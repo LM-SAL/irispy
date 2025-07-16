@@ -56,6 +56,8 @@ optional-dependencies.docs = [
   "sphinx-design",
   "sphinx-gallery",
   "sunpy-sphinx-theme",
+  # TODO: Remove when sunkit-image is released
+  'sunkit-image @ git+https://github.com/Deus1704/sunkit-image.git',
 ]
 optional-dependencies.tests = [
   "irispy-lmsal[all]",
