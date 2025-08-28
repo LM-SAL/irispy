@@ -37,6 +37,7 @@ RADIANCE_UNIT = u.erg / u.cm**2 / u.s / u.steradian / u.Angstrom
 SLIT_WIDTH = 0.33 * u.arcsec
 SPECTRAL_BAND = {
     "1343": "FUV",
+    "1400": "FUV",
     "2786": "NUV",
     "2814": "NUV",
     "2826": "NUV",

@@ -1,0 +1,30 @@
+Observation is https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20140329_140938_3860258481_2014-03-29T14%3A09%3A382014-03-29T14%3A09%3A38.xml
+
+Original details
+----------------
+
+IHOP251 with Sac Peak at AR12017
+OBS 3860258481: Very large coarse 8-step raster
+
+Where
+-----
+x,y:	490",280"
+Max FOV:	181"x174"
+Target:	AR
+
+Raster
+------
+FOV:	14"x174"
+Steps:	8x2"
+Step Cad:	9.4s
+Raster Cad:	72s, 180 ras
+Linelist:	v38_03
+
+
+SJI
+---
+FOV:	167"x174"
+
+1400:	26s, 519 imgs
+2796:	19s, 690 imgs
+2832:	75s, 173 imgs

@@ -4,50 +4,50 @@ import pytest
 from irispy.io.utils import fitsinfo, read_files
 
 
-def test_fitsinfo(capsys, raster_file, sji_1330_file, sji_1400_file, sji_2796_file, sji_2832_file):
-    fitsinfo(raster_file)
+def test_fitsinfo(capsys, sns_sg_file, sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
+    fitsinfo(sns_sg_file)
     captured = capsys.readouterr()
-    assert raster_file in captured.out
+    assert sns_sg_file in captured.out
 
-    fitsinfo(sji_1330_file)
+    fitsinfo(sns_sji_1330_file)
     captured = capsys.readouterr()
-    assert sji_1330_file in captured.out
+    assert sns_sji_1330_file in captured.out
 
-    fitsinfo(sji_1400_file)
+    fitsinfo(sns_sji_1400_file)
     captured = capsys.readouterr()
-    assert sji_1400_file in captured.out
+    assert sns_sji_1400_file in captured.out
 
-    fitsinfo(sji_2796_file)
+    fitsinfo(sns_sji_2796_file)
     captured = capsys.readouterr()
-    assert sji_2796_file in captured.out
+    assert sns_sji_2796_file in captured.out
 
-    fitsinfo(sji_2832_file)
+    fitsinfo(sns_sji_2832_file)
     captured = capsys.readouterr()
-    assert sji_2832_file in captured.out
+    assert sns_sji_2832_file in captured.out
 
 
-def test_read_files_with_mix(raster_file, sji_1330_file):
-    returns = read_files([raster_file, sji_1330_file])
+def test_read_files_with_mix(sns_sg_file, sns_sji_1330_file):
+    returns = read_files([sns_sg_file, sns_sji_1330_file])
     assert len(returns) == 2
 
 
-def test_read_files_raster(raster_file):
+def test_read_files_raster(sns_sg_file):
     # Simple test to ensure it does not error
-    assert read_files(raster_file)
-    assert read_files([raster_file])
+    assert read_files(sns_sg_file)
+    assert read_files([sns_sg_file])
 
 
-def test_read_files_sji(sji_1330_file, sji_1400_file, sji_2796_file, sji_2832_file):
+def test_read_files_sji(sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
     # Simple test to ensure it does not error
-    assert read_files(sji_1330_file)
-    assert read_files(sji_1400_file)
-    assert read_files(sji_2796_file)
-    assert read_files(sji_2832_file)
-    assert read_files([sji_2832_file])
+    assert read_files(sns_sji_1330_file)
+    assert read_files(sns_sji_1400_file)
+    assert read_files(sns_sji_2796_file)
+    assert read_files(sns_sji_2832_file)
+    assert read_files([sns_sji_2832_file])
 
 
-def test_read_files_sji_more_than_one(sji_1330_file, sji_1400_file):
-    returns = read_files([sji_1330_file, sji_1400_file])
+def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
+    returns = read_files([sns_sji_1330_file, sns_sji_1400_file])
     assert len(returns) == 2
 
 
