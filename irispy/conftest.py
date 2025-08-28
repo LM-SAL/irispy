@@ -190,7 +190,7 @@ def raster_sjicube_2832():
 
 @pytest.fixture(scope="session")
 def fake_long_sns_obs(tmp_path_factory):
-    header = fits.getheader(get_test_filepath("sns/iris_l2_20210905_001833_3620258102_SJI_2832_t000.fits"))
+    header = fits.getheader(get_test_filepath("raster/iris_l2_20140329_140938_3860258481_SJI_2832_t000.fits"))
     header["STARTOBS"] = "2017-05-02T05:25:51.000"
     header["ENDOBS"] = "2017-05-02T08:25:51.000"
     header["NAXIS3"] = 100
@@ -200,6 +200,6 @@ def fake_long_sns_obs(tmp_path_factory):
     data = rng.random((header["NAXIS3"], header["NAXIS2"], header["NAXIS1"]))
     temp_dir = tmp_path_factory.mktemp("IRIS")
     hdu = fits.PrimaryHDU(data=data, header=header, do_not_scale_image_data=True, scale_back=True)
-    fits_file = os.fspath(temp_dir.joinpath("iris_l2_20210905_001833_3620258102_SJI_2832_t000.fits"))
+    fits_file = os.fspath(temp_dir.joinpath("iris_l2_20140329_140938_3860258481_SJI_2832_t000.fits"))
     hdu.writeto(fits_file)
     return [fits_file]
