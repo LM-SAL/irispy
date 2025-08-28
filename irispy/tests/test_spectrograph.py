@@ -7,12 +7,12 @@ from astropy.io import fits
 from irispy.io.spectrograph import read_spectrograph_lvl2
 
 
-def test_fits_data_comparison(raster_file):
+def test_fits_data_comparison(sns_sg_file):
     """
     Make sure the data is the same in pyfits and irispy.
     """
-    iris_l2_test_raster = read_spectrograph_lvl2(raster_file)
-    with fits.open(raster_file) as hdulist:
+    iris_l2_test_raster = read_spectrograph_lvl2(sns_sg_file)
+    with fits.open(sns_sg_file) as hdulist:
         spectral_window1 = hdulist[0].header["TDESC1"]
         spectral_window2 = hdulist[0].header["TDESC2"]
         spectral_window3 = hdulist[0].header["TDESC3"]

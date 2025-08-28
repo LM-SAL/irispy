@@ -15,5 +15,7 @@ For more information see the instrument paper which is available `online for fre
 
 `Documentation is hosted on Read the Docs <https://irispy.readthedocs.io/en/stable/>`__
 
-Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
-However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
+.. warning::
+
+   Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
+   However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
