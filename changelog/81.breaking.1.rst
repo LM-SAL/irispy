@@ -1,3 +1,0 @@
-Renamed ``Collection`` to ``RasterCollection``.
-Moved metadata into a separate file.
-Removed ``convert_to`` method.

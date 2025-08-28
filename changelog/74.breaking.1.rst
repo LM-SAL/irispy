@@ -1,1 +1,0 @@
-Removed versions from the response, it now only supports the latest version which is currently at V9.

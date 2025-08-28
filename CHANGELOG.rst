@@ -1,3 +1,25 @@
+0.4.0 (2025-08-28)
+==================
+
+Breaking Changes
+----------------
+
+- Renamed "get_iris_response" to `irispy.utils.response.get_latest_response`. (`#74 <https://github.com/LM-SAL/irispy/pull/74>`__)
+- Removed versions from the response, it now only supports the latest version which is currently at V9. (`#74 <https://github.com/LM-SAL/irispy/pull/74>`__)
+- Renamed ``Collection`` to ``RasterCollection``.
+  Moved metadata into a separate file.
+  Removed ``convert_to`` method. (`#81 <https://github.com/LM-SAL/irispy/pull/81>`__)
+- Increased minimum version of Python to 3.11, sunpy to 7.0.0 and dkist to 1.15.0 (`#81 <https://github.com/LM-SAL/irispy/pull/81>`__)
+- All references to irispy-lmsal have been removed and now the package is simply referred to as ``irispy``.
+  The package name on pypi and conda-forge is still the same due to conflicts with existing packages. (`#85 <https://github.com/LM-SAL/irispy/pull/85>`__)
+
+
+Internal Changes
+----------------
+
+- Added more test data. (`#86 <https://github.com/LM-SAL/irispy/pull/86>`__)
+
+
 0.3.1 (2025-07-30)
 ==================
 

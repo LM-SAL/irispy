@@ -1,1 +1,0 @@
-Increased minimum version of Python to 3.11, sunpy to 7.0.0 and dkist to 1.15.0
