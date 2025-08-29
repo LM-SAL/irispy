@@ -9,7 +9,7 @@ from astropy import constants
 
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
-from irispy.utils.response import get_interpolated_effective_area
+from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
 __all__ = [
     "calculate_dn_to_radiance_factor",
@@ -50,23 +50,27 @@ def radiometric_calibration(
     # The slit width is divided by 2 in the IDL code, unsure why.
     solid_angle = cube.wcs.wcs.cdelt[lat_wcs_index] * cube.wcs.wcs.cunit[lat_wcs_index] * (SLIT_WIDTH / 2)
     # Get wavelength for each pixel.
-    obs_wavelength = cube.axis_world_coords(2)
+    obs_wavelength = cube.axis_world_coords(2)[0]
     time_obs = cube.meta.date_reference
+    iris_response = get_latest_response(time_obs)
     exp_corrected_cube = cube.apply_exposure_time_correction()
     # Convert to radiance units.
+    data_quantities = (exp_corrected_cube.data * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s),)
+    if exp_corrected_cube.uncertainty is not None:
+        uncertainty = (
+            exp_corrected_cube.uncertainty.array * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s)
+        )
+        data_quantities += (uncertainty,)
     new_data_quantities = convert_photons_per_sec_to_radiance(
-        (
-            exp_corrected_cube.data * exp_corrected_cube.unit,
-            exp_corrected_cube.uncertainty.array * exp_corrected_cube.unit,
-        ),
-        time_obs,
+        data_quantities,
+        iris_response,
         obs_wavelength,
         detector_type,
         spectral_dispersion_per_pixel,
         solid_angle,
     )
     new_data = new_data_quantities[0].value
-    new_uncertainty = new_data_quantities[1].value
+    new_uncertainty = new_data_quantities[1].value if len(new_data_quantities) > 1 else None
     new_unit = new_data_quantities[0].unit
     new_cube = SpectrogramCube(
         new_data,
