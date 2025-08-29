@@ -73,3 +73,8 @@ def test_radiometric_calibration(raster_file):
     new_cube = radiometric_calibration(cube)
     assert new_cube.unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
     assert new_cube.data.shape == cube.data.shape
+
+    sequence = raster_collection["C II 1336"]
+    new_sequence = radiometric_calibration(sequence)
+    assert new_sequence[0].unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
+    assert new_sequence[0].data.shape == sequence[0].data.shape
