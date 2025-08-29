@@ -2,23 +2,19 @@
 This module provides general utility functions called by code in spectrograph.
 """
 
-from sys import breakpointhook
 import numpy as np
 
 import astropy.units as u
 from astropy import constants
 
+from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
+from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
 from irispy.utils.response import get_interpolated_effective_area
-from sunraster.spectrogram import APPLY_EXPOSURE_TIME_ERROR
-from scipy.interpolate import make_interp_spline
-from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
-from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH, RADIANCE_UNIT
-from irispy.utils.constants import DN_UNIT
 
 __all__ = [
-    "calculate_photons_per_sec_to_radiance_factor",
-    "convert_between_dn_and_photons",
-    "convert_or_undo_photons_per_sec_to_radiance",
+    "calculate_dn_to_radiance_factor",
+    "convert_photons_per_sec_to_radiance",
+    "radiometric_calibration",
     "reshape_1d_wavelength_dimensions_for_broadcast",
 ]
 
@@ -51,16 +47,18 @@ def radiometric_calibration(
     lat_wcs_index = ["HPLT" in c for c in cube.wcs.wcs.ctype]
     lat_wcs_index = np.arange(len(cube.wcs.wcs.ctype))[lat_wcs_index]
     lat_wcs_index = lat_wcs_index[0]
-    solid_angle = cube.wcs.wcs.cdelt[lat_wcs_index] * cube.wcs.wcs.cunit[lat_wcs_index] * SLIT_WIDTH
+    # The slit width is divided by 2 in the IDL code, unsure why.
+    solid_angle = cube.wcs.wcs.cdelt[lat_wcs_index] * cube.wcs.wcs.cunit[lat_wcs_index] * (SLIT_WIDTH / 2)
     # Get wavelength for each pixel.
     obs_wavelength = cube.axis_world_coords(2)
     time_obs = cube.meta.date_reference
-
     exp_corrected_cube = cube.apply_exposure_time_correction()
-
     # Convert to radiance units.
     new_data_quantities = convert_photons_per_sec_to_radiance(
-        (exp_corrected_cube.data * exp_corrected_cube.unit, exp_corrected_cube.uncertainty.array * exp_corrected_cube.unit),
+        (
+            exp_corrected_cube.data * exp_corrected_cube.unit,
+            exp_corrected_cube.uncertainty.array * exp_corrected_cube.unit,
+        ),
         time_obs,
         obs_wavelength,
         detector_type,
@@ -108,6 +106,7 @@ def convert_photons_per_sec_to_radiance(
         spectral dispersion (wavelength width) of a pixel.
     solid_angle: scalar `astropy.units.Quantity`
         Solid angle corresponding to a pixel.
+
     Returns
     -------
     `list` of `astropy.units.Quantity`
@@ -181,7 +180,7 @@ def calculate_dn_to_radiance_factor(
         detector_type,
         wavelength,
     )
-    # Return radiometric conversed data assuming input data is in units of photons/s.
+    # Return radiometric converted data assuming input data is in units of photons/s.
     return (
         constants.h
         * constants.c

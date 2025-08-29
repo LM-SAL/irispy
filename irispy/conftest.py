@@ -25,7 +25,7 @@ try:
     import matplotlib.pyplot as plt
 
     HAVE_MATPLOTLIB = True
-    #mpl.use("Agg")
+    mpl.use("Agg")
 except ImportError:
     HAVE_MATPLOTLIB = False
 
