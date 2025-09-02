@@ -4,8 +4,10 @@
 Installation
 ************
 
-Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
-However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
+.. warning::
+
+   Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
+   However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
 
 Release version
 ===============

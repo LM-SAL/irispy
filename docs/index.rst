@@ -31,8 +31,10 @@ It provides a set of classes for handling both SJI and spectrograph observations
 These link the observations with various forms of supporting data including: measurement uncertainties; units; a data mask to mark pixels with unreliable or unphysical data values; WCS (World Coordinate System) transformations that describe the position, wavelengths, and times represented by the pixels; and general metadata.
 These classes also provide methods for applying a number of calibration routines including exposure time correction and conversion between data number, photons, and energy units.
 
-Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
-However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
+.. warning::
+
+   Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
+   However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
 
 Getting help
 ============

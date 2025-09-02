@@ -122,11 +122,18 @@ class BaseMeta(NDMeta):
         return self.get("AECNRAS")
 
     @property
-    def number_raster_positions(self):
+    def number_of_unique_raster_positions(self):
+        """
+        Number of unique positions in raster.
+        """
+        return self.get("NRASTERP")
+
+    @property
+    def number_of_raster_positions(self):
         """
         Number of positions in raster.
         """
-        self.get("NRASTERP")
+        return self.get("RASNRPT")
 
     @property
     def spectral_range(self):

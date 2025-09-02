@@ -1,2 +1,0 @@
-All references to irispy-lmsal have been removed and now the package is simply referred to as ``irispy``.
-The package name on pypi and conda-forge is still the same due to conflicts with existing packages.

@@ -102,18 +102,38 @@ def _create_wcs(hdulist):
     pc1_2ix = hdulist[1].header["PC1_2IX"]
     pc2_1ix = hdulist[1].header["PC2_1IX"]
     pc2_2ix = hdulist[1].header["PC2_2IX"]
+    # Handle if there are 0's in the aux array for XCENIX, YCENIX and the PC_IJ arrays
+    xcenix_values = hdulist[1].data[:, xcenix_idx]
+    ycenix_values = hdulist[1].data[:, ycenix_idx]
+    pc1_1ix_values = hdulist[1].data[:, pc1_1ix]
+    pc1_2ix_values = hdulist[1].data[:, pc1_2ix]
+    pc2_1ix_values = hdulist[1].data[:, pc2_1ix]
+    pc2_2ix_values = hdulist[1].data[:, pc2_2ix]
+    for array in [
+        xcenix_values,
+        ycenix_values,
+        pc1_1ix_values,
+        pc1_2ix_values,
+        pc2_1ix_values,
+        pc2_2ix_values,
+    ]:
+        zero_idx = np.where(array == 0)[0]
+        if zero_idx.size > 0:
+            nonzero_idx = np.where(array != 0)[0]
+            nonzero_vals = array[nonzero_idx]
+            array[zero_idx] = np.interp(zero_idx, nonzero_idx, nonzero_vals)
     for i in range(hdulist[0].header["NAXIS3"]):
         location = get_body_heliographic_stonyhurst("Earth", (base_time + times[i]).isot)
         observer = Helioprojective(
-            hdulist[1].data[i, xcenix_idx] * u.arcsec,
-            hdulist[1].data[i, ycenix_idx] * u.arcsec,
+            xcenix_values[i] * u.arcsec,
+            ycenix_values[i] * u.arcsec,
             observer=location,
             obstime=base_time + times[i],
         )
         rotation_matrix = np.asanyarray(
             [
-                [hdulist[1].data[i, pc1_1ix], hdulist[1].data[i, pc1_2ix]],
-                [hdulist[1].data[i, pc2_1ix], hdulist[1].data[i, pc2_2ix]],
+                [pc1_1ix_values[i], pc1_2ix_values[i]],
+                [pc2_1ix_values[i], pc2_2ix_values[i]],
             ]
         )
         new_header = make_fitswcs_header(

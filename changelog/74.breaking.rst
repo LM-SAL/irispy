@@ -1,1 +1,0 @@
-Renamed "get_iris_response" to `irispy.utils.response.get_latest_response`.
