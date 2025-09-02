@@ -29,6 +29,13 @@ def radiometric_calibration(
 
     The data is also exposure time corrected during the conversion.
 
+    Notes
+    -----
+    This is designed to do the same as `iris2/iris_calib_spectrum.pro <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/lmsal/iris2/iris_calib_spectrum.pro>`__ IDL code.
+
+    However, it does not output the same values.
+    It is around 5% higher than the IDL code.
+
     Parameters
     ----------
     cube : `SpectrogramCube` | `SpectrogramCubeSequence`
@@ -39,6 +46,8 @@ def radiometric_calibration(
     `SpectrogramCube` or `SpectrogramCubeSequence`
         New cube in new units.
     """
+    if isinstance(cube, SpectrogramCubeSequence):
+        return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
     detector_type = cube.meta.detector
     # Get spectral dispersion per pixel.
     spectral_wcs_index = np.where(np.array(cube.wcs.wcs.ctype) == "WAVE")[0][0]

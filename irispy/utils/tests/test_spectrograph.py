@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from scipy.io import readsav
 
@@ -8,6 +9,7 @@ from sunpy.time import parse_time
 
 from irispy.data.test import get_test_filepath
 from irispy.io.utils import read_files
+from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.response import get_latest_response
 from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiometric_calibration
@@ -71,10 +73,15 @@ def test_radiometric_calibration(raster_file):
     raster_collection = read_files(raster_file)
     cube = raster_collection["C II 1336"][0]
     new_cube = radiometric_calibration(cube)
+    assert isinstance(new_cube, SpectrogramCube)
+
+    assert np.any(new_cube.data != cube.data)
     assert new_cube.unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
     assert new_cube.data.shape == cube.data.shape
 
     sequence = raster_collection["C II 1336"]
     new_sequence = radiometric_calibration(sequence)
+    assert isinstance(new_sequence, SpectrogramCubeSequence)
     assert new_sequence[0].unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
     assert new_sequence[0].data.shape == sequence[0].data.shape
+    assert np.any(new_sequence[0].data != sequence[0].data)
