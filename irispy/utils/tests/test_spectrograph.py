@@ -27,9 +27,8 @@ def idl_output_rad_cal():
     return readsav(get_test_filepath("output_calibration.sav"))
 
 
-# @pytest.mark.parametrize("window", ("A", "B"))
-def test_calculate_dn_to_radiance_factor(raster_file, idl_input_rad_cal, idl_output_rad_cal):
-    raster_collection = read_files(raster_file)
+def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_output_rad_cal):
+    raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     idl_wavelength = idl_input_rad_cal["wavelength"] * u.Angstrom
     idl_factor_cgs = idl_output_rad_cal["factor"]
@@ -47,18 +46,12 @@ def test_calculate_dn_to_radiance_factor(raster_file, idl_input_rad_cal, idl_out
     )
     assert len(factor) == len(idl_wavelength)
     # Idl output is here to help check values
-    #  -----------------------------------------------------------------
-    # | iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits |
-    #  -----------------------------------------------------------------
-    # MRDFITS: Image array (47,187)  Type=Real*8
-    # MRDFITS: Image array (18,40,187)  Type=Real*4
+    # iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits |
     # % IRIS_CALIB_SPECTRUM: Input wavelength range: 1332.68-1337.50 A
-    # Conditional values FUV, NUV...           0          -1
     # % IRIS_CALIB_SPECTRUM: Using FUV response
     # % IRIS_CALIB_SPECTRUM: Selected effective area statistics: (min,mean,max)=(0.106070,0.114238,0.122407)
     # % IRIS_CALIB_SPECTRUM: Spectrum converted by: (min,mean,max)=(28811.731,30982.472,33369.609)
-    # IDL returns it in full units
-    # erg cm^-2 s^-1 sr^-1 Å^-1
+    # IDL factor is in units: erg cm^-2 s^-1 sr^-1 Å^-1
     idl_unit = u.erg / (u.cm**2 * u.s * u.sr * u.AA)
     idl_factor = idl_factor_cgs * idl_unit
     # Convert Python factor to IDL units for comparison
@@ -69,8 +62,8 @@ def test_calculate_dn_to_radiance_factor(raster_file, idl_input_rad_cal, idl_out
     assert_quantity_allclose(factor_in_idl_units, idl_factor, atol=200 * idl_unit)
 
 
-def test_radiometric_calibration(raster_file):
-    raster_collection = read_files(raster_file)
+def test_radiometric_calibration(sns_sg_file):
+    raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     new_cube = radiometric_calibration(cube)
     assert isinstance(new_cube, SpectrogramCube)

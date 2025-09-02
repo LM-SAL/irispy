@@ -54,12 +54,12 @@ def radiometric_calibration(
     spectral_dispersion_per_pixel = cube.wcs.wcs.cdelt[spectral_wcs_index] * cube.wcs.wcs.cunit[spectral_wcs_index]
     # Get solid angle from slit width for a pixel.
     lat_wcs_index = ["HPLT" in c for c in cube.wcs.wcs.ctype]
-    lat_wcs_index = np.arange(len(cube.wcs.wcs.ctype))[lat_wcs_index]
-    lat_wcs_index = lat_wcs_index[0]
+    lat_wcs_index = np.arange(len(cube.wcs.wcs.ctype))[lat_wcs_index][0]
     # The slit width is divided by 2 in the IDL code, unsure why.
     solid_angle = cube.wcs.wcs.cdelt[lat_wcs_index] * cube.wcs.wcs.cunit[lat_wcs_index] * (SLIT_WIDTH / 2)
     # Get wavelength for each pixel.
-    obs_wavelength = cube.axis_world_coords(2)[0]
+    wavelength_axis_index = np.where(np.array(cube.wcs.wcs.ctype)[::-1] == "WAVE")[0][0]
+    wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
     time_obs = cube.meta.date_reference
     iris_response = get_latest_response(time_obs)
     exp_corrected_cube = cube.apply_exposure_time_correction()
@@ -71,12 +71,12 @@ def radiometric_calibration(
         )
         data_quantities += (uncertainty,)
     new_data_quantities = convert_photons_per_sec_to_radiance(
-        data_quantities,
-        iris_response,
-        obs_wavelength,
-        detector_type,
-        spectral_dispersion_per_pixel,
-        solid_angle,
+        data_quantities=data_quantities,
+        iris_response=iris_response,
+        wavelength=wavelength,
+        detector_type=detector_type,
+        spectral_dispersion_per_pixel=spectral_dispersion_per_pixel,
+        solid_angle=solid_angle,
     )
     new_data = new_data_quantities[0].value
     new_uncertainty = new_data_quantities[1].value if len(new_data_quantities) > 1 else None
@@ -94,9 +94,10 @@ def radiometric_calibration(
 
 
 def convert_photons_per_sec_to_radiance(
+    *,
     data_quantities,
     iris_response,
-    obs_wavelength,
+    wavelength,
     detector_type,
     spectral_dispersion_per_pixel,
     solid_angle,
@@ -111,12 +112,12 @@ def convert_photons_per_sec_to_radiance(
         radiance equivalent counts, e.g. erg / cm**2 / s / sr / Angstrom.
     iris_response: dict
         The IRIS response data loaded from `irispy.utils.response.get_latest_response`.
-    obs_wavelength: `astropy.units.Quantity`
+    wavelength: `astropy.units.Quantity`
         Wavelength at each element along spectral axis of data quantities.
     detector_type: `str`
         Detector type: 'FUV', 'NUV', or 'SJI'.
     spectral_dispersion_per_pixel: scalar `astropy.units.Quantity`
-        spectral dispersion (wavelength width) of a pixel.
+        Spectral dispersion (wavelength width) of a pixel.
     solid_angle: scalar `astropy.units.Quantity`
         Solid angle corresponding to a pixel.
 
@@ -128,18 +129,18 @@ def convert_photons_per_sec_to_radiance(
     for i, data in enumerate(data_quantities):
         if data.unit != u.photon / u.s:
             msg = (
-                f"Invalid unit provided. Unit must be equivalent to {u.photon / u.s}."
+                f"Invalid unit provided. Unit must be equivalent to {u.photon / u.s}. "
                 f"Error found for {i}th element of ``data_quantities`` with unit: {data.unit}"
             )
             raise ValueError(
                 msg,
             )
     photons_per_sec_to_radiance_factor = calculate_dn_to_radiance_factor(
-        iris_response,
-        obs_wavelength,
-        detector_type,
-        spectral_dispersion_per_pixel,
-        solid_angle,
+        iris_response=iris_response,
+        wavelength=wavelength,
+        detector_type=detector_type,
+        spectral_dispersion_per_pixel=spectral_dispersion_per_pixel,
+        solid_angle=solid_angle,
     )
     # Change shape of arrays so they are compatible for broadcasting
     # with data and uncertainty arrays.
@@ -151,6 +152,7 @@ def convert_photons_per_sec_to_radiance(
 
 
 def calculate_dn_to_radiance_factor(
+    *,
     iris_response,
     wavelength,
     detector_type,
