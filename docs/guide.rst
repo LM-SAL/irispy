@@ -59,7 +59,7 @@ Let us retrieve the header of the raster file and display the description of the
     <BLANKLINE>
     Raster Collection
     -----------------
-    Cube keys: (np.str_('C II 1336'), np.str_('Si IV 1394'), np.str_('Mg II k 2796'))
+    Spectral Windows (cube keys): (np.str_('C II 1336'), np.str_('Si IV 1394'), np.str_('Mg II k 2796'))
     Number of Cubes: 3
     Aligned dimensions: [5 16 548]
     Aligned physical types: [('meta.obs.sequence',), ...]
