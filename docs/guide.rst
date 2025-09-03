@@ -45,7 +45,7 @@ Let us retrieve the header of the raster file and display the description of the
 
 .. code-block:: python
 
-    >>> raster = read_files(sample_data.RASTER)  # doctest: +REMOTE_DATA
+    >>> raster = read_files(sample_data.RASTER_TAR)  # doctest: +REMOTE_DATA
 
 .. note::
     By default, this will load the data into memory.
@@ -278,8 +278,8 @@ and for the raster file:
 
 .. code-block:: python
 
-    >>> fits.info("iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits") # doctest: +SKIP
-    Filename: iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits
+    >>> fits.info(sample_data.RASTER_FITS)  # doctest: +REMOTE_DATA
+    Filename: ...iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits
     No.    Name      Ver    Type      Cards   Dimensions   Format
       0  PRIMARY       1 PrimaryHDU     215   ()
       1                1 ImageHDU        33   (513, 548, 16)   int16 (rescales to float32)
@@ -292,33 +292,32 @@ If you would like a bit more information, we have a similar function within ``ir
 
 .. code-block:: python
 
-    >>> from irispy.io import fitsinfo  # doctest: +REMOTE_DATA
-    >>> fitsinfo(sample_data.SJI_1330)  # doctest: +REMOTE_DATA
+    >>> from irispy.io import fits_info  # doctest: +REMOTE_DATA
+    >>> fits_info(sample_data.SJI_1330)  # doctest: +REMOTE_DATA
     Filename: ...iris_l2_20211001_060925_3683602040_SJI_1330_t000.fits.gz
-    No.    Name      Ver    Type      Cards   Dimensions   Format
-      0  PRIMARY       1 PrimaryHDU     162   (555, 548, 20)   int16 (rescales to float32)
-      1                1 ImageHDU        38   (31, 20)   float64
-      2                1 TableHDU        33   20R x 5C   [A10, A10, A4, A66, A63]
-    INFO: Observation description: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2 [irispy.io.utils]
-    INFO: Extension No. 1 stores data and header of SJI_1330:  [irispy.io.utils]
-    INFO: 1310.00 - 1350.00 AA [irispy.io.utils]
+    Observation: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
+    OBS ID: 3683602040
+    No.   Name  Ver    Type    Cards   Dimensions              Format                  Description
+    --- ------- --- ---------- ----- -------------- --------------------------- -------------------------
+      0 PRIMARY   1 PrimaryHDU   162 (555, 548, 20) int16 (rescales to float32) SJI 1330 (1310 - 1350 AA)
+      1           1   ImageHDU    38       (31, 20)                     float64            Auxiliary data
+      2           1   TableHDU    33       20R x 5C    [A10, A10, A4, A66, A63]            Auxiliary data
 
 .. code-block:: python
 
-    >>> fitsinfo("iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits") # doctest: +SKIP
-    Filename: iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits
-    No.    Name      Ver    Type      Cards   Dimensions   Format
-      0  PRIMARY       1 PrimaryHDU     215   ()
-      1                1 ImageHDU        33   (513, 548, 16)   int16 (rescales to float32)
-      2                1 ImageHDU        33   (512, 548, 16)   int16 (rescales to float32)
-      3                1 ImageHDU        33   (1018, 548, 16)   int16 (rescales to float32)
-      4                1 ImageHDU        54   (47, 16)   float64
-      5                1 TableHDU        53   16R x 7C   [A10, A10, A4, A10, A4, A66, A66]
-    Observation description:  Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
+    >>> fits_info(sample_data.RASTER_FITS)  # doctest: +REMOTE_DATA
+    Filename: ...iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits
+    Observation: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
+    OBS ID: 3683602040
+    No.   Name  Ver    Type    Cards    Dimensions                 Format                       Description
+    --- ------- --- ---------- ----- --------------- --------------------------------- -----------------------------
+      0 PRIMARY   1 PrimaryHDU   215              ()                                        Primary Header (no data)
+      1           1   ImageHDU    33  (513, 548, 16)       int16 (rescales to float32)    C II 1336 (1332 - 1358 AA)
+      2           1   ImageHDU    33  (512, 548, 16)       int16 (rescales to float32)   Si IV 1394 (1381 - 1407 AA)
+      3           1   ImageHDU    33 (1018, 548, 16)       int16 (rescales to float32) Mg II k 2796 (2783 - 2835 AA)
+      4           1   ImageHDU    54        (47, 16)                           float64                Auxiliary data
+      5           1   TableHDU    53        16R x 7C [A10, A10, A4, A10, A4, A66, A66]                Auxiliary data
 
-    Extension No. 1 stores data and header of C II 1336: 1331.70 - 1358.29 AA (FUV)
-    Extension No. 2 stores data and header of Si IV 1394: 1380.73 - 1406.73 AA (FUV)
-    Extension No. 3 stores data and header of Mg II k 2796: 2783.27 - 2835.06 AA (NUV)
 
 If we now want to recover the main header of any file:
 
@@ -341,28 +340,22 @@ If we now want to recover the main header of any file:
     ...
 
     # The main header of a raster file
-    >>> fits.getheader("iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits") # doctest: +SKIP
-    SIMPLE  =                    T / Written by IDL:  Mon Nov 15 09:21:38 2021
+    >>> fits.getheader(sample_data.RASTER_FITS)  # doctest: +REMOTE_DATA
+    SIMPLE  =                    T / Written by IDL:  Sat Aug 20 21:58:03 2022
     BITPIX  =                   16 / Number of bits per data pixel
     NAXIS   =                    0 / Number of data axes
     EXTEND  =                    T / FITS data may contain extensions
-    DATE    = '2021-11-15'         / Creation UTC (CCCC-MM-DD) date of FITS header
-    COMMENT FITS (Flexible Image Transport System) format is defined in 'Astronomy
-    COMMENT and Astrophysics', volume 376, page 359; bibcode 2001A&A...376..359H
-    TELESCOP= 'IRIS    '           /
-    INSTRUME= 'SPEC    '           /
+    DATE    = '2022-08-21'         / Creation UTC (CCCC-MM-DD) date of FITS header
     ...
 
     # The individual header corresponding to Si IV 1403 in the raster
-    >>> fits.getheader("iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits", 2) # doctest: +SKIP
+    >>> fits.getheader(sample_data.RASTER_FITS, 2)  # doctest: +REMOTE_DATA
     XTENSION= 'IMAGE   '           / IMAGE extension
     BITPIX  =                   16 / Number of bits per data pixel
     NAXIS   =                    3 / Number of data axes
     NAXIS1  =                  512 /
     NAXIS2  =                  548 /
     NAXIS3  =                   16 /
-    PCOUNT  =                    0 / No Group Parameters
-    GCOUNT  =                    1 / One Data Group
     ...
 
 The same can be done with the data using `astropy.io.fits.getdata`.
@@ -372,39 +365,25 @@ As the number of spectral windows in a raster file may vary from one observation
 .. code-block:: python
 
     # The header corresponding to the extra information extension
-    >>> fits.getheader("iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits", -1) # doctest: +SKIP
+    >>> fits.getheader(sample_data.RASTER_FITS, -1)  # doctest: +REMOTE_DATA
     XTENSION= 'TABLE   '           / ASCII table extension
     BITPIX  =                    8 / 8 bit bytes
     NAXIS   =                    2 / 2-dimensional ASCII table
     NAXIS1  =                  296 / Number of positions along axis 1
     NAXIS2  =                   16 / Number of positions along axis 2
-    PCOUNT  =                    0 / Size of special data area
-    GCOUNT  =                    1 / one data group (required keyword)
-    TFIELDS =                    7 / Number of fields in each row
-    TBCOL1  =                    1 /
-    TFORM1  = 'A10     '           /
-    TTYPE1  = 'FRMID   '           /
     ...
-    # The data for the extra information extension
-    >>> data = fits.getdata("iris_l2_20211001_060925_3683602040_raster_t000_r00000.fits", -1) # doctest: +SKIP
-    # The names of the records
-    >>> data.dtype.names # doctest: +SKIP
-    ('FRMID',
-     'FUVFDBID',
-     'FUVCRSID',
-     'NUVFDBID',
-     'NUVCRSID',
-     'FUVfilename',
-     'NUVfilename',
-     'FUVtemp',
-     'NUVtemp')
+    >>> # The data for the extra information extension
+    >>> data = fits.getdata(sample_data.RASTER_FITS, -1)  # doctest: +REMOTE_DATA
+    >>> # The names of the records
+    >>> data.dtype.names # doctest: +REMOTE_DATA
+    ('FRMID', 'FUVFDBID', 'FUVCRSID', 'NUVFDBID', 'NUVCRSID', 'FUVfilename', 'NUVfilename')
 
 We can access the values of the variables stored in the data corresponding to the extra information extension as either an attribute or a key:
 
 .. code-block:: python
 
     # An example is the record: "FUVfilename"
-    >>> data_extra.FUVfilename # doctest: +SKIP
+    >>> data.FUVfilename # doctest: +REMOTE_DATA
     chararray(['/irisa/data/level1/2021/10/01/H0600/iris20211001_06092534_fuv.fits',
               '/irisa/data/level1/2021/10/01/H0600/iris20211001_06092706_fuv.fits',
               ...

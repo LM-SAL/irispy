@@ -1,0 +1,2 @@
+``fitsinfo`` now renamed to `irispy.io.fits_info`.
+The output has been updated to be nicer.

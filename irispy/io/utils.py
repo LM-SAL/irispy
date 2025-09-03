@@ -1,15 +1,17 @@
+import sys
 import tarfile
 from pathlib import Path
 
 from astropy.io import fits
+from astropy.table import Table
 
 from ndcube import NDCollection
-from sunpy import log as logger
+from sunpy import log
 
 from irispy.io.sji import read_sji_lvl2
 from irispy.io.spectrograph import read_spectrograph_lvl2
 
-__all__ = ["fitsinfo", "read_files"]
+__all__ = ["fits_info", "read_files"]
 
 
 def _get_simple_metadata(file):
@@ -56,7 +58,7 @@ def _extract_tarfile(filenames):
     return expanded_files
 
 
-def fitsinfo(filename):
+def fits_info(filename: str) -> None:
     """
     Prints information about the extension of a raster or SJI level 2 data
     file.
@@ -66,19 +68,40 @@ def fitsinfo(filename):
     filename : str
         Filename to load.
     """
+
+    def get_description(idx, idx_mod):
+        # The last two extensions are reserved for auxiliary data.
+        auxiliary_extension_indices = [num_extensions - 2, num_extensions - 1]
+        if idx == 0 and idx_mod == 0:
+            return "Primary Header (no data)"
+        if idx not in auxiliary_extension_indices:
+            text_modifier = (
+                f" ({header[f'TDET{idx + idx_mod}'][:3]})" if "SPEC" in header[f"TDET{idx + idx_mod}"] else ""
+            )
+            return f"{header[f'TDESC{idx + idx_mod}'].replace('_', ' ')} ({header[f'TWMIN{idx + idx_mod}']:.0f} - {header[f'TWMAX{idx + idx_mod}']:.0f} AA{text_modifier})"
+        return "Auxiliary data"
+
+    results = [
+        f"Filename: {Path(filename).absolute()}",
+        f"Observation: {fits.getval(filename, 'OBS_DESC')}",
+        f"OBS ID: {fits.getval(filename, 'OBSID')}",
+    ]
+    table = Table(
+        names=("No.", "Name", "Ver", "Type", "Cards", "Dimensions", "Format", "Description"),
+        dtype=("S8", "S32", "S8", "S16", "S8", "S40", "S16", "U200"),
+    )
     with fits.open(filename) as hdulist:
-        hdulist.info()
-        hdr = hdulist[0].header
-        msg = f"Observation description: {hdr['OBS_DESC']}"
-        logger.info(msg)
-        modifier = ""
-        for i in range(hdr["NWIN"]):
-            msg = f"Extension No. {i + 1} stores data and header of {hdr[f'TDESC{i + 1}']}: "
-            logger.info(msg)
-            if "SJI" not in hdr[f"TDET{i + 1}"]:
-                modifier = f" ({hdr[f'TDET{i + 1}'][:3]})"
-            msg = f"{hdr[f'TWMIN{i + 1}']:.2f} - {hdr[f'TWMAX{i + 1}']:.2f} AA{modifier}"
-            logger.info(msg)
+        hdu_info = hdulist.info(output=False)
+        header = hdulist[0].header
+        num_extensions = len(hdulist)
+        for idx in range(num_extensions):
+            description = get_description(idx, 0 if "SPEC" in header["INSTRUME"] else 1)
+            hdu_info[idx] = (*hdu_info[idx][:-1], description)
+            table.add_row(list(map(str, hdu_info[idx])))
+
+    sys.stdout.write("\n".join(results) + "\n")
+    table.pprint()
+    sys.stdout.flush()
 
 
 def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=False, allow_errors=False, **kwargs):
@@ -124,7 +147,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
         sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
         raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
         instrume, describe = _get_simple_metadata(filename)
-        logger.debug(f"Processing file: {filename} with instrume: {instrume}")
+        log.debug(f"Processing file: {filename} with instrume: {instrume}")
         try:
             if sdo_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith("AIA"):
                 file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
@@ -138,10 +161,10 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                     file, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
                 )
             else:
-                logger.warning(f"INSTRUME: {instrume} was not recognized and not loaded")
+                log.warning(f"INSTRUME: {instrume} was not recognized and not loaded")
         except Exception as e:
             if allow_errors:
-                logger.warning(f"File {filename} failed to load with {e}")
+                log.warning(f"File {filename} failed to load with {e}")
                 continue
             raise
     return NDCollection(returns.items()) if len(returns) > 1 else next(iter(returns.values()))
