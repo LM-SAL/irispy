@@ -154,8 +154,8 @@ class SpectrogramCubeSequence(SpecSeq):
 
 class RasterCollection(NDCollection):
     """
-    Subclass of NDCollection for holding a collection of raster cubes with keys
-    as the spectral window.
+    Subclass of NDCollection for holding a collection of `.SpectrogramCube` or
+    `.SpectrogramCubeSequence` with keys being the spectral windows.
     """
 
     def __str__(self) -> str:
@@ -163,7 +163,7 @@ class RasterCollection(NDCollection):
             f"""
             Raster Collection
             -----------------
-            Cube keys: {tuple(self.keys())}
+            Spectral Windows (cube keys): {tuple(self.keys())}
             Number of Cubes: {len(self)}
             Aligned dimensions: {self.aligned_dimensions}
             Aligned physical types: {self.aligned_axis_physical_types}

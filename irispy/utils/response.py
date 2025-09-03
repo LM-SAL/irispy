@@ -368,6 +368,6 @@ def get_interpolated_effective_area(iris_response, detector_type, obs_wavelength
     tck = make_interp_spline(
         response_wavelength,
         eff_area,
-        k=0,
+        k=1,
     )
     return tck(obs_wavelength) * u.cm**2
