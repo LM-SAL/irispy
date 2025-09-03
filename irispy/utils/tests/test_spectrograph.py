@@ -38,11 +38,11 @@ def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_out
     solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH / 2)
     iris_response = get_latest_response(parse_time("2025-01-01"))
     factor = calculate_dn_to_radiance_factor(
-        iris_response,
-        idl_wavelength,
-        "FUV",
-        spectral_dispersion_per_pixel,
-        solid_angle,
+        iris_response=iris_response,
+        wavelength=idl_wavelength,
+        detector_type="FUV",
+        spectral_dispersion_per_pixel=spectral_dispersion_per_pixel,
+        solid_angle=solid_angle,
     )
     assert len(factor) == len(idl_wavelength)
     # Idl output is here to help check values
