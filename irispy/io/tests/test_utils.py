@@ -4,7 +4,7 @@ import pytest
 from irispy.io.utils import fits_info, read_files
 
 
-def test_fitsinfo(capsys, sns_sg_file, sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
+def test_fits_info(capsys, sns_sg_file, sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
     fits_info(sns_sg_file)
     captured = capsys.readouterr()
     assert sns_sg_file in captured.out

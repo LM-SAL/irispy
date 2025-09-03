@@ -70,9 +70,11 @@ def fits_info(filename: str) -> None:
     """
 
     def get_description(idx, idx_mod):
+        # The last two extensions are reserved for auxiliary data.
+        auxiliary_extension_indices = [num_extensions - 2, num_extensions - 1]
         if idx == 0 and idx_mod == 0:
             return "Primary Header (no data)"
-        if idx not in [num_extensions - 2, num_extensions - 1]:
+        if idx not in auxiliary_extension_indices:
             text_modifier = (
                 f" ({header[f'TDET{idx + idx_mod}'][:3]})" if "SPEC" in header[f"TDET{idx + idx_mod}"] else ""
             )
@@ -86,7 +88,7 @@ def fits_info(filename: str) -> None:
     ]
     table = Table(
         names=("No.", "Name", "Ver", "Type", "Cards", "Dimensions", "Format", "Description"),
-        dtype=("S4", "S10", "S4", "S10", "S4", "S20", "S10", "S100"),
+        dtype=("S8", "S32", "S8", "S16", "S8", "S40", "S16", "U200"),
     )
     with fits.open(filename) as hdulist:
         hdu_info = hdulist.info(output=False)
