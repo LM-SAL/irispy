@@ -8,7 +8,6 @@ from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
 
-import dkist
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import Helioprojective
@@ -22,7 +21,7 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUE_UNSCA
 __all__ = ["read_sji_lvl2"]
 
 
-def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
+def _create_sji_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
     """
     Creates the GWCS object for the SJI file.
 
@@ -40,13 +39,11 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
     crval_table = hdulist[1].data[:, hdulist[1].header["XCENIX"] : hdulist[1].header["YCENIX"] + 1]
     crpix_table = [hdulist[0].header["CRPIX1"], hdulist[0].header["CRPIX2"]]
     cdelt = [hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]
-    older_dkist = dkist.__version__ < "1.12.0"
-    kwargs = {"crpix": crpix_table * u.pixel} if older_dkist else {"crpix_table": crpix_table * u.pixel}
     celestial = VaryingCelestialTransform(
         cdelt=cdelt * u.arcsec / u.pixel,
         pc_table=pc_table * u.pixel,
         crval_table=crval_table * u.arcsec,
-        **kwargs,
+        crpix_table=crpix_table * u.pixel,
     )
     base_time = Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
     times = hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
@@ -82,7 +79,7 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
     return gwcs.WCS(forward_transform, input_frame=input_frame, output_frame=output_frame)
 
 
-def _create_wcs(hdulist):
+def _create_sji_wcs(hdulist):
     """
     This is required as occasionally we need a normal WCS instead of a gWCS due
     to compatibility issues.
@@ -230,13 +227,13 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
         map_cube = cube_class(
             data_nan_masked,
-            _create_gwcs(hdulist),
+            _create_sji_gwcs(hdulist),
             uncertainty=out_uncertainty,
             unit=unit,
             meta=SJIMeta(hdulist[0].header),
             mask=mask,
             scaled=scaled,
-            _basic_wcs=_create_wcs(hdulist),
+            _basic_wcs=_create_sji_wcs(hdulist),
         )
         [map_cube.extra_coords.add(*extra_coord) for extra_coord in extra_coords]
     return map_cube
