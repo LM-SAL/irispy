@@ -16,7 +16,7 @@ __all__ = ["AIACube", "SJICube"]
 
 class SJICube(SpectrogramCube):
     """
-    Class representing SJI Image described by a single WCS.
+    Class representing SJI Image described by a single gWCS.
 
     Parameters
     ----------

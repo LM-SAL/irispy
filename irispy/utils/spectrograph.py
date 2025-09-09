@@ -7,7 +7,7 @@ import numpy as np
 import astropy.units as u
 from astropy import constants
 
-from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
@@ -20,8 +20,8 @@ __all__ = [
 
 
 def radiometric_calibration(
-    cube: SpectrogramCube | SpectrogramCubeSequence,
-) -> SpectrogramCube | SpectrogramCubeSequence:
+    cube: SpectrogramCube,
+) -> SpectrogramCube:
     """
     Performs radiometric calibration on the input cube or cube sequence.
 
@@ -38,16 +38,14 @@ def radiometric_calibration(
 
     Parameters
     ----------
-    cube : `irispy.spectrograph.SpectrogramCube` | `irispy.spectrograph.SpectrogramCubeSequence`
+    cube : `irispy.spectrograph.SpectrogramCube`
         The input cube to be calibrated.
 
     Returns
     -------
-    `irispy.spectrograph.SpectrogramCube` or `irispy.spectrograph.SpectrogramCubeSequence`
+    `irispy.spectrograph.SpectrogramCube`
         New cube in new units.
     """
-    if isinstance(cube, SpectrogramCubeSequence):
-        return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
     detector_type = cube.meta.detector
     # Get spectral dispersion per pixel.
     spectral_wcs_index = np.where(np.array(cube.wcs.wcs.ctype) == "WAVE")[0][0]

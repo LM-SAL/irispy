@@ -6,18 +6,15 @@ import numpy as np
 from ndcube import NDCollection
 from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
-from sunraster import SpectrogramSequence as SpecSeq
 
-from irispy.visualization import IRISPlotter, IRISSequencePlotter, set_axis_properties
+from irispy.visualization import IRISPlotter, set_axis_properties
 
-__all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
+__all__ = ["SpectrogramCube", "RasterCollection"]
 
 
 class SpectrogramCube(SpecCube):
     """
-    Class representing spectrogram data described by a single WCS.
-
-    Idea is that this class holds one complete raster scan or a sit and stare.
+    Class representing spectrogram data described by a single gWCS.
 
     Parameters
     ----------
@@ -107,51 +104,6 @@ class SpectrogramCube(SpecCube):
         return ax
 
 
-class SpectrogramCubeSequence(SpecSeq):
-    """
-    Class representing spectrogram data described by a collection of separate
-    WCSes.
-
-    So each individual `SpectrogramCube` within represents a single complete raster scan.
-    The sequence contains multiple such cubes till the end of the observation.
-
-    Parameters
-    ----------
-    data_list: `list`
-        List of `SpectrogramCube` objects from the same spectral window and OBS ID.
-    meta: `dict` or header object, optional
-        Metadata associated with the sequence.
-    common_axis: `int`, optional
-        The axis of the NDCubes corresponding to time.
-    """
-
-    def __init__(self, data_list, meta=None, common_axis=0, **kwargs) -> None:
-        # Check that all spectrograms are from same spectral window and OBS ID.
-        if len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
-            msg = "Constituent SpectrogramCube objects must have same value of 'OBSID' in its meta."
-            raise ValueError(msg)
-        super().__init__(data_list, meta=meta, common_axis=common_axis, **kwargs)
-
-    def __str__(self) -> str:
-        # Overload it get the class name in the string
-        return super().__str__()
-
-    def plot(self, *args, **kwargs):
-        cmap = kwargs.get("cmap")
-        if not cmap:
-            try:
-                cmap = plt.get_cmap(name=f"irissji{int(self.meta.detector[:3])}")
-            except Exception as e:  # NOQA: BLE001
-                logger.debug(e)
-                cmap = "viridis"
-        kwargs["cmap"] = cmap
-        if len(self.shape) == 1:
-            kwargs.pop("cmap")
-        ax = IRISSequencePlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
-
-
 class RasterCollection(NDCollection):
     """
     Subclass of NDCollection for holding a collection of `.SpectrogramCube` or
@@ -164,7 +116,6 @@ class RasterCollection(NDCollection):
             Raster Collection
             -----------------
             Spectral Windows (cube keys): {tuple(self.keys())}
-            Number of Cubes: {len(self)}
             Aligned dimensions: {self.aligned_dimensions}
             Aligned physical types: {self.aligned_axis_physical_types}
             """,

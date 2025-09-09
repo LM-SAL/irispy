@@ -9,7 +9,7 @@ from sunpy.time import parse_time
 
 from irispy.data.test import get_test_filepath
 from irispy.io.utils import read_files
-from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.response import get_latest_response
 from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiometric_calibration
@@ -64,25 +64,18 @@ def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_out
 
 def test_radiometric_calibration(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+
+    cube = raster_collection["C II 1336"]
     new_cube = radiometric_calibration(cube)
     assert isinstance(new_cube, SpectrogramCube)
-
-    assert np.any(new_cube.data != cube.data)
     assert new_cube.unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
     assert new_cube.data.shape == cube.data.shape
-
-    sequence = raster_collection["C II 1336"]
-    new_sequence = radiometric_calibration(sequence)
-    assert isinstance(new_sequence, SpectrogramCubeSequence)
-    assert new_sequence[0].unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
-    assert new_sequence[0].data.shape == sequence[0].data.shape
-    assert np.any(new_sequence[0].data != sequence[0].data)
+    assert np.any(new_cube.data != cube.data)
 
 
 def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
 
     solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH)
     iris_response = get_latest_response(parse_time("2014-09-10"))
