@@ -185,7 +185,7 @@ def calculate_dn_to_radiance_factor(
     Notes
     -----
     The term "multiplicative" refers to the fact that the conversion factor calculated by the
-    `calculate_photons_per_sec_to_radiance_factor`  function is used to multiply the counts per
+    `.calculate_dn_to_radiance_factor` function is used to multiply the counts per
     second (cps) data to obtain the radiance data. In other words, the conversion factor is a
     scaling factor that is applied to the cps data to convert it to radiance units.
     """

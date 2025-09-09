@@ -78,3 +78,33 @@ def test_radiometric_calibration(sns_sg_file):
     assert new_sequence[0].unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
     assert new_sequence[0].data.shape == sequence[0].data.shape
     assert np.any(new_sequence[0].data != sequence[0].data)
+
+
+def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
+    raster_collection = read_files(sns_sg_file)
+    cube = raster_collection["C II 1336"][0]
+
+    solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH)
+    iris_response = get_latest_response(parse_time("2014-09-10"))
+    factor = calculate_dn_to_radiance_factor(
+        iris_response=iris_response,
+        wavelength=[1402.77] * u.Angstrom,
+        detector_type="FUV",
+        # Peter Young does not take this into account, so its set to 1 Angstrom here
+        spectral_dispersion_per_pixel=1 * u.AA,
+        solid_angle=solid_angle,
+    )
+    intensity = 1 * factor * 4 * (u.photon / u.s)  # factor assumes data is in photons / s
+    idl_unit = u.erg / (u.cm**2 * u.s * u.sr * u.AA)
+    intensity = intensity.to(idl_unit)
+    """
+    IDL> iris_calib, 1, 1402.77, '10-sep-2014' % IRIS_CALIB: instrument
+    response version is 009 Eff.
+
+    area:   1.0060 cm^2
+    DN:                1.00
+    Y-binning:     1
+    Exposure time:   1.00 s
+    Intensity:      4.363e+01 erg cm^-2 s^-1 sr^-1
+    """
+    assert_quantity_allclose(intensity, 43.63 * idl_unit, rtol=0.01)
