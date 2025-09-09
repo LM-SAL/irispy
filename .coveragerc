@@ -8,8 +8,6 @@ omit =
   */irispy/*setup_package*
   */irispy/extern/*
   */irispy/version*
-disable_warnings =
-  module-not-measured
 
 [report]
 exclude_lines =

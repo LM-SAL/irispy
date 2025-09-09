@@ -114,14 +114,14 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
 
     Parameters
     ----------
-    filename : `list of `str`, `str`, `pathlib.Path`
+    filename : `list` of `str`, `str`, `pathlib.Path`
         Filename(s) to load.
     spectral_windows: iterable of `str` or `str`
         Spectral windows to extract from files. Default=None, implies, extract all
         spectral windows.
     uncertainty : `bool`, optional
         If `True` (not the default), will compute the uncertainty for the data (slower and
-        uses more memory). If `memmap=True`, the uncertainty is never computed.
+        uses more memory). If ``memmap=True``, the uncertainty is never computed.
     memmap : `bool`, optional
         If `True` (not the default), will not load arrays into memory, and will only read from
         the file into memory when needed. This option is faster and uses a
@@ -135,7 +135,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
 
     Returns
     -------
-    `NDCollection`
+    `ndcube.NDCollection`
         With keys being the value of TDESC1, the values being the cube.
     """
     if isinstance(filenames, (str, Path)):

@@ -50,7 +50,7 @@ def read_spectrograph_lvl2(
         spectral windows.
     uncertainty : `bool`, optional
         If `True` (not the default), will compute the uncertainty for the data (slower and
-        uses more memory). If `memmap=True`, the uncertainty is never computed.
+        uses more memory). If ``memmap=True``, the uncertainty is never computed.
     memmap : `bool`, optional
         If `True` (not the default), will not load arrays into memory, and will only read from
         the file into memory when needed. This option is faster and uses a

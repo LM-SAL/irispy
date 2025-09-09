@@ -265,8 +265,7 @@ def _fit_xput_lite(observation_time, time_cal_coeffs, cal_coeffs):
     The procedure involved in this function is as follows:
 
     1. The time difference (in years) is computed from the ``observation_time`` and ``time_cal_coeffs``.
-    2. A least-squares fit is performed to determine the best fit for the time-dependent
-    effective areas given the time difference.
+    2. A least-squares fit is performed to determine the best fit for the time-dependent effective areas given the time difference.
 
     Goal is to replicate the base functionality of the IDL routine
     ``fit_iris_xput.pro`` in the SSWIDL package but without the optional keyword argument.

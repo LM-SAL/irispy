@@ -102,7 +102,7 @@ initial_model = m.Const1D(amplitude=2 * si_iv_1403.unit) + m.Gaussian1D(
 # To do this we use the `ndcube.NDCube.axis_world_coords` method of NDCube which returns all,
 # or a subset of the world coordinates along however many array axes they are
 # correlated with. So in this case we get the wavelength dimension which only
-# returns a single `SpectralCoord` object corresponding to the first array dimension of the cube.
+# returns a single `astropy.coordinates.SpectralCoord` object corresponding to the first array dimension of the cube.
 
 fitter = LevMarLSQFitter()
 average_fit = fitter(
@@ -121,7 +121,7 @@ ax.plot(average_fit(spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)), linest
 plt.legend()
 
 ################################################################################
-# The function `.parallel_fit_dask` will map a model to each element of a cube along
+# The function `astropy.modeling.fitting.parallel_fit_dask` will map a model to each element of a cube along
 # one (or more) "fitting axes", in this case our fitting axis is our wavelength
 # axis (array axis -1). So we want to fit each slice of the data array along the 3rd axis.
 #
@@ -135,7 +135,7 @@ plt.legend()
 # * A fitter instance.
 # * The fitting axis (or axes).
 #
-# What is returned from `.parallel_fit_dask` is a model with array parameters with
+# What is returned from `astropy.modeling.fitting.parallel_fit_dask` is a model with array parameters with
 # the shape of the non-fitting axes of the data.
 
 # We want to do some basic data sanitization.
