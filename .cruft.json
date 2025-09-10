@@ -1,0 +1,39 @@
+{
+  "template": "https://github.com/sunpy/package-template",
+  "commit": "c6b71e7a9e0b345517e1d3f31b01570ac2c15da0",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "package_name": "irispy-lmsal",
+      "module_name": "irispy",
+      "short_description": "A Python package that provides the tools to read in and analyze data from the IRIS solar-observing satellite.",
+      "author_name": "IRIS Instrument Team",
+      "author_email": "https://iris.lmsal.com/contact.html",
+      "project_url": "https://pypi.org/project/irispy-lmsal/",
+      "github_repo": "LM-SAL/irispy",
+      "sourcecode_url": "https://github.com/LM-SAL/irispy",
+      "download_url": "https://pypi.org/project/irispy-lmsal/",
+      "documentation_url": "https://irispy.readthedocs.io/",
+      "changelog_url": "https://irispy.readthedocs.io/en/latest/changelog.html",
+      "issue_tracker_url": "https://github.com/LM-SAL/irispy/issues",
+      "license": "BSD 3-Clause",
+      "minimum_python_version": "3.11",
+      "use_compiled_extensions": "n",
+      "enable_dynamic_dev_versions": "y",
+      "include_example_code": "n",
+      "include_cruft_update_github_workflow": "y",
+      "use_extended_ruff_linting": "y",
+      "_sphinx_theme": "sunpy",
+      "_parent_project": "",
+      "_install_requires": "",
+      "_copy_without_render": [
+        "docs/_templates",
+        "docs/_static",
+        ".github/workflows/sub_package_update.yml"
+      ],
+      "_template": "https://github.com/sunpy/package-template",
+      "_commit": "c6b71e7a9e0b345517e1d3f31b01570ac2c15da0"
+    }
+  },
+  "directory": null
+}

@@ -123,7 +123,7 @@ aia_map = update_pointing(aia_map, pointing_table=pointing_table)
 # **irispy** will set this to be at Earth.
 # This will allow us to transform from IRIS to any another observer.
 #
-# Using :meth:`~.draw_extent`, drawing regions is straightforward.
+# Using :meth:`sunpy.map.GenericMap.draw_extent`, drawing regions is straightforward.
 
 aia_bottom_left = SkyCoord(-850 * u.arcsec, -50 * u.arcsec, frame=aia_map.coordinate_frame)
 aia_top_right = SkyCoord(-650 * u.arcsec, 150 * u.arcsec, frame=aia_map.coordinate_frame)
@@ -140,7 +140,7 @@ extent(ax, sji_cut.basic_wcs)
 # and for this we need to rotate one of them. We can either rotate SDO/AIA to the
 # IRIS frame, or vice-versa.
 #
-# We will rotate the AIA data, using `sunpy.map.Map.reproject_to`.
+# We will rotate the AIA data, using `sunpy.map.GenericMap.reproject_to`.
 # As `sunpy` does not support gWCS (yet), we have to use the basic WCS.
 
 aia_reprojected = aia_sub.reproject_to(sji_cut.basic_wcs)

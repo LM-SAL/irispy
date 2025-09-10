@@ -30,7 +30,7 @@ from irispy.utils import image_clipping
 # but using your browser will also work.
 #
 # Using the url: http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/07/08/
-# we are after `iris_l2_20140708_114109_3824262996_raster.tar.gz` which is ~730 MB in size.
+# we are after ``iris_l2_20140708_114109_3824262996_raster.tar.gz`` which is ~730 MB in size.
 
 downloaded_tar_iris_file = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/07/08/20140708_114109_3824262996/iris_l2_20140708_114109_3824262996_raster.tar.gz",

@@ -1,6 +1,6 @@
-*********
+=========
 Changelog
-*********
+=========
 
 .. note::
 
@@ -8,7 +8,7 @@ Changelog
 
 This directory contains "news fragments" which are short files that contain a small **ReST**-formatted text that will be added to the next ``CHANGELOG``.
 
-The ``CHANGELOG`` will be read by users, so this description should be aimed at IRISPy users instead of describing internal changes which are only relevant to the developers.
+The ``CHANGELOG`` will be read by users, so this description should be aimed at users instead of describing internal changes which are only relevant to the developers.
 
 Make sure to use full sentences with correct case and punctuation, for example::
 
@@ -22,7 +22,8 @@ Each file should be named like ``<PULL REQUEST>.<TYPE>[.<COUNTER>].rst``, where 
 * ``feature``: New user facing features and any new behavior.
 * ``bugfix``: Fixes a reported bug.
 * ``doc``: Documentation addition or improvement, like rewording an entire session or adding missing docs.
-* ``removal``: Feature deprecation and/or feature removal.
+* ``deprecation``: Feature deprecation
+* ``removal``: Feature removal.
 * ``trivial``: A change which has no user facing effect or is tiny change.
 
 So for example: ``123.feature.rst``, ``456.bugfix.rst``.

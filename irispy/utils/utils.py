@@ -104,7 +104,7 @@ def get_detector_type(meta):
 
     Parameters
     ----------
-    meta: dict-like
+    meta: `dict`
         Dictionary-like object containing entry for "detector type"
 
     Returns
@@ -140,17 +140,17 @@ def calculate_dust_mask(data_array):
     return ndimage.binary_dilation(mask, structure=struct).astype(mask.dtype)
 
 
-def calculate_uncertainty(data: np.array, readout_noise: u.Quantity, unit: u.Quantity) -> float:
+def calculate_uncertainty(data: np.ndarray, readout_noise: u.Quantity, unit: u.Quantity) -> float:
     """
     Calculates the uncertainty of a given data array.
 
     Parameters
     ----------
-    data : np.array
+    data : numpy.ndarray
         The data array.
-    readout_noise : u.Quantity
+    readout_noise : astropy.units.Quantity
         The readout noise, needs to be a unit that is convertible to photon.
-    unit : u.Quantity
+    unit : astropy.units.Quantity
         The final unit that the value should be converted to.
 
     Returns

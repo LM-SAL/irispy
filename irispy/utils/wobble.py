@@ -14,10 +14,10 @@ from astropy.wcs import WCS
 from sunpy.time import parse_time
 from sunpy.visualization.colormaps.color_tables import iris_sji_color_table
 
-__all__ = ["wobble_movie"]
+__all__ = ["generate_wobble_movie"]
 
 
-def wobble_movie(
+def generate_wobble_movie(
     files: list | str | Path,
     *,
     outdir: str | Path = "./",
@@ -37,10 +37,10 @@ def wobble_movie(
 
     Parameters
     ----------
-    files : Union[list, str, Path]
+    files : Union[list, str, pathlib.Path]
         Files to create a wobble movie from.
         If a string or Path is passed, it will encapsulated in a list.
-    outdir : Union[str,Path], optional
+    outdir : Union[str, pathlib.Path], optional
         Location to save the movie(s).
         Defaults to the current working directory.
     trim : `bool`, optional
@@ -51,11 +51,11 @@ def wobble_movie(
     wobble_cadence : `int`, optional
         Sets the cadence of the wobble movie in seconds.
         Optional, defaults to 180 seconds.
-    ffmpeg_path : Union[str,Path], optional
+    ffmpeg_path : Union[str, pathlib.Path], optional
         Path to FFMPEG executable, by default `None`.
         In theory you will not need to do this but matplotlib might not be able to find the ffmpeg exe.
     **kwargs : `dict`, optional
-        Keyword arguments to passed to `FuncAnimation`.
+        Keyword arguments to passed to `matplotlib.animation.FuncAnimation`.
 
     Returns
     -------

@@ -58,7 +58,7 @@ print(mg_ii_k)
 # for the Mg II k core wavelength.
 #
 # We can use the ``crop`` method to get this information, this will
-# require a `~.SpectralCoord` object from `astropy.coordinates`.
+# require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
 
 # None, means that the axis is not cropped
 # Since we want one physical coordinate, we will just use the

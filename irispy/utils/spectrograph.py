@@ -38,12 +38,12 @@ def radiometric_calibration(
 
     Parameters
     ----------
-    cube : `SpectrogramCube` | `SpectrogramCubeSequence`
+    cube : `irispy.spectrograph.SpectrogramCube` | `irispy.spectrograph.SpectrogramCubeSequence`
         The input cube to be calibrated.
 
     Returns
     -------
-    `SpectrogramCube` or `SpectrogramCubeSequence`
+    `irispy.spectrograph.SpectrogramCube` or `irispy.spectrograph.SpectrogramCubeSequence`
         New cube in new units.
     """
     if isinstance(cube, SpectrogramCubeSequence):

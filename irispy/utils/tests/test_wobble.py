@@ -1,8 +1,8 @@
-from irispy.utils.wobble import wobble_movie
+from irispy.utils.wobble import generate_wobble_movie
 
 
-def test_wobble_movie(fake_long_sns_obs, tmp_path):
-    movies = wobble_movie(fake_long_sns_obs, outdir=tmp_path)
+def test_generate_wobble_movie(fake_long_sns_obs, tmp_path):
+    movies = generate_wobble_movie(fake_long_sns_obs, outdir=tmp_path)
     assert movies != []
-    movies = wobble_movie(fake_long_sns_obs, outdir=tmp_path, trim=True)
+    movies = generate_wobble_movie(fake_long_sns_obs, outdir=tmp_path, trim=True)
     assert movies != []

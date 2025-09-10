@@ -22,12 +22,12 @@ class SJICube(SpectrogramCube):
     ----------
     data : `numpy.ndarray`
         The array holding the actual data in this object.
-    wcs : `ndcube.wcs.wcs.WCS`
-        The WCS object containing the axes' information
-    unit : `astropy.unit.Unit` or `str`
+    wcs : `astropy.wcs.WCS`
+        The WCS object containing the axes information
+    unit : `astropy.units.Unit` or `str`
         Unit for the dataset.
         Strings that can be converted to a Unit are allowed.
-    meta : dict-like object
+    meta : `dict` object
         Additional meta information about the dataset.
     uncertainty : any type, optional
         Uncertainty in the dataset. Should have an attribute uncertainty_type
