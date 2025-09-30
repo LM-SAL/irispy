@@ -18,7 +18,7 @@ import astropy.units as u
 from astropy import constants
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.modeling import models as m
-from astropy.modeling.fitting import LevMarLSQFitter, parallel_fit_dask
+from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.visualization import time_support
 from astropy.wcs.utils import wcs_to_celestial_frame
 
@@ -104,7 +104,7 @@ initial_model = m.Const1D(amplitude=2 * si_iv_1403.unit) + m.Gaussian1D(
 # correlated with. So in this case we get the wavelength dimension which only
 # returns a single `astropy.coordinates.SpectralCoord` object corresponding to the first array dimension of the cube.
 
-fitter = LevMarLSQFitter()
+fitter = TRFLSQFitter()
 average_fit = fitter(
     initial_model,
     spatial_mean.axis_world_coords("em.wl")[0].to(u.nm),
@@ -153,7 +153,9 @@ with warnings.catch_warnings():
         fitting_axes=2,
         world=si_iv_1403.wcs,
         model=average_fit,
-        fitter=LevMarLSQFitter(),
+        # You can replace this with TRFLSQFitter, LMLSQFitter is faster in a single thread
+        # which is why we use it here in this example.
+        fitter=LMLSQFitter(),
         scheduler="single-threaded",
     )
 
@@ -197,6 +199,8 @@ cbar.ax.tick_params(labelsize=8)
 axs[1].set_title("Velocity from Gaussian shift")
 
 sigma = (iris_model_fit.stddev_1.quantity.to(u.nm)) / si_iv_core * (constants.c.to(u.km / u.s))
+# We make any negative values nan for the purpose of the color scale.
+sigma = np.where(sigma < 0, np.nan, sigma)
 line_max = np.nanpercentile(np.abs(sigma.value), 95)
 line = axs[2].imshow(sigma.value.T, vmax=line_max)
 cbar = fig.colorbar(line, ax=axs[2])
