@@ -8,7 +8,8 @@ Then use the fitted values to calculate the Gaussian moments.
 """
 # sphinx_gallery_thumbnail_number = 3
 
-import warnings
+import shutil
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -143,34 +144,61 @@ plt.legend()
 filtered_data = np.where(si_iv_1403.data < 0, 0, si_iv_1403.data)
 filtered_data = np.where(np.isfinite(filtered_data), filtered_data, 0)
 
-# We can therefore fit the cube
-with warnings.catch_warnings():
-    # There are several WCS warnings we just want to ignore
-    warnings.simplefilter("ignore")
-    iris_model_fit = parallel_fit_dask(
-        data=filtered_data,
-        data_unit=si_iv_1403.unit,
-        fitting_axes=2,
-        world=si_iv_1403.wcs,
-        model=average_fit,
-        # You can replace this with TRFLSQFitter, LMLSQFitter is faster in a single thread
-        # which is why we use it here in this example.
-        fitter=LMLSQFitter(),
-        scheduler="single-threaded",
-    )
+################################################################################
+# Before we fit the data cube, I want to briefly talk about errors during the
+# fitting process.
+#
+# It is possible that the fitting process will fail for some pixels.
+# This can be for a variety of reasons, but most commonly it is because the
+# fitting algorithm cannot converge to a solution. When this happens the
+# fitting algorithm will raise a warning/exception. However, when using
+# `parallel_fit_dask`, these warnings/exceptions are caught and not raised.
+# Instead, the parameter values for that pixel are set to NaN.
+#
+# If you want to diagnose why, you can set the
+# ``diagnostics`` and ``diagnostics_path`` keyword arguments.
 
+diag_path = Path("./diag")
+shutil.rmtree(diag_path, ignore_errors=True)
+
+# We can therefore fit the cube
+iris_model_fit = parallel_fit_dask(
+    data=filtered_data,
+    data_unit=si_iv_1403.unit,
+    fitting_axes=2,
+    world=si_iv_1403.wcs,
+    model=average_fit,
+    # You can replace this with TRFLSQFitter, LMLSQFitter is faster in a single thread
+    # which is why we use it here in this example.
+    fitter=LMLSQFitter(),
+    scheduler="single-threaded",
+    # See above for the error handling discussion
+    diagnostics="error",
+    diagnostics_path=diag_path,
+)
+
+################################################################################
 # Note that this example is done in a single thread. If you want to use multiple cores.
 # You can create a dask client and pass it to the parallel_fit_dask function.
+#
 # For example:
 #
-# from dask.distributed import Client
+#     from dask.distributed import Client
 #
-# client = Client()
+#     client = Client()
 #
 # Then pass this to the parallel_fit_dask function by replacing scheduler line above with:
 #
-# scheduler=client,
+#     scheduler=client,
 #
+# Now let us check if there were any errors during the fitting process.
+# In this example there were none, but if there were you would find them in the "diag" folder.
+
+errors = [p.read_text() for p in diag_path.rglob("error.log")]
+print(f"{len(errors)} errors occurred")
+if errors:
+    print("First error is:")
+    print(errors[0])
 
 ################################################################################
 # Let us see the output!
