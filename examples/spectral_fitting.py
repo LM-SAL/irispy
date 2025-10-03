@@ -90,6 +90,7 @@ plt.colorbar(label="Intensity [DN]", shrink=0.8)
 
 wl_sum = si_iv_1403.rebin((1, 1, si_iv_1403.data.shape[-1]), operation=np.sum)[0]
 spatial_mean = si_iv_1403.rebin((*si_iv_1403.data.shape[:-1], 1))[0, 0, :]
+wavelength_coords = spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)
 
 ################################################################################
 # Now we can create a model for this spectra.
@@ -108,7 +109,7 @@ initial_model = m.Const1D(amplitude=2 * si_iv_1403.unit) + m.Gaussian1D(
 fitter = TRFLSQFitter()
 average_fit = fitter(
     initial_model,
-    spatial_mean.axis_world_coords("em.wl")[0].to(u.nm),
+    wavelength_coords,
     spatial_mean.data * spatial_mean.unit,
 )
 
@@ -117,8 +118,8 @@ average_fit = fitter(
 
 fig = plt.figure()
 ax = spatial_mean.plot(label="Spatial average")
-ax.plot(initial_model(spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)), label="Initial model")
-ax.plot(average_fit(spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)), linestyle="--", label="Spatial average fit")
+ax.plot(initial_model(wavelength_coords), label="Initial model")
+ax.plot(average_fit(wavelength_coords), linestyle="--", label="Spatial average fit")
 plt.legend()
 
 ################################################################################
@@ -166,7 +167,9 @@ iris_model_fit = parallel_fit_dask(
     data=filtered_data,
     data_unit=si_iv_1403.unit,
     fitting_axes=2,
-    world=si_iv_1403.wcs,
+    # We are fitting along the wavelength axis, so we need to provide the world coordinates
+    # along this axis. The input has to be a tuple of length equal to the number of fitting axes.
+    world=(wavelength_coords,),
     model=average_fit,
     # You can replace this with TRFLSQFitter, LMLSQFitter is faster in a single thread
     # which is why we use it here in this example.
@@ -209,7 +212,7 @@ net_flux = (
     np.sqrt(2 * np.pi)
     * (iris_model_fit.amplitude_0 + iris_model_fit.amplitude_1)
     * iris_model_fit.stddev_1.quantity
-    / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1])
+    / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1]).to(u.nm)
 )
 amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
 amp = axs[0].imshow(net_flux.value.T, vmin=0, vmax=amp_max, origin="lower")
