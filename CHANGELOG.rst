@@ -1,3 +1,28 @@
+0.5.0 (2025-10-06)
+==================
+
+Breaking Changes
+----------------
+
+- `irispy.utils.spectrograph.radiometric_calibration` function was added, replacing ``convert_between_dn_and_photons``. (`#77 <https://github.com/LM-SAL/irispy/pull/77>`__)
+- ``fitsinfo`` now renamed to `irispy.io.fits_info`.
+  The output has been updated to be nicer. (`#78 <https://github.com/LM-SAL/irispy/pull/78>`__)
+- Renamed "wobble_movie" to "generate_wobble_movie". (`#88 <https://github.com/LM-SAL/irispy/pull/88>`__)
+
+
+Bug Fixes
+---------
+
+- Improved radiometric calibration calculations and fixed unit conversion errors.
+  It still does not match the IDL code, it can over estimate the radiance by a small margin. (`#77 <https://github.com/LM-SAL/irispy/pull/77>`__)
+
+
+Internal Changes
+----------------
+
+- Retemplated package using the sunpy template. (`#88 <https://github.com/LM-SAL/irispy/pull/88>`__)
+
+
 0.4.0 (2025-08-28)
 ==================
 

@@ -1,2 +1,0 @@
-Improved radiometric calibration calculations and fixed unit conversion errors.
-It still does not match the IDL code, it can over estimate the radiance by a small margin.
