@@ -97,6 +97,7 @@ def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
     intensity = 1 * factor * 4 * (u.photon / u.s)  # factor assumes data is in photons / s
     """
     I changed the IDL code to print out the entire number.
+
     IDL> iris_calib, 1, 1402.77, '10-sep-2014'
     % IRIS_CALIB: instrument response version is 009
     Eff. area:       1.0060300 cm^2
