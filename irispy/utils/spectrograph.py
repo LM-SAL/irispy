@@ -33,8 +33,11 @@ def radiometric_calibration(
     Which is different from the IDL code as does not take spectral dispersion into account.
     If you want the same results as the IDL code, can multiply the output by the spectral dispersion.
 
-    This is calculated as ``cube.wcs.wcs.cdelt[0] * cube.wcs.wcs.cunit[0]``.
-    The solid angle is calculated as ``cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * SLIT_WIDTH``.
+    The spectral dispersion and solid angle are calculated using the WCS information.
+    The wavelength axis and spatial axis should be determined dynamically from the WCS, rather than assuming fixed axis indices.
+    For example, the spectral dispersion is calculated as ``cube.wcs.wcs.cdelt[wavelength_axis] * cube.wcs.wcs.cunit[wavelength_axis]``,
+    and the solid angle as ``cube.wcs.wcs.cdelt[spatial_axis] * cube.wcs.wcs.cunit[spatial_axis] * SLIT_WIDTH``,
+    where ``wavelength_axis`` and ``spatial_axis`` are determined from the WCS.
 
     Parameters
     ----------
@@ -132,10 +135,10 @@ def convert_photons_per_sec_to_radiance(
     Notes
     -----
     This is designed to do the same as `nrl/iris_calib.pro <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/nrl/iris_calib.pro>`__ IDL code.
-
-    It has been checked and verified against these results.
-    The difference is that this function takes into account the spectral dispersion which the IDL code does not.
-    To get the same results as the IDL code, can multiply the output by the spectral dispersion or set it to 1 Angstrom.
+    The difference is that this function takes into account the spectral dispersion which the IDL code
+    does not.
+    To get the same results as the IDL code, can multiply the output by the spectral dispersion
+    or set the keyword to have the value of 1 Angstrom.
     """
     for i, data in enumerate(data_quantities):
         if data.unit != u.photon / u.s:
