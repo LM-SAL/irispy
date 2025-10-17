@@ -2,8 +2,9 @@
 ``irispy``
 **********
 
-.. image:: ./iris_full.jpg
+.. image:: https://raw.githubusercontent.com/LM-SAL/irispy/refs/heads/main/iris_full.jpg
   :width: 400
+  :align: center
   :alt: Image of the IRIS spacecraft
 
 ``irispy`` is a library that provides the tools to read in and analyze data from Interface Region Imaging Spectrograph (IRIS).
