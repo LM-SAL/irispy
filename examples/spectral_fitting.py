@@ -123,7 +123,8 @@ ax.plot(average_fit(wavelength_coords), linestyle="--", label="Spatial average f
 plt.legend()
 
 ################################################################################
-# The function `astropy.modeling.fitting.parallel_fit_dask` will map a model to each element of a cube along
+# The function `~astropy.modeling.fitting.parallel_fit_dask` will map a model
+# to each element of a cube along
 # one (or more) "fitting axes", in this case our fitting axis is our wavelength
 # axis (array axis -1). So we want to fit each slice of the data array along the 3rd axis.
 #
@@ -137,7 +138,7 @@ plt.legend()
 # * A fitter instance.
 # * The fitting axis (or axes).
 #
-# What is returned from `astropy.modeling.fitting.parallel_fit_dask` is a model with array parameters with
+# What is returned from `~astropy.modeling.fitting.parallel_fit_dask` is a model with array parameters with
 # the shape of the non-fitting axes of the data.
 
 # We want to do some basic data sanitization.
@@ -153,7 +154,7 @@ filtered_data = np.where(np.isfinite(filtered_data), filtered_data, 0)
 # This can be for a variety of reasons, but most commonly it is because the
 # fitting algorithm cannot converge to a solution. When this happens the
 # fitting algorithm will raise a warning/exception. However, when using
-# `parallel_fit_dask`, these warnings/exceptions are caught and not raised.
+# `~astropy.modeling.fitting.parallel_fit_dask`, these warnings/exceptions are caught and not raised.
 # Instead, the parameter values for that pixel are set to NaN.
 #
 # If you want to diagnose why, you can set the

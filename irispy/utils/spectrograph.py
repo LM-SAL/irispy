@@ -29,12 +29,15 @@ def radiometric_calibration(
 
     The data is also exposure time corrected during the conversion.
 
-    Notes
-    -----
-    This is designed to do the same as `iris2/iris_calib_spectrum.pro <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/lmsal/iris2/iris_calib_spectrum.pro>`__ IDL code.
+    This takes into account the spectral dispersion and solid angle of the pixels based on the WCS.
+    Which is different from the IDL code as does not take spectral dispersion into account.
+    If you want the same results as the IDL code, can multiply the output by the spectral dispersion.
 
-    However, it does not output the same values.
-    It is around 5% higher than the IDL code.
+    The spectral dispersion and solid angle are calculated using the WCS information.
+    The wavelength axis and spatial axis should be determined dynamically from the WCS, rather than assuming fixed axis indices.
+    For example, the spectral dispersion is calculated as ``cube.wcs.wcs.cdelt[wavelength_axis] * cube.wcs.wcs.cunit[wavelength_axis]``,
+    and the solid angle as ``cube.wcs.wcs.cdelt[spatial_axis] * cube.wcs.wcs.cunit[spatial_axis] * SLIT_WIDTH``,
+    where ``wavelength_axis`` and ``spatial_axis`` are determined from the WCS.
 
     Parameters
     ----------
@@ -45,6 +48,10 @@ def radiometric_calibration(
     -------
     `irispy.spectrograph.SpectrogramCube` or `irispy.spectrograph.SpectrogramCubeSequence`
         New cube in new units.
+
+    Notes
+    -----
+    This is designed to do the same as `iris2/iris_calib_spectrum.pro <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/lmsal/iris2/iris_calib_spectrum.pro>`__ IDL code.
     """
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
@@ -55,8 +62,7 @@ def radiometric_calibration(
     # Get solid angle from slit width for a pixel.
     lat_wcs_index = ["HPLT" in c for c in cube.wcs.wcs.ctype]
     lat_wcs_index = np.arange(len(cube.wcs.wcs.ctype))[lat_wcs_index][0]
-    # The slit width is divided by 2 in the IDL code, unsure why.
-    solid_angle = cube.wcs.wcs.cdelt[lat_wcs_index] * cube.wcs.wcs.cunit[lat_wcs_index] * (SLIT_WIDTH / 2)
+    solid_angle = cube.wcs.wcs.cdelt[lat_wcs_index] * cube.wcs.wcs.cunit[lat_wcs_index] * SLIT_WIDTH
     # Get wavelength for each pixel.
     wavelength_axis_index = np.where(np.array(cube.wcs.wcs.ctype)[::-1] == "WAVE")[0][0]
     wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
@@ -125,6 +131,14 @@ def convert_photons_per_sec_to_radiance(
     -------
     `list` of `astropy.units.Quantity`
         Data quantities converted to radiance.
+
+    Notes
+    -----
+    This is designed to do the same as `nrl/iris_calib.pro <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/nrl/iris_calib.pro>`__ IDL code.
+    The difference is that this function takes into account the spectral dispersion which the IDL code
+    does not.
+    To get the same results as the IDL code, can multiply the output by the spectral dispersion
+    or set the keyword to have the value of 1 Angstrom.
     """
     for i, data in enumerate(data_quantities):
         if data.unit != u.photon / u.s:
