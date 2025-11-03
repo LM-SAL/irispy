@@ -1,15 +1,15 @@
 """
-=======================
-Radiometric Calibration
-=======================
+======================= Radiometric Calibration =======================
 
-In this example we will show how to perform radiometric calibration on IRIS data.
+In this example we will show how to perform radiometric calibration on
+IRIS data.
 
-IRIS level 2 data are provided in units of Data Number (DN).
-To convert these to a flux in physical units (e.g., :math:`erg s^{-1} sr^{-1} cm^{-2} Å^{-1}`)
-one must perform a radiometric calibration.
+IRIS level 2 data are provided in units of Data Number (DN). To convert
+these to a flux in physical units (e.g., :math:`erg s^{-1} sr^{-1}
+cm^{-2} Å^{-1}`) one must perform a radiometric calibration.
 
-Please refer to `ITN26 for more information on the calibration process <https://iris.lmsal.com/itn26/calibration.html>`__.
+Please refer to
+`ITN26 for more information on the calibration process <https://iris.lmsal.com/itn26/calibration.html>`__.
 """
 
 import matplotlib.pyplot as plt

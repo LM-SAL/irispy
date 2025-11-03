@@ -1,10 +1,9 @@
 """
-=======================
-Umbral flashes analysis
-=======================
+======================= Umbral flashes analysis =======================
 
-In this example, we are going to work with IRIS data to
-study an example of a dynamical phenomena called `umbral flashes <https://ui.adsabs.harvard.edu/abs/1973SoPh...30..403M>`__.
+In this example, we are going to work with IRIS data to study an example
+of a dynamical phenomena called
+`umbral flashes <https://ui.adsabs.harvard.edu/abs/1973SoPh...30..403M>`__.
 """
 
 import matplotlib.dates as mdates

@@ -1,23 +1,22 @@
 [build-system]
+build-backend = 'setuptools.build_meta'
 requires = [
   "setuptools>=62.1",
-  "setuptools_scm[toml]>=8.0.0",
+  "setuptools-scm[toml]>=8",
   "wheel",
 ]
-build-backend = 'setuptools.build_meta'
 
 [project]
 name = "irispy-lmsal"
-dynamic = ["version"]
 description = "Provides tools to read and analyze data from the IRIS solar-observing satellite."
 readme = "README.rst"
-requires-python = ">=3.11"
+keywords = [ "iris", "lmsal", "NASA", "science", "solar", "solar physics", "spectra" ]
 license = { file = "licenses/LICENSE.rst" }
-keywords = ["solar physics", "solar", "science", "NASA", "iris", "spectra", "lmsal"]
 authors = [
-  {name = "IRIS Instrument Team  @ LMSAL"},
-  {name = "Nabil Freij", email = "nabil.freij@gmail.com"},
+  { name = "IRIS Instrument Team  @ LMSAL" },
+  { name = "Nabil Freij", email = "nabil.freij@gmail.com" },
 ]
+requires-python = ">=3.11"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
@@ -25,132 +24,132 @@ classifiers = [
   "Natural Language :: English",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Physics",
 ]
+dynamic = [ "version" ]
 dependencies = [
-  'dkist>=1.15.0',
-  'ndcube>=2.3.0',
-  'pandas>=1.3.3',
-  'scipy>=1.7.0',
-  'sunpy>=7.0.0',
-  'sunraster>=0.6.1',
+  "dkist>=1.15",
   "mpl-animators>=1.2.3",
+  "ndcube>=2.3",
+  "pandas>=1.3.3",
+  "scipy>=1.7",
+  "sunpy>=7",
+  "sunraster>=0.6.1",
 ]
 
-[project.urls]
-Changelog = "https://irispy.readthedocs.io/en/stable/changelog"
-Documentation = "https://irispy.readthedocs.io/en/stable/"
-Homepage = "https://iris.lmsal.com/"
-"Issue Tracker" = "https://github.com/LM-SAL/irispy/issues"
-"Source Code" = "https://github.com/LM-SAL/irispy"
+optional-dependencies.all = [ "irispy-lmsal" ]
+optional-dependencies.dev = [ "irispy-lmsal[docs,tests]" ]
+optional-dependencies.docs = [
+  "aiapy",
+  "dask[distributed]",
+  "irispy-lmsal[all]",
+  "pooch",
+  "sphinx",
+  "sphinx-automodapi",
+  "sphinx-changelog",
+  "sphinx-copybutton",
+  "sphinx-design",
+  "sphinx-gallery",
+  "sunpy-sphinx-theme",
+]
+optional-dependencies.tests = [
+  "irispy-lmsal[all]",
+  "pooch",
+  "pytest-astropy",
+  "pytest-mpl",
+]
+urls.Changelog = "https://irispy.readthedocs.io/en/stable/changelog"
+urls.Documentation = "https://irispy.readthedocs.io/en/stable/"
+urls.Homepage = "https://iris.lmsal.com/"
+urls."Issue Tracker" = "https://github.com/LM-SAL/irispy/issues"
+urls."Source Code" = "https://github.com/LM-SAL/irispy"
 
 [tool.setuptools]
 zip-safe = false
 include-package-data = true
-platforms = ["any"]
-provides = ["irispy"]
-license-files = ["licenses/LICENSE.rst"]
+platforms = [ "any" ]
+provides = [ "irispy" ]
+license-files = [ "licenses/LICENSE.rst" ]
 
 [tool.setuptools.packages.find]
-include = ["irispy*"]
-exclude = ["irispy._dev*"]
+include = [ "irispy*" ]
+exclude = [ "irispy._dev*" ]
 namespaces = false
 
 [tool.setuptools_scm]
 version_file = "irispy/_version.py"
 
-[project.optional-dependencies]
-all = ["irispy-lmsal"]
-tests = [
-  "irispy-lmsal[all]",
-  'pytest-astropy',
-  "pytest-mpl",
-  'pooch',
-]
-docs = [
-  "irispy-lmsal[all]",
-  'aiapy',
-  'pooch',
-  'dask[distributed]',
-  'sphinx',
-  'sphinx-automodapi',
-  'sphinx-changelog',
-  'sphinx-copybutton',
-  'sphinx-design',
-  'sphinx-gallery',
-  'sunpy-sphinx-theme',
-]
-dev = ["irispy-lmsal[tests,docs]"]
+[tool.towncrier]
+package = "irispy"
+filename = "CHANGELOG.rst"
+directory = "changelog/"
+issue_format = "`#{issue} <https://github.com/LM-SAL/irispy/pull/{issue}>`__"
+title_format = "{version} ({project_date})"
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Breaking Changes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "deprecation"
+name = "Deprecations"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "removal"
+name = "Removals"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "New Features"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Bug Fixes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "doc"
+name = "Documentation"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "trivial"
+name = "Internal Changes"
+showcontent = true
 
 [tool.gilesbot]
 
-  [tool.gilesbot.circleci_artifacts]
-  enabled = true
+[tool.gilesbot.circleci_artifacts]
+enabled = true
 
-  [tool.gilesbot.circleci_artifacts.figure_report]
-  url = ".tmp/py313-figure/figure_test_images/fig_comparison.html"
-  message = "Click details to see the figure test comparisons, for py313-figure."
-  report_on_fail = true
+[tool.gilesbot.circleci_artifacts.figure_report]
+url = ".tmp/py313-figure/figure_test_images/fig_comparison.html"
+message = "Click details to see the figure test comparisons, for py313-figure."
+report_on_fail = true
 
-  [tool.gilesbot.pull_requests]
-  enabled = true
+[tool.gilesbot.pull_requests]
+enabled = true
 
-  [tool.gilesbot.towncrier_changelog]
-  enabled = true
-  verify_pr_number = true
-  changelog_skip_label = "No Changelog Entry Needed"
-  help_url = "https://github.com/LM-SAL/irispy/blob/main/changelog/README.rst"
+[tool.gilesbot.towncrier_changelog]
+enabled = true
+verify_pr_number = true
+changelog_skip_label = "No Changelog Entry Needed"
+help_url = "https://github.com/LM-SAL/irispy/blob/main/changelog/README.rst"
 
-  changelog_missing_long = "There isn't a changelog file in this pull request. Please add a changelog file to the `changelog/` directory following the instructions in the changelog [README](https://github.com/LM-SAL/irispy/blob/main/changelog/README.rst)."
+changelog_missing_long = "There isn't a changelog file in this pull request. Please add a changelog file to the `changelog/` directory following the instructions in the changelog [README](https://github.com/LM-SAL/irispy/blob/main/changelog/README.rst)."
 
-  type_incorrect_long = "The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog [README](https://github.com/LM-SAL/irispy/blob/main/changelog/README.rst)"
+type_incorrect_long = "The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog [README](https://github.com/LM-SAL/irispy/blob/main/changelog/README.rst)"
 
-  number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
+number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
 
 # TODO: This should be in towncrier.toml but Giles currently only works looks in
 # pyproject.toml we should move this back when it's fixed.
-[tool.towncrier]
-  package = "irispy"
-  filename = "CHANGELOG.rst"
-  directory = "changelog/"
-  issue_format = "`#{issue} <https://github.com/LM-SAL/irispy/pull/{issue}>`__"
-  title_format = "{version} ({project_date})"
-
-  [[tool.towncrier.type]]
-  directory = "breaking"
-  name = "Breaking Changes"
-  showcontent = true
-
-  [[tool.towncrier.type]]
-  directory = "deprecation"
-  name = "Deprecations"
-  showcontent = true
-
-  [[tool.towncrier.type]]
-  directory = "removal"
-  name = "Removals"
-  showcontent = true
-
-  [[tool.towncrier.type]]
-  directory = "feature"
-  name = "New Features"
-  showcontent = true
-
-  [[tool.towncrier.type]]
-  directory = "bugfix"
-  name = "Bug Fixes"
-  showcontent = true
-
-  [[tool.towncrier.type]]
-  directory = "doc"
-  name = "Documentation"
-  showcontent = true
-
-  [[tool.towncrier.type]]
-  directory = "trivial"
-  name = "Internal Changes"
-  showcontent = true

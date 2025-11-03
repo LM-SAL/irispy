@@ -1,12 +1,12 @@
 """
-=============================
-Dealing with IRIS v34 rasters
+============================= Dealing with IRIS v34 rasters
 =============================
 
-In this example we will show how ``irispy`` deals with a v34 dataset by default and how to
-undo that if you so desire.
+In this example we will show how ``irispy`` deals with a v34 dataset by
+default and how to undo that if you so desire.
 
-These v34 are scans which raster from west to east instead of the default east to west.
+These v34 are scans which raster from west to east instead of the
+default east to west.
 """
 
 import matplotlib.pyplot as plt

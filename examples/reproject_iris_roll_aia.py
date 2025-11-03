@@ -1,12 +1,13 @@
 """
-======================================
-Reproject IRIS SJI (rolled) to SDO/AIA
+====================================== Reproject IRIS SJI (rolled) to SDO/AIA
 ======================================
 
-In this example we will show how to reproject a rolled IRIS dataset to SDO/AIA.
+In this example we will show how to reproject a rolled IRIS dataset to
+SDO/AIA.
 
-The IRIS team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV
-for each observation from https://iris.lmsal.com/search/
+The IRIS team at LMSAL provides AIA data cubes which are coaligned to
+the IRIS FOV for each observation from
+https://iris.lmsal.com/search/
 
 Therefore this example is more a showcase of functionally.
 """

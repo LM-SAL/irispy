@@ -49,7 +49,7 @@ def get_test_filepath(filename, package="irispy.data.test", **kwargs):
     return get_pkg_data_filename(filename, package=package, **kwargs)
 
 
-def get_test_data_filenames():
+def get_test_data_filenames() -> list[Path]:
     """
     Return a list of all test files in ``data/test`` directory.
 
@@ -57,7 +57,7 @@ def get_test_data_filenames():
 
     Returns
     -------
-    `list`
+    get_test_data_filenames_list : `list`
         The name of all test files in ``data/test`` directory.
     """
     get_test_data_filenames_list = []

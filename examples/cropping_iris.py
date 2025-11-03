@@ -1,9 +1,8 @@
 """
-=================
-Cropping IRIS SJI
-=================
+================= Cropping IRIS SJI =================
 
-In this example we will show crop a IRIS dataset and the particularity of the crop operation.
+In this example we will show crop a IRIS dataset and the particularity
+of the crop operation.
 """
 
 import matplotlib.pyplot as plt
