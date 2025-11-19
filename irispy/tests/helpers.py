@@ -36,10 +36,10 @@ def get_hash_library_name():
 
 def figure_test(test_function):
     """
-    A decorator for a test that verifies the hash of the current figure or the
-    returned figure, with the name of the test function as the hash identifier
-    in the library. A PNG is also created in the 'result_image' directory,
-    which is created on the current path.
+    A decorator for a test that verifies the hash of the current figure or the returned
+    figure, with the name of the test function as the hash identifier in the library. A
+    PNG is also created in the 'result_image' directory, which is created on the current
+    path.
 
     All such decorated tests are marked with `pytest.mark.mpl_image` for convenient filtering.
 

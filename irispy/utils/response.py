@@ -259,8 +259,8 @@ def get_latest_response(
 
 def _fit_xput_lite(observation_time, time_cal_coeffs, cal_coeffs):
     """
-    To calculate the coefficients of best-fit time function for throughput, for
-    which we apply a fit based on ``cal_coeffs``.
+    To calculate the coefficients of best-fit time function for throughput, for which we
+    apply a fit based on ``cal_coeffs``.
 
     The procedure involved in this function is as follows:
 

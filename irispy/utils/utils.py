@@ -33,8 +33,8 @@ def record_to_dict(arr: np.ndarray):
 
 def image_clipping(image, cutoff=1.5e-3, gamma=1.0):
     """
-    Computes and returns the min and max values of the input (image), clipping
-    brightest and darkest pixels.
+    Computes and returns the min and max values of the input (image), clipping brightest
+    and darkest pixels.
 
     Parameters
     ----------

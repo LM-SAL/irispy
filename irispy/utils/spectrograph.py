@@ -52,6 +52,12 @@ def radiometric_calibration(
     Notes
     -----
     This is designed to do the same as `iris2/iris_calib_spectrum.pro <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/lmsal/iris2/iris_calib_spectrum.pro>`__ IDL code.
+
+    The calibration output has been confirmed to provide the same results as those provided
+    by the SolarSoft IDL routine `IRIS_CALIB <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/nrl/iris_calib.pro>`__.
+    The major difference being that the output here is accounting for the wavelength, which is why the units
+    here are :math:`erg s^{-1} sr^{-1} cm^{-2} Å^{-1}` and not :math:`erg s^{-1} sr^{-1} cm^{-2}`.
+    Notice the extra :math:`Å^{-1}` in the units.
     """
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
@@ -174,8 +180,8 @@ def calculate_dn_to_radiance_factor(
     solid_angle,
 ):
     """
-    Calculates multiplicative factor that converts counts/s to radiance for
-    given wavelengths.
+    Calculates multiplicative factor that converts counts/s to radiance for given
+    wavelengths.
 
     Parameters
     ----------

@@ -84,11 +84,10 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
 
 def _create_wcs(hdulist):
     """
-    This is required as occasionally we need a normal WCS instead of a gWCS due
-    to compatibility issues.
+    This is required as occasionally we need a normal WCS instead of a gWCS due to
+    compatibility issues.
 
-    This has been set to have an Earth Observer at the time of the
-    observation.
+    This has been set to have an Earth Observer at the time of the observation.
     """
     wcses = []
     base_time = Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")

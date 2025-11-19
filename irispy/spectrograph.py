@@ -109,8 +109,7 @@ class SpectrogramCube(SpecCube):
 
 class SpectrogramCubeSequence(SpecSeq):
     """
-    Class representing spectrogram data described by a collection of separate
-    WCSes.
+    Class representing spectrogram data described by a collection of separate WCSes.
 
     So each individual `SpectrogramCube` within represents a single complete raster scan.
     The sequence contains multiple such cubes till the end of the observation.

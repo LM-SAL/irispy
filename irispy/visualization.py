@@ -104,8 +104,7 @@ class IRISPlotter(MatplotlibPlotter):
 class IRISSequencePlotter(MatplotlibSequencePlotter):
     def animate(self, sequence_axis_coords=None, sequence_axis_unit=None, **kwargs):
         """
-        Animate the `~ndcube.NDCubeSequence` with the sequence axis as a
-        slider.
+        Animate the `~ndcube.NDCubeSequence` with the sequence axis as a slider.
 
         Keyword arguments are passed to
         `ndcube.visualization.mpl_plotter.MatplotlibPlotter.plot` and therefore only
