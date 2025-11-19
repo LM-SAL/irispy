@@ -85,16 +85,11 @@ aia_crop = aia_map.submap(
         observer=sji_map.top_right_coord.observer,
     ),
 )
-# Before co-aligning the images, we first resample the AIA image to the same plate
-# scale as the IRIS image. This will ensure better results from our coalignment.
-nx = (aia_crop.scale.axis1 * aia_crop.dimensions.x) / sji_map.scale.axis1.to(u.arcsec / u.pix)
-ny = (aia_crop.scale.axis2 * aia_crop.dimensions.y) / sji_map.scale.axis2.to(u.arcsec / u.pix)
-aia_upsampled = aia_crop.resample(u.Quantity([nx, ny]))
 
 # ###############################################################################
 # One way to visualize the alignment is to plot the AIA contours on the IRIS SJI image.
 #
-# As one can see, the alignment is not perfect. Creating a pixel perfect WCS
+# As one will see, the alignment is not perfect. Creating a pixel perfect WCS
 # is very difficult due to uncertainties in locations and the pointing information.
 #
 # So what we can do is a cross-correlation between IRIS and SDO/AIA to see if we can
@@ -108,16 +103,25 @@ aia_upsampled = aia_crop.resample(u.Quantity([nx, ny]))
 # For details of the implementation refer to the documentation of
 # `~sunkit_image.coalignment.match_template.match_template_coalign`.
 
-# We need to prepare the SJI data.
+# Before co-aligning the images, we first resample the AIA image to the same plate
+# scale as the IRIS image. This will ensure better results from our coalignment.
+nx = (aia_crop.scale.axis1 * aia_crop.dimensions.x) / sji_map.scale.axis1.to(u.arcsec / u.pix)
+ny = (aia_crop.scale.axis2 * aia_crop.dimensions.y) / sji_map.scale.axis2.to(u.arcsec / u.pix)
+aia_upsampled = aia_crop.resample(u.Quantity([nx, ny]))
+
+# We need to prepare the SJI data by removing NaNs.
 sji_map_corrected_data = sji_map.data.copy()
 nan_mask = ~np.isfinite(sji_map_corrected_data)
 if np.any(nan_mask):
     sji_map_corrected_data[nan_mask] = 0
 sji_map_corrected = sunpy.map.Map(sji_map_corrected_data, sji_map.meta)
 
-coaligned_sji_map = coalign(sji_map_corrected, aia_upsampled, method="match_template")
+coaligned_sji_map = coalign(sji_map_corrected, aia_upsampled, method="match_template", pad_input=True)
 
-fig = plt.figure(figsize=(12, 5))
+# ###############################################################################
+# Finally, we can plot the results of the co-alignment.
+
+fig = plt.figure(figsize=(12, 6))
 
 ax1 = fig.add_subplot(121, projection=sji_map.wcs)
 sji_map.plot(axes=ax1)
@@ -130,6 +134,13 @@ aia_upsampled.draw_contours(axes=ax2, levels=[500] * u.DN, colors=["red"], linew
 ax2.set_title("Co-aligned IRIS SJI with AIA contours")
 ax2.coords[1].set_ticks_visible(False)
 ax2.coords[1].set_ticklabel_visible(False)
+
+xlims_world = [-570, -510] * u.arcsec
+ylims_world = [-210, -160] * u.arcsec
+world_coords = SkyCoord(Tx=xlims_world, Ty=ylims_world, frame=aia_upsampled.coordinate_frame)
+pixel_coords_x, pixel_coords_y = aia_upsampled.wcs.world_to_pixel(world_coords)
+ax2.set_xlim(pixel_coords_x)
+ax2.set_ylim(pixel_coords_y)
 
 fig.tight_layout()
 
