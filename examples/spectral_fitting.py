@@ -7,9 +7,6 @@ In this example, we are going to fit spectral lines from IRIS, using the raster 
 with a single Gaussian. Then use the fitted values to calculate the Gaussian moments.
 """
 
-
-# sphinx_gallery_thumbnail_number = 3
-
 import shutil
 from pathlib import Path
 
@@ -250,3 +247,5 @@ for ax in axs:
 fig.tight_layout()
 
 plt.show()
+
+# sphinx_gallery_thumbnail_number = 3
