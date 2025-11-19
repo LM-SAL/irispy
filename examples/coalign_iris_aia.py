@@ -70,17 +70,18 @@ pointing_table = get_pointing_table(
 )
 aia_map = update_pointing(aia_map, pointing_table=pointing_table)
 
-# Crop the AIA FOV to be similar to IRIS.
+# Crop the AIA FOV to be similar to IRIS but larger to ensure full coverage.
+# It needs to be at least as large as an expected shift, otherwise you will contend with edge effects
 aia_crop = aia_map.submap(
     bottom_left=SkyCoord(
-        sji_map.bottom_left_coord.Tx - 1 * u.arcsec,
-        sji_map.bottom_left_coord.Ty - 1 * u.arcsec,
+        sji_map.bottom_left_coord.Tx - 50 * u.arcsec,
+        sji_map.bottom_left_coord.Ty - 50 * u.arcsec,
         frame="helioprojective",
         observer=sji_map.bottom_left_coord.observer,
     ),
     top_right=SkyCoord(
-        sji_map.top_right_coord.Tx + 1 * u.arcsec,
-        sji_map.top_right_coord.Ty + 1 * u.arcsec,
+        sji_map.top_right_coord.Tx + 50 * u.arcsec,
+        sji_map.top_right_coord.Ty + 50 * u.arcsec,
         frame="helioprojective",
         observer=sji_map.top_right_coord.observer,
     ),
@@ -116,7 +117,7 @@ if np.any(nan_mask):
     sji_map_corrected_data[nan_mask] = 0
 sji_map_corrected = sunpy.map.Map(sji_map_corrected_data, sji_map.meta)
 
-coaligned_sji_map = coalign(sji_map_corrected, aia_upsampled, method="match_template", pad_input=True)
+coaligned_sji_map = coalign(sji_map_corrected, aia_upsampled, method="match_template")
 
 # ###############################################################################
 # Finally, we can plot the results of the co-alignment.
@@ -135,10 +136,10 @@ ax2.set_title("Co-aligned IRIS SJI with AIA contours")
 ax2.coords[1].set_ticks_visible(False)
 ax2.coords[1].set_ticklabel_visible(False)
 
-xlims_world = [-570, -510] * u.arcsec
-ylims_world = [-210, -160] * u.arcsec
-world_coords = SkyCoord(Tx=xlims_world, Ty=ylims_world, frame=aia_upsampled.coordinate_frame)
-pixel_coords_x, pixel_coords_y = aia_upsampled.wcs.world_to_pixel(world_coords)
+xlims_world = [-570, -490] * u.arcsec
+ylims_world = [-210, -140] * u.arcsec
+world_coords = SkyCoord(Tx=xlims_world, Ty=ylims_world, frame=coaligned_sji_map.coordinate_frame)
+pixel_coords_x, pixel_coords_y = coaligned_sji_map.wcs.world_to_pixel(world_coords)
 ax2.set_xlim(pixel_coords_x)
 ax2.set_ylim(pixel_coords_y)
 
