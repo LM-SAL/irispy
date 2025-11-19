@@ -1,9 +1,9 @@
 repos:
-  - repo: https://github.com/PyCQA/docformatter
-    rev: 7798699c0a9ddcc41a16b4dd7b8e216443f78792
-    hooks:
-      - id: docformatter
-        args: ["-r", "--in-place", "--pre-summary-newline", "--make-summary-multi", "--black"]
+  # - repo: https://github.com/PyCQA/docformatter
+  #   rev: 7798699c0a9ddcc41a16b4dd7b8e216443f78792
+  #   hooks:
+  #     - id: docformatter
+  #       args: ["-r", "--in-place", "--pre-summary-newline", "--make-summary-multi", "--black"]
     # This should be before any formatting hooks like isort
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: "v0.14.5"

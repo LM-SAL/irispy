@@ -1,5 +1,7 @@
 """
-================ Spectral fitting ================
+================
+Spectral fitting
+================
 
 In this example, we are going to fit spectral lines from IRIS, using the raster data
 with a single Gaussian. Then use the fitted values to calculate the Gaussian moments.

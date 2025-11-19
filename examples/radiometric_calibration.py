@@ -1,5 +1,7 @@
 """
-======================= Radiometric Calibration =======================
+=======================
+Radiometric Calibration
+=======================
 
 In this example we will show how to perform radiometric calibration on IRIS data.
 

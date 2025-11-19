@@ -1,5 +1,6 @@
 """
-====================================== Reproject IRIS SJI (rolled) to SDO/AIA
+======================================
+Reproject IRIS SJI (rolled) to SDO/AIA
 ======================================
 
 In this example we will show how to reproject a rolled IRIS dataset to SDO/AIA.

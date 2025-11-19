@@ -1,5 +1,7 @@
 """
-================== Mg II Dopplergrams ==================
+==================
+Mg II Dopplergrams
+==================
 
 In this example we are going to produce a Dopplergram for the Mg II k line from a
 400-step raster. The Dopplergram is obtained by subtracting the intensities at

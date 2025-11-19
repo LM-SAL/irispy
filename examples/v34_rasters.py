@@ -1,5 +1,6 @@
 """
-============================= Dealing with IRIS v34 rasters
+=============================
+Dealing with IRIS v34 rasters
 =============================
 
 In this example we will show how ``irispy`` deals with a v34 dataset by default and how

@@ -1,5 +1,6 @@
 """
-================================== Opening the IRIS Aligned AIA Cubes
+==================================
+Opening the IRIS Aligned AIA Cubes
 ==================================
 
 In this example we will show how ``irispy`` handles the AIA cubes provided by the IRIS
