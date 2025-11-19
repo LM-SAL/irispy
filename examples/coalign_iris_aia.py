@@ -37,7 +37,7 @@ from irispy.io import read_files
 
 sji_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2025/07/10/20250710_121126_3893010094/iris_l2_20250710_121126_3893010094_SJI_2832_t000_deconvolved.fits.gz",
-    known_hash="a2cc80da9fedc27add3f04abd126894d546059ea468d3ab5adbcc482e40e506a",
+    known_hash="0875acc65711969a93ce67474b6236bc98ce5a2bc49901ccad0f70ccf1478033",
 )
 
 ###############################################################################
@@ -73,14 +73,14 @@ aia_map = update_pointing(aia_map, pointing_table=pointing_table)
 # Crop the AIA FOV to be similar to IRIS.
 aia_crop = aia_map.submap(
     bottom_left=SkyCoord(
-        sji_map.bottom_left_coord.Tx - 50 * u.arcsec,
-        sji_map.bottom_left_coord.Ty - 50 * u.arcsec,
+        sji_map.bottom_left_coord.Tx - 1 * u.arcsec,
+        sji_map.bottom_left_coord.Ty - 1 * u.arcsec,
         frame="helioprojective",
         observer=sji_map.bottom_left_coord.observer,
     ),
     top_right=SkyCoord(
-        sji_map.top_right_coord.Tx + 50 * u.arcsec,
-        sji_map.top_right_coord.Ty + 50 * u.arcsec,
+        sji_map.top_right_coord.Tx + 1 * u.arcsec,
+        sji_map.top_right_coord.Ty + 1 * u.arcsec,
         frame="helioprojective",
         observer=sji_map.top_right_coord.observer,
     ),
@@ -92,16 +92,8 @@ ny = (aia_crop.scale.axis2 * aia_crop.dimensions.y) / sji_map.scale.axis2.to(u.a
 aia_upsampled = aia_crop.resample(u.Quantity([nx, ny]))
 
 # ###############################################################################
-# # One way to visualize the alignment is to plot the AIA contours on the IRIS SJI image.
-
-fig = plt.figure()
-
-ax1 = fig.add_subplot(111, projection=sji_map.wcs)
-sji_map.plot(axes=ax1, autoalign=True)
-aia_upsampled.draw_contours(levels=[500] * u.DN, colors=["red"], linewidths=2)
-ax1.set_title("IRIS SJI with AIA contours")
-
-###############################################################################
+# One way to visualize the alignment is to plot the AIA contours on the IRIS SJI image.
+#
 # As one can see, the alignment is not perfect. Creating a pixel perfect WCS
 # is very difficult due to uncertainties in locations and the pointing information.
 #
@@ -123,12 +115,22 @@ if np.any(nan_mask):
     sji_map_corrected_data[nan_mask] = 0
 sji_map_corrected = sunpy.map.Map(sji_map_corrected_data, sji_map.meta)
 
-coaligned_sji_map = coalign(sji_map_corrected, aia_upsampled, method="match_template", pad_input=True)
+coaligned_sji_map = coalign(sji_map_corrected, aia_upsampled, method="match_template")
 
-fig = plt.figure()
-ax1 = fig.add_subplot(111, projection=coaligned_sji_map.wcs)
-coaligned_sji_map.plot(axes=ax1, autoalign=True)
-aia_upsampled.draw_contours(levels=[500] * u.DN, colors=["red"], linewidths=2)
-ax1.set_title("Co-aligned IRIS SJI with AIA contours")
+fig = plt.figure(figsize=(12, 5))
+
+ax1 = fig.add_subplot(121, projection=sji_map.wcs)
+sji_map.plot(axes=ax1)
+aia_upsampled.draw_contours(axes=ax1, levels=[500] * u.DN, colors=["red"], linewidths=2)
+ax1.set_title("IRIS SJI with AIA contours")
+
+ax2 = fig.add_subplot(122, projection=coaligned_sji_map.wcs, sharex=ax1, sharey=ax1)
+coaligned_sji_map.plot(axes=ax2)
+aia_upsampled.draw_contours(axes=ax2, levels=[500] * u.DN, colors=["red"], linewidths=2)
+ax2.set_title("Co-aligned IRIS SJI with AIA contours")
+ax2.coords[1].set_ticks_visible(False)
+ax2.coords[1].set_ticklabel_visible(False)
+
+fig.tight_layout()
 
 plt.show()
