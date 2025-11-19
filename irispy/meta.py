@@ -108,16 +108,14 @@ class BaseMeta(NDMeta):
     @property
     def exposure_control_triggers_in_observation(self):
         """
-        Number of times automatic exposure control triggered during observing
-        campaign.
+        Number of times automatic exposure control triggered during observing campaign.
         """
         return self.get("AECNOBS")
 
     @property
     def exposure_control_triggers_in_raster(self):
         """
-        Number of times automatic exposure control was triggered during this
-        raster.
+        Number of times automatic exposure control was triggered during this raster.
         """
         return self.get("AECNRAS")
 
@@ -159,8 +157,7 @@ class BaseMeta(NDMeta):
     @property
     def raster_fov_width_x(self):
         """
-        Width of the field of view of the raster in the X (rastering)
-        direction.
+        Width of the field of view of the raster in the X (rastering) direction.
         """
         return self.get("FOVX") * u.arcsec
 

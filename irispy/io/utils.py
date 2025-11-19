@@ -60,8 +60,7 @@ def _extract_tarfile(filenames):
 
 def fits_info(filename: str) -> None:
     """
-    Prints information about the extension of a raster or SJI level 2 data
-    file.
+    Prints information about the extension of a raster or SJI level 2 data file.
 
     Parameters
     ----------
@@ -106,8 +105,7 @@ def fits_info(filename: str) -> None:
 
 def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=False, allow_errors=False, **kwargs):
     """
-    A wrapper function to read any number of raster, SJI or IRIS-aligned AIA
-    data files.
+    A wrapper function to read any number of raster, SJI or IRIS-aligned AIA data files.
 
     The goal is be able to download an entire IRIS observation and read it
     in one go, without having to worry about the type of file.

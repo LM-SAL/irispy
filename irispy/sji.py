@@ -130,8 +130,7 @@ class SJICube(SpectrogramCube):
 
     def apply_dust_mask(self, *, undo=False):
         """
-        Applies or undoes an update of the mask with the dust particles
-        positions.
+        Applies or undoes an update of the mask with the dust particles positions.
 
         Rewrite self.mask with/without the dust positions.
 

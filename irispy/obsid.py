@@ -80,8 +80,8 @@ class ObsID(dict):
     @staticmethod
     def _exptime_to_quant(exptime):
         """
-        Converts an 'exptime' string (used in IRIS tables and OBS_DESC) to a
-        Quantity instance in seconds.
+        Converts an 'exptime' string (used in IRIS tables and OBS_DESC) to a Quantity
+        instance in seconds.
         """
         if exptime == "Exposure 1s":
             return 1.0 * u.s

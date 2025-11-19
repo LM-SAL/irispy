@@ -92,8 +92,8 @@ def _get_sampledata_dir():
 
 def _get_sample_files(filename_list, *, no_download=False, force_download=False):
     """
-    Returns a list of disk locations corresponding to a list of filenames for
-    sample data, downloading the sample data files as necessary.
+    Returns a list of disk locations corresponding to a list of filenames for sample
+    data, downloading the sample data files as necessary.
 
     Parameters
     ----------

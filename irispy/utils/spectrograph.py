@@ -174,8 +174,8 @@ def calculate_dn_to_radiance_factor(
     solid_angle,
 ):
     """
-    Calculates multiplicative factor that converts counts/s to radiance for
-    given wavelengths.
+    Calculates multiplicative factor that converts counts/s to radiance for given
+    wavelengths.
 
     Parameters
     ----------

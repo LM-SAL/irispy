@@ -2,12 +2,11 @@
 ================================== Opening the IRIS Aligned AIA Cubes
 ==================================
 
-In this example we will show how ``irispy`` handles the AIA cubes
-provided by the IRIS team. These cubes are aligned to the IRIS
-observation and are 50" larger than the IRIS FOV.
+In this example we will show how ``irispy`` handles the AIA cubes provided by the IRIS
+team. These cubes are aligned to the IRIS observation and are 50" larger than the IRIS
+FOV.
 
-They have the same format as IRIS SJI files, so you can read them via
-``irispy``.
+They have the same format as IRIS SJI files, so you can read them via ``irispy``.
 """
 
 import matplotlib.pyplot as plt

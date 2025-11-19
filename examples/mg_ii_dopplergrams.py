@@ -1,10 +1,9 @@
 """
 ================== Mg II Dopplergrams ==================
 
-In this example we are going to produce a Dopplergram for the Mg II k
-line from a 400-step raster. The Dopplergram is obtained by subtracting
-the intensities at symmetrical velocity shifts from the line core (e.g.,
-±50 km/s).
+In this example we are going to produce a Dopplergram for the Mg II k line from a
+400-step raster. The Dopplergram is obtained by subtracting the intensities at
+symmetrical velocity shifts from the line core (e.g., ±50 km/s).
 """
 
 import tarfile

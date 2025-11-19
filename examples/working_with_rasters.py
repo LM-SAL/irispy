@@ -2,8 +2,7 @@
 =============================== Working with spectrograph files
 ===============================
 
-In this example, we will showcase how to open, crop and plot IRIS
-spectrograph data.
+In this example, we will showcase how to open, crop and plot IRIS spectrograph data.
 """
 
 import matplotlib.pyplot as plt
