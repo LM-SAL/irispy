@@ -55,6 +55,8 @@ optional-dependencies.docs = [
   "sphinx-copybutton",
   "sphinx-design",
   "sphinx-gallery",
+  # TODO: Remove when sunkit-image is released
+  "sunkit-image @ git+https://github.com/nabobalis/sunkit-image.git@coalign_pr",
   "sunpy-sphinx-theme",
 ]
 optional-dependencies.tests = [
@@ -150,6 +152,3 @@ changelog_missing_long = "There isn't a changelog file in this pull request. Ple
 type_incorrect_long = "The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog [README](https://github.com/LM-SAL/irispy/blob/main/changelog/README.rst)"
 
 number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
-
-# TODO: This should be in towncrier.toml but Giles currently only works looks in
-# pyproject.toml we should move this back when it's fixed.
