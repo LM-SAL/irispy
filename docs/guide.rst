@@ -122,13 +122,10 @@ We use the following command to read and load the data from a SJI level 2 file:
     Observatory:           IRIS
     Instrument:            SJI
     Bandpass:              1330.0
-    Obs. Start:            2021-10-01T06:09:24.920
-    Obs. End:              2021-10-01T06:11:44.461
-    Instance Start:        2021-10-01T06:09:25.020
-    Instance End:          2021-10-01T06:11:37.580
-    Total Frames in Obs.:  None
-    IRIS Obs. id:          3683602040
-    IRIS Obs. Description: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
+    Obs Date:              2021-10-01T06:09:25.020 -- 2021-10-01T06:11:37.580
+    Total Frames in Obs:   None
+    Obs ID:                3683602040
+    Obs Description:       Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
     Axis Types:            [('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat', 'time', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM'), ('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat'), ('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat')]
     Roll:                  0.000464606
     Cube dimensions:       (20, 548, 555)

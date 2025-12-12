@@ -100,13 +100,10 @@ class SJICube(SpectrogramCube):
             Observatory:           {self.meta.get("TELESCOP", "IRIS")}
             Instrument:            {self.meta.get("INSTRUME")}
             Bandpass:              {self.meta.get("TWAVE1")}
-            Obs. Start:            {self.meta.get("STARTOBS")}
-            Obs. End:              {self.meta.get("ENDOBS")}
-            Instance Start:        {instance_start}
-            Instance End:          {instance_end}
-            Total Frames in Obs.:  {self.meta.get("NBFRAMES")}
-            IRIS Obs. id:          {self.meta.get("OBSID")}
-            IRIS Obs. Description: {self.meta.get("OBS_DESC")}
+            Obs Date:              {instance_start} -- {instance_end}
+            Total Frames in Obs:   {self.meta.get("NBFRAMES")}
+            Obs ID:                {self.meta.get("OBSID")}
+            Obs Description:       {self.meta.get("OBS_DESC")}
             Axis Types:            {self.array_axis_physical_types}
             Roll:                  {self.meta.get("SAT_ROT")}
             Cube dimensions:       {self.shape}

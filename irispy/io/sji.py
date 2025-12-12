@@ -43,14 +43,12 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
         crval_table=crval_table * u.arcsec,
         crpix_table=crpix_table * u.pixel,
     )
-    base_time = Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
-    times = hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
-    # We need to account for a non-zero time delta.
-    base_time += times[0]
-    times -= times[0]
+    start_time = Time(hdulist[0].header["DATE_OBS"], format="isot", scale="utc")
+    cadence = hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
+    cadence -= cadence[0]
     temporal = m.Tabular1D(
         np.arange(hdulist[1].data.shape[0]) * u.pix,
-        lookup_table=times,
+        lookup_table=cadence,
         fill_value=np.nan,
         bounds_error=False,
         method="linear",
@@ -59,14 +57,14 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
     celestial_frame = cf.CelestialFrame(
         axes_order=(0, 1),
         unit=(u.arcsec, u.arcsec),
-        reference_frame=Helioprojective(observer="earth", obstime=base_time),
+        reference_frame=Helioprojective(observer="earth", obstime=start_time),
         axis_physical_types=[
             "custom:pos.helioprojective.lon",
             "custom:pos.helioprojective.lat",
         ],
         axes_names=("Longitude", "Latitude"),
     )
-    temporal_frame = cf.TemporalFrame(Time(base_time), unit=(u.s,), axes_order=(2,), axes_names=("Time (UTC)",))
+    temporal_frame = cf.TemporalFrame(start_time, unit=(u.s,), axes_order=(2,), axes_names=("Time (UTC)",))
     output_frame = cf.CompositeFrame([celestial_frame, temporal_frame])
     input_frame = cf.CoordinateFrame(
         axes_order=(0, 1, 2),
@@ -92,11 +90,10 @@ def _create_headers_wcs(hdulist):
     from sunpy.map.header_helper import make_fitswcs_header  # NOQA: PLC0415
 
     wcses = []
-    base_time = Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
-    times = hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
-    # We need to account for a non-zero time delta.
-    base_time += times[0]
-    times -= times[0]
+    obs_times = (
+        Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
+        + hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
+    )
     xcenix_idx = hdulist[1].header["XCENIX"]
     ycenix_idx = hdulist[1].header["YCENIX"]
     pc1_1ix = hdulist[1].header["PC1_1IX"]
@@ -124,12 +121,12 @@ def _create_headers_wcs(hdulist):
             nonzero_vals = array[nonzero_idx]
             array[zero_idx] = np.interp(zero_idx, nonzero_idx, nonzero_vals)
     for i in range(hdulist[0].header["NAXIS3"]):
-        location = get_body_heliographic_stonyhurst("Earth", (base_time + times[i]).isot)
+        location = get_body_heliographic_stonyhurst("Earth", (obs_times[i]).isot)
         observer = Helioprojective(
             xcenix_values[i] * u.arcsec,
             ycenix_values[i] * u.arcsec,
             observer=location,
-            obstime=base_time + times[i],
+            obstime=obs_times[i],
         )
         rotation_matrix = np.asanyarray(
             [

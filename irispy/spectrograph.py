@@ -81,10 +81,9 @@ class SpectrogramCube(SpecCube):
             f"""
             SpectrogramCube
             ---------------
-            OBS ID:             {self.meta.get("OBSID")}
-            OBS Description:    {self.meta.get("OBS_DESC")}
-            OBS period:         {self.meta.get("STARTOBS")} -- {self.meta.get("ENDOBS")}
-            Spectrogram period: {instance_start} -- {instance_end}
+            Obs ID:             {self.meta.get("OBSID")}
+            Obs Description:    {self.meta.get("OBS_DESC")}
+            Obs Date:           {instance_start} -- {instance_end}
             Data shape:         {self.shape}
             Axis Types:         {self.array_axis_physical_types}
             Roll:               {self.meta.get("SAT_ROT")}
