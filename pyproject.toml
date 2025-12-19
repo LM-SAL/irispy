@@ -16,7 +16,7 @@ authors = [
   { name = "IRIS Instrument Team  @ LMSAL" },
   { name = "Nabil Freij", email = "nabil.freij@gmail.com" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
@@ -25,7 +25,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
