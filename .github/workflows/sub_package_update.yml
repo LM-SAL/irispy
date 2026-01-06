@@ -5,7 +5,6 @@ permissions:
     contents: write
     pull-requests: write
     actions: write
-    workflows: write
 
 on:
   # Allow manual runs through the web UI
