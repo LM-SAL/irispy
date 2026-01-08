@@ -62,6 +62,8 @@ jobs:
           - ffmpeg
         brew:
           - ffmpeg
+        apt:
+          - ffmpeg
       envs: |
         - windows: py312
         - macos: py313
