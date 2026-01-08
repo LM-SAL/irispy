@@ -39,11 +39,6 @@ jobs:
       envs: |
         - linux: py314
 
-<<<<<<<
-  test:
-    needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
-=======
   sdist_verify:
     runs-on: ubuntu-latest
     steps:
@@ -54,7 +49,10 @@ jobs:
       - run: python -m pip install -U --user build
       - run: python -m build . --sdist
       - run: python -m pip install -U --user twine
->>>>>>>
+
+  test:
+    needs: [core]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
     with:
       submodules: false
       coverage: codecov
@@ -65,20 +63,11 @@ jobs:
         brew:
           - ffmpeg
       envs: |
-<<<<<<<
-        - windows: py313
-=======
-        - linux: py314
         - windows: py312
->>>>>>>
-        - macos: py312
-<<<<<<<
-=======
+        - macos: py313
         - linux: py312-oldestdeps
-        - linux: py314-devdeps
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
->>>>>>>
 
   docs:
     needs: [core]
@@ -99,10 +88,7 @@ jobs:
     needs: [core]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
     with:
-<<<<<<<
-=======
       default_python: '3.13'
->>>>>>>
       submodules: false
       coverage: codecov
       posargs: -n auto --dist loadgroup
@@ -116,12 +102,6 @@ jobs:
     needs: [core]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
     with:
-<<<<<<<
-=======
-      python-version: '3.13'
-      test_extras: 'tests'
-      test_command: 'pytest -p no:warnings --doctest-rst --pyargs irispy'
->>>>>>>
       submodules: false
       coverage: codecov
       posargs: -n auto
