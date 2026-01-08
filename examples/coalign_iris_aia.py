@@ -22,7 +22,7 @@ from astropy.time import Time, TimeDelta
 
 import sunpy.map
 from aiapy.calibrate import update_pointing
-from aiapy.calibrate.util import get_pointing_table
+from aiapy.calibrate.utils import get_pointing_table
 from sunpy.net import Fido
 from sunpy.net import attrs as a
 
