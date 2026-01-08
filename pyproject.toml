@@ -8,10 +8,10 @@ requires = [
 
 [project]
 name = "irispy-lmsal"
-description = "Provides tools to read and analyze data from the IRIS solar-observing satellite."
-readme = "README.rst"
+description = "A Python package that provides the tools to read in and analyze data from the IRIS solar-observing satellite."
+readme = { file = "README.rst", content-type = "text/x-rst" }
 keywords = [ "iris", "lmsal", "NASA", "science", "solar", "solar physics", "spectra" ]
-license = { file = "licenses/LICENSE.rst" }
+license-files = [ "licenses/LICENSE.rst" ]
 authors = [
   { name = "IRIS Instrument Team  @ LMSAL" },
   { name = "Nabil Freij", email = "nabil.freij@gmail.com" },
@@ -75,7 +75,6 @@ zip-safe = false
 include-package-data = true
 platforms = [ "any" ]
 provides = [ "irispy" ]
-license-files = [ "licenses/LICENSE.rst" ]
 
 [tool.setuptools.packages.find]
 include = [ "irispy*" ]

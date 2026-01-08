@@ -39,6 +39,17 @@ jobs:
       envs: |
         - linux: py314
 
+  sdist_verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -U --user build
+      - run: python -m build . --sdist
+      - run: python -m pip install -U --user twine
+
   test:
     needs: [core]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
@@ -51,9 +62,14 @@ jobs:
           - ffmpeg
         brew:
           - ffmpeg
+        apt:
+          - ffmpeg
       envs: |
-        - windows: py313
-        - macos: py312
+        - windows: py312
+        - macos: py313
+        - linux: py312-oldestdeps
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   docs:
     needs: [core]
@@ -74,6 +90,7 @@ jobs:
     needs: [core]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
     with:
+      default_python: '3.13'
       submodules: false
       coverage: codecov
       posargs: -n auto --dist loadgroup
