@@ -171,7 +171,7 @@ ax1.set_title("IRIS SJI with AIA contours")
 
 plt.show()
 
-# ###############################################################################
+###############################################################################
 # As one can see, the reprojection has not aligned the two images.
 # Since the WCS information was not 100% accurate to begin with, this means that
 # reprojecting alone is not sufficient to get a perfect alignment.
