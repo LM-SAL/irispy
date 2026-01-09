@@ -170,3 +170,10 @@ aia_reprojected.draw_contours(levels=[500], colors=["red"], linewidths=2)
 ax1.set_title("IRIS SJI with AIA contours")
 
 plt.show()
+
+# ###############################################################################
+# As one can see, the reprojection has not aligned the two images.
+# Since the WCS information was not 100% accurate to begin with, this means that
+# reprojecting alone is not sufficient to get a perfect alignment.
+#
+# If you want to align, you can check out the following :ref:`sphx_glr_generated_gallery_coalign_iris_aia.py`
