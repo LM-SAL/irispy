@@ -1,5 +1,6 @@
 import textwrap
 import warnings
+from numbers import Integral
 
 import matplotlib.pyplot as plt
 
@@ -114,7 +115,7 @@ class SJICube(SpectrogramCube):
         sliced_self = super().__getitem__(item)
         sliced_self.scaled = self.scaled
         # Here we are guarding against getting a crop slice
-        if self._basic_wcs is not None and isinstance(item, int | float):
+        if self._basic_wcs is not None and isinstance(item, Integral):
             sliced_self._basic_wcs = self._basic_wcs[item]
         return sliced_self
 
