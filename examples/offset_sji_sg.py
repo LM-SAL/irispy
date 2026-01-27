@@ -113,9 +113,9 @@ slit_location_from_sji_aux = sji_2796[time_idx_2796].wcs.pixel_to_world(
 ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="Slit Pixel Location")
 
 # Now these are the slit locations (some modified by offset values in the axillary data)
-ax.plot_coord(slit, color="white", linestyle="--", linewidth=0.5, label="Slit WCS")
-ax.plot_coord(slit_with_sg_offset, color="red", linestyle="--", linewidth=0.5, label="SG Offset")
-ax.plot_coord(slit_with_sji_offset, color="green", linestyle="--", linewidth=0.5, label="SJI Offset")
+ax.plot_coord(slit, color="white", linestyle="--", linewidth=1, label="Slit WCS")
+ax.plot_coord(slit_with_sg_offset, color="red", linestyle="-.", linewidth=1, label="SG Offset")
+ax.plot_coord(slit_with_sji_offset, color="green", linestyle="-", linewidth=1, label="SJI Offset")
 
 ax.legend()
 
