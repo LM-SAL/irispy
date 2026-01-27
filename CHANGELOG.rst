@@ -1,3 +1,21 @@
+0.6.0 (2026-01-26)
+==================
+
+Breaking Changes
+----------------
+
+- Moved internal code to move to use "DATE_OBS" instead of "STARTDATE". (`#96 <https://github.com/LM-SAL/irispy/pull/96>`__)
+- Removed support for Python 3.11. (`#97 <https://github.com/LM-SAL/irispy/pull/97>`__)
+- Made the standard WCS lazy created on access now to speed up loading (`#103 <https://github.com/LM-SAL/irispy/pull/103>`__)
+
+
+Documentation
+-------------
+
+- Added an example to demonstrate co-alignment of IRIS SJI and SDO/AIA images using sunkit-image's ``match_template`` method. (`#65 <https://github.com/LM-SAL/irispy/pull/65>`__)
+- Added an offset example, attempting to track down a WCS offset between the IRIS SJI and IRIS SG WCS. (`#96 <https://github.com/LM-SAL/irispy/pull/96>`__)
+
+
 0.5.0 (2025-10-06)
 ==================
 

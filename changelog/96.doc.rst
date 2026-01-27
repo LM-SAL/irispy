@@ -1,1 +1,0 @@
-Added an offset example, attempting to track down a WCS offset between the IRIS SJI and IRIS SG WCS.

@@ -1,1 +1,0 @@
-Made the standard WCS lazy created on access now to speed up loading

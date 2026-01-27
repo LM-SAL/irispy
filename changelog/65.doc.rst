@@ -1,1 +1,0 @@
-Added an example to demonstrate co-alignment of IRIS SJI and SDO/AIA images using sunkit-image's ``match_template`` method.
