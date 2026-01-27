@@ -3,6 +3,9 @@ import warnings
 
 import matplotlib.pyplot as plt
 
+from astropy.utils import isiterable
+from astropy.wcs import WCS
+
 from sunpy import log as logger
 from sunpy.map import Map
 from sunpy.util.exceptions import SunpyMetadataWarning
@@ -156,7 +159,9 @@ class SJICube(SpectrogramCube):
         """
         Returns a standard WCS instead of gWCS.
         """
-        return self._basic_wcs
+        if isiterable(self._basic_wcs):
+            return [WCS(wcs) for wcs in self._basic_wcs]
+        return WCS(self._basic_wcs)
 
     def to_maps(self, index: int | list[int] | None = None):
         """

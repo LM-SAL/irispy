@@ -32,13 +32,13 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [
-  "dkist>=1.16.0",
+  "dkist>=1.16",
   "mpl-animators>=1.2.3",
-  "ndcube>=2.4.0",
+  "ndcube>=2.4",
   "pandas>=1.3.3",
   "scipy>=1.7",
-  "sunpy>=7.0.0",
-  "sunraster>=0.7.0",
+  "sunpy>=7",
+  "sunraster>=0.7",
 ]
 
 optional-dependencies.all = [ "irispy-lmsal" ]
