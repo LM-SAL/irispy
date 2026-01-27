@@ -91,7 +91,7 @@ def _create_headers_wcs(hdulist):
 
     wcses = []
     obs_times = (
-        Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
+        Time(hdulist[0].header["DATE_OBS"], format="isot", scale="utc")
         + hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
     )
     xcenix_idx = hdulist[1].header["XCENIX"]
