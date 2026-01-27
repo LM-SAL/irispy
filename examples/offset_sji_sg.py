@@ -66,9 +66,9 @@ time_stamp_2796 = time_2796[time_idx_2796].isot
 print(time_stamp_2796, "\n", time_target, "\n", time_idx_2796)
 
 ###############################################################################
-# We will require the axillary data from both files later on/
+# We will require the auxiliary data from both files later on.
 
-# The raster file is extracted to the cache pooch via pooch, so we need to do some magic to get it:
+# The raster file is extracted to the cache directory via pooch, so we need to do some magic to get it:
 raster_aux_data = fits.getdata(
     next(iter(Path("~/.cache/pooch/").expanduser().glob("*iris_l2_20130902_182935_4000005156_raster/*fits"))), ext=-2
 )
