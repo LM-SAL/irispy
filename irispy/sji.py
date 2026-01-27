@@ -3,11 +3,11 @@ import warnings
 
 import matplotlib.pyplot as plt
 
-from astropy.utils import isiterable
 from astropy.wcs import WCS
 
 from sunpy import log as logger
 from sunpy.map import Map
+from sunpy.util import MetaDict
 from sunpy.util.exceptions import SunpyMetadataWarning
 from sunraster import SpectrogramCube
 
@@ -69,7 +69,9 @@ class SJICube(SpectrogramCube):
     ) -> None:
         self.scaled = scaled
         self.dust_masked = False
-        self._basic_wcs = kwargs.pop("_basic_wcs") if "_basic_wcs" in kwargs else None
+        self._basic_wcs = kwargs.pop("_basic_wcs", None)
+        if self._basic_wcs is not None and not isinstance(self._basic_wcs, list):
+            self._basic_wcs = [self._basic_wcs]
         super().__init__(
             data,
             wcs,
@@ -114,7 +116,8 @@ class SJICube(SpectrogramCube):
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
         sliced_self.scaled = self.scaled
-        if self._basic_wcs is not None:
+        # Here we are guarding against getting a crop slice
+        if self._basic_wcs is not None and isinstance(item, int | float):
             sliced_self._basic_wcs = self._basic_wcs[item]
         return sliced_self
 
@@ -159,9 +162,11 @@ class SJICube(SpectrogramCube):
         """
         Returns a standard WCS instead of gWCS.
         """
-        if isiterable(self._basic_wcs):
-            return [WCS(wcs) for wcs in self._basic_wcs]
-        return WCS(self._basic_wcs)
+        if self._basic_wcs is None:
+            return None
+        if isinstance(self._basic_wcs, MetaDict):
+            return WCS(self._basic_wcs)
+        return [WCS(wcs_header) for wcs_header in self._basic_wcs]
 
     def to_maps(self, index: int | list[int] | None = None):
         """

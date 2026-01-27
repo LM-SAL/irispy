@@ -83,6 +83,9 @@ def _create_headers_wcs(hdulist):
     compatibility issues.
 
     This has been set to have an Earth Observer at the time of the observation.
+
+    However, this only creates the WCS headers, not the full WCS objects.
+    Those are created in the SJICube class property basic_wcs.
     """
     from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst  # NOQA: PLC0415
     from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
