@@ -54,8 +54,7 @@ optional-dependencies.docs = [
   "sphinx-copybutton",
   "sphinx-design",
   "sphinx-gallery",
-  # TODO: Remove when sunkit-image is released
-  "sunkit-image @ git+https://github.com/nabobalis/sunkit-image.git@coalign_pr",
+  "sunkit-image",
   "sunpy-sphinx-theme",
 ]
 optional-dependencies.tests = [
