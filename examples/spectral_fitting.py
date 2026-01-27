@@ -210,7 +210,7 @@ if errors:
 fig, axs = plt.subplots(nrows=3, ncols=1, subplot_kw={"projection": si_iv_spec_crop}, figsize=(6, 16))
 net_flux = (
     np.sqrt(2 * np.pi)
-    * (iris_model_fit.amplitude_0 + iris_model_fit.amplitude_1)
+    * (iris_model_fit.amplitude_1)
     * iris_model_fit.stddev_1.quantity
     / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1]).to(u.nm)
 )
