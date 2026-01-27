@@ -6,13 +6,8 @@ import gwcs
 import gwcs.coordinate_frames as cf
 from astropy.io import fits
 from astropy.time import Time
-from astropy.wcs import WCS
 
-import dkist
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
-from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
-from sunpy.coordinates.frames import Helioprojective
-from sunpy.map.header_helper import make_fitswcs_header
 
 from irispy.meta import SJIMeta
 from irispy.sji import AIACube, SJICube
@@ -36,17 +31,17 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
     `gwcs.WCS`
         GWCS object for the SJI file.
     """
+    from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
+
     pc_table = hdulist[1].data[:, hdulist[1].header["PC1_1IX"] : hdulist[1].header["PC2_2IX"] + 1].reshape(-1, 2, 2)
     crval_table = hdulist[1].data[:, hdulist[1].header["XCENIX"] : hdulist[1].header["YCENIX"] + 1]
     crpix_table = [hdulist[0].header["CRPIX1"], hdulist[0].header["CRPIX2"]]
     cdelt = [hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]
-    older_dkist = dkist.__version__ < "1.12.0"
-    kwargs = {"crpix": crpix_table * u.pixel} if older_dkist else {"crpix_table": crpix_table * u.pixel}
     celestial = VaryingCelestialTransform(
         cdelt=cdelt * u.arcsec / u.pixel,
         pc_table=pc_table * u.pixel,
         crval_table=crval_table * u.arcsec,
-        **kwargs,
+        crpix_table=crpix_table * u.pixel,
     )
     base_time = Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
     times = hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
@@ -82,13 +77,20 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
     return gwcs.WCS(forward_transform, input_frame=input_frame, output_frame=output_frame)
 
 
-def _create_wcs(hdulist):
+def _create_headers_wcs(hdulist):
     """
     This is required as occasionally we need a normal WCS instead of a gWCS due to
     compatibility issues.
 
     This has been set to have an Earth Observer at the time of the observation.
+
+    However, this only creates the WCS headers, not the full WCS objects.
+    Those are created in the SJICube class property basic_wcs.
     """
+    from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst  # NOQA: PLC0415
+    from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
+    from sunpy.map.header_helper import make_fitswcs_header  # NOQA: PLC0415
+
     wcses = []
     base_time = Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
     times = hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
@@ -147,7 +149,7 @@ def _create_wcs(hdulist):
             exposure=hdulist[1].data[i, hdulist[1].header["EXPTIMES"]] * u.second,
             unit=u.DN,
         )
-        wcses.append(WCS(new_header))
+        wcses.append(new_header)
     return wcses
 
 
@@ -235,7 +237,7 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             meta=SJIMeta(hdulist[0].header),
             mask=mask,
             scaled=scaled,
-            _basic_wcs=_create_wcs(hdulist),
+            _basic_wcs=_create_headers_wcs(hdulist),
         )
         [map_cube.extra_coords.add(*extra_coord) for extra_coord in extra_coords]
     return map_cube
