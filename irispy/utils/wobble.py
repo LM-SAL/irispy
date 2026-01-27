@@ -68,7 +68,7 @@ def generate_wobble_movie(
 
     2832 is considered the best wavelength to use for wobble movies.
 
-    Timestamps take the main header cadence and add that to the "DATEOBS".
+    Timestamps take the main header cadence and add that to the "DATE_OBS".
     They do not use the information in the AUX array.
     """
     # Avoid circular imports
@@ -90,10 +90,10 @@ def generate_wobble_movie(
         cadence_sample = max(1, np.floor(wobble_cadence / cadence))
         if timestamp:
             timestamps = [
-                parse_time(header["STARTOBS"]) + TimeDelta(cadence, format="sec") * i for i in range(numframes)
+                parse_time(header["DATE_OBS"]) + TimeDelta(cadence, format="sec") * i for i in range(numframes)
             ]
         else:
-            timestamps = [parse_time(header["STARTOBS"])]
+            timestamps = [parse_time(header["DATE_OBS"])]
         # Trim down to only that part of the movie that contains data in all frames
         if trim:
             # TODO: improve this, it trims a bit but not fully

@@ -92,7 +92,7 @@ def read_spectrograph_lvl2(
             window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
         data_dict = {window_name: [] for window_name in spectral_windows_req}
         # No observer information in the header, so we just assume its at Earth.
-        base_time = Time(hdulist[0].header["STARTOBS"])
+        base_time = Time(hdulist[0].header["DATE_OBS"])
         location = get_body_heliographic_stonyhurst("Earth", (base_time).isot)
         observer = Helioprojective(
             hdulist[0].header["XCEN"] * u.arcsec,

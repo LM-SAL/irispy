@@ -55,6 +55,7 @@ lint.extend-ignore = [
     "ERA001", # Commented out code
     "INP001", # Implicit namespace package
     "T201", # Use print
+    "N816", # Variable `times_SG` in global scope should not be mixedCase"
 ]
 "docs/conf.py" = [
     "INP001", # conf.py is part of an implicit namespace package
