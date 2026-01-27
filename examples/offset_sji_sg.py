@@ -10,8 +10,6 @@ The cause is unknown at this time and this has not been cross-checked with SSWID
 So it is possible this is just a bug in the Python library.
 """
 
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pooch
@@ -70,7 +68,7 @@ print(time_stamp_2796, "\n", time_target, "\n", time_idx_2796)
 
 # The raster file is extracted to the cache directory via pooch, so we need to do some magic to get it:
 raster_aux_data = fits.getdata(
-    next(iter(Path("~/.cache/pooch/").expanduser().glob("*iris_l2_20130902_182935_4000005156_raster/*fits"))), ext=-2
+    next(iter(pooch.os_cache("pooch").expanduser().glob("*iris_l2_20130902_182935_4000005156_raster/*fits"))), ext=-2
 )
 sji_aux_data = fits.getdata(sji_filename, ext=-2)
 
