@@ -191,7 +191,7 @@ class SJICube(SpectrogramCube):
         # We can shortcut if the Cube has been reduced to a 2D slice
         if self.wcs.world_n_dim == 2:
             # TODO: Missing metadata
-            return Map(self.data, self.wcs)
+            return Map(self.data, self.basic_wcs)
         data_wcs = ((self.data[i], self.basic_wcs[i]) for i in idx_list)
         times_iso = (self.wcs.pixel_to_world(0, 0, i)[-1].utc.isot for i in idx_list)
         with warnings.catch_warnings():
