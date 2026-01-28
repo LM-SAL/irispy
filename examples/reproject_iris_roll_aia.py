@@ -81,7 +81,9 @@ sji_frame = wcs_to_celestial_frame(sji_cut.basic_wcs)
 plt.figure()
 ax = sji_cut.plot()
 plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']}", pad=20)
-ax.coords.grid()
+# You have to specify the grid type to be contours for WCSAxes to plot it correctly.
+# This is due to a quirk of how gWCS interacts with WCSAxes.
+ax.coords.grid(grid_type="contours")
 
 ###############################################################################
 # We will want to align the data to AIA.

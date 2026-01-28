@@ -96,6 +96,8 @@ plt.figure()
 ax = sji_cutout.plot()
 # Plot each corner of the box
 [ax.plot_coord(coord, "o") for coord in bbox]
-ax.coords.grid()
+# You have to specify the grid type to be contours for WCSAxes to plot it correctly.
+# This is due to a quirk of how gWCS interacts with WCSAxes.
+ax.coords.grid(grid_type="contours")
 
 plt.show()
