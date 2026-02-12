@@ -43,9 +43,8 @@ def _create_gwcs(hdulist: fits.HDUList) -> gwcs.WCS:
         crval_table=crval_table * u.arcsec,
         crpix_table=crpix_table * u.pixel,
     )
-    start_time = Time(hdulist[0].header["DATE_OBS"], format="isot", scale="utc")
+    start_time = Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
     cadence = hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
-    cadence -= cadence[0]
     temporal = m.Tabular1D(
         np.arange(hdulist[1].data.shape[0]) * u.pix,
         lookup_table=cadence,
@@ -91,7 +90,7 @@ def _create_headers_wcs(hdulist):
 
     wcses = []
     obs_times = (
-        Time(hdulist[0].header["DATE_OBS"], format="isot", scale="utc")
+        Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc")
         + hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
     )
     xcenix_idx = hdulist[1].header["XCENIX"]

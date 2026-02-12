@@ -26,7 +26,7 @@ def generate_wobble_movie(
     wobble_cadence: int = 180,
     ffmpeg_path: str | Path | None = None,
     **kwargs,
-) -> None:
+) -> list:
     """
     Creates a wobble movie from a list of files.
 
