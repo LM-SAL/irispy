@@ -119,9 +119,9 @@ ax.plot_coord(slit_with_sji_offset, color="green", linestyle="-", linewidth=1, l
 ax.legend()
 
 # "Crop" the image without touching the actual data.
-bbox = SkyCoord([130, 190] * u.arcsec, [40, 100] * u.arcsec, frame=sji_2796_frame)
-x_limit, y_limit = sji_2796_closest.wcs.world_to_pixel(bbox)
-ax.set_xlim(int(x_limit[0]), int(x_limit[1]))
-ax.set_ylim(int(y_limit[0]), int(y_limit[1]))
+#bbox = SkyCoord([130, 190] * u.arcsec, [40, 100] * u.arcsec, frame=sji_2796_frame)
+#x_limit, y_limit = sji_2796_closest.wcs.world_to_pixel(bbox)
+#ax.set_xlim(int(x_limit[0]), int(x_limit[1]))
+#ax.set_ylim(int(y_limit[0]), int(y_limit[1]))
 
 plt.show()
