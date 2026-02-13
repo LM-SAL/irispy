@@ -102,7 +102,7 @@ slit_with_sji_offset = SkyCoord(Tx=raster_lon_coords + (-1 * sji_offset), Ty=ras
 ###############################################################################
 # Now we can visualize the difference.
 
-fig = plt.figure(figsize=(7, 7))
+fig = plt.figure(figsize=(9, 9))
 ax = fig.add_subplot(projection=sji_2796_closest)
 sji_2796_closest.plot(ax)
 
