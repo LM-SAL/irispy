@@ -8,6 +8,9 @@ The offset varies between observations and is not fixed.
 
 The cause is unknown at this time and this has not been cross-checked with SSWIDL.
 So it is possible this is just a bug in the Python library.
+
+Comment from author:
+Running this locally gives a different outcome than from the final version online and I have been unable to figure out why.
 """
 
 import matplotlib.pyplot as plt
@@ -102,7 +105,7 @@ slit_with_sji_offset = SkyCoord(Tx=raster_lon_coords + (-1 * sji_offset), Ty=ras
 ###############################################################################
 # Now we can visualize the difference.
 
-fig = plt.figure(figsize=(7, 7))
+fig = plt.figure(figsize=(9, 9))
 ax = fig.add_subplot(projection=sji_2796_closest)
 sji_2796_closest.plot(ax)
 
@@ -112,15 +115,14 @@ slit_location_from_sji_aux = sji_2796[time_idx_2796].wcs.pixel_to_world(
 )
 ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="Slit Pixel Location")
 
-# Now these are the slit locations (some modified by offset values in the axillary data)
+# Now these are the slit locations (with the last two modified by offset values in the axillary data)
 ax.plot_coord(slit, color="white", linestyle="--", linewidth=1, label="Slit WCS")
-ax.plot_coord(slit_with_sg_offset, color="red", linestyle="-.", linewidth=1, label="SG Offset")
-ax.plot_coord(slit_with_sji_offset, color="green", linestyle="-", linewidth=1, label="SJI Offset")
-
+ax.plot_coord(slit_with_sg_offset, color="red", linestyle="-", linewidth=1, label="Slit WCS + SG Offset")
+ax.plot_coord(slit_with_sji_offset, color="green", linestyle="-", linewidth=1, label="Slit WCS + SJI Offset")
 ax.legend()
 
 # "Crop" the image without touching the actual data.
-bbox = SkyCoord([140, 180] * u.arcsec, [50, 90] * u.arcsec, frame=sji_2796_frame)
+bbox = SkyCoord([130, 190] * u.arcsec, [40, 100] * u.arcsec, frame=sji_2796_frame)
 x_limit, y_limit = sji_2796_closest.wcs.world_to_pixel(bbox)
 ax.set_xlim(int(x_limit[0]), int(x_limit[1]))
 ax.set_ylim(int(y_limit[0]), int(y_limit[1]))
