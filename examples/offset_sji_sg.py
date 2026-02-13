@@ -8,6 +8,9 @@ The offset varies between observations and is not fixed.
 
 The cause is unknown at this time and this has not been cross-checked with SSWIDL.
 So it is possible this is just a bug in the Python library.
+
+Comment from author:
+Running this locally gives a different outcome than from the final version online and I have been unable to figure out why.
 """
 
 import matplotlib.pyplot as plt
