@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   core:
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2
     with:
       submodules: false
       coverage: codecov
@@ -52,7 +52,7 @@ jobs:
 
   test:
     needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2
     with:
       submodules: false
       coverage: codecov
@@ -73,36 +73,55 @@ jobs:
 
   docs:
     needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2
     with:
+      default_python: '3.13'
       submodules: false
       pytest: false
+      toxdeps: tox-pypi-filter
+      cache-path: |
+        docs/_build/
+        docs/generated/
+        .tox/sample_data/
       cache-key: docs-${{ github.run_id }}
       libraries: |
         apt:
-          - ffmpeg
+          - libopenjp2-7
           - graphviz
+          - ffmpeg
       envs: |
         - linux: build_docs
 
   online:
     if: "!startsWith(github.event.ref, 'refs/tags/v')"
-    needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
+    needs: [docs]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2
     with:
       default_python: '3.13'
       submodules: false
       coverage: codecov
-      posargs: -n auto --dist loadgroup
+      toxdeps: tox-pypi-filter
       libraries: |
         apt:
+          - libopenjp2-7
+          - graphviz
           - ffmpeg
       envs: |
+        - linux: build_docs-gallery
+          pytest: false
+          cache-path: |
+            docs/_build/
+            docs/generated/
+            .tox/sample_data/
+          cache-key: docs-${{ github.run_id }}
         - linux: py314-online
+          posargs: -n auto --dist loadgroup --color=yes
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   cron:
     needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@main
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2
     with:
       submodules: false
       coverage: codecov
@@ -127,7 +146,7 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'Run publish')
       )
     needs: [test]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@main
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@v2
     with:
       libraries: "ffmpeg"
       test_extras: "dev"

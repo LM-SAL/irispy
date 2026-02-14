@@ -77,6 +77,14 @@ extensions = [
 # Add any paths that contain templates here, relative to this directory.
 # templates_path = ["_templates"]
 
+# Add any paths that contain static files for the docs, relative to this directory.
+html_static_path = ["_static"]
+
+# These paths are either relative to html_static_path or fully qualified paths
+html_css_files = [
+    "css/style.css",
+]
+
 # Register the template for the robots.txt
 html_extra_path = ["robots.txt"]
 
