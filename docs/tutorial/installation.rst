@@ -5,7 +5,7 @@ Installation
 ************
 
 This is the first chapter in the ``irispy`` tutorial, and by the end of it you should have a working installation of Python and ``irispy``.
-For further information and alternative methods for installing ``sunpy`` beyond the recommended approach outlined below, refer to :ref:`sunpy-topic-guide-installing`.
+For further information and alternative methods for installing ``irispy`` beyond the recommended approach outlined below, refer to sunpy's documentation (:ref:`sunpy-topic-guide-installing`).
 
 Installing Python
 =================
@@ -65,16 +65,14 @@ Then select your platform to install miniforge:
 
             bash Miniforge3-$(uname)-$(uname -m).sh
 
-        Once the installer has completed, restart your terminal or system if the changes don't take effect.
+        Once the installer has completed, restart your terminal or log-out and log-in if the changes don't take effect.
 
     .. tab-item:: Windows
         :sync: platform
 
-        Double click the executable file downloaded from
-        the links above.
+        Double click the executable file downloaded from the links above.
 
-        Once the installer has completed you should have a new "miniforge
-        Prompt" entry in your start menu.
+        Once the installer has completed you should have a new "miniforge Prompt" entry in your start menu.
 
 In a new terminal (miniforge Prompt on Windows) run ``conda list`` to test that the install has worked.
 

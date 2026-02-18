@@ -4,9 +4,9 @@
 Acquiring Data
 **************
 
-This section of the tutorial introduces ways to obtain IRIS data from different places.
-The main tutorial below will focus on using the IRIS data search and download from the official IRIS website.
-But we will also introduce the `~sunpy.net.Fido` interface for searching and downloading data from a variety of different sources, including IRIS data from the Virtual Solar Observatory (VSO).
+This section of the tutorial will introduce methods to obtain IRIS data from two different places.
+The main section will focus on using the IRIS data search tool from the official IRIS website.
+But we will also cover the `~sunpy.net.Fido` interface for searching and downloading data from a variety of different sources, including IRIS data from the Virtual Solar Observatory (VSO).
 
 IRIS data search website
 ========================
@@ -16,9 +16,9 @@ It consists of five graphical elements and three steps to the data:
 
 #. IRIS Banner
 #. Selection widgets
-#. Graphical display of search results on a solar image
+#. Graphical display of search results on a SDO/AIA image
 #. Tabular display of search results
-#. Dataset browser/inspector with links to download the data sets
+#. Dataset browser/inspector with links to download the datasets
 
 The IRIS data search tool is optimized for use on landscaped displays of at least 1280x768 pixels.
 The banner and the solar image can be hidden (displayed) by clicking on the red (green) buttons in the upper left corners to accommodate smaller screens.
@@ -31,8 +31,8 @@ If you have difficulty with the tool, you might first try one of these browsers 
 
 **Selection widgets**
 
-There are six widgets available for customized, dynamic, data searches.
-At the most basic this search consists of specifying the **start** and **end** of a time range of interest.
+There are six widgets available for customized dynamic data searches.
+At the most basic, this search consists of specifying the **start** and **end** of a time range of interest.
 When first loaded, these default to select the week surrounding the current date.
 The **start** and **end** times can be moved forward and back a day or a week by using the single and double arrow buttons.
 Specific dates can be entered directly into the text boxes or by using the calendars that popup when one clicks on them.
@@ -62,7 +62,7 @@ Limit sets to specific IRIS Observation IDs or **target**.
 The colors of these last two change to indicate the presence (green) or absence (red) of matching datasets based upon other selections.
 
 When all selections are made, clicking the search button refreshes the results in the display area.
- **Note that the display does not update while you are constructing a search.**
+**Note that the display does not update while you are constructing a search.**
 A range of background SDO/AIA images of the sun corresponding to the start time of query can be selected for the display.
 All filters (other than dates) and displays are cleared by clicking the reset button.
 
@@ -76,7 +76,7 @@ The default setting displays the bounding boxes for the slit jaw (raster) image 
 A sortable list of IRIS observations on the right presents details of the dataset including the time interval, short descriptions, pointing, fields of view, cadences and observation IDs.
 Clicking on an entry in either widget, highlights the selection in the table along with a detailed description in the inspection widget.
 
-.. figure:: iris_search_result.jpg
+.. figure:: ../_static/images/tutorial/iris_search_result.jpg
    :align: center
    :alt: Screenshot of the IRIS inspection widget
 
@@ -108,7 +108,7 @@ The following examples here will use ``Fido``, so lets start by importing it:
     >>> from sunpy.net import Fido, attrs as a
 
 Searching for data
-******************
+------------------
 
 To search for data with `~sunpy.net.Fido`, you need to specify attributes to search with.
 For IRIS data, the most important attribute is `a.Time <sunpy.net.attrs.Time>` and `a.Instrument.iris <sunpy.net.attrs.Instrument>`.
@@ -118,7 +118,7 @@ Some search attributes need one or more values specifying, for example ``Time`` 
 .. code-block:: python
 
     >>> a.Time('2020/3/4', '2020/3/5')
-    <sunpy.net.attrs.Time(2020-03-04 00:00:00.000, 2020-03-06 00:00:00.000)>
+    <sunpy.net.attrs.Time(2020-03-04 00:00:00.000, 2020-03-05 00:00:00.000)>
 
 To search for data use the ``Fido.search`` method:
 
@@ -133,27 +133,28 @@ To see a summary of the results print the result variable that came back from th
 .. code-block:: python
 
     >>> print(result)  # doctest: +REMOTE_DATA
-    <sunpy.net.fido_factory.UnifiedResponse object at ...>
     Results from 1 Provider:
-
+    <BLANKLINE>
     4 Results from the VSOClient:
     Source: https://sdac.virtualsolar.org/cgi/search
     Data retrieval status: http://docs.virtualsolar.org/wiki/VSOHealthReport
     Total estimated size: 2.375 Gbyte
-
-        Start Time               End Time        Source Instrument    Wavelength    Provider  Physobs  Wavetype     Extent X         Extent Y       Extent Width   Extent Type  Size
-                                                                        Angstrom                                                                                                Mibyte
+    <BLANKLINE>
+           Start Time               End Time        Source Instrument    Wavelength    Provider  Physobs  Wavetype     Extent X         Extent Y       Extent Width   Extent Type  Size
+                                                                          Angstrom                                                                                                Mibyte
     ----------------------- ----------------------- ------ ---------- ---------------- -------- --------- -------- ---------------- ---------------- ---------------- ----------- ------
     2020-03-03 22:53:35.000 2020-03-04 01:59:14.000   IRIS       IRIS 1332.0 .. 2835.0    LMSAL intensity   NARROW 790.775695800781 16.8814430236816 230.227996826172 PARTIAL_SUN 2019.0
     2020-03-03 22:53:35.000 2020-03-04 01:59:05.000   IRIS       IRIS 2796.0 .. 2796.0    LMSAL intensity   NARROW 790.774841308594 16.8615531921387 230.227996826172 PARTIAL_SUN   88.0
     2020-03-03 22:53:38.000 2020-03-04 01:59:09.000   IRIS       IRIS 2832.0 .. 2832.0    LMSAL intensity   NARROW    790.775390625 16.8734436035156 230.227996826172 PARTIAL_SUN  104.0
     2020-03-03 22:53:41.000 2020-03-04 01:59:11.000   IRIS       IRIS 1400.0 .. 1400.0    LMSAL intensity   NARROW 790.775695800781 16.8814430236816 230.227996826172 PARTIAL_SUN   54.0
+    <BLANKLINE>
+    <BLANKLINE>
 
 This shows that there are 4 results from the Virtual Solar Observatory (VSO), which is a service which indexes may solar datasets and provides access to them.
-Note that the results are not from the IRIS website, but from the VSO, which is a different service and as such does not have the full set of  data products available on the IRIS website.
+Note that the results are not from the IRIS website, but from the VSO, which is a different service and as such does not have the full set of data products available on the IRIS website.
 
-We should detail the returned results a bit more.
-The first result is the spectragraph data, we know this for two reasons, first because the wavelength range covers the full IRIS spectrograph range, and second because the size of the file is much larger than the slit jaw images.
+We shall detail the returned results a bit more.
+The first result is the spectrograph data, we know this for two reasons, first because the wavelength range covers the full IRIS spectrograph range, and second because the size of the file is much larger than the slit jaw images.
 The other three results are slit jaw images, we know this because the wavelength range covers only a single slit jaw wavelength and the file size is much smaller than the spectrograph data.
 
 We can also filter by other attributes, for example if we only wanted the slit jaw images we could add a filter for the wavelength:
@@ -164,17 +165,19 @@ We can also filter by other attributes, for example if we only wanted the slit j
     >>> filtered_result # doctest: +REMOTE_DATA
     <sunpy.net.fido_factory.UnifiedResponse object at ...>
     Results from 1 Provider:
-
+    <BLANKLINE>
     2 Results from the VSOClient:
     Source: https://sdac.virtualsolar.org/cgi/search
     Data retrieval status: http://docs.virtualsolar.org/wiki/VSOHealthReport
     Total estimated size: 2.209 Gbyte
-
-        Start Time               End Time        Source Instrument    Wavelength    Provider  Physobs  Wavetype     Extent X         Extent Y       Extent Width   Extent Type  Size
-                                                                        Angstrom                                                                                                Mibyte
+    <BLANKLINE>
+           Start Time               End Time        Source Instrument    Wavelength    Provider  Physobs  Wavetype     Extent X         Extent Y       Extent Width   Extent Type  Size
+                                                                          Angstrom                                                                                                Mibyte
     ----------------------- ----------------------- ------ ---------- ---------------- -------- --------- -------- ---------------- ---------------- ---------------- ----------- ------
     2020-03-03 22:53:35.000 2020-03-04 01:59:14.000   IRIS       IRIS 1332.0 .. 2835.0    LMSAL intensity   NARROW 790.775695800781 16.8814430236816 230.227996826172 PARTIAL_SUN 2019.0
     2020-03-03 22:53:35.000 2020-03-04 01:59:05.000   IRIS       IRIS 2796.0 .. 2796.0    LMSAL intensity   NARROW 790.774841308594 16.8615531921387 230.227996826172 PARTIAL_SUN   88.0
+    <BLANKLINE>
+    <BLANKLINE>
 
 But we still get the spectrograph data because it also matches the wavelength filter.
 If we want to only get the raster, we can simply index the results to get just the first result, which is the spectrograph data:
@@ -199,10 +202,10 @@ Here we'll just download the first file in the result:
 
 .. code-block:: python
 
-    >>> downloaded_files = Fido.fetch(filtered_result[0][1]) # doctest: +REMOTE_DATA
-    >>> downloaded_files # doctest: +REMOTE_DATA
+    >>> downloaded_files = Fido.fetch(filtered_result[0][1]) # doctest: +SKIP
+    >>> downloaded_files # doctest: +SKIP
     <parfive.results.Results object at ...>
-    ['.../aia.lev1.335A_2020_01_01T00_00_00.64Z.image_lev1.fits']
+    ['.../iris_l2_20200303_225335_3605202860_SJI_2796_t000.fits.gz']
 
 If any files failed to download, the progress bar will show an incomplete number of files and the `parfive.Results` object will contain a list of the URLs that failed to transfer and the error associated with them.
 This can be accessed with the ``.errors`` attribute or by printing the `~parfive.Results` object:

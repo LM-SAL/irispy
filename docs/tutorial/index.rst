@@ -21,10 +21,11 @@ Each chapter of the tutorial provides a self-contained set of codes.
 However, we do recommend that first read over the :ref:`sunpy-tutorial-index` to be familiar with the broader Python ecosystem around solar physics.
 That tutorial covers more low level topics such as units and general World Coordinate Systems (WCS) which will not be covered here in the same detail.
 
-Later chapters build on the concepts introduced in earlier chapters.
-
 .. toctree::
    :maxdepth: 2
 
    installation
    acquiring_data
+   level_2
+   calibration
+   data_notes

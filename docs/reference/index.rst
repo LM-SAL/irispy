@@ -8,7 +8,8 @@ API Reference
    :maxdepth: 2
 
    irispy
+   io
+   meta
    sji
    spectrograph
-   io
    utils

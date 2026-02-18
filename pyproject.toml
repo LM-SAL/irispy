@@ -45,6 +45,7 @@ optional-dependencies.all = [ "irispy-lmsal" ]
 optional-dependencies.dev = [ "irispy-lmsal[docs,tests]" ]
 optional-dependencies.docs = [
   "aiapy",
+  "astroscrappy",
   "dask[distributed]",
   "irispy-lmsal[all]",
   "pooch",

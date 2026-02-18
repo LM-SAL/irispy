@@ -4,12 +4,12 @@
 ``irispy`` documentation
 ************************
 
-``irispy`` is an open-source Python package that provides tools to read, manipulate, and visualize `Interface Region Imaging Spectrograph (IRIS)`_ data.
+``irispy`` is an open-source Python package that provides tools to read, manipulate, and visualize `Interface Region Imaging Spectrograph (IRIS) <https://iris.lmsal.com/>`__ data.
 `The data is publicly available and provides access to co-aligned SDO/AIA data and more. <https://iris.lmsal.com/search/>`__
 
-The goal of ``irispy`` is to provide a set of classes for handling both SJI and spectrograph observations.
-These link the observations with various forms of supporting data including: measurement uncertainties; units; a data mask to mark pixels with unreliable or unphysical data values; WCS (World Coordinate System) transformations that describe the position, wavelengths, and times represented by the pixels; and general metadata.
-These classes also provide methods for applying a number of calibration routines including exposure time correction and conversion between data number, photons, and energy units.
+The goal of ``irispy`` is to provide a set of classes for handling both imaging (slit-jaw) and spectral observations (spectrograph).
+The classes link the observations with various forms of supporting data including: measurement uncertainties; units; a data mask to mark pixels with unreliable or unphysical data values; WCS (World Coordinate System) transformations that describe the position, wavelengths, and times represented by the pixels; and general metadata.
+These classes also provide methods for applying a number of calibration routines including exposure time correction and conversion between data number, photons, and energy units, referred to as radiometric calibration.
 
 .. warning::
 
