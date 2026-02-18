@@ -27,3 +27,4 @@ Later chapters build on the concepts introduced in earlier chapters.
    :maxdepth: 2
 
    installation
+   acquiring_data
