@@ -116,25 +116,6 @@ Cleaning Up
 The slit-jaw CCD contains some particles that cause dark regions of order up to a few arcseconds in size in the slit.
 These features are marked as bad pixels and set to zero values (0) in ``iris_prep`` so they can be easily recognized during data analysis.
 The particles are stable in position and do not let any light through - they are completely dark.
-They are most prominent in the FUV images (1400Å and 1330Å) and much less visible in the NUV images (2796Å and 2830Å).
+They are most prominent in the FUV images (1400 Å and 1330 Å) and much less visible in the NUV images (2796 Å and 2830 Å).
 
-These dust spots can be cosmetically corrected in slit-jaw images and movies using ``IRIS_DUSTBUSTER``.
-The routine is faster and more effective than general purpose image correction routines because it is able to take advantage of two characteristics of the dust spots:
-
-1. Their location in the CCD frame is well-known.
-2. The IRIS level 2 movies often consist of rasters such that there are usually valid measurements of the solar features obscured by the dust available from previous or subsequent frames.
-
-It can be run as follows:
-
-.. code-block:: python
-
-    >>> # IDL> cleandat = IRIS_DUSTBUSTER(hdr, dat)
-
-where, again, ``dat`` and ``hdr`` are the results of, e.g., ``read_iris_l2``; the output ``cleandat`` has the same data type and dimensions as dat, with the dust pixels replaced by the average value of the same solar coordinates in nearby frames (for a raster), or by a blurred value of the nearby neighborhood (for a sit-and-stare).
-Note that the dustbuster should be run prior to intensity scaling, so a quick series of commands to read, set the color table, clean and scale, and display a slit-jaw movie would be as follows:
-
-    IDL> read_iris_l2, lev2_sji_file, hdr, dat
-    IDL> iris_lct, hdr
-    IDL> ploop, iris_intscale(iris_dustbuster(hdr, dat), hdr)
-
-The dustbuster generally does not try to remove the slit from the SJI movies; if you want to remove it (for example, if you are trying to cross-correlate image sequences without locking on to the slit), set the ``/slit`` keyword in the call to ``iris_dustbuster``. Note that the slit contrast has been decreasing in the FUV channels, especially the 1330 SJI, over time; this is not a result of the action of the dustbuster, but an intrinsic property of the data.
+These dust spots can be cosmetically corrected in slit-jaw images and movies but there is currently no routine to do this in ``irispy``.
