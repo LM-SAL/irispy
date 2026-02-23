@@ -26,6 +26,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   core:
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2
@@ -40,7 +43,6 @@ jobs:
         - linux: py314
 
   sdist_verify:
-    permissions: read-all
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
