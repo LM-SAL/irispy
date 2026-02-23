@@ -97,7 +97,7 @@ Level 3 data exist only for spectral rasters, and are 4D datacubes stored as (x,
    The Level 2 data are fully reduced, calibrated, etc., and packaged such that they are "shovel ready" for further analysis.
    On the other hand IRIS Level 1 data **MUST** be passed through the calibration routines `iris_prep.pro <http://sohowww.nascom.nasa.gov/solarsoft/iris/idl/lmsal/calibration/iris_prep.pro>`__ by an expert user to reach only level 1.5.
    The transition from level 1.5 to level 2 is a non-trivial exercise in packaging the data and while the code is available, it is currently not being supported for general use.
-   **Therefore, we strongly recommend that the non-expert or casual IRIS users use the Level 2 data products**.
+   **Therefore, we strongly recommend that everyone use the Level 2 data products.**
 
 .. _iris_table3:
 

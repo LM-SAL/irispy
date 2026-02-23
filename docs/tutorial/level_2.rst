@@ -77,7 +77,6 @@ For example, ``TIME`` has the value 0, meaning that ``data[:, 0]`` will give an 
 
 The technical metadata in the last extension are usually not useful for the end-user.
 Their content is only useful for reproducing the exact steps of the data calibration, and contain details such as FRM, FDB, and CRS IDs, names of level 1 files used.
-The header of the last extension contains some information about the format.
 
 Reading Level 2 Data
 ====================

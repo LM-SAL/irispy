@@ -13,7 +13,7 @@ These classes also provide methods for applying a number of calibration routines
 
 .. warning::
 
-    Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
+    Please be aware that the package name on pypi and conda-forge is `irispy-lmsal <https://pypi.org/project/irispy-lmsal/>`__ to avoid name clashes with other packages.
     However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
 
 .. grid:: 1 2 2 2
