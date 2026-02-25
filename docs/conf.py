@@ -182,13 +182,21 @@ autoclass_content = "both"
 
 # Configuration for sphinx-gallery
 from sunpy_sphinx_theme import PNG_ICON
+from sphinx_gallery.sorting import ExplicitOrder
 
 sphinx_gallery_conf = {
-    "backreferences_dir": Path("generated") / "modules",
+    "backreferences_dir": str(Path("generated") / "modules"),
     "filename_pattern": "^((?!skip_).)*$",
-    "examples_dirs": Path("..") / "examples",
+    "examples_dirs": str(Path("..") / "examples"),
+    "subsection_order": ExplicitOrder(
+        [
+            "../examples/basic",
+            "../examples/advanced",
+            "../examples/misc",
+        ]
+    ),
     "within_subsection_order": "ExampleTitleSortKey",
-    "gallery_dirs": Path("generated") / "gallery",
+    "gallery_dirs": str(Path("generated") / "gallery"),
     "default_thumb_file": PNG_ICON,
     "abort_on_example_error": False,
     "plot_gallery": "True",
