@@ -1,8 +1,10 @@
-.. _irispy-tutorial-data-notes:
+.. _irispy-tutorial-data-idiosyncrasies:
 
-***************
-IRIS data notes
-***************
+*******************
+Data Idiosyncrasies
+*******************
+
+This page describes some of the particularities of IRIS data that users should be aware of when working with the data.
 
 Background in FUV data
 ======================
@@ -10,7 +12,7 @@ Background in FUV data
 FUV spectra with longer exposure times show a faint background most likely caused by a light leak from wavelengths significantly longer than the FUV.
 This means that the light leak is absorbed at a different CCD depth than the FUV light and thus does not show the same CCD flat-field (which for the FUV is quite prominent and dominated by the CCD annealing pattern).
 The light leak effectively acts as an extra "dark current" although it appears to have varying intensity levels for different pointings on the Sun.
-This background has been characterized and is automatically removed by ``iris_prep``, and therefore subtracted in level 1.5 and level 2 data.
+This background has been characterized and is automatically removed by ``iris_prep.pro``, and therefore subtracted in level 1.5 and level 2 data.
 
 Coalignment between channels and SJI & spectra
 ==============================================
@@ -57,7 +59,7 @@ Particles on slit-jaw images
 ============================
 
 The slit-jaw CCD contains some particles that cause dark regions of order up to a few arcseconds in size in the slit.
-These features are marked as bad pixels and set to zero values (0) in ``iris_prep`` so they can be easily recognized during data analysis.
+These features are marked as bad pixels and set to zero values (0) in ``iris_prep.pro`` so they can be easily recognized during data analysis.
 The particles are stable in position and do not let any light through - they are completely dark.
 They are most prominent in the FUV images (1400 Å and 1330 Å) and much less visible in the NUV images (2796 Å and 2830 Å).
 
@@ -114,7 +116,7 @@ Cleaning Up
 -----------
 
 The slit-jaw CCD contains some particles that cause dark regions of order up to a few arcseconds in size in the slit.
-These features are marked as bad pixels and set to zero values (0) in ``iris_prep`` so they can be easily recognized during data analysis.
+These features are marked as bad pixels and set to zero values (0) in ``iris_prep.pro`` so they can be easily recognized during data analysis.
 The particles are stable in position and do not let any light through - they are completely dark.
 They are most prominent in the FUV images (1400 Å and 1330 Å) and much less visible in the NUV images (2796 Å and 2830 Å).
 
