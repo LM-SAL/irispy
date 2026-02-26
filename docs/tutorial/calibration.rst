@@ -24,7 +24,7 @@ Radiometric Calibration
 
 The IRIS data are given in Data Number units (DN).
 To convert these to a flux in physical units (e.g., erg s\ :sup:`-1` sr\ :sup:`-1` cm\ :sup:`-2` Å\ :sup:`-1`) one must perform radiometric calibration.
-The calibration data is included ``irispy``, and can be read:
+The latest calibration data are included in ``irispy`` and can be read:
 
 .. code-block:: python
 

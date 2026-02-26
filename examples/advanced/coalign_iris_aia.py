@@ -14,7 +14,7 @@ Therefore this example is more a showcase of functionally.
 import matplotlib.pyplot as plt
 import numpy as np
 import pooch
-from sunkit_image.coalignment import coalign
+from sunkit_image.coalignment import coalign_map
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -117,7 +117,7 @@ if np.any(nan_mask):
     sji_map_corrected_data[nan_mask] = 0
 sji_map_corrected = sunpy.map.Map(sji_map_corrected_data, sji_map.meta)
 
-coaligned_sji_map = coalign(sji_map_corrected, aia_upsampled, method="match_template")
+coaligned_sji_map = coalign_map(sji_map_corrected, aia_upsampled, method="match_template")
 
 # ###############################################################################
 # Finally, we can plot the results of the co-alignment.

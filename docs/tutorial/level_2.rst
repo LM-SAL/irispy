@@ -16,7 +16,7 @@ The level 2 data are a combination of individual frames for the duration of a gi
 There are two types of IRIS level 2 files: spectrograph and slit-jaw.
 The internal structure is different for spectrograph and slit-jaw files, and file naming convention is the following:
 
-* Spectrograph: ``iris_l2_<day>_<time>_<OBSID>_raster_t000_r<raster number>.fits``, where ``<day>`` is YYYMMDD, ``<time>`` is the starting time in HHMMSS, and the raster number starts at zero and up to the total number of raster scans (or repeats) minus one.
+* Spectrograph: ``iris_l2_<day>_<time>_<OBSID>_raster_t000_r<raster number>.fits``, where ``<day>`` is YYYYMMDD, ``<time>`` is the starting time in HHMMSS, and the raster number starts at zero and up to the total number of raster scans (or repeats) minus one.
 
 * Slit-jaw: ``iris_l2_<day>_<time>_<OBSID>_SJI_<filter>_t000.fits``, where ``<filter>`` is the filter central wavelength in Å (1330, 1400, 2796, or 2832).
 
@@ -85,7 +85,7 @@ Reading Level 2 Data
 Currently, ``irispy`` does not provide a way to download the data from the `IRIS archive. <https://iris.lmsal.com/data.html>`__
 We recommend browsing the catalogue using your web browser.
 
-The following examples in this section will showcase how how to read the fits file header, load an IRIS raster window (region) into memory, as well as locate important auxiliary information.
+The following examples in this section will showcase how to read the FITS file header, load an IRIS raster window (region) into memory, as well as locate important auxiliary information.
 
 This guide uses some "sample data" from the IRIS archive that can be accessed:
 `The sample data is from this observation.
@@ -273,14 +273,14 @@ For example, we can access the description of the observation from the primary h
     >>> iris_sji.meta["OBS_DESC"]  # doctest: +REMOTE_DATA
     'Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2'
 
-When the observation sequence started onboard IRIS, is given by the keyword ``STARTOBS``:
+The time when the observation sequence started onboard IRIS is given by the keyword ``STARTOBS``:
 
 .. code-block:: python
 
     >>> iris_sji.meta['STARTOBS']   # doctest: +REMOTE_DATA
     '2021-10-01T06:09:24.920'
 
-The exposure times are calculated from the auxiliary metadata, and are given in seconds and as such is not a key but a property of the metadata object:
+The exposure times are calculated from the auxiliary metadata, are given in seconds, and are therefore a property of the metadata object rather than a header key:
 
 .. code-block:: python
 
@@ -391,7 +391,7 @@ Both the raster and slit-jaw cubes can be visualized using the ``plot`` method.
 
     Under the hood, irispy via `ndcube` via astropy using `matplotlib` to visualize the image meaning that plots built with irispy can be further customized using either `astropy's WCSAxes <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__ or `matplotlib` API.
 
-Note that the colormap have been set by ``irispy`` based on the wavelength of the observation.
+Note that the colormap has been set by ``irispy`` based on the wavelength of the observation.
 This only applies to the slit-jaw images, as the raster cubes do not have a single wavelength thus the colormap is set to a default matplotlib one.
 
 .. plot::

@@ -54,7 +54,7 @@ Breaking Changes
   Removed ``convert_to`` method. (`#81 <https://github.com/LM-SAL/irispy/pull/81>`__)
 - Increased minimum version of Python to 3.11, sunpy to 7.0.0 and dkist to 1.15.0 (`#81 <https://github.com/LM-SAL/irispy/pull/81>`__)
 - All references to irispy-lmsal have been removed and now the package is simply referred to as ``irispy``.
-  The package name on pypi and conda-forge is still the same due to conflicts with existing packages. (`#85 <https://github.com/LM-SAL/irispy/pull/85>`__)
+  The package name on PyPI and conda-forge is still the same due to conflicts with existing packages. (`#85 <https://github.com/LM-SAL/irispy/pull/85>`__)
 
 
 Internal Changes

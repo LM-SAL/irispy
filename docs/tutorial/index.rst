@@ -6,7 +6,7 @@ The ``irispy`` tutorial
 
 Welcome to the tutorial for ``irispy``.
 The goal of this tutorial is to provide a gentle introduction to using ``irispy`` to analyze IRIS data.
-``irispy`` is a instrument team led, free and open-source Python toolkit for analyzing IRIS data.
+``irispy`` is an instrument team-led, free and open-source Python toolkit for analyzing IRIS data.
 
 **Who this is for**
 

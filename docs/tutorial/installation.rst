@@ -16,8 +16,8 @@ As well as containing a Python installation, this virtual environment provides a
 If you already have Python and ``conda`` working you can skip the next section.
 
 `If you are using Anaconda, we recommend that you uninstall it as the default package channel(s) have a restrictive license which means you might not be able to use it for free <https://sunpy.org/posts/2024/2024-08-09-anaconda/>`__.
-Instead, we recommend that you use miniforge which is a minimal installer that setups ``conda`` with the ``conda-forge`` channel, which is free to use for everyone.
-If you are using miniforge, you can skip the next section
+Instead, we recommend that you use miniforge which is a minimal installer that set ups ``conda`` with the ``conda-forge`` channel, which is free to use for everyone.
+If you are using miniforge, you can skip the next section.
 
 .. _irispy-tutorial-installing-miniforge:
 
@@ -72,14 +72,14 @@ Then select your platform to install miniforge:
 
         Double click the executable file downloaded from the links above.
 
-        Once the installer has completed you should have a new "miniforge Prompt" entry in your start menu.
+        Once the installer has completed you should have a new "Miniforge Prompt" entry in your start menu.
 
-In a new terminal (miniforge Prompt on Windows) run ``conda list`` to test that the install has worked.
+In a new terminal (Miniforge Prompt on Windows) run ``conda list`` to test that the install has worked.
 
 Installing irispy
 =================
 
-To install ``irispy``, start by launching a terminal (under a UNIX-like system) or the miniforge Prompt (under Windows).
+To install ``irispy``, start by launching a terminal (under a UNIX-like system) or the Miniforge Prompt (under Windows).
 Now we will create and activate a new virtual environment to install ``irispy`` into:
 
 .. code-block:: bash

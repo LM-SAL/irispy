@@ -20,7 +20,7 @@ It consists of five graphical elements and three steps to the data:
 #. Tabular display of search results
 #. Dataset browser/inspector with links to download the datasets
 
-The IRIS data search tool is optimized for use on landscaped displays of at least 1280x768 pixels.
+The IRIS data search tool is optimized for use on landscape displays of at least 1280x768 pixels.
 The banner and the solar image can be hidden (displayed) by clicking on the red (green) buttons in the upper left corners to accommodate smaller screens.
 The data search tool has been tested with recent versions of Firefox, Safari and Chrome browsers.
 If you have difficulty with the tool, you might first try one of these browsers to ensure compatibility.
@@ -35,7 +35,7 @@ There are six widgets available for customized dynamic data searches.
 At the most basic, this search consists of specifying the **start** and **end** of a time range of interest.
 When first loaded, these default to select the week surrounding the current date.
 The **start** and **end** times can be moved forward and back a day or a week by using the single and double arrow buttons.
-Specific dates can be entered directly into the text boxes or by using the calendars that popup when one clicks on them.
+Specific dates can be entered directly into the text boxes or by using the calendars that pop up when one clicks on them.
 The total **count** of datasets available within the time range appears at the bottom left of this selection area.
 By default, only datasets that are completely processed are displayed.
 If you wish to include ones that are still processing, uncheck the **only OBS with data** box below **count** (not shown in figure).
@@ -99,7 +99,7 @@ Now we will describe how to search for and download IRIS data using sunpy's `~su
 `~sunpy.net.Fido` is a unified interface for searching and fetching solar physics data irrespective of the underlying client or web service through which the data is obtained.
 This is not a general tutorial for `~sunpy.net.Fido`, please read :ref:`sunpy-tutorial-acquiring-data-index` for a more in depth introduction to using `~sunpy.net.Fido` to search for and download data from a variety of different sources.
 
-The following examples here will use ``Fido``, so lets start by importing it:
+The following examples will use ``Fido``, so let's start by importing it:
 
 .. code-block:: python
 
@@ -150,7 +150,7 @@ To see a summary of the results print the result variable that came back from th
     <BLANKLINE>
     <BLANKLINE>
 
-This shows that there are 4 results from the Virtual Solar Observatory (VSO), which is a service which indexes may solar datasets and provides access to them.
+This shows that there are 4 results from the Virtual Solar Observatory (VSO), which is a service which indexes many solar datasets and provides access to them.
 Note that the results are not from the IRIS website, but from the VSO, which is a different service and as such does not have the full set of data products available on the IRIS website.
 
 We shall detail the returned results a bit more.

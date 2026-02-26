@@ -5,7 +5,7 @@ Example Gallery
 ***************
 
 This gallery contains examples of how to use ``irispy``.
-Each example is written to be self-contained and attempt to explain each concept within its text.
+Each example is written to be self-contained and attempts to explain each concept within its text.
 
 **We are always looking for more gallery examples, so if you have ideas or code, please do get in touch and we can work on new examples!**
 

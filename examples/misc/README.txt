@@ -1,4 +1,4 @@
 Miscellaneous
 =============
 
-Examples which are useful but not focused on a topic but more of informational in nature.
+Examples which are useful but not focused on a specific topic, and are more informational in nature.
