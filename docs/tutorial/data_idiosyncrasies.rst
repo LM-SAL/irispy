@@ -51,8 +51,8 @@ IRIS passes through the South Atlantic Anomaly (SAA) on a regular basis.
 The impact of energetic particles on the CCD camera causes bright hits/pixels.
 These can be removed with any of the multitude of cosmic ray removal procedures available in Python.
 ``irispy`` does not have a built-in routine to remove cosmic rays, but the user can apply any of the available routines to the data.
-One such example is the `astroscrappy` package and is used in this example :ref:`sphx_glr_generated_gallery_removing_spikes_sji.py`.
-Note that is is only for the slit-jaw images, and not the spectrograms and that is a more complex task to remove cosmic rays from the spectrograms.
+One such example is the `astroscrappy` package and is used in this example :ref:`sphx_glr_generated_gallery_basic_removing_spikes.py`.
+This example showcases how well it works and the pitfalls you might encounter when applying it to IRIS data.
 Cosmic rays are **not removed** from the IRIS data during normal calibration/pipeline processing to avoid introducing artifacts.
 
 Particles on slit-jaw images
