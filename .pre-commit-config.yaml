@@ -38,11 +38,11 @@ repos:
         exclude: ".*(.fits|.fts|.fit|.header|.txt|tca.*|.json)$|^CITATION.rst$"
       - id: mixed-line-ending
         exclude: ".*(.fits|.fts|.fit|.header|.txt|tca.*)$"
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
-    hooks:
-      - id: codespell
-        args: [ "--write-changes" ]
+  # See https://github.com/python-trio/trio/pull/3255
+  -   repo: https://github.com/adhtruong/mirrors-typos
+      rev: v1.43.5
+      hooks:
+      -   id: typos
 ci:
   autofix_prs: false
   autoupdate_schedule: "quarterly"
