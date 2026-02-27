@@ -103,7 +103,7 @@ def test_get_latest_response_to_idl(idl_response):
     np_test.assert_almost_equal(iris_response["AREA_SJI"][3].to_value(), idl_response["AREA_SJI"][3], decimal=4)
 
 
-def test_get_latest_response_mutliple_inputs():
+def test_get_latest_response_multiple_inputs():
     times = parse_time(["2025-08-05T22:25:04.723", "2025-08-06T22:25:04.723", "2025-08-07T22:25:04.723"])
     iris_response = get_latest_response(times)
     assert len(iris_response) == 3
