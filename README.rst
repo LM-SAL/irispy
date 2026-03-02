@@ -25,16 +25,19 @@ Usage of Generative AI
 ----------------------
 
 We expect authentic engagement in our community.
-**Do no post the output from Large Language Models or similar generative AI as code, issues or comments on GitHub or any other platform.**
+Be wary of posting output from large language models or similar generative AI as comments on GitHub or any other platform, as such comments tend to be formulaic and low‑quality content.
+**Do not post the output from Large Language Models or similar generative AI as code, issues or comments on GitHub or any other platform.**
 If you use generative AI tools as an aid in developing code or documentation changes, ensure that you fully understand the proposed changes and can explain why they are the correct approach and an improvement to the current state.
-For more information see our documentation on fair and appropriate [AI usage](https://docs.sunpy.org/en/latest/dev_guide/contents/ai_usage.html).
+For more information see our documentation on fair and appropriate `AI usage <https://docs.sunpy.org/en/latest/dev_guide/contents/ai_usage.html>`__.
 
 License
 -------
 
-This project is Copyright (c) IRIS Instrument Team and licensed under the terms of the BSD 3-Clause license.
-This package is based upon the `Openastronomy packaging guide <https://github.com/OpenAstronomy/packaging-guide>`_ which is licensed under the BSD 3-clause licence.
-See the licenses folder for more information.
+This project is Copyright (c) IRIS Instrument Team and licensed under
+the terms of the BSD 3-Clause license. This package is based upon
+the `Openastronomy packaging guide <https://github.com/OpenAstronomy/packaging-guide>`__
+which is licensed under the BSD 3-clause licence. See the licenses folder for
+more information.
 
 Contributing
 ------------
@@ -56,4 +59,8 @@ Being an open source contributor doesn't just mean writing code, either.
 You can help out by writing documentation, tests, or even giving feedback about the project (and yes - that includes giving feedback about the contribution process).
 Some of these contributions may be the most valuable to the project as a whole, because you're coming to the project with fresh eyes, so you can see the errors and assumptions that seasoned contributors have glossed over.
 
-Note: This disclaimer was originally written by `Adrienne Lowe <https://github.com/adriennefriend>`_ for a `PyCon talk <https://www.youtube.com/watch?v=6Uj746j9Heo>`_, and was adapted by irispy based on its use in the README file for the `MetPy project <https://github.com/Unidata/MetPy>`_.
+Note: This disclaimer was originally written by
+`Adrienne Lowe <https://github.com/adriennefriend>`__ for a
+`PyCon talk <https://www.youtube.com/watch?v=6Uj746j9Heo>`__, and was adapted by
+irispy-lmsal based on its use in the README file for the
+`MetPy project <https://github.com/Unidata/MetPy>`__.
