@@ -67,4 +67,4 @@ A detailed discussion of the radiometric calibration steps for IRIS and how to u
    The level 2 FITS headers have only one value for the exposure time (the value without AEC).
    The sequence-dependent exposure times are available in the auxiliary metadata in the FITS files (see :ref:`irispy-tutorial-lev2`), with table index given by ``EXPTIMEF``, ``EXPTIMEN``, and ``EXPTIME`` for FUV, NUV, and slit-jaw, respectively.
 
-``irispy`` has a routine to perform the conversion from DN to physical units and is described in this example :ref:`sphx_glr_generated_gallery_basic_radiometric_calibration.py`.
+``irispy`` has a routine to perform the conversion from DN to physical units and is described in this example :ref:`sphx_glr_generated_gallery_how_to_07_radiometric_calibration.py`.

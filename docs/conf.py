@@ -190,12 +190,12 @@ sphinx_gallery_conf = {
     "examples_dirs": str(Path("..") / "examples"),
     "subsection_order": ExplicitOrder(
         [
-            "../examples/basic",
-            "../examples/advanced",
+            "../examples/how_to",
+            "../examples/tutorial",
             "../examples/misc",
         ]
     ),
-    "within_subsection_order": "ExampleTitleSortKey",
+    "within_subsection_order": "FileNameSortKey",
     "gallery_dirs": str(Path("generated") / "gallery"),
     "default_thumb_file": PNG_ICON,
     "abort_on_example_error": False,

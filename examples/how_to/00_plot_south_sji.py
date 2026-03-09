@@ -1,7 +1,7 @@
 """
-===========
-A quick SJI
-===========
+================
+Plot a quick SJI
+================
 
 In this example we will show how to plot a South Pole SJI dataset.
 """

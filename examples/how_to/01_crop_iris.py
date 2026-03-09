@@ -1,7 +1,7 @@
 """
-=================
-Cropping IRIS SJI
-=================
+=============
+Crop IRIS SJI
+=============
 
 In this example we will show crop a IRIS dataset and the particularity of the crop
 operation.

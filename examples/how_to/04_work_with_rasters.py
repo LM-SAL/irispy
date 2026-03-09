@@ -1,7 +1,7 @@
 """
-===============================
-Working with spectrograph files
-===============================
+============================
+Work with spectrograph files
+============================
 
 In this example, we will showcase how to open, crop and plot IRIS spectrograph data.
 """

@@ -1,7 +1,7 @@
 """
-=============================
-Co-align IRIS SJI  to SDO/AIA
-=============================
+============================
+Co-align IRIS SJI to SDO/AIA
+============================
 
 In this example we will show how to co-align a rolled IRIS dataset to SDO/AIA.
 

@@ -1,7 +1,7 @@
 """
-=======================================
-Removing Cosmic Ray Hits from IRIS data
-=======================================
+=====================================
+Remove Cosmic Ray Hits from IRIS data
+=====================================
 
 This example illustrates how to remove cosmic ray hits from a IRIS SJI FITS file.
 using `astroscrappy.detect_cosmics <https://astroscrappy.readthedocs.io/en/latest/api/astroscrappy.detect_cosmics.html>`__.
