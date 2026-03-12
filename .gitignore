@@ -263,4 +263,4 @@ package.json
 *.log
 
 # Examples data
-examples/*.fits
+examples/**/*.fits
