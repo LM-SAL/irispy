@@ -191,7 +191,9 @@ sphinx_gallery_conf = {
     "subsection_order": ExplicitOrder(
         [
             "../examples/how_to",
-            "../examples/tutorial",
+            "../examples/plotting",
+            "../examples/coalign",
+            "../examples/analysis",
             "../examples/misc",
         ]
     ),

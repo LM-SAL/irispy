@@ -1,6 +1,6 @@
 """
 ============================
-Work with spectrograph files
+Manipulate spectrograph data
 ============================
 
 In this example, we will showcase how to open, crop and plot IRIS spectrograph data.
