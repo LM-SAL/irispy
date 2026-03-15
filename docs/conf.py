@@ -124,7 +124,6 @@ intersphinx_mapping = {
     "mpl_animators": ("https://docs.sunpy.org/projects/mpl-animators/en/latest/", None),
     "ndcube": ("https://docs.sunpy.org/projects/ndcube/en/latest/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
-    "pandas": ("https://pandas.pydata.org/pandas-docs/stable/", None),
     "parfive": ("https://parfive.readthedocs.io/en/latest/", None),
     "python": ("https://docs.python.org/3/", None),
     "reproject": ("https://reproject.readthedocs.io/en/latest/", None),
