@@ -12,7 +12,7 @@ from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 
 from irispy.utils.constants import SPECTRAL_BAND
 
-__all__ = ["SGMeta", "SJIMeta"]
+__all__ = ["BaseMeta", "SGMeta", "SJIMeta"]
 
 
 class BaseMeta(NDMeta):
@@ -145,7 +145,7 @@ class BaseMeta(NDMeta):
         """
         The spectral band of the spectral window.
         """
-        return SPECTRAL_BAND[self.spectral_window]
+        return SPECTRAL_BAND.get(self.spectral_window, self.spectral_window)
 
     @property
     def raster_fov_width_y(self):
@@ -206,6 +206,10 @@ class BaseMeta(NDMeta):
 
 
 class SJIMeta(BaseMeta, RemoteSensorMetaABC):
+    """
+    Metadata class for IRIS slit-jaw images.
+    """
+
     def __init__(self, header, **kwargs) -> None:
         super().__init__(header, **kwargs)
         self._iwin = 1
@@ -235,6 +239,10 @@ class SJIMeta(BaseMeta, RemoteSensorMetaABC):
 
 
 class SGMeta(BaseMeta, SlitSpectrographMetaABC):
+    """
+    Metadata class for IRIS slit spectrograph data.
+    """
+
     def __init__(self, header, spectral_window, **kwargs) -> None:
         super().__init__(header, **kwargs)
         spectral_windows = np.array([self[f"TDESC{i}"] for i in range(1, self["NWIN"] + 1)])

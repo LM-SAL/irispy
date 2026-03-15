@@ -57,6 +57,7 @@ warnings.filterwarnings("error", category=AstropyDeprecationWarning)
 maximum_signature_line_length = 80
 
 extensions = [
+    "matplotlib.sphinxext.plot_directive",
     "sphinx_automodapi.automodapi",
     "sphinx_automodapi.smart_resolver",
     "sphinx_changelog",
@@ -76,6 +77,14 @@ extensions = [
 
 # Add any paths that contain templates here, relative to this directory.
 # templates_path = ["_templates"]
+
+# Add any paths that contain static files for the docs, relative to this directory.
+html_static_path = ["_static"]
+
+# These paths are either relative to html_static_path or fully qualified paths
+html_css_files = [
+    "css/style.css",
+]
 
 # Register the template for the robots.txt
 html_extra_path = ["robots.txt"]
@@ -110,11 +119,11 @@ with Path("nitpick-exceptions").open() as nitpick_exceptions:
 intersphinx_mapping = {
     "aiapy": ("https://aiapy.readthedocs.io/en/latest/", None),
     "astropy": ("https://docs.astropy.org/en/latest/", None),
+    "astroscrappy": ("https://astroscrappy.readthedocs.io/en/latest/", None),
     "matplotlib": ("https://matplotlib.org/stable", None),
     "mpl_animators": ("https://docs.sunpy.org/projects/mpl-animators/en/latest/", None),
     "ndcube": ("https://docs.sunpy.org/projects/ndcube/en/latest/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
-    "pandas": ("https://pandas.pydata.org/pandas-docs/stable/", None),
     "parfive": ("https://parfive.readthedocs.io/en/latest/", None),
     "python": ("https://docs.python.org/3/", None),
     "reproject": ("https://reproject.readthedocs.io/en/latest/", None),
@@ -172,13 +181,23 @@ autoclass_content = "both"
 
 # Configuration for sphinx-gallery
 from sunpy_sphinx_theme import PNG_ICON
+from sphinx_gallery.sorting import ExplicitOrder
 
 sphinx_gallery_conf = {
-    "backreferences_dir": Path("generated") / "modules",
+    "backreferences_dir": str(Path("generated") / "modules"),
     "filename_pattern": "^((?!skip_).)*$",
-    "examples_dirs": Path("..") / "examples",
-    "within_subsection_order": "ExampleTitleSortKey",
-    "gallery_dirs": Path("generated") / "gallery",
+    "examples_dirs": str(Path("..") / "examples"),
+    "subsection_order": ExplicitOrder(
+        [
+            "../examples/how_to",
+            "../examples/plotting",
+            "../examples/coalign",
+            "../examples/analysis",
+            "../examples/misc",
+        ]
+    ),
+    "within_subsection_order": "FileNameSortKey",
+    "gallery_dirs": str(Path("generated") / "gallery"),
     "default_thumb_file": PNG_ICON,
     "abort_on_example_error": False,
     "plot_gallery": "True",

@@ -1,7 +1,7 @@
 """
-==================================
-Opening the IRIS Aligned AIA Cubes
-==================================
+===============================
+Open the IRIS Aligned AIA Cubes
+===============================
 
 In this example we will show how ``irispy`` handles the AIA cubes provided by the IRIS
 team. These cubes are aligned to the IRIS observation and are 50" larger than the IRIS

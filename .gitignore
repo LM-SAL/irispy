@@ -263,4 +263,4 @@ package.json
 *.log
 
 # Examples data
-examples/iris_l2_20140708_114109_3824262996_raster_t000_r00000.fits
+examples/**/*.fits

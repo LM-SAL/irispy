@@ -1,8 +1,8 @@
 .. _irispy_changelog:
 
-**************
-Full Changelog
-**************
+*********
+Changelog
+*********
 
 .. changelog::
    :towncrier: ../

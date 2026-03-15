@@ -36,6 +36,7 @@ READOUT_NOISE = {
 RADIANCE_UNIT = u.erg / u.cm**2 / u.s / u.steradian / u.Angstrom
 SLIT_WIDTH = 0.33 * u.arcsec
 SPECTRAL_BAND = {
+    "1330": "FUV",
     "1336": "FUV",
     "1343": "FUV",
     "1349": "FUV",
