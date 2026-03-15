@@ -34,7 +34,7 @@ from irispy.utils import image_clipping
 
 downloaded_tar_iris_file = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/07/08/20140708_114109_3824262996/iris_l2_20140708_114109_3824262996_raster.tar.gz",
-    known_hash="0935729fad679bbe35f721b27040d808b7ed600d1a33d849656461388761fb4d",
+    known_hash="21cff86fd0064936ce6807b1334ea1d3d50f3d358e5888810fba8e9bc1118567",
 )
 
 ###############################################################################
