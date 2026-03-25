@@ -30,11 +30,11 @@ time_support()
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_raster.tar.gz",
-    known_hash="e0fdbe63b6ff88856d97dff1fd4c3f62bf0bb4a85c025930c36fd69086ed0533",
+    known_hash="445c495cb6e4bdd8b563b318589691e3f4da79ee0e507d5ea587f1bd995fcb22",
 )
 sji_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits.gz",
-    known_hash="e04eedbe7fd7e5e173b6a9308db3e45991634a4f8d9b245a334d5c492d85d0ed",
+    known_hash="1f424de4420b729385e81b00df4ba4d868a121486686f17cd1ecdbe7754ee78b",
 )
 
 ###############################################################################
