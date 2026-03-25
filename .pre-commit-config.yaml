@@ -1,49 +1,27 @@
+exclude: ".*(.fits|.fts|.fit|.header|.txt|tca.*|extern.*|irispy/extern|^CITATION.rst)$"
 repos:
-<<<<<<<
-  # - repo: https://github.com/PyCQA/docformatter
-  #   rev: 7798699c0a9ddcc41a16b4dd7b8e216443f78792
-  #   hooks:
-  #     - id: docformatter
-  #       args: ["-r", "--in-place", "--pre-summary-newline", "--make-summary-multi", "--black"]
-=======
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
     rev: v1.23.1
     hooks:
       - id: zizmor
->>>>>>>
     # This should be before any formatting hooks like isort
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: "v0.15.4"
     hooks:
-<<<<<<<
-      - id: ruff-check
-        args: ["--fix", "--unsafe-fixes"]
-      - id: ruff-format
-=======
       - id: ruff
-        args: ["--fix"]
+        args: ["--fix", "--unsafe-fixes"]
         types: [python]
         # Define here once and then reference using YAML anchor
-        exclude: &exclude_dirs ^irispy/(data|extern)/
->>>>>>>
+        exclude: &exclude_dirs ^aiapy/(data|extern)/
+      - id: ruff-format
+        types: [python]
+        exclude: *exclude_dirs
   - repo: https://github.com/PyCQA/isort
     rev: 8.0.1
     hooks:
       - id: isort
-<<<<<<<
-        exclude: ".*(.fits|.fts|.fit|.header|.txt|tca.*|extern.*|irispy/extern)$"
-  - repo: https://github.com/tox-dev/pyproject-fmt
-    rev: v2.11.1
-    hooks:
-      - id: pyproject-fmt
-  - repo: https://github.com/tox-dev/tox-toml-fmt
-    rev: v1.2.1
-    hooks:
-      - id: tox-toml-fmt
-=======
         types: [python]
         exclude: *exclude_dirs
->>>>>>>
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -54,10 +32,7 @@ repos:
         types: [python]
         exclude: *exclude_dirs
       - id: trailing-whitespace
-<<<<<<<
-=======
-        types_or: [python, rst]
->>>>>>>
+        types_or: [python, rst, yaml, json]
       - id: check-yaml
         types: [yaml]
         exclude: *exclude_dirs
@@ -68,30 +43,18 @@ repos:
         types: [python]
         exclude: *exclude_dirs
       - id: check-added-large-files
-        args: ["--enforce-all", "--maxkb=5682"]
+        args: ["--enforce-all", "--maxkb=1054"]
       - id: end-of-file-fixer
-        types_or: [python, rst]
+        types_or: [python, rst, yaml, json]
       - id: mixed-line-ending
-<<<<<<<
-        exclude: ".*(.fits|.fts|.fit|.header|.txt|tca.*)$"
-=======
-        types_or: [python, rst]
+        types_or: [python, rst, yaml, json]
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
       - id: codespell
-        args: [ "--write-changes" ]
+        args: ["--write-changes"]
         types_or: [python, rst]
         exclude: *exclude_dirs
-ci:
-  autofix_prs: false
-  autoupdate_schedule: "quarterly"
->>>>>>>
-  # See https://github.com/python-trio/trio/pull/3255
-  -   repo: https://github.com/adhtruong/mirrors-typos
-      rev: v1.43.5
-      hooks:
-      -   id: typos
 ci:
   autofix_prs: false
   autoupdate_schedule: "quarterly"
