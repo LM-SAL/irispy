@@ -1,12 +1,4 @@
-<<<<<<<
 **********
-=======
-A Python package that provides the tools to read in and analyze data from the IRIS solar-observing satellite.
-=============================================================================================================
-
-Usage of Generative AI
-----------------------
->>>>>>>
 ``irispy``
 **********
 
@@ -14,30 +6,6 @@ Usage of Generative AI
   :width: 400
   :align: center
   :alt: Image of the IRIS spacecraft
-<<<<<<<
-=======
-If you use generative AI tools as an aid in developing code or documentation changes, ensure that you fully understand the proposed changes and can explain why they are the correct approach and an improvement to the current state.
-For more information see our documentation on fair and appropriate `AI usage <https://docs.sunpy.org/en/latest/dev_guide/contents/ai_usage.html>`__.
-
-Contributing
-------------
-
-We love contributions! irispy-lmsal is open source,
-built on open source, and we'd love to have you hang out in our community.
-
-If you would like to get involved, check out the `Developers Guide`_ section of the SunPy docs.
-Stop by our chat room `#sunpy:openastronomy.org`_ if you have any questions.
-Help is always welcome so let us know what you like to work on, or check out the `issues page`_ for the list of known outstanding items.
-
-For more information on contributing to SunPy, please read our `Newcomers' guide`_.
-
-.. _Developers Guide: https://docs.sunpy.org/en/latest/dev_guide/index.html
-.. _`#sunpy:openastronomy.org`: https://app.element.io/#/room/#sunpy:openastronomy.org
-.. _issues page: https://github.com/LM-SAL/irispy/issues
-.. _Newcomers' guide: https://docs.sunpy.org/en/latest/dev_guide/contents/newcomers.html
-
-When you are interacting with the SunPy community you are asked at to follow our `code of conduct <https://sunpy.org/coc>`__.
->>>>>>>
 
 ``irispy`` is a library that provides the tools to read in and analyze data from Interface Region Imaging Spectrograph (IRIS).
 
@@ -52,24 +20,6 @@ For more information see the instrument paper which is available `online for fre
 
     Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
     However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
-
-Usage of Generative AI
-----------------------
-
-We expect authentic engagement in our community.
-Be wary of posting output from large language models or similar generative AI as comments on GitHub or any other platform, as such comments tend to be formulaic and low‑quality content.
-**Do not post the output from Large Language Models or similar generative AI as code, issues or comments on GitHub or any other platform.**
-If you use generative AI tools as an aid in developing code or documentation changes, ensure that you fully understand the proposed changes and can explain why they are the correct approach and an improvement to the current state.
-For more information see our documentation on fair and appropriate `AI usage <https://docs.sunpy.org/en/latest/dev_guide/contents/ai_usage.html>`__.
-
-License
--------
-
-This project is Copyright (c) IRIS Instrument Team and licensed under
-the terms of the BSD 3-Clause license. This package is based upon
-the `Openastronomy packaging guide <https://github.com/OpenAstronomy/packaging-guide>`__
-which is licensed under the BSD 3-clause licence. See the licenses folder for
-more information.
 
 Contributing
 ------------
@@ -96,3 +46,21 @@ Note: This disclaimer was originally written by
 `PyCon talk <https://www.youtube.com/watch?v=6Uj746j9Heo>`__, and was adapted by
 irispy-lmsal based on its use in the README file for the
 `MetPy project <https://github.com/Unidata/MetPy>`__.
+
+Usage of Generative AI
+----------------------
+
+We expect authentic engagement in our community.
+Be wary of posting output from large language models or similar generative AI as comments on GitHub or any other platform, as such comments tend to be formulaic and low‑quality content.
+**Do not post the output from Large Language Models or similar generative AI as code, issues or comments on GitHub or any other platform.**
+If you use generative AI tools as an aid in developing code or documentation changes, ensure that you fully understand the proposed changes and can explain why they are the correct approach and an improvement to the current state.
+For more information see our documentation on fair and appropriate `AI usage <https://docs.sunpy.org/en/latest/dev_guide/contents/ai_usage.html>`__.
+
+License
+-------
+
+This project is Copyright (c) IRIS Instrument Team and licensed under
+the terms of the BSD 3-Clause license. This package is based upon
+the `Openastronomy packaging guide <https://github.com/OpenAstronomy/packaging-guide>`__
+which is licensed under the BSD 3-clause licence. See the licenses folder for
+more information.
