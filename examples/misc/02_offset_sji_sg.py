@@ -92,9 +92,8 @@ sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, 5]
 sji_2796_closest = sji_2796[time_idx_2796]
 sji_2796_frame = wcs_to_celestial_frame(sji_2796_closest.basic_wcs)
 
-# Seems to be a plus one missing?! This seems like a bug. TODO: WORK THIS OUT
-raster_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx + 1]
-raster_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx + 1]
+raster_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
+raster_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
 
 # Now we will get the raster location from its WCS and overlay that on the SJI below.
 slit = SkyCoord(Tx=raster_lon_coords, Ty=raster_lat_coords, frame=sji_2796_frame)
@@ -122,7 +121,7 @@ ax.plot_coord(slit_with_sji_offset, color="green", linestyle="-", linewidth=1, l
 ax.legend()
 
 # "Crop" the image without touching the actual data.
-bbox = SkyCoord([130, 190] * u.arcsec, [40, 100] * u.arcsec, frame=sji_2796_frame)
+bbox = SkyCoord([140, 180] * u.arcsec, [50, 90] * u.arcsec, frame=sji_2796_frame)
 x_limit, y_limit = sji_2796_closest.wcs.world_to_pixel(bbox)
 ax.set_xlim(int(x_limit[0]), int(x_limit[1]))
 ax.set_ylim(int(y_limit[0]), int(y_limit[1]))

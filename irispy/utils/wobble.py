@@ -84,7 +84,7 @@ def generate_wobble_movie(
         with fits.open(a_file) as hdulist:
             data = hdulist[0].data
             header = hdulist[0].header
-            wcs = WCS(header)
+            wcs = WCS(header, preserve_units=True)
             numframes = header["NAXIS3"]
             date = header["STARTOBS"].split(".")[0]
             # Calculate index to downsample in time to accentuate the wobble

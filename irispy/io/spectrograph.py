@@ -155,7 +155,7 @@ def read_spectrograph_lvl2(
                     header["PC3_2"] = ang3
                     header["PC3_3"] = ang4
                 try:
-                    wcs = WCS(header)
+                    wcs = WCS(header, preserve_units=True)
                 except Exception as e:  # NOQA: BLE001
                     msg = (
                         f"WCS failed to load while reading one step of the raster due to {e}"
@@ -182,7 +182,7 @@ def read_spectrograph_lvl2(
                     header["PC3_2"] = -header["PC3_2"]
                     header["CDELT3"] = -header["CDELT3"]
                     header["CRPIX3"] = header["NAXIS3"] - header["CRPIX3"] + 1
-                    wcs = WCS(header)
+                    wcs = WCS(header, preserve_units=True)
                 else:
                     data = hdulist[window_fits_indices[i]].data
                 _set_wcs_aux_obs_coord(wcs, observer)
