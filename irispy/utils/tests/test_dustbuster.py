@@ -72,22 +72,18 @@ class _FakeCube:
 def test_dustbuster_sji_cube_supports_sji_header_fallbacks_and_2d_data():
     cube = _FakeCube()
 
-    cleaned_cube, bad_pixel_indices, replacement_values, applied_shift = dustbuster_sji_cube(
+    cleaned_cube = dustbuster_sji_cube(
         cube,
-        bad_pixel_addresses=[5],
+        bad_pixel_addresses=[2073],
         slit_center_mask=(1.0, 1.0),
         mask_plate_scale=1.0,
         roll_deg=0.0,
-        mask_shape=(4, 4),
-        manual_offset=(0.0, 0.0),
         align_mask=False,
-        spatial_window=3,
     )
 
-    assert applied_shift == (0, 0)
-    np.testing.assert_array_equal(bad_pixel_indices, np.array([[0, 1, 1]]))
-    np.testing.assert_allclose(replacement_values, np.array([6.0]))
-    np.testing.assert_allclose(cleaned_cube.data[1, 1], 6.0)
+    assert cube.data[1, 1] == 0.1
+    assert cleaned_cube.data[1, 1] != cube.data[1, 1]
+    assert np.isfinite(cleaned_cube.data[1, 1])
     assert not cleaned_cube.mask[1, 1]
 
 
@@ -114,9 +110,10 @@ def test_get_sji_dust_metadata_from_ssw_uses_sji_header_summing_factor(monkeypat
     )
 
     np.testing.assert_array_equal(metadata["bad_pixel_addresses"], np.array([11, 12], dtype=np.int64))
-    assert metadata["sumspat"] == 1
-    assert metadata["sumsptrl"] == 1
-    assert metadata["recnum"] == 7
+    assert set(metadata) == {"bad_pixel_addresses", "slit_center_mask", "mask_plate_scale", "roll_deg"}
+    assert metadata["slit_center_mask"] == (503.69, 502.40201)
+    assert metadata["mask_plate_scale"] == 0.1679
+    assert metadata["roll_deg"] == 0.27399999
 
 
 def test_dustbuster_public_utils_exports():

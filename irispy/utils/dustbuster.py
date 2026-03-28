@@ -23,6 +23,22 @@ from irispy.utils.variables import POINTING_INFO
 
 __all__ = ["dustbuster_sji_cube", "get_sji_dust_metadata_from_ssw"]
 
+_MASK_SHAPE = (2072, 1096)
+_MANUAL_OFFSET = (0.0, -0.5)
+_MAX_ALIGNMENT_SHIFT = 7
+_DISK_RADIUS_LIMIT = 880.0
+_INVALID_VALUE = -200.0
+_TEMPORAL_OFFSETS = (-2, -1, 1, 2)
+_SPATIAL_WINDOW = 9
+_SJI_CHANNEL_SUFFIX = {
+    "1330": "133",
+    "1400": "140",
+    "2796": "279",
+    "2832": "283",
+    "1600": "MIR",
+    "5000": "FSI",
+}
+
 
 def _get_extra_coord_values(cube: Any, name: str) -> np.ndarray:
     extra_coords = getattr(cube, "extra_coords", None)
@@ -58,17 +74,8 @@ def dustbuster_sji_cube(
     slit_center_mask: tuple[float, float],
     mask_plate_scale: float,
     roll_deg: float,
-    mask_shape: tuple[int, int] = (2072, 1096),
-    manual_offset: tuple[float, float] = (0.0, -0.5),
-    expand_mask: int = 0,
-    max_alignment_shift: int = 7,
-    disk_radius_limit: float = 880.0,
-    invalid_value: float = -200.0,
     align_mask: bool = True,
-    temporal_offsets: tuple[int, ...] = (-2, -1, 1, 2),
-    spatial_method: Literal["mean", "median"] = "mean",
-    spatial_window: int = 9,
-) -> tuple[Any, np.ndarray, np.ndarray, tuple[int, int]]:
+) -> Any:
     """Remove dust-contaminated pixels from an ``irispy`` ``SJICube``.
 
     Parameters
@@ -86,42 +93,14 @@ def dustbuster_sji_cube(
     roll_deg : float
         Rotation angle from detector-mask coordinates into image coordinates,
         in degrees.
-    mask_shape : tuple of int, default=(2072, 1096)
-        Shape of the detector dust-mask grid as ``(nx, ny)``.
-    manual_offset : tuple of float, default=(0.0, -0.5)
-        Empirical x/y offset, in summed image pixels, applied before
-        projection.
-    expand_mask : int, default=0
-        Number of detector-mask pixels by which to dilate the mask before
-        projection.
-    max_alignment_shift : int, default=7
-        Maximum integer x/y shift considered during alignment.
-    disk_radius_limit : float, default=880.0
-        Ignore candidate pixels farther than this many arcsec from disk center
-        when scoring alignment.
-    invalid_value : float, default=-200.0
-        Sentinel value used for invalid pixels in the scaled SJI cube.
     align_mask : bool, default=True
         If True, align the projected mask to the darkest valid pixels in the
         cube using a bounded integer search.
-    temporal_offsets : tuple of int, default=(-2, -1, 1, 2)
-        Frame offsets used to seek replacement values at the same spatial
-        location in nearby frames.
-    spatial_method : {'mean', 'median'}, default='mean'
-        Same-frame spatial fallback used when no temporal neighbor is valid.
-    spatial_window : int, default=9
-        Width of the same-frame spatial fallback window in pixels.
 
     Returns
     -------
     cleaned_cube : Any
         Copy of the input cube with dust pixels replaced.
-    bad_pixel_indices : ndarray of int64, shape (n, 3)
-        Replaced pixels as ``(frame, y, x)`` integer triplets.
-    replacement_values : ndarray of float, shape (n,)
-        Values written into ``bad_pixel_indices``.
-    applied_shift : tuple of int
-        Integer x/y shift applied to the projected mask.
 
     Notes
     -----
@@ -177,24 +156,20 @@ def dustbuster_sji_cube(
     crval2 = np.asarray([w.wcs.crval[1] for w in wcs_list], dtype=float)
     image_plate_scale = 0.5 * (np.abs(cdelt1) + np.abs(cdelt2))
 
-    detector_nx, detector_ny = mask_shape
+    detector_nx, detector_ny = _MASK_SHAPE
     detector_mask = np.zeros((detector_nx, detector_ny), dtype=bool)
     detector_addresses = np.asarray(bad_pixel_addresses, dtype=np.int64)
     detector_x = detector_addresses % detector_nx
     detector_y = detector_addresses // detector_nx
     detector_mask[detector_x, detector_y] = True
 
-    if expand_mask > 0:
-        structure = np.ones((2 * expand_mask + 1, 2 * expand_mask + 1), dtype=bool)
-        detector_mask = ndimage.binary_dilation(detector_mask, structure=structure)
-
     detector_x, detector_y = np.nonzero(detector_mask)
 
     offspat = (sumspat - 1.0) / (2.0 * sumspat)
     offsptrl = (sumsptrl - 1.0) / (2.0 * sumsptrl)
 
-    mask_x = detector_x.astype(float) / float(sumsptrl) + manual_offset[0]
-    mask_y = detector_y.astype(float) / float(sumspat) + manual_offset[1]
+    mask_x = detector_x.astype(float) / float(sumsptrl) + _MANUAL_OFFSET[0]
+    mask_y = detector_y.astype(float) / float(sumspat) + _MANUAL_OFFSET[1]
 
     mask_slit_x = slit_center_mask[0] / float(sumsptrl) + offsptrl
     mask_slit_y = slit_center_mask[1] / float(sumspat) + offspat
@@ -224,8 +199,8 @@ def dustbuster_sji_cube(
     if align_mask:
         best_score = np.inf
         best_shift = (0, 0)
-        for shift_x in range(-max_alignment_shift, max_alignment_shift + 1):
-            for shift_y in range(-max_alignment_shift, max_alignment_shift + 1):
+        for shift_x in range(-_MAX_ALIGNMENT_SHIFT, _MAX_ALIGNMENT_SHIFT + 1):
+            for shift_y in range(-_MAX_ALIGNMENT_SHIFT, _MAX_ALIGNMENT_SHIFT + 1):
                 trial_x = mapped_x + shift_x
                 trial_y = mapped_y + shift_y
 
@@ -237,15 +212,15 @@ def dustbuster_sji_cube(
                     & (trial_x < nx)
                     & (trial_y >= 0)
                     & (trial_y < ny)
-                    & (np.abs(x_arcsec) <= disk_radius_limit)
-                    & (np.abs(y_arcsec) <= disk_radius_limit)
+                    & (np.abs(x_arcsec) <= _DISK_RADIUS_LIMIT)
+                    & (np.abs(y_arcsec) <= _DISK_RADIUS_LIMIT)
                 )
                 if not np.any(valid):
                     continue
 
                 trial_values = np.full(trial_x.shape, np.nan, dtype=float)
                 trial_values[valid] = data[mapped_t[valid], trial_y[valid], trial_x[valid]]
-                valid &= trial_values != invalid_value
+                valid &= trial_values != _INVALID_VALUE
                 valid &= np.isfinite(trial_values)
                 if not np.any(valid):
                     continue
@@ -269,13 +244,13 @@ def dustbuster_sji_cube(
         & (mapped_x < nx)
         & (mapped_y >= 0)
         & (mapped_y < ny)
-        & (np.abs(x_arcsec) <= disk_radius_limit)
-        & (np.abs(y_arcsec) <= disk_radius_limit)
+        & (np.abs(x_arcsec) <= _DISK_RADIUS_LIMIT)
+        & (np.abs(y_arcsec) <= _DISK_RADIUS_LIMIT)
     )
 
     mapped_values = np.full(mapped_x.shape, np.nan, dtype=float)
     mapped_values[keep] = data[mapped_t[keep], mapped_y[keep], mapped_x[keep]]
-    keep &= mapped_values != invalid_value
+    keep &= mapped_values != _INVALID_VALUE
     keep &= np.isfinite(mapped_values)
 
     bad_pixel_indices = np.empty((0, 3), dtype=np.int64)
@@ -295,7 +270,7 @@ def dustbuster_sji_cube(
         target_y = bad_pixel_indices[:, 1]
         target_x = bad_pixel_indices[:, 2]
 
-        temporal_offsets_arr = np.asarray(temporal_offsets, dtype=np.int64)
+        temporal_offsets_arr = np.asarray(_TEMPORAL_OFFSETS, dtype=np.int64)
         candidate_t = target_t[:, None] + temporal_offsets_arr[None, :]
         candidate_y = np.broadcast_to(target_y[:, None], candidate_t.shape)
         candidate_x = np.broadcast_to(target_x[:, None], candidate_t.shape)
@@ -310,7 +285,7 @@ def dustbuster_sji_cube(
             candidate_y[valid_candidates],
             candidate_x[valid_candidates],
         ]
-        valid_candidates &= candidate_values != invalid_value
+        valid_candidates &= candidate_values != _INVALID_VALUE
         valid_candidates &= np.isfinite(candidate_values)
 
         candidate_values[valid_candidates] /= exposure_times[safe_t[valid_candidates]]
@@ -329,26 +304,16 @@ def dustbuster_sji_cube(
             spatial_fill = np.empty_like(data)
             for frame in range(nt):
                 image = data[frame].copy()
-                image[image == invalid_value] = np.nan
+                image[image == _INVALID_VALUE] = np.nan
                 image[bad_pixel_mask[frame]] = np.nan
 
-                if spatial_method == "median":
-                    smoothed = ndimage.generic_filter(
-                        image,
-                        np.nanmedian,
-                        size=spatial_window,
-                        mode="nearest",
-                    )
-                elif spatial_method == "mean":
-                    finite = np.isfinite(image).astype(float)
-                    filled = np.where(np.isfinite(image), image, 0.0)
-                    numerator = ndimage.uniform_filter(filled, size=spatial_window, mode="nearest")
-                    denominator = ndimage.uniform_filter(finite, size=spatial_window, mode="nearest")
-                    with np.errstate(invalid="ignore", divide="ignore"):
-                        smoothed = numerator / denominator
-                    smoothed[denominator == 0.0] = np.nan
-                else:
-                    raise ValueError("spatial_method must be 'mean' or 'median'.")
+                finite = np.isfinite(image).astype(float)
+                filled = np.where(np.isfinite(image), image, 0.0)
+                numerator = ndimage.uniform_filter(filled, size=_SPATIAL_WINDOW, mode="nearest")
+                denominator = ndimage.uniform_filter(finite, size=_SPATIAL_WINDOW, mode="nearest")
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    smoothed = numerator / denominator
+                smoothed[denominator == 0.0] = np.nan
 
                 spatial_fill[frame] = smoothed
 
@@ -360,7 +325,7 @@ def dustbuster_sji_cube(
 
             still_missing = ~np.isfinite(replacement_values)
             if np.any(still_missing):
-                valid_data = data[np.isfinite(data) & (data != invalid_value)]
+                valid_data = data[np.isfinite(data) & (data != _INVALID_VALUE)]
                 replacement_values[still_missing] = float(np.median(valid_data))
 
     cleaned_cube = deepcopy(cube)
@@ -389,7 +354,7 @@ def dustbuster_sji_cube(
                     bad_pixel_indices[:, 2],
                 ] = False
 
-    return cleaned_cube, bad_pixel_indices, replacement_values, applied_shift
+    return cleaned_cube
 
 
 def get_sji_dust_metadata_from_ssw(
@@ -418,9 +383,7 @@ def get_sji_dust_metadata_from_ssw(
     Returns
     -------
     dict
-        Dictionary with keys:
-        ``bad_pixel_addresses``, ``slit_center_mask``, ``mask_plate_scale``,
-        ``roll_deg``, ``sumspat``, ``sumsptrl``, ``img_path``, and ``recnum``.
+        Minimal keyword arguments for ``dustbuster_sji_cube``.
     """
     date_obs = str(cube.meta["DATE_OBS"])
     obs_tai = float(Time(date_obs, format="fits", scale="utc").unix_tai)
@@ -430,19 +393,8 @@ def get_sji_dust_metadata_from_ssw(
         raise ValueError(f"Unsupported TDESC1 for SJI dust mask lookup: {img_path!r}")
     channel = img_path.split("_", 1)[1]
 
-    if channel == "1330":
-        suffix = "133"
-    elif channel == "1400":
-        suffix = "140"
-    elif channel == "2796":
-        suffix = "279"
-    elif channel == "2832":
-        suffix = "283"
-    elif channel == "1600":
-        suffix = "MIR"
-    elif channel == "5000":
-        suffix = "FSI"
-    else:
+    suffix = _SJI_CHANNEL_SUFFIX.get(channel)
+    if suffix is None:
         raise ValueError(f"Unsupported SJI channel: {channel!r}")
 
     slit_center_mask = (
@@ -451,8 +403,6 @@ def get_sji_dust_metadata_from_ssw(
     )
     mask_plate_scale = float(POINTING_INFO[f"CDLT_{suffix}"])
     roll_deg = float(POINTING_INFO[f"BE_{suffix}"])
-    cdlt_1p5 = float(POINTING_INFO["CDLT_1P5"])
-
     flat_index = read_genx(flat_genx_path)["SAVEGEN0"]
     badpix_struct = read_geny(badpix_geny_path)["p0"]
 
@@ -493,18 +443,14 @@ def get_sji_dust_metadata_from_ssw(
         "slit_center_mask": slit_center_mask,
         "mask_plate_scale": mask_plate_scale,
         "roll_deg": roll_deg,
-        "cdlt_1p5": cdlt_1p5,
-        "sumspat": _get_sji_summing_factor(cube, axis="y"),
-        "sumsptrl": _get_sji_summing_factor(cube, axis="x"),
-        "img_path": img_path,
-        "recnum": recnum,
     }
 
 if __name__ == "__main__":
-    from irispy.io import read_files
-    from scipy.io import readsav as read_geny
-    from sunpy.io.special import read_genx
     from pathlib import Path
+
+    from irispy.io import read_files
+    from sunpy.io.special import read_genx
+    from scipy.io import readsav as read_geny
 
     cube = read_files("~/Downloads/iris_l2_20130902_182935_4000005156_SJI_2796_t000.fits")
     meta = get_sji_dust_metadata_from_ssw(
@@ -515,14 +461,4 @@ if __name__ == "__main__":
         read_geny=read_geny,
     )
 
-    cleaned_cube, bad_pixel_indices, replacement_values, applied_shift = dustbuster_sji_cube(
-        cube,
-        bad_pixel_addresses=meta["bad_pixel_addresses"],
-        slit_center_mask=meta["slit_center_mask"],
-        mask_plate_scale=meta["mask_plate_scale"],
-        roll_deg=meta["roll_deg"],
-    )
-    cube.plot()
-    cleaned_cube.plot()
-    import matplotlib.pyplot as plt
-    plt.show()
+    dustbuster_sji_cube(cube, **meta)
