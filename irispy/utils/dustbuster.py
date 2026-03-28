@@ -19,6 +19,7 @@ from astropy.time import Time
 from numpy.typing import ArrayLike
 from scipy import ndimage
 from scipy.io import readsav as read_geny
+from sunpy.data import manager as data_manager
 from sunpy.io.special import read_genx
 
 from irispy.utils.variables import POINTING_INFO
@@ -33,6 +34,10 @@ _DISK_RADIUS_LIMIT = 880.0
 _INVALID_VALUE = -200.0
 _TEMPORAL_OFFSETS = (-2, -1, 1, 2)
 _SPATIAL_WINDOW = 9
+_FLAT_INDEX_URLS = ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_flat.genx"]
+_FLAT_INDEX_SHA256 = "40de195c55b0c5e04acb5f6f55883603c74a71bac6a5d639ec73f9d39d076b24"
+_BAD_PIXEL_URLS = ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_badpix.geny"]
+_BAD_PIXEL_SHA256 = "c4d1884fb1a4f09b6ce4fe150a0aadab2664e479d86ae0ae063d8daa559e230d"
 _SJI_CHANNEL_SUFFIX = {
     "1330": "133",
     "1400": "140",
@@ -75,6 +80,15 @@ def _align_frame_idx(n_frames: int) -> np.ndarray:
         return np.arange(n_frames, dtype=np.int64)
     frame_idx = np.rint(np.linspace(0, n_frames - 1, _MAX_ALIGNMENT_FRAMES)).astype(np.int64)
     return np.unique(frame_idx)
+
+
+@data_manager.require("iris_sji_flat_index", _FLAT_INDEX_URLS, _FLAT_INDEX_SHA256, defer_download=True)
+@data_manager.require("iris_sji_bad_pixel_map", _BAD_PIXEL_URLS, _BAD_PIXEL_SHA256, defer_download=True)
+def _sji_dust_calibration_paths() -> tuple[str, str]:
+    return (
+        str(data_manager.get("iris_sji_flat_index")),
+        str(data_manager.get("iris_sji_bad_pixel_map")),
+    )
 
 
 def clean_sji_dust(
@@ -386,8 +400,8 @@ def clean_sji_dust(
 def get_sji_dust_params(
     cube,
     *,
-    flat_index_path: str,
-    bad_pixel_path: str,
+    flat_index_path: str | None = None,
+    bad_pixel_path: str | None = None,
 ) -> dict:
     """
     Return the detector dust-mask arguments needed by ``clean_sji_dust``.
@@ -396,15 +410,22 @@ def get_sji_dust_params(
     ----------
     cube : irispy.sji.SJICube
         Input SJI cube.
-    flat_index_path : str
-        Path to the latest IRIS ``*flat.genx`` file.
-    bad_pixel_path : str
-        Path to the latest IRIS ``*badpix.geny`` file.
+    flat_index_path : str, optional
+        Path to an IRIS ``*flat.genx`` file. If omitted, a pinned calibration
+        file is downloaded and cached through SunPy's data manager.
+    bad_pixel_path : str, optional
+        Path to an IRIS ``*badpix.geny`` file. If omitted, a pinned calibration
+        file is downloaded and cached through SunPy's data manager.
     Returns
     -------
     dict
         Minimal keyword arguments for ``clean_sji_dust``.
     """
+    if flat_index_path is None or bad_pixel_path is None:
+        cached_flat_index_path, cached_bad_pixel_path = _sji_dust_calibration_paths()
+        flat_index_path = cached_flat_index_path if flat_index_path is None else flat_index_path
+        bad_pixel_path = cached_bad_pixel_path if bad_pixel_path is None else bad_pixel_path
+
     date_obs = str(cube.meta["DATE_OBS"])
     obs_tai = float(Time(date_obs, format="fits", scale="utc").unix_tai)
 

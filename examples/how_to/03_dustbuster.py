@@ -24,19 +24,6 @@ sji_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# The dust cleaner also needs a calibration index and the matching bad-pixel map.
-# We download the current pair from the IRIS calibration archive.
-
-flat_index_path = pooch.retrieve(
-    "https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_flat.genx",
-    known_hash="40de195c55b0c5e04acb5f6f55883603c74a71bac6a5d639ec73f9d39d076b24",
-)
-bad_pixel_path = pooch.retrieve(
-    "https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_badpix.geny",
-    known_hash="c4d1884fb1a4f09b6ce4fe150a0aadab2664e479d86ae0ae063d8daa559e230d",
-)
-
-###############################################################################
 # We can now open the SJI cube.
 # To keep the example fast, we only clean the first 5 frames.
 
@@ -50,12 +37,10 @@ ax.set_title("Original SJI frame")
 
 ###############################################################################
 # We can now look up the dust-mask parameters and clean the cube.
+# The first call will download and cache the pinned calibration files through
+# SunPy's data manager.
 
-dust_params = get_sji_dust_params(
-    sji_2832,
-    flat_index_path=flat_index_path,
-    bad_pixel_path=bad_pixel_path,
-)
+dust_params = get_sji_dust_params(sji_2832)
 cleaned_sji_2832 = clean_sji_dust(sji_2832, **dust_params)
 cleaned_map = cleaned_sji_2832.to_maps(0)
 

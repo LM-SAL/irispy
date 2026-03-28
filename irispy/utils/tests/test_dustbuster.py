@@ -87,12 +87,17 @@ def test_clean_sji_dust_supports_sji_header_fallbacks_and_2d_data():
     assert not cleaned_cube.mask[1, 1]
 
 
-def test_get_sji_dust_params_uses_sji_header_values(monkeypatch):
+def test_get_sji_dust_params_uses_sji_header_values(monkeypatch, tmp_path):
     cube = _FakeCube()
 
     class _FakeTime:
         def __init__(self, value, format=None, scale=None):
             self.unix_tai = 1000.0
+
+    flat_index_path = tmp_path / "flat.genx"
+    bad_pixel_path = tmp_path / "badpix.geny"
+    flat_index_path.write_text("flat", encoding="ascii")
+    bad_pixel_path.write_text("badpix", encoding="ascii")
 
     monkeypatch.setattr(dustbuster_module, "Time", _FakeTime)
     monkeypatch.setattr(
@@ -111,11 +116,9 @@ def test_get_sji_dust_params_uses_sji_header_values(monkeypatch):
         lambda path: {"p0": {"F7": np.array([11, 12], dtype=np.int64)}},
     )
 
-    params = get_sji_dust_params(
-        cube,
-        flat_index_path="flat.genx",
-        bad_pixel_path="badpix.geny",
-    )
+    with dustbuster_module.data_manager.override_file("iris_sji_flat_index", str(flat_index_path)):
+        with dustbuster_module.data_manager.override_file("iris_sji_bad_pixel_map", str(bad_pixel_path)):
+            params = get_sji_dust_params(cube)
 
     np.testing.assert_array_equal(params["dust_ids"], np.array([11, 12], dtype=np.int64))
     assert set(params) == {"dust_ids", "slit_center", "mask_scale", "roll_deg"}
