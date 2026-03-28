@@ -7,6 +7,8 @@ from astropy.wcs import WCS
 
 from ndcube.meta import NDMeta
 
+from sunpy.util import MetaDict
+
 from irispy import SJICube, utils
 
 TIMES = Time(["2014-12-11T19:39:00.48", "2014-12-11T19:43:07.6"])
@@ -43,6 +45,22 @@ def cube():
         "CRVAL3": 0,
         "NAXIS3": 2,
     }
+    basic_wcs_header = MetaDict(
+        {
+            "CTYPE1": "HPLN-TAN",
+            "CUNIT1": "arcsec",
+            "CDELT1": 0.4,
+            "CRPIX1": 0,
+            "CRVAL1": 0,
+            "NAXIS1": 4,
+            "CTYPE2": "HPLT-TAN",
+            "CUNIT2": "arcsec",
+            "CDELT2": 0.5,
+            "CRPIX2": 0,
+            "CRVAL2": 0,
+            "NAXIS2": 3,
+        }
+    )
     wcs = WCS(header=header, naxis=3, preserve_units=True)
     cube = SJICube(
         data,
@@ -52,6 +70,7 @@ def cube():
         unit=utils.constants.DN_UNIT["SJI"],
         scaled=True,
         meta=NDMeta({"exposure time": exposure_times}, axes={"exposure time": 0}, data_shape=data.shape),
+        _basic_wcs=[basic_wcs_header.copy(), basic_wcs_header.copy()],
     )
     cube.extra_coords.add(*EXTRA_COORDS[0])
     return cube
@@ -189,3 +208,22 @@ def test_sjicube_apply_dust_mask(dust_cube):
         ]
     )
     np.testing.assert_array_equal(dust_cube.mask, before_mask)
+
+
+def test_sjicube_frame_slice_keeps_basic_wcs(cube):
+    frame = cube[0]
+
+    assert isinstance(frame.basic_wcs, WCS)
+
+
+def test_sjicube_time_slice_keeps_basic_wcs(cube):
+    cube_slice = cube[:1]
+
+    assert cube_slice.basic_wcs is not None
+    assert len(cube_slice.basic_wcs) == 1
+
+
+def test_sjicube_spatial_slice_drops_basic_wcs(cube):
+    cropped = cube[:, :, :2]
+
+    assert cropped.basic_wcs is None

@@ -114,9 +114,29 @@ class SJICube(SpectrogramCube):
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
         sliced_self.scaled = self.scaled
-        # Here we are guarding against getting a crop slice
-        if self._basic_wcs is not None and isinstance(item, Integral):
-            sliced_self._basic_wcs = self._basic_wcs[item]
+        if self._basic_wcs is None:
+            return sliced_self
+
+        time_item = item
+        spatial_items = ()
+        if isinstance(item, tuple):
+            time_item = item[0]
+            spatial_items = item[1:]
+
+        # Preserve the per-frame WCS headers for pure time slicing only.
+        # Spatial slicing would require updating the stored FITS WCS headers.
+        if any(axis_item not in (slice(None), Ellipsis) for axis_item in spatial_items):
+            return sliced_self
+
+        if time_item is Ellipsis:
+            time_item = slice(None)
+
+        if isinstance(time_item, Integral):
+            sliced_self._basic_wcs = self._basic_wcs[time_item]
+        elif isinstance(time_item, slice):
+            sliced_self._basic_wcs = self._basic_wcs[time_item]
+        elif isinstance(time_item, (list, tuple)):
+            sliced_self._basic_wcs = [self._basic_wcs[index] for index in time_item]
         return sliced_self
 
     def plot(self, *args, **kwargs):

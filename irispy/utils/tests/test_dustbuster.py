@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import irispy.utils.dustbuster as dustbuster_module
 import irispy.utils as iris_utils
-from irispy.utils.dustbuster import dustbuster_sji_cube, get_sji_dust_metadata_from_ssw
+from irispy.utils.dustbuster import clean_sji_dust, get_sji_dust_params
 
 
 class _FakeCoord:
@@ -69,16 +69,16 @@ class _FakeCube:
         return new_cube
 
 
-def test_dustbuster_sji_cube_supports_sji_header_fallbacks_and_2d_data():
+def test_clean_sji_dust_supports_sji_header_fallbacks_and_2d_data():
     cube = _FakeCube()
 
-    cleaned_cube = dustbuster_sji_cube(
+    cleaned_cube = clean_sji_dust(
         cube,
-        bad_pixel_addresses=[2073],
-        slit_center_mask=(1.0, 1.0),
-        mask_plate_scale=1.0,
+        dust_ids=[2073],
+        slit_center=(1.0, 1.0),
+        mask_scale=1.0,
         roll_deg=0.0,
-        align_mask=False,
+        align=False,
     )
 
     assert cube.data[1, 1] == 0.1
@@ -87,7 +87,7 @@ def test_dustbuster_sji_cube_supports_sji_header_fallbacks_and_2d_data():
     assert not cleaned_cube.mask[1, 1]
 
 
-def test_get_sji_dust_metadata_from_ssw_uses_sji_header_summing_factor(monkeypatch):
+def test_get_sji_dust_params_uses_sji_header_values(monkeypatch):
     cube = _FakeCube()
 
     class _FakeTime:
@@ -95,28 +95,36 @@ def test_get_sji_dust_metadata_from_ssw_uses_sji_header_summing_factor(monkeypat
             self.unix_tai = 1000.0
 
     monkeypatch.setattr(dustbuster_module, "Time", _FakeTime)
-
-    metadata = get_sji_dust_metadata_from_ssw(
-        cube,
-        flat_genx_path="flat.genx",
-        badpix_geny_path="badpix.geny",
-        read_genx=lambda path: {
+    monkeypatch.setattr(
+        dustbuster_module,
+        "read_genx",
+        lambda path: {
             "SAVEGEN0": [
                 {"IMG_PATH": "SJI_2796", "FILETAI": 900.0, "RECNUM": 1},
                 {"IMG_PATH": "SJI_2796", "FILETAI": 1002.0, "RECNUM": 7},
             ],
         },
-        read_geny=lambda path: {"p0": {"F7": np.array([11, 12], dtype=np.int64)}},
+    )
+    monkeypatch.setattr(
+        dustbuster_module,
+        "read_geny",
+        lambda path: {"p0": {"F7": np.array([11, 12], dtype=np.int64)}},
     )
 
-    np.testing.assert_array_equal(metadata["bad_pixel_addresses"], np.array([11, 12], dtype=np.int64))
-    assert set(metadata) == {"bad_pixel_addresses", "slit_center_mask", "mask_plate_scale", "roll_deg"}
-    assert metadata["slit_center_mask"] == (503.69, 502.40201)
-    assert metadata["mask_plate_scale"] == 0.1679
-    assert metadata["roll_deg"] == 0.27399999
+    params = get_sji_dust_params(
+        cube,
+        flat_index_path="flat.genx",
+        bad_pixel_path="badpix.geny",
+    )
+
+    np.testing.assert_array_equal(params["dust_ids"], np.array([11, 12], dtype=np.int64))
+    assert set(params) == {"dust_ids", "slit_center", "mask_scale", "roll_deg"}
+    assert params["slit_center"] == (503.69, 502.40201)
+    assert params["mask_scale"] == 0.1679
+    assert params["roll_deg"] == 0.27399999
 
 
 def test_dustbuster_public_utils_exports():
     assert iris_utils.dustbuster is dustbuster_module
-    assert iris_utils.dustbuster_sji_cube is dustbuster_sji_cube
-    assert iris_utils.get_sji_dust_metadata_from_ssw is get_sji_dust_metadata_from_ssw
+    assert iris_utils.clean_sji_dust is clean_sji_dust
+    assert iris_utils.get_sji_dust_params is get_sji_dust_params

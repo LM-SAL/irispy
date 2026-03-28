@@ -18,14 +18,17 @@ import numpy as np
 from astropy.time import Time
 from numpy.typing import ArrayLike
 from scipy import ndimage
+from scipy.io import readsav as read_geny
+from sunpy.io.special import read_genx
 
 from irispy.utils.variables import POINTING_INFO
 
-__all__ = ["dustbuster_sji_cube", "get_sji_dust_metadata_from_ssw"]
+__all__ = ["clean_sji_dust", "get_sji_dust_params"]
 
 _MASK_SHAPE = (2072, 1096)
 _MANUAL_OFFSET = (0.0, -0.5)
 _MAX_ALIGNMENT_SHIFT = 7
+_MAX_ALIGNMENT_FRAMES = 8
 _DISK_RADIUS_LIMIT = 880.0
 _INVALID_VALUE = -200.0
 _TEMPORAL_OFFSETS = (-2, -1, 1, 2)
@@ -40,7 +43,7 @@ _SJI_CHANNEL_SUFFIX = {
 }
 
 
-def _get_extra_coord_values(cube: Any, name: str) -> np.ndarray:
+def _coord_values(cube: Any, name: str) -> np.ndarray:
     extra_coords = getattr(cube, "extra_coords", None)
     if extra_coords is not None and hasattr(extra_coords, "keys") and name in extra_coords.keys():
         named_coord = extra_coords[name]
@@ -55,7 +58,7 @@ def _get_extra_coord_values(cube: Any, name: str) -> np.ndarray:
     return np.asarray(getattr(values, "value", values), dtype=float)
 
 
-def _get_sji_summing_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
+def _bin_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
     if axis == "x":
         value = getattr(cube.meta, "spectral_summing_factor", None)
         if value is None and hasattr(cube.meta, "get"):
@@ -67,14 +70,21 @@ def _get_sji_summing_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
     return 1 if value is None else int(value)
 
 
-def dustbuster_sji_cube(
+def _align_frame_idx(n_frames: int) -> np.ndarray:
+    if n_frames <= _MAX_ALIGNMENT_FRAMES:
+        return np.arange(n_frames, dtype=np.int64)
+    frame_idx = np.rint(np.linspace(0, n_frames - 1, _MAX_ALIGNMENT_FRAMES)).astype(np.int64)
+    return np.unique(frame_idx)
+
+
+def clean_sji_dust(
     cube: Any,
     *,
-    bad_pixel_addresses: ArrayLike,
-    slit_center_mask: tuple[float, float],
-    mask_plate_scale: float,
+    dust_ids: ArrayLike,
+    slit_center: tuple[float, float],
+    mask_scale: float,
     roll_deg: float,
-    align_mask: bool = True,
+    align: bool = True,
 ) -> Any:
     """Remove dust-contaminated pixels from an ``irispy`` ``SJICube``.
 
@@ -82,18 +92,18 @@ def dustbuster_sji_cube(
     ----------
     cube : Any
         ``irispy.sji.SJICube`` or an object with the same interface.
-    bad_pixel_addresses : array-like of int
+    dust_ids : array-like of int
         One-dimensional detector-mask bad-pixel addresses using Fortran-style
         linear indexing ``x + nx * y``.
-    slit_center_mask : tuple of float
+    slit_center : tuple of float
         Slit center in detector-mask coordinates, expressed as zero-based
         detector pixels ``(x, y)`` before summing.
-    mask_plate_scale : float
+    mask_scale : float
         Detector-mask plate scale in arcsec per detector pixel.
     roll_deg : float
         Rotation angle from detector-mask coordinates into image coordinates,
         in degrees.
-    align_mask : bool, default=True
+    align : bool, default=True
         If True, align the projected mask to the darkest valid pixels in the
         cube using a bounded integer search.
 
@@ -121,344 +131,334 @@ def dustbuster_sji_cube(
     ``irispy`` rather than worked around locally.
     """
     data = np.asarray(cube.data, dtype=float)
-    original_ndim = data.ndim
-    if original_ndim == 2:
+    input_ndim = data.ndim
+    if input_ndim == 2:
         data = data[np.newaxis, :, :]
-    elif original_ndim != 3:
+    elif input_ndim != 3:
         raise ValueError("cube.data must have shape (nt, ny, nx) or (ny, nx).")
 
-    nt, ny, nx = data.shape
+    n_frames, n_y, n_x = data.shape
 
-    basic_wcs = cube.basic_wcs
-    if basic_wcs is None:
+    frame_wcs = cube.basic_wcs
+    if frame_wcs is None:
         raise ValueError("cube.basic_wcs is required.")
-    if isinstance(basic_wcs, list):
-        wcs_list = basic_wcs
+    if isinstance(frame_wcs, list):
+        wcs_list = frame_wcs
     else:
-        wcs_list = [basic_wcs]
-    if len(wcs_list) != nt:
+        wcs_list = [frame_wcs]
+    if len(wcs_list) != n_frames:
         raise ValueError("cube.basic_wcs must contain one WCS per frame.")
 
-    exposure_times = _get_extra_coord_values(cube, "exposure time")
-    slit_x = _get_extra_coord_values(cube, "slit x position") - 1.0
-    slit_y = _get_extra_coord_values(cube, "slit y position") - 1.0
-    if exposure_times.shape != (nt,) or slit_x.shape != (nt,) or slit_y.shape != (nt,):
+    exposure_s = _coord_values(cube, "exposure time")
+    slit_x_pix = _coord_values(cube, "slit x position") - 1.0
+    slit_y_pix = _coord_values(cube, "slit y position") - 1.0
+    if exposure_s.shape != (n_frames,) or slit_x_pix.shape != (n_frames,) or slit_y_pix.shape != (n_frames,):
         raise ValueError("The required per-frame extra coordinates must each have shape (nt,).")
 
-    sumspat = _get_sji_summing_factor(cube, axis="y")
-    sumsptrl = _get_sji_summing_factor(cube, axis="x")
+    y_bin = _bin_factor(cube, axis="y")
+    x_bin = _bin_factor(cube, axis="x")
 
-    crpix1 = np.asarray([w.wcs.crpix[0] for w in wcs_list], dtype=float)
-    crpix2 = np.asarray([w.wcs.crpix[1] for w in wcs_list], dtype=float)
-    cdelt1 = np.asarray([w.wcs.cdelt[0] for w in wcs_list], dtype=float)
-    cdelt2 = np.asarray([w.wcs.cdelt[1] for w in wcs_list], dtype=float)
-    crval1 = np.asarray([w.wcs.crval[0] for w in wcs_list], dtype=float)
-    crval2 = np.asarray([w.wcs.crval[1] for w in wcs_list], dtype=float)
-    image_plate_scale = 0.5 * (np.abs(cdelt1) + np.abs(cdelt2))
+    ref_x_pix = np.asarray([w.wcs.crpix[0] for w in wcs_list], dtype=float)
+    ref_y_pix = np.asarray([w.wcs.crpix[1] for w in wcs_list], dtype=float)
+    x_scale = np.asarray([w.wcs.cdelt[0] for w in wcs_list], dtype=float)
+    y_scale = np.asarray([w.wcs.cdelt[1] for w in wcs_list], dtype=float)
+    ref_x_arcsec = np.asarray([w.wcs.crval[0] for w in wcs_list], dtype=float)
+    ref_y_arcsec = np.asarray([w.wcs.crval[1] for w in wcs_list], dtype=float)
+    image_scale = 0.5 * (np.abs(x_scale) + np.abs(y_scale))
 
-    detector_nx, detector_ny = _MASK_SHAPE
-    detector_mask = np.zeros((detector_nx, detector_ny), dtype=bool)
-    detector_addresses = np.asarray(bad_pixel_addresses, dtype=np.int64)
-    detector_x = detector_addresses % detector_nx
-    detector_y = detector_addresses // detector_nx
+    mask_nx, mask_ny = _MASK_SHAPE
+    detector_mask = np.zeros((mask_nx, mask_ny), dtype=bool)
+    dust_ids = np.asarray(dust_ids, dtype=np.int64)
+    detector_x = dust_ids % mask_nx
+    detector_y = dust_ids // mask_nx
     detector_mask[detector_x, detector_y] = True
 
     detector_x, detector_y = np.nonzero(detector_mask)
 
-    offspat = (sumspat - 1.0) / (2.0 * sumspat)
-    offsptrl = (sumsptrl - 1.0) / (2.0 * sumsptrl)
+    y_bin_offset = (y_bin - 1.0) / (2.0 * y_bin)
+    x_bin_offset = (x_bin - 1.0) / (2.0 * x_bin)
 
-    mask_x = detector_x.astype(float) / float(sumsptrl) + _MANUAL_OFFSET[0]
-    mask_y = detector_y.astype(float) / float(sumspat) + _MANUAL_OFFSET[1]
+    dust_x_mask = detector_x.astype(float) / float(x_bin) + _MANUAL_OFFSET[0]
+    dust_y_mask = detector_y.astype(float) / float(y_bin) + _MANUAL_OFFSET[1]
 
-    mask_slit_x = slit_center_mask[0] / float(sumsptrl) + offsptrl
-    mask_slit_y = slit_center_mask[1] / float(sumspat) + offspat
+    slit_x_mask = slit_center[0] / float(x_bin) + x_bin_offset
+    slit_y_mask = slit_center[1] / float(y_bin) + y_bin_offset
 
-    dx_mask = mask_x - mask_slit_x
-    dy_mask = mask_y - mask_slit_y
-    mask_radius_arcsec = np.hypot(dx_mask, dy_mask) * mask_plate_scale
-    mask_angle = np.arctan2(dx_mask, dy_mask)
+    dx_mask = dust_x_mask - slit_x_mask
+    dy_mask = dust_y_mask - slit_y_mask
+    dust_radius_arcsec = np.hypot(dx_mask, dy_mask) * mask_scale
+    dust_angle = np.arctan2(dx_mask, dy_mask)
     roll_rad = np.deg2rad(roll_deg)
 
-    dx_image = (mask_radius_arcsec[:, None] / image_plate_scale[None, :]) * np.sin(mask_angle[:, None] - roll_rad)
-    dy_image = (mask_radius_arcsec[:, None] / image_plate_scale[None, :]) * np.cos(mask_angle[:, None] - roll_rad)
+    dx_pix = (dust_radius_arcsec[:, None] / image_scale[None, :]) * np.sin(dust_angle[:, None] - roll_rad)
+    dy_pix = (dust_radius_arcsec[:, None] / image_scale[None, :]) * np.cos(dust_angle[:, None] - roll_rad)
 
-    projected_x = dx_image + slit_x[None, :]
-    projected_y = dy_image + slit_y[None, :]
+    dust_x = dx_pix + slit_x_pix[None, :]
+    dust_y = dy_pix + slit_y_pix[None, :]
 
-    floor_x = np.floor(projected_x).astype(np.int64)
-    ceil_x = np.ceil(projected_x).astype(np.int64)
-    floor_y = np.floor(projected_y).astype(np.int64)
-    ceil_y = np.ceil(projected_y).astype(np.int64)
+    x0 = np.floor(dust_x).astype(np.int64)
+    x1 = np.ceil(dust_x).astype(np.int64)
+    y0 = np.floor(dust_y).astype(np.int64)
+    y1 = np.ceil(dust_y).astype(np.int64)
 
-    mapped_x = np.concatenate([floor_x, floor_x, ceil_x, ceil_x], axis=0)
-    mapped_y = np.concatenate([floor_y, ceil_y, floor_y, ceil_y], axis=0)
-    mapped_t = np.broadcast_to(np.arange(nt, dtype=np.int64), mapped_x.shape)
+    dust_x = np.concatenate([x0, x0, x1, x1], axis=0)
+    dust_y = np.concatenate([y0, y1, y0, y1], axis=0)
+    dust_t = np.broadcast_to(np.arange(n_frames, dtype=np.int64), dust_x.shape)
 
-    applied_shift = (0, 0)
-    if align_mask:
+    align_shift = (0, 0)
+    if align:
+        align_frame_idx = _align_frame_idx(n_frames)
+        align_x = dust_x[:, align_frame_idx]
+        align_y = dust_y[:, align_frame_idx]
+        align_t = np.broadcast_to(align_frame_idx, align_x.shape)
+        align_ref_x_pix = ref_x_pix[align_frame_idx]
+        align_ref_y_pix = ref_y_pix[align_frame_idx]
+        align_x_scale = x_scale[align_frame_idx]
+        align_y_scale = y_scale[align_frame_idx]
+        align_ref_x_arcsec = ref_x_arcsec[align_frame_idx]
+        align_ref_y_arcsec = ref_y_arcsec[align_frame_idx]
+
         best_score = np.inf
         best_shift = (0, 0)
         for shift_x in range(-_MAX_ALIGNMENT_SHIFT, _MAX_ALIGNMENT_SHIFT + 1):
             for shift_y in range(-_MAX_ALIGNMENT_SHIFT, _MAX_ALIGNMENT_SHIFT + 1):
-                trial_x = mapped_x + shift_x
-                trial_y = mapped_y + shift_y
+                shifted_x = align_x + shift_x
+                shifted_y = align_y + shift_y
 
-                x_arcsec = (trial_x + 1.0 - crpix1[None, :]) * cdelt1[None, :] + crval1[None, :]
-                y_arcsec = (trial_y + 1.0 - crpix2[None, :]) * cdelt2[None, :] + crval2[None, :]
+                x_arcsec = (
+                    (shifted_x + 1.0 - align_ref_x_pix[None, :]) * align_x_scale[None, :]
+                    + align_ref_x_arcsec[None, :]
+                )
+                y_arcsec = (
+                    (shifted_y + 1.0 - align_ref_y_pix[None, :]) * align_y_scale[None, :]
+                    + align_ref_y_arcsec[None, :]
+                )
 
-                valid = (
-                    (trial_x >= 0)
-                    & (trial_x < nx)
-                    & (trial_y >= 0)
-                    & (trial_y < ny)
+                valid_hits = (
+                    (shifted_x >= 0)
+                    & (shifted_x < n_x)
+                    & (shifted_y >= 0)
+                    & (shifted_y < n_y)
                     & (np.abs(x_arcsec) <= _DISK_RADIUS_LIMIT)
                     & (np.abs(y_arcsec) <= _DISK_RADIUS_LIMIT)
                 )
-                if not np.any(valid):
+                if not np.any(valid_hits):
                     continue
 
-                trial_values = np.full(trial_x.shape, np.nan, dtype=float)
-                trial_values[valid] = data[mapped_t[valid], trial_y[valid], trial_x[valid]]
-                valid &= trial_values != _INVALID_VALUE
-                valid &= np.isfinite(trial_values)
-                if not np.any(valid):
+                hit_t = align_t[valid_hits]
+                hit_y = shifted_y[valid_hits]
+                hit_x = shifted_x[valid_hits]
+                hit_values = data[hit_t, hit_y, hit_x]
+                valid_values = (hit_values != _INVALID_VALUE) & np.isfinite(hit_values)
+                if not np.any(valid_values):
                     continue
 
-                coords = np.stack([mapped_t[valid], trial_y[valid], trial_x[valid]], axis=1)
-                coords = np.unique(coords, axis=0)
-                score = float(np.mean(data[coords[:, 0], coords[:, 1], coords[:, 2]]))
+                # Using the sampled values directly keeps the shift ranking stable
+                # while avoiding an expensive per-shift deduplication step.
+                score = float(np.mean(hit_values[valid_values]))
                 if score < best_score:
                     best_score = score
                     best_shift = (shift_x, shift_y)
 
-        applied_shift = best_shift
-        mapped_x = mapped_x + applied_shift[0]
-        mapped_y = mapped_y + applied_shift[1]
+        align_shift = best_shift
+        dust_x = dust_x + align_shift[0]
+        dust_y = dust_y + align_shift[1]
 
-    x_arcsec = (mapped_x + 1.0 - crpix1[None, :]) * cdelt1[None, :] + crval1[None, :]
-    y_arcsec = (mapped_y + 1.0 - crpix2[None, :]) * cdelt2[None, :] + crval2[None, :]
+    x_arcsec = (dust_x + 1.0 - ref_x_pix[None, :]) * x_scale[None, :] + ref_x_arcsec[None, :]
+    y_arcsec = (dust_y + 1.0 - ref_y_pix[None, :]) * y_scale[None, :] + ref_y_arcsec[None, :]
 
-    keep = (
-        (mapped_x >= 0)
-        & (mapped_x < nx)
-        & (mapped_y >= 0)
-        & (mapped_y < ny)
+    valid_hits = (
+        (dust_x >= 0)
+        & (dust_x < n_x)
+        & (dust_y >= 0)
+        & (dust_y < n_y)
         & (np.abs(x_arcsec) <= _DISK_RADIUS_LIMIT)
         & (np.abs(y_arcsec) <= _DISK_RADIUS_LIMIT)
     )
 
-    mapped_values = np.full(mapped_x.shape, np.nan, dtype=float)
-    mapped_values[keep] = data[mapped_t[keep], mapped_y[keep], mapped_x[keep]]
-    keep &= mapped_values != _INVALID_VALUE
-    keep &= np.isfinite(mapped_values)
+    dust_pixels = np.empty((0, 3), dtype=np.int64)
+    fill_values = np.empty(0, dtype=float)
+    if np.any(valid_hits):
+        hit_t = dust_t[valid_hits]
+        hit_y = dust_y[valid_hits]
+        hit_x = dust_x[valid_hits]
+        hit_values = data[hit_t, hit_y, hit_x]
+        valid_values = (hit_values != _INVALID_VALUE) & np.isfinite(hit_values)
+        if np.any(valid_values):
+            dust_pixels = np.stack([hit_t[valid_values], hit_y[valid_values], hit_x[valid_values]], axis=1)
+            dust_pixels = np.unique(dust_pixels, axis=0)
 
-    bad_pixel_indices = np.empty((0, 3), dtype=np.int64)
-    replacement_values = np.empty(0, dtype=float)
-    if np.any(keep):
-        bad_pixel_indices = np.stack([mapped_t[keep], mapped_y[keep], mapped_x[keep]], axis=1)
-        bad_pixel_indices = np.unique(bad_pixel_indices, axis=0)
+            fill_mask = np.zeros(data.shape, dtype=bool)
+            fill_mask[
+                dust_pixels[:, 0],
+                dust_pixels[:, 1],
+                dust_pixels[:, 2],
+            ] = True
 
-        bad_pixel_mask = np.zeros(data.shape, dtype=bool)
-        bad_pixel_mask[
-            bad_pixel_indices[:, 0],
-            bad_pixel_indices[:, 1],
-            bad_pixel_indices[:, 2],
-        ] = True
+            fill_t = dust_pixels[:, 0]
+            fill_y = dust_pixels[:, 1]
+            fill_x = dust_pixels[:, 2]
 
-        target_t = bad_pixel_indices[:, 0]
-        target_y = bad_pixel_indices[:, 1]
-        target_x = bad_pixel_indices[:, 2]
+            time_offsets = np.asarray(_TEMPORAL_OFFSETS, dtype=np.int64)
+            neighbor_t = fill_t[:, None] + time_offsets[None, :]
+            neighbor_y = np.broadcast_to(fill_y[:, None], neighbor_t.shape)
+            neighbor_x = np.broadcast_to(fill_x[:, None], neighbor_t.shape)
 
-        temporal_offsets_arr = np.asarray(_TEMPORAL_OFFSETS, dtype=np.int64)
-        candidate_t = target_t[:, None] + temporal_offsets_arr[None, :]
-        candidate_y = np.broadcast_to(target_y[:, None], candidate_t.shape)
-        candidate_x = np.broadcast_to(target_x[:, None], candidate_t.shape)
+            in_time_range = (neighbor_t >= 0) & (neighbor_t < n_frames)
+            clipped_t = np.clip(neighbor_t, 0, n_frames - 1)
 
-        in_range = (candidate_t >= 0) & (candidate_t < nt)
-        safe_t = np.clip(candidate_t, 0, nt - 1)
-
-        valid_candidates = in_range & (~bad_pixel_mask[safe_t, candidate_y, candidate_x])
-        candidate_values = np.full(candidate_t.shape, np.nan, dtype=float)
-        candidate_values[valid_candidates] = data[
-            safe_t[valid_candidates],
-            candidate_y[valid_candidates],
-            candidate_x[valid_candidates],
-        ]
-        valid_candidates &= candidate_values != _INVALID_VALUE
-        valid_candidates &= np.isfinite(candidate_values)
-
-        candidate_values[valid_candidates] /= exposure_times[safe_t[valid_candidates]]
-        replacement_values = np.full(target_t.shape, np.nan, dtype=float)
-        rows_with_candidates = np.any(valid_candidates, axis=1)
-        if np.any(rows_with_candidates):
-            with np.errstate(invalid="ignore"):
-                replacement_values[rows_with_candidates] = np.nanmedian(
-                    candidate_values[rows_with_candidates],
-                    axis=1,
-                )
-        replacement_values *= exposure_times[target_t]
-
-        missing = ~np.isfinite(replacement_values)
-        if np.any(missing):
-            spatial_fill = np.empty_like(data)
-            for frame in range(nt):
-                image = data[frame].copy()
-                image[image == _INVALID_VALUE] = np.nan
-                image[bad_pixel_mask[frame]] = np.nan
-
-                finite = np.isfinite(image).astype(float)
-                filled = np.where(np.isfinite(image), image, 0.0)
-                numerator = ndimage.uniform_filter(filled, size=_SPATIAL_WINDOW, mode="nearest")
-                denominator = ndimage.uniform_filter(finite, size=_SPATIAL_WINDOW, mode="nearest")
-                with np.errstate(invalid="ignore", divide="ignore"):
-                    smoothed = numerator / denominator
-                smoothed[denominator == 0.0] = np.nan
-
-                spatial_fill[frame] = smoothed
-
-            replacement_values[missing] = spatial_fill[
-                target_t[missing],
-                target_y[missing],
-                target_x[missing],
+            valid_neighbors = in_time_range & (~fill_mask[clipped_t, neighbor_y, neighbor_x])
+            neighbor_values = np.full(neighbor_t.shape, np.nan, dtype=float)
+            neighbor_values[valid_neighbors] = data[
+                clipped_t[valid_neighbors],
+                neighbor_y[valid_neighbors],
+                neighbor_x[valid_neighbors],
             ]
+            valid_neighbors &= neighbor_values != _INVALID_VALUE
+            valid_neighbors &= np.isfinite(neighbor_values)
 
-            still_missing = ~np.isfinite(replacement_values)
-            if np.any(still_missing):
-                valid_data = data[np.isfinite(data) & (data != _INVALID_VALUE)]
-                replacement_values[still_missing] = float(np.median(valid_data))
+            neighbor_values[valid_neighbors] /= exposure_s[clipped_t[valid_neighbors]]
+            fill_values = np.full(fill_t.shape, np.nan, dtype=float)
+            has_neighbors = np.any(valid_neighbors, axis=1)
+            if np.any(has_neighbors):
+                with np.errstate(invalid="ignore"):
+                    fill_values[has_neighbors] = np.nanmedian(
+                        neighbor_values[has_neighbors],
+                        axis=1,
+                    )
+            fill_values *= exposure_s[fill_t]
+
+            needs_spatial_fill = ~np.isfinite(fill_values)
+            if np.any(needs_spatial_fill):
+                for frame_idx in np.unique(fill_t[needs_spatial_fill]):
+                    frame_needs = needs_spatial_fill & (fill_t == frame_idx)
+                    frame_data = data[frame_idx].copy()
+                    frame_data[frame_data == _INVALID_VALUE] = np.nan
+                    frame_data[fill_mask[frame_idx]] = np.nan
+
+                    finite_mask = np.isfinite(frame_data).astype(float)
+                    filled_data = np.where(np.isfinite(frame_data), frame_data, 0.0)
+                    mean_signal = ndimage.uniform_filter(filled_data, size=_SPATIAL_WINDOW, mode="nearest")
+                    mean_weight = ndimage.uniform_filter(finite_mask, size=_SPATIAL_WINDOW, mode="nearest")
+                    with np.errstate(invalid="ignore", divide="ignore"):
+                        frame_fill = mean_signal / mean_weight
+                    frame_fill[mean_weight == 0.0] = np.nan
+
+                    fill_values[frame_needs] = frame_fill[
+                        fill_y[frame_needs],
+                        fill_x[frame_needs],
+                    ]
+
+                needs_global_fill = ~np.isfinite(fill_values)
+                if np.any(needs_global_fill):
+                    good_values = data[np.isfinite(data) & (data != _INVALID_VALUE)]
+                    fill_values[needs_global_fill] = float(np.median(good_values))
 
     cleaned_cube = deepcopy(cube)
-    cleaned_cube.data[...] = data[0] if original_ndim == 2 else data
-    if bad_pixel_indices.size > 0:
-        if original_ndim == 2:
+    cleaned_cube.data[...] = data[0] if input_ndim == 2 else data
+    if dust_pixels.size > 0:
+        if input_ndim == 2:
             cleaned_cube.data[
-                bad_pixel_indices[:, 1],
-                bad_pixel_indices[:, 2],
-            ] = replacement_values
+                dust_pixels[:, 1],
+                dust_pixels[:, 2],
+            ] = fill_values
             if getattr(cleaned_cube, "mask", None) is not None:
                 cleaned_cube.mask[
-                    bad_pixel_indices[:, 1],
-                    bad_pixel_indices[:, 2],
+                    dust_pixels[:, 1],
+                    dust_pixels[:, 2],
                 ] = False
         else:
             cleaned_cube.data[
-                bad_pixel_indices[:, 0],
-                bad_pixel_indices[:, 1],
-                bad_pixel_indices[:, 2],
-            ] = replacement_values
+                dust_pixels[:, 0],
+                dust_pixels[:, 1],
+                dust_pixels[:, 2],
+            ] = fill_values
             if getattr(cleaned_cube, "mask", None) is not None:
                 cleaned_cube.mask[
-                    bad_pixel_indices[:, 0],
-                    bad_pixel_indices[:, 1],
-                    bad_pixel_indices[:, 2],
+                    dust_pixels[:, 0],
+                    dust_pixels[:, 1],
+                    dust_pixels[:, 2],
                 ] = False
 
     return cleaned_cube
 
 
-def get_sji_dust_metadata_from_ssw(
+def get_sji_dust_params(
     cube,
     *,
-    flat_genx_path: str,
-    badpix_geny_path: str,
-    read_genx,
-    read_geny,
+    flat_index_path: str,
+    bad_pixel_path: str,
 ) -> dict:
     """
-    Return the detector dust-mask metadata needed by the SJI dustbuster.
+    Return the detector dust-mask arguments needed by ``clean_sji_dust``.
 
     Parameters
     ----------
     cube : irispy.sji.SJICube
         Input SJI cube.
-    flat_genx_path : str
+    flat_index_path : str
         Path to the latest IRIS ``*flat.genx`` file.
-    badpix_geny_path : str
+    bad_pixel_path : str
         Path to the latest IRIS ``*badpix.geny`` file.
-    read_genx : callable
-        Reader for the ``.genx`` index file.
-    read_geny : callable
-        Reader for the ``.geny`` bad-pixel structure.
     Returns
     -------
     dict
-        Minimal keyword arguments for ``dustbuster_sji_cube``.
+        Minimal keyword arguments for ``clean_sji_dust``.
     """
     date_obs = str(cube.meta["DATE_OBS"])
     obs_tai = float(Time(date_obs, format="fits", scale="utc").unix_tai)
 
-    img_path = str(cube.meta["TDESC1"])
-    if not img_path.startswith("SJI_"):
-        raise ValueError(f"Unsupported TDESC1 for SJI dust mask lookup: {img_path!r}")
-    channel = img_path.split("_", 1)[1]
+    sji_name = str(cube.meta["TDESC1"])
+    if not sji_name.startswith("SJI_"):
+        raise ValueError(f"Unsupported TDESC1 for SJI dust mask lookup: {sji_name!r}")
+    channel = sji_name.split("_", 1)[1]
 
     suffix = _SJI_CHANNEL_SUFFIX.get(channel)
     if suffix is None:
         raise ValueError(f"Unsupported SJI channel: {channel!r}")
 
-    slit_center_mask = (
+    slit_center = (
         float(POINTING_INFO[f"CPX1_{suffix}"]) - 1.0,
         float(POINTING_INFO[f"CPX2_{suffix}"]) - 1.0,
     )
-    mask_plate_scale = float(POINTING_INFO[f"CDLT_{suffix}"])
+    mask_scale = float(POINTING_INFO[f"CDLT_{suffix}"])
     roll_deg = float(POINTING_INFO[f"BE_{suffix}"])
-    flat_index = read_genx(flat_genx_path)["SAVEGEN0"]
-    badpix_struct = read_geny(badpix_geny_path)["p0"]
+    flat_index = read_genx(flat_index_path)["SAVEGEN0"]
+    bad_pixel_map = read_geny(bad_pixel_path)["p0"]
 
-    # Expect the flat index rows to expose img_path, filetai, recnum.
-    matching_rows = [row for row in flat_index if str(row["IMG_PATH"]) == img_path]
+    matching_rows = [row for row in flat_index if str(row["IMG_PATH"]) == sji_name]
     if not matching_rows:
-        raise ValueError(f"No flat-index rows matched img_path={img_path!r}")
+        raise ValueError(f"No flat-index rows matched img_path={sji_name!r}")
 
-    filetai = np.array([row["FILETAI"] for row in matching_rows], dtype=float)
-    recnums = np.array([row["RECNUM"] for row in matching_rows], dtype=int)
+    row_tai = np.array([row["FILETAI"] for row in matching_rows], dtype=float)
+    record_ids = np.array([row["RECNUM"] for row in matching_rows], dtype=int)
 
-    best = int(np.argmin(np.abs(filetai - obs_tai)))
-    recnum = int(recnums[best])
+    best_idx = int(np.argmin(np.abs(row_tai - obs_tai)))
+    record_id = int(record_ids[best_idx])
 
-    # Match the IDL field lookup: badpix_str.F<recnum>
-    field_name = f"F{recnum}"
+    field_name = f"F{record_id}"
 
-    if isinstance(badpix_struct, dict):
-        raw = badpix_struct[field_name]
+    if isinstance(bad_pixel_map, dict):
+        field_data = bad_pixel_map[field_name]
     else:
-        raw = getattr(badpix_struct, field_name)
+        field_data = getattr(bad_pixel_map, field_name)
 
-    if isinstance(raw, np.ndarray) and raw.dtype == object:
-        pieces = [np.asarray(piece, dtype=np.int64).ravel() for piece in raw.flat]
-        bad_pixel_addresses = (
+    if isinstance(field_data, np.ndarray) and field_data.dtype == object:
+        pieces = [np.asarray(piece, dtype=np.int64).ravel() for piece in field_data.flat]
+        dust_ids = (
             np.concatenate(pieces) if pieces else np.empty(0, dtype=np.int64)
         )
-    elif isinstance(raw, (list, tuple)):
-        pieces = [np.asarray(piece, dtype=np.int64).ravel() for piece in raw]
-        bad_pixel_addresses = (
+    elif isinstance(field_data, (list, tuple)):
+        pieces = [np.asarray(piece, dtype=np.int64).ravel() for piece in field_data]
+        dust_ids = (
             np.concatenate(pieces) if pieces else np.empty(0, dtype=np.int64)
         )
     else:
-        bad_pixel_addresses = np.asarray(raw, dtype=np.int64).ravel()
+        dust_ids = np.asarray(field_data, dtype=np.int64).ravel()
 
     return {
-        "bad_pixel_addresses": bad_pixel_addresses,
-        "slit_center_mask": slit_center_mask,
-        "mask_plate_scale": mask_plate_scale,
+        "dust_ids": dust_ids,
+        "slit_center": slit_center,
+        "mask_scale": mask_scale,
         "roll_deg": roll_deg,
     }
-
-if __name__ == "__main__":
-    from pathlib import Path
-
-    from irispy.io import read_files
-    from sunpy.io.special import read_genx
-    from scipy.io import readsav as read_geny
-
-    cube = read_files("~/Downloads/iris_l2_20130902_182935_4000005156_SJI_2796_t000.fits")
-    meta = get_sji_dust_metadata_from_ssw(
-        cube,
-        flat_genx_path=Path("~/Downloads/latest_calibration/20260326_032515_flat.genx").expanduser(),
-        badpix_geny_path=Path("~/Downloads/latest_calibration/20260326_032515_badpix.geny").expanduser(),
-        read_genx=read_genx,
-        read_geny=read_geny,
-    )
-
-    dustbuster_sji_cube(cube, **meta)
