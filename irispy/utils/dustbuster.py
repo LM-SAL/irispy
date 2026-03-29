@@ -39,7 +39,7 @@ def _align_frame_idx(n_frames: int) -> np.ndarray:
     return np.unique(frame_idx)
 
 
-def clean_sji(
+def _clean_sji_with_params(
     cube,
     *,
     dust_ids: ArrayLike,
@@ -48,33 +48,6 @@ def clean_sji(
     roll_deg: float,
     align: bool = True,
 ):
-    """
-    Remove dust-contaminated pixels from an `irispy.sji.SJICube`.
-
-    Parameters
-    ----------
-    cube : SJICube-like
-        A `~irispy.sji.SJICube`.
-    dust_ids : array-like of int
-        One-dimensional detector-mask bad-pixel addresses using Fortran-style
-        linear indexing ``x + nx * y``..
-    slit_center : tuple of float
-        Slit center in detector-mask coordinates, expressed as zero-based
-        detector pixels ``(x, y)`` before summing.
-    mask_scale : float
-        Detector-mask plate scale in arcsec per detector pixel.
-    roll_deg : float
-        Rotation angle from detector-mask coordinates into image coordinates,
-        in degrees.
-    align : bool, optional
-        If True (the default), align the projected mask to the darkest valid pixels in the
-        cube using a bounded integer search.
-
-    Returns
-    -------
-    cleaned_cube : ~irispy.sji.SJICube`
-        Copy of the input cube with dust pixels replaced.
-    """
     data = cube.data
     input_ndim = data.ndim
     if input_ndim == 2:
@@ -127,10 +100,10 @@ def clean_sji(
     dy_pix = (dust_radius_arcsec[:, None] / image_scale[None, :]) * np.cos(dust_angle[:, None] - roll_rad)
     dust_x = dx_pix + slit_x_pix[None, :]
     dust_y = dy_pix + slit_y_pix[None, :]
-    x0 = np.floor(dust_x)
-    x1 = np.ceil(dust_x)
-    y0 = np.floor(dust_y)
-    y1 = np.ceil(dust_y)
+    x0 = np.floor(dust_x).astype(np.int64)
+    x1 = np.ceil(dust_x).astype(np.int64)
+    y0 = np.floor(dust_y).astype(np.int64)
+    y1 = np.ceil(dust_y).astype(np.int64)
     dust_x = np.concatenate([x0, x0, x1, x1], axis=0)
     dust_y = np.concatenate([y0, y1, y0, y1], axis=0)
     dust_t = np.broadcast_to(np.arange(n_frames, dtype=np.int64), dust_x.shape)
@@ -274,6 +247,30 @@ def clean_sji(
     return cleaned_cube
 
 
+def clean_sji(cube, *, align: bool = True):
+    """
+    Remove dust-contaminated pixels from an `irispy.sji.SJICube`.
+
+    Parameters
+    ----------
+    cube : SJICube-like
+        A `~irispy.sji.SJICube`.
+    align : bool, optional
+        If True (the default), align the projected mask to the darkest valid pixels in the
+        cube using a bounded integer search.
+
+    Returns
+    -------
+    cleaned_cube : ~irispy.sji.SJICube`
+        Copy of the input cube with dust pixels replaced.
+    """
+    dust_params = get_sji_dust_params(
+        date_obs=cube.meta["DATE_OBS"],
+        sji_name=cube.meta["TDESC1"],
+    )
+    return _clean_sji_with_params(cube, align=align, **dust_params)
+
+
 @data_manager.require(
     "iris_sji_flat_index",
     ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_flat.genx"],
@@ -288,7 +285,7 @@ def clean_sji(
 )
 def get_sji_dust_params(*, date_obs: str, sji_name: str) -> dict:
     """
-    Return the detector dust-mask arguments needed by `irispy.utils.dustbuster.clean_sji`.
+    Return the detector dust-mask metadata for an IRIS SJI observation.
 
     Fetches the necessary parameters from the SJI flat-index and bad-pixel map files based on the observation time and SJI descriptor.
     These come from a SSWDB server.
@@ -303,7 +300,7 @@ def get_sji_dust_params(*, date_obs: str, sji_name: str) -> dict:
     Returns
     -------
     dict
-        Minimal keyword arguments for `irispy.utils.dustbuster.clean_sji`.
+        Dust-mask metadata used internally by `irispy.utils.dustbuster.clean_sji`.
     """
     if not sji_name.startswith("SJI_"):
         msg = f"Unsupported TDESC1 for SJI dust mask lookup: {sji_name!r}"

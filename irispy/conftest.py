@@ -193,6 +193,21 @@ def remote_raster_scanning_tar():
 
 
 @pytest.fixture
+def example_sji_2832_file():
+    return pooch.retrieve(
+        "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/09/19/20140919_051712_3860608353/iris_l2_20140919_051712_3860608353_SJI_2832_t000.fits.gz",
+        known_hash="7ec0f3d63d97bc7620675c78fb6c670ef5b4249d31ef7818435b629c04b72f60",
+    )
+
+
+@pytest.fixture
+def example_sjicube_2832(example_sji_2832_file):
+    from irispy.io import read_files  # NOQA: PLC0415
+
+    return read_files(example_sji_2832_file, memmap=False)
+
+
+@pytest.fixture
 def sns_sg_file():
     return get_test_filepath("sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000.fits")
 

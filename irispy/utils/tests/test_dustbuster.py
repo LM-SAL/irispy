@@ -12,6 +12,24 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 from irispy.utils.dustbuster import clean_sji, get_sji_dust_params
 
 
+def _patch_dust_params(monkeypatch, **overrides):
+    params = {
+        "dust_ids": [2073],
+        "slit_center": (1.0, 0.5),
+        "mask_scale": 1.0,
+        "roll_deg": 0.0,
+    }
+    params.update(overrides)
+
+    def _get_params(*, date_obs, sji_name):
+        assert date_obs == "2024-01-01T00:00:00.000"
+        assert sji_name == "SJI_2796"
+        return params
+
+    monkeypatch.setattr(dustbuster_module, "get_sji_dust_params", _get_params)
+    return params
+
+
 def _first_changed_frame(original_cube, *cleaned_cubes):
     changed_frames = np.zeros(original_cube.data.shape[0], dtype=bool)
     for cleaned_cube in cleaned_cubes:
@@ -45,7 +63,8 @@ def test_align_frame_idx_covers_short_and_long_cubes():
     assert frame_idx[-1] == 8
 
 
-def test_clean_sji_replaces_2d_dust_pixel_and_clears_mask(make_sji_cube):
+def test_clean_sji_replaces_2d_dust_pixel_and_clears_mask(make_sji_cube, monkeypatch):
+    _patch_dust_params(monkeypatch)
     cube = make_sji_cube(
         [
             [1.0, 2.0, 3.0, 4.0],
@@ -55,14 +74,7 @@ def test_clean_sji_replaces_2d_dust_pixel_and_clears_mask(make_sji_cube):
         ]
     )
 
-    cleaned_cube = clean_sji(
-        cube,
-        dust_ids=[2073],
-        slit_center=(1.0, 0.5),
-        mask_scale=1.0,
-        roll_deg=0.0,
-        align=False,
-    )
+    cleaned_cube = clean_sji(cube, align=False)
 
     assert cube.data[1, 1] == 0.1
     assert cleaned_cube.data[1, 1] != cube.data[1, 1]
@@ -70,7 +82,8 @@ def test_clean_sji_replaces_2d_dust_pixel_and_clears_mask(make_sji_cube):
     assert not cleaned_cube.mask[1, 1]
 
 
-def test_clean_sji_aligns_and_uses_temporal_fill_for_3d_data(make_sji_cube):
+def test_clean_sji_aligns_and_uses_temporal_fill_for_3d_data(make_sji_cube, monkeypatch):
+    _patch_dust_params(monkeypatch)
     data = np.full((9, 4, 4), 10.0)
     slit_x = np.array([2.0, 3.0, 2.0, 3.0, 2.0, 3.0, 2.0, 3.0, 2.0])
     for frame_idx, dust_x in enumerate((slit_x - 1).astype(int)):
@@ -78,14 +91,7 @@ def test_clean_sji_aligns_and_uses_temporal_fill_for_3d_data(make_sji_cube):
 
     cube = make_sji_cube(data, slit_x=slit_x)
 
-    cleaned_cube = clean_sji(
-        cube,
-        dust_ids=[2073],
-        slit_center=(1.0, 0.5),
-        mask_scale=1.0,
-        roll_deg=0.0,
-        align=True,
-    )
+    cleaned_cube = clean_sji(cube, align=True)
 
     assert cleaned_cube.data[0, 1, 1] == pytest.approx(10.0)
     assert cleaned_cube.data[1, 1, 2] == pytest.approx(10.0)
@@ -93,7 +99,8 @@ def test_clean_sji_aligns_and_uses_temporal_fill_for_3d_data(make_sji_cube):
     assert not cleaned_cube.mask[1, 1, 2]
 
 
-def test_clean_sji_uses_global_fill_when_temporal_and_spatial_fill_fail(make_sji_cube):
+def test_clean_sji_uses_global_fill_when_temporal_and_spatial_fill_fail(make_sji_cube, monkeypatch):
+    _patch_dust_params(monkeypatch)
     data = np.full((2, 4, 4), BAD_PIXEL_VALUE_SCALED, dtype=float)
     data[0, 1, 1] = 1.0
     data[1, 0, 0] = 7.0
@@ -101,63 +108,39 @@ def test_clean_sji_uses_global_fill_when_temporal_and_spatial_fill_fail(make_sji
 
     cube = make_sji_cube(data, slit_x=[2.0, 3.0])
 
-    cleaned_cube = clean_sji(
-        cube,
-        dust_ids=[2073],
-        slit_center=(1.0, 0.5),
-        mask_scale=1.0,
-        roll_deg=0.0,
-        align=False,
-    )
+    cleaned_cube = clean_sji(cube, align=False)
 
     assert cleaned_cube.data[0, 1, 1] == pytest.approx(3.0)
 
 
-def test_clean_sji_validates_input_shape(make_sji_cube):
+def test_clean_sji_validates_input_shape(make_sji_cube, monkeypatch):
+    _patch_dust_params(monkeypatch)
     cube = make_sji_cube(np.zeros((2, 4, 4)))[:, 0, 0]
 
     with pytest.raises(ValueError, match=r"cube.data must have shape"):
-        clean_sji(
-            cube,
-            dust_ids=[2073],
-            slit_center=(1.0, 0.5),
-            mask_scale=1.0,
-            roll_deg=0.0,
-            align=False,
-        )
+        clean_sji(cube, align=False)
 
 
-def test_clean_sji_requires_basic_wcs(make_sji_cube):
+def test_clean_sji_requires_basic_wcs(make_sji_cube, monkeypatch):
+    _patch_dust_params(monkeypatch)
     cube = make_sji_cube(np.zeros((2, 4, 4)))
     cube._basic_wcs = None
 
     with pytest.raises(ValueError, match=r"cube.basic_wcs is required"):
-        clean_sji(
-            cube,
-            dust_ids=[2073],
-            slit_center=(1.0, 0.5),
-            mask_scale=1.0,
-            roll_deg=0.0,
-            align=False,
-        )
+        clean_sji(cube, align=False)
 
 
-def test_clean_sji_requires_one_basic_wcs_per_frame(make_sji_cube):
+def test_clean_sji_requires_one_basic_wcs_per_frame(make_sji_cube, monkeypatch):
+    _patch_dust_params(monkeypatch)
     cube = make_sji_cube(np.zeros((2, 4, 4)))
     cube._basic_wcs = cube._basic_wcs[:1]
 
     with pytest.raises(ValueError, match=r"cube.basic_wcs must contain one WCS per frame"):
-        clean_sji(
-            cube,
-            dust_ids=[2073],
-            slit_center=(1.0, 0.5),
-            mask_scale=1.0,
-            roll_deg=0.0,
-            align=False,
-        )
+        clean_sji(cube, align=False)
 
 
-def test_clean_sji_requires_per_frame_extra_coords(make_sji_cube):
+def test_clean_sji_requires_per_frame_extra_coords(make_sji_cube, monkeypatch):
+    _patch_dust_params(monkeypatch)
     cube = make_sji_cube(np.zeros((2, 4, 4)))
     cube.__dict__["__extra_coords"] = {
         "exposure time": SimpleNamespace(wcs=SimpleNamespace(pixel_to_world=lambda _pixels: np.array([1.0]) * u.s)),
@@ -170,14 +153,7 @@ def test_clean_sji_requires_per_frame_extra_coords(make_sji_cube):
     }
 
     with pytest.raises(ValueError, match="required per-frame extra coordinates"):
-        clean_sji(
-            cube,
-            dust_ids=[2073],
-            slit_center=(1.0, 0.5),
-            mask_scale=1.0,
-            roll_deg=0.0,
-            align=False,
-        )
+        clean_sji(cube, align=False)
 
 
 @pytest.mark.remote_data
@@ -215,30 +191,18 @@ def test_get_sji_dust_params_real_sji_values(
 @pytest.mark.remote_data
 def test_clean_sji_smoke_real_sji_cube(sns_sjicube_2796):
     cube = sns_sjicube_2796[:5]
-
-    params = get_sji_dust_params(
-        date_obs=cube.meta["DATE_OBS"],
-        sji_name=cube.meta["TDESC1"],
-    )
-    cleaned_cube = clean_sji(cube, align=False, **params)
+    cleaned_cube = clean_sji(cube, align=False)
 
     assert cleaned_cube.data.shape == cube.data.shape
     assert cleaned_cube.basic_wcs is not None
-    assert params["dust_ids"].ndim == 1
-    assert params["dust_ids"].size > 0
 
 
 @pytest.mark.remote_data
 @figure_test
-def test_clean_sji_compare_options(sns_sjicube_2796):
-    cube = sns_sjicube_2796[:5]
-    params = get_sji_dust_params(
-        date_obs=cube.meta["DATE_OBS"],
-        sji_name=cube.meta["TDESC1"],
-    )
-
-    cleaned_fast = clean_sji(cube, align=False, **params)
-    cleaned_aligned = clean_sji(cube, align=True, **params)
+def test_clean_sji_compare_options(example_sjicube_2832):
+    cube = example_sjicube_2832[:5]
+    cleaned_fast = clean_sji(cube, align=False)
+    cleaned_aligned = clean_sji(cube, align=True)
 
     frame_idx = _first_changed_frame(cube, cleaned_fast, cleaned_aligned)
     original_frame = cube.data[frame_idx]
