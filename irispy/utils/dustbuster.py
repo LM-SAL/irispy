@@ -3,7 +3,8 @@ Dust cleaning for `irispy.sji.SJICube` objects.
 """
 
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Literal, TypeVar, Protocol
+from collections.abc import Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -28,7 +29,48 @@ _TEMPORAL_OFFSETS = np.array((-2, -1, 1, 2))
 _SPATIAL_WINDOW = 9
 
 
-def _bin_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
+class _PixelToWorldResult(Protocol):
+    value: ArrayLike
+
+
+class _CoordWCS(Protocol):
+    def pixel_to_world(self, pixels: ArrayLike) -> _PixelToWorldResult: ...
+
+
+class _ExtraCoord(Protocol):
+    wcs: _CoordWCS
+
+
+class _ExtraCoords(Protocol):
+    def __getitem__(self, key: str) -> _ExtraCoord: ...
+
+
+class _MetaLike(Protocol):
+    def __getitem__(self, key: str) -> object: ...
+
+
+class _FrameWCSParams(Protocol):
+    crpix: ArrayLike
+    cdelt: ArrayLike
+    crval: ArrayLike
+
+
+class _FrameWCS(Protocol):
+    wcs: _FrameWCSParams
+
+
+class _DustbusterCube(Protocol):
+    data: np.ndarray
+    mask: np.ndarray | None
+    meta: _MetaLike
+    extra_coords: _ExtraCoords
+    basic_wcs: _FrameWCS | Sequence[_FrameWCS] | None
+
+
+CubeT = TypeVar("CubeT", bound=_DustbusterCube)
+
+
+def _bin_factor(cube: _DustbusterCube, *, axis: Literal["x", "y"]) -> int:
     return int(cube.meta["SUMSPTRL" if axis == "x" else "SUMSPAT"])
 
 
@@ -39,20 +81,20 @@ def _align_frame_idx(n_frames: int) -> np.ndarray:
     return np.unique(frame_idx)
 
 
-def clean_sji_dust(
-    cube: Any,
+def clean_sji_dust[CubeT: _DustbusterCube](
+    cube: CubeT,
     *,
     dust_ids: ArrayLike,
     slit_center: tuple[float, float],
     mask_scale: float,
     roll_deg: float,
     align: bool = True,
-) -> Any:
+) -> CubeT:
     """Remove dust-contaminated pixels from an ``irispy`` ``SJICube``.
 
     Parameters
     ----------
-    cube : Any
+    cube : SJICube-like
         ``irispy.sji.SJICube`` or an object with the same interface.
     dust_ids : array-like of int
         One-dimensional detector-mask bad-pixel addresses using Fortran-style
@@ -71,7 +113,7 @@ def clean_sji_dust(
 
     Returns
     -------
-    cleaned_cube : Any
+    cleaned_cube : same type as ``cube``
         Copy of the input cube with dust pixels replaced.
 
     Notes

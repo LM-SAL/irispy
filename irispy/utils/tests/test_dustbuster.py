@@ -13,6 +13,29 @@ from irispy.utils.dustbuster import clean_sji_dust, get_sji_dust_params
 _DEFAULT = object()
 
 
+def _fake_time(*_args, **_kwargs):
+    return SimpleNamespace(unix_tai=1000.0)
+
+
+def _read_genx_with_rows(rows):
+    def _reader(_path):
+        return {"SAVEGEN0": rows}
+
+    return _reader
+
+
+def _read_geny_with_ids(dust_ids):
+    def _reader(_path):
+        return {
+            "p0": np.rec.array(
+                [(np.array(dust_ids, dtype=np.int64),)],
+                dtype=[("F7", object)],
+            ),
+        }
+
+    return _reader
+
+
 def _fake_frame_wcs():
     return SimpleNamespace(
         wcs=SimpleNamespace(
@@ -48,9 +71,10 @@ def _make_cube(
         }
 
     def _extra_coord(values, unit):
-        return SimpleNamespace(
-            wcs=SimpleNamespace(pixel_to_world=lambda pixels, values=values, unit=unit: values * unit)
-        )
+        def _pixel_to_world(_pixels, *, values=values, unit=unit):
+            return values * unit
+
+        return SimpleNamespace(wcs=SimpleNamespace(pixel_to_world=_pixel_to_world))
 
     return SimpleNamespace(
         data=data,
@@ -178,34 +202,27 @@ def test_clean_sji_dust_validates_input_shape_and_metadata(cube, message):
 def test_get_sji_dust_params_uses_sji_header_values(monkeypatch, tmp_path):
     flat_index_path, bad_pixel_path = _write_managed_file_stubs(tmp_path)
 
-    monkeypatch.setattr(dustbuster_module, "Time", lambda *args, **kwargs: SimpleNamespace(unix_tai=1000.0))
+    monkeypatch.setattr(dustbuster_module, "Time", _fake_time)
     monkeypatch.setattr(
         dustbuster_module,
         "read_genx",
-        lambda path: {
-            "SAVEGEN0": [
+        _read_genx_with_rows(
+            [
                 {"IMG_PATH": "SJI_2796", "FILETAI": 900.0, "RECNUM": 1},
                 {"IMG_PATH": "SJI_2796", "FILETAI": 1002.0, "RECNUM": 7},
-            ],
-        },
+            ]
+        ),
     )
-    monkeypatch.setattr(
-        dustbuster_module,
-        "read_geny",
-        lambda path: {
-            "p0": np.rec.array(
-                [(np.array([11, 12], dtype=np.int64),)],
-                dtype=[("F7", object)],
-            ),
-        },
-    )
+    monkeypatch.setattr(dustbuster_module, "read_geny", _read_geny_with_ids([11, 12]))
 
-    with dustbuster_module.data_manager.override_file("iris_sji_flat_index", str(flat_index_path)):
-        with dustbuster_module.data_manager.override_file("iris_sji_bad_pixel_map", str(bad_pixel_path)):
-            params = get_sji_dust_params(
-                date_obs="2024-01-01T00:00:00.000",
-                sji_name="SJI_2796",
-            )
+    with (
+        dustbuster_module.data_manager.override_file("iris_sji_flat_index", str(flat_index_path)),
+        dustbuster_module.data_manager.override_file("iris_sji_bad_pixel_map", str(bad_pixel_path)),
+    ):
+        params = get_sji_dust_params(
+            date_obs="2024-01-01T00:00:00.000",
+            sji_name="SJI_2796",
+        )
 
     np.testing.assert_array_equal(params["dust_ids"], np.array([11, 12], dtype=np.int64))
     assert set(params) == {"dust_ids", "slit_center", "mask_scale", "roll_deg"}
@@ -241,26 +258,19 @@ def test_clean_sji_dust_smoke_real_sji_cube(sns_sjicube_2796):
 def test_get_sji_dust_params_validates_sji_name_and_matching_rows(monkeypatch, tmp_path, sji_name, flat_rows, message):
     flat_index_path, bad_pixel_path = _write_managed_file_stubs(tmp_path)
 
-    monkeypatch.setattr(dustbuster_module, "Time", lambda *args, **kwargs: SimpleNamespace(unix_tai=1000.0))
-    monkeypatch.setattr(dustbuster_module, "read_genx", lambda path: {"SAVEGEN0": flat_rows})
-    monkeypatch.setattr(
-        dustbuster_module,
-        "read_geny",
-        lambda path: {
-            "p0": np.rec.array(
-                [(np.array([11, 12], dtype=np.int64),)],
-                dtype=[("F7", object)],
-            ),
-        },
-    )
+    monkeypatch.setattr(dustbuster_module, "Time", _fake_time)
+    monkeypatch.setattr(dustbuster_module, "read_genx", _read_genx_with_rows(flat_rows))
+    monkeypatch.setattr(dustbuster_module, "read_geny", _read_geny_with_ids([11, 12]))
 
-    with dustbuster_module.data_manager.override_file("iris_sji_flat_index", str(flat_index_path)):
-        with dustbuster_module.data_manager.override_file("iris_sji_bad_pixel_map", str(bad_pixel_path)):
-            with pytest.raises(ValueError, match=message):
-                get_sji_dust_params(
-                    date_obs="2024-01-01T00:00:00.000",
-                    sji_name=sji_name,
-                )
+    with (
+        dustbuster_module.data_manager.override_file("iris_sji_flat_index", str(flat_index_path)),
+        dustbuster_module.data_manager.override_file("iris_sji_bad_pixel_map", str(bad_pixel_path)),
+        pytest.raises(ValueError, match=message),
+    ):
+        get_sji_dust_params(
+            date_obs="2024-01-01T00:00:00.000",
+            sji_name=sji_name,
+        )
 
 
 def test_dustbuster_public_utils_exports():
