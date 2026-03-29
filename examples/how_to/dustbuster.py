@@ -7,13 +7,14 @@ In this example we will show how to remove detector dust from an IRIS SJI cube.
 """
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pooch
 
 from irispy.io import read_files
-from irispy.utils import clean_sji
+from irispy.utils.dustbuster import clean_sji, clean_sji_regions
 
 ###############################################################################
-# We start by downloading the same SJI file used in the crop example.
+# We start by downloading a small 2832 SJI file used in the crop example.
 #
 # In this case, we will use ``pooch`` to keep the example self-contained
 # but using your browser will also work.
@@ -28,24 +29,36 @@ sji_filename = pooch.retrieve(
 # To keep the example fast, we only clean the first 5 frames.
 
 sji_2832 = read_files(sji_filename, memmap=False)[:5]
-original_map = sji_2832.to_maps(0)
-
-fig = plt.figure(figsize=(12, 5))
-ax = fig.add_subplot(121, projection=original_map.wcs)
-original_map.plot(axes=ax, vmin=0, vmax=500)
-ax.set_title("Original SJI frame")
 
 ###############################################################################
-# We can now clean the cube.
-# The first call will download and cache the pinned calibration files through
-# SunPy's data manager.
+# We will now compare the standard dust cleanup to the region-based version.
+# Both methods use the calibration dust map. The region-based version also
+# expands those seed pixels into connected negative regions in the data.
 
-cleaned_sji_2832 = clean_sji(sji_2832)
-cleaned_map = cleaned_sji_2832.to_maps(0)
+cleaned_default = clean_sji(sji_2832)
+cleaned_regions = clean_sji_regions(sji_2832)
 
-ax = fig.add_subplot(122, projection=cleaned_map.wcs)
-cleaned_map.plot(axes=ax, vmin=0, vmax=500)
-ax.set_title("Dust cleaned SJI frame")
+change = np.maximum(
+    np.abs(cleaned_default.data - sji_2832.data),
+    np.abs(cleaned_regions.data - sji_2832.data),
+)
+frame_idx = int(np.nanargmax(np.nansum(change, axis=(1, 2))))
+image_data = (sji_2832.data, cleaned_default.data, cleaned_regions.data)
 
-plt.tight_layout()
+vmin, vmax = np.nanpercentile(image_data[1][frame_idx], [1, 99])
+
+fig, axes = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
+for ax, image, title in zip(
+    axes,
+    image_data,
+    ("Original", "clean_sji", "clean_sji_regions"),
+    strict=True,
+):
+    ax.imshow(image[frame_idx], origin="lower", cmap="gray", vmin=vmin, vmax=vmax)
+    ax.set_title(title)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+fig.suptitle(f"Dust cleanup comparison, frame {frame_idx}")
+
 plt.show()

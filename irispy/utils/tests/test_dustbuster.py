@@ -9,13 +9,25 @@ import astropy.units as u
 import irispy.utils.dustbuster as dustbuster_module
 from irispy.tests.helpers import figure_test
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
-from irispy.utils.dustbuster import clean_sji, get_sji_dust_params
+from irispy.utils.dustbuster import clean_sji, clean_sji_regions, get_sji_dust_params
 
 
-def _clean_test_cube(cube, *, align, fill_mode="blur"):
+def _clean_test_cube(cube, *, align, fill_mode="blur", dust_ids=None):
     return dustbuster_module._clean_sji_with_params(
         cube,
-        dust_ids=[2073],
+        dust_ids=[2073] if dust_ids is None else dust_ids,
+        slit_center=(1.0, 0.5),
+        mask_scale=1.0,
+        roll_deg=0.0,
+        align=align,
+        fill_mode=fill_mode,
+    )
+
+
+def _clean_test_region_cube(cube, *, align, fill_mode="blur", dust_ids=None):
+    return dustbuster_module._clean_sji_regions_with_params(
+        cube,
+        dust_ids=[2073] if dust_ids is None else dust_ids,
         slit_center=(1.0, 0.5),
         mask_scale=1.0,
         roll_deg=0.0,
@@ -116,6 +128,43 @@ def test_clean_sji_fill_mode_global_skips_blur_fill(make_sji_cube):
 
     assert cleaned_blur.data[0, 1, 1] > cleaned_global.data[0, 1, 1]
     assert cleaned_global.data[0, 1, 1] == pytest.approx(1.0)
+
+
+def test_clean_sji_fills_off_slit_negative_island(make_sji_cube):
+    data = np.full((7, 7), 5.0)
+    data[3, 4] = -3.0
+
+    cube = make_sji_cube(data)
+    cleaned_cube = _clean_test_cube(cube, align=False, dust_ids=[])
+
+    assert cleaned_cube.data[3, 4] == pytest.approx(5.0)
+
+
+def test_clean_sji_leaves_negative_pixel_on_slit(make_sji_cube):
+    data = np.full((7, 7), 5.0)
+    data[3, 1] = -3.0
+
+    cube = make_sji_cube(data)
+    cleaned_cube = _clean_test_cube(cube, align=False, dust_ids=[])
+
+    assert cleaned_cube.data[3, 1] == pytest.approx(-3.0)
+
+
+def test_clean_sji_regions_expands_seed_into_connected_negative_region(make_sji_cube):
+    data = np.full((7, 7), 5.0)
+    data[1, 1] = BAD_PIXEL_VALUE_SCALED
+    data[1, 2] = -4.0
+    data[2, 1] = -3.0
+
+    cube = make_sji_cube(data)
+    cleaned_default = _clean_test_cube(cube, align=False)
+    cleaned_region = _clean_test_region_cube(cube, align=False)
+
+    assert cleaned_default.data[1, 1] == pytest.approx(BAD_PIXEL_VALUE_SCALED)
+    assert cleaned_default.data[2, 1] == pytest.approx(-3.0)
+    assert cleaned_region.data[1, 1] == pytest.approx(5.0)
+    assert cleaned_region.data[1, 2] == pytest.approx(5.0)
+    assert cleaned_region.data[2, 1] == pytest.approx(5.0)
 
 
 @figure_test
@@ -230,6 +279,15 @@ def test_get_sji_dust_params_real_sji_values(
 def test_clean_sji_smoke_real_sji_cube(sns_sjicube_2796):
     cube = sns_sjicube_2796[:5]
     cleaned_cube = clean_sji(cube, align=False)
+
+    assert cleaned_cube.data.shape == cube.data.shape
+    assert cleaned_cube.basic_wcs is not None
+
+
+@pytest.mark.remote_data
+def test_clean_sji_regions_smoke_real_sji_cube(sns_sjicube_2796):
+    cube = sns_sjicube_2796[:5]
+    cleaned_cube = clean_sji_regions(cube, align=False)
 
     assert cleaned_cube.data.shape == cube.data.shape
     assert cleaned_cube.basic_wcs is not None
