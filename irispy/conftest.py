@@ -8,14 +8,21 @@ import pooch
 import pytest
 from scipy.io import readsav
 
+import astropy.units as u
 from astropy.io import fits
+from astropy.wcs import WCS
 
+from sunpy.util import MetaDict
+
+from irispy import SJICube
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
 from irispy.utils import record_to_dict
+from irispy.utils.constants import DN_UNIT
 
 console_logger = logging.getLogger()
 console_logger.setLevel("INFO")
+_DEFAULT = object()
 # Don't actually import pytest_remotedata because that can do things to the
 # entrypoints code in pytest.
 remotedata_spec = importlib.util.find_spec("pytest_remotedata")
@@ -67,6 +74,114 @@ def idl_response():
         get_test_filepath("iris_response_2025_08_05T22_25_04_723.sav"), python_dict=True, verbose=False
     )
     return record_to_dict(idl_response["iris_response"][0])
+
+
+@pytest.fixture
+def make_sji_cube():
+    def _make(
+        data,
+        *,
+        exposure_s=None,
+        slit_x=None,
+        slit_y=None,
+        basic_wcs=_DEFAULT,
+        meta=None,
+    ):
+        data = np.asarray(data, dtype=float)
+        n_frames = data.shape[0] if data.ndim == 3 else 1
+        ny, nx = data.shape[-2:]
+        exposure_s_values = np.ones(n_frames) if exposure_s is None else np.asarray(exposure_s, dtype=float)
+        slit_x_values = np.full(n_frames, 2.0) if slit_x is None else np.asarray(slit_x, dtype=float)
+        slit_y_values = np.full(n_frames, 2.0) if slit_y is None else np.asarray(slit_y, dtype=float)
+
+        if meta is None:
+            meta = {
+                "DATE_OBS": "2024-01-01T00:00:00.000",
+                "TDESC1": "SJI_2796",
+                "SUMSPAT": 1,
+                "SUMSPTRL": 1,
+            }
+
+        basic_wcs_header = MetaDict(
+            {
+                "CTYPE1": "HPLN-TAN",
+                "CUNIT1": "arcsec",
+                "CDELT1": 1.0,
+                "CRPIX1": 1.0,
+                "CRVAL1": 0.0,
+                "NAXIS1": nx,
+                "CTYPE2": "HPLT-TAN",
+                "CUNIT2": "arcsec",
+                "CDELT2": 1.0,
+                "CRPIX2": 1.0,
+                "CRVAL2": 0.0,
+                "NAXIS2": ny,
+            }
+        )
+        if basic_wcs is _DEFAULT:
+            basic_wcs_value = [basic_wcs_header.copy() for _ in range(n_frames)] if data.ndim == 3 else basic_wcs_header
+        else:
+            basic_wcs_value = basic_wcs
+
+        if data.ndim == 3:
+            header = {
+                "CTYPE1": "HPLN-TAN",
+                "CUNIT1": "arcsec",
+                "CDELT1": 1.0,
+                "CRPIX1": 1.0,
+                "CRVAL1": 0.0,
+                "NAXIS1": nx,
+                "CTYPE2": "HPLT-TAN",
+                "CUNIT2": "arcsec",
+                "CDELT2": 1.0,
+                "CRPIX2": 1.0,
+                "CRVAL2": 0.0,
+                "NAXIS2": ny,
+                "CTYPE3": "Time    ",
+                "CUNIT3": "s",
+                "CDELT3": 1.0,
+                "CRPIX3": 1.0,
+                "CRVAL3": 0.0,
+                "NAXIS3": n_frames,
+            }
+            cube = SJICube(
+                data,
+                WCS(header=header, naxis=3, preserve_units=True),
+                unit=DN_UNIT["SJI"],
+                meta=meta,
+                mask=data < 0.5,
+                _basic_wcs=basic_wcs_value,
+            )
+        else:
+            header = {
+                "CTYPE1": "HPLN-TAN",
+                "CUNIT1": "arcsec",
+                "CDELT1": 1.0,
+                "CRPIX1": 1.0,
+                "CRVAL1": 0.0,
+                "NAXIS1": nx,
+                "CTYPE2": "HPLT-TAN",
+                "CUNIT2": "arcsec",
+                "CDELT2": 1.0,
+                "CRPIX2": 1.0,
+                "CRVAL2": 0.0,
+                "NAXIS2": ny,
+            }
+            cube = SJICube(
+                data,
+                WCS(header=header, naxis=2, preserve_units=True),
+                unit=DN_UNIT["SJI"],
+                meta=meta,
+                mask=data < 0.5,
+            )
+            cube._basic_wcs = basic_wcs_value
+
+        cube.extra_coords.add("exposure time", 0, exposure_s_values * u.s)
+        cube.extra_coords.add("slit x position", 0, slit_x_values * u.arcsec)
+        cube.extra_coords.add("slit y position", 0, slit_y_values * u.arcsec)
+        return cube
+
+    return _make
 
 
 @pytest.fixture
