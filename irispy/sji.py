@@ -131,9 +131,7 @@ class SJICube(SpectrogramCube):
         if time_item is Ellipsis:
             time_item = slice(None)
 
-        if isinstance(time_item, Integral):
-            sliced_self._basic_wcs = self._basic_wcs[time_item]
-        elif isinstance(time_item, slice):
+        if isinstance(time_item, (Integral, slice)):
             sliced_self._basic_wcs = self._basic_wcs[time_item]
         elif isinstance(time_item, (list, tuple)):
             sliced_self._basic_wcs = [self._basic_wcs[index] for index in time_item]

@@ -2,16 +2,16 @@
 Dust cleaning for `irispy.sji.SJICube` objects.
 """
 
-from __future__ import annotations
-
 from copy import deepcopy
 from typing import Any, Literal
 
 import numpy as np
-from astropy.time import Time
 from numpy.typing import ArrayLike
 from scipy import ndimage
 from scipy.io import readsav as read_geny
+
+from astropy.time import Time
+
 from sunpy.data import manager as data_manager
 from sunpy.io.special import read_genx
 
@@ -26,14 +26,6 @@ _MAX_ALIGNMENT_FRAMES = 8
 _DISK_RADIUS_LIMIT = 880.0
 _TEMPORAL_OFFSETS = np.array((-2, -1, 1, 2))
 _SPATIAL_WINDOW = 9
-_FLAT_INDEX_URLS = ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_flat.genx"]
-_FLAT_INDEX_SHA256 = "40de195c55b0c5e04acb5f6f55883603c74a71bac6a5d639ec73f9d39d076b24"
-_BAD_PIXEL_URLS = ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_badpix.geny"]
-_BAD_PIXEL_SHA256 = "c4d1884fb1a4f09b6ce4fe150a0aadab2664e479d86ae0ae063d8daa559e230d"
-
-
-def _coord_values(cube: Any, name: str) -> np.ndarray:
-    return np.asarray(cube.extra_coords[name]._lookup_tables[0][1].table[0].value)
 
 
 def _bin_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
@@ -45,15 +37,6 @@ def _align_frame_idx(n_frames: int) -> np.ndarray:
         return np.arange(n_frames)
     frame_idx = np.rint(np.linspace(0, n_frames - 1, _MAX_ALIGNMENT_FRAMES)).astype(int)
     return np.unique(frame_idx)
-
-
-@data_manager.require("iris_sji_flat_index", _FLAT_INDEX_URLS, _FLAT_INDEX_SHA256, defer_download=True)
-@data_manager.require("iris_sji_bad_pixel_map", _BAD_PIXEL_URLS, _BAD_PIXEL_SHA256, defer_download=True)
-def _sji_dust_calibration_paths() -> tuple[str, str]:
-    return (
-        str(data_manager.get("iris_sji_flat_index")),
-        str(data_manager.get("iris_sji_bad_pixel_map")),
-    )
 
 
 def clean_sji_dust(
@@ -109,26 +92,30 @@ def clean_sji_dust(
     function raises immediately so the missing metadata can be added to
     ``irispy`` rather than worked around locally.
     """
-    data = np.asarray(cube.data, dtype=float)
+    data = cube.data
     input_ndim = data.ndim
     if input_ndim == 2:
         data = data[np.newaxis, :, :]
     elif input_ndim != 3:
-        raise ValueError("cube.data must have shape (nt, ny, nx) or (ny, nx).")
+        msg = "cube.data must have shape (nt, ny, nx) or (ny, nx)."
+        raise ValueError(msg)
 
     n_frames, n_y, n_x = data.shape
 
     if cube.basic_wcs is None:
-        raise ValueError("cube.basic_wcs is required.")
+        msg = "cube.basic_wcs is required."
+        raise ValueError(msg)
     wcs_list = cube.basic_wcs if input_ndim == 3 else [cube.basic_wcs]
     if len(wcs_list) != n_frames:
-        raise ValueError("cube.basic_wcs must contain one WCS per frame.")
+        msg = "cube.basic_wcs must contain one WCS per frame."
+        raise ValueError(msg)
 
-    exposure_s = _coord_values(cube, "exposure time")
-    slit_x_pix = _coord_values(cube, "slit x position") - 1.0
-    slit_y_pix = _coord_values(cube, "slit y position") - 1.0
+    exposure_s = cube.extra_coords["exposure time"].wcs.pixel_to_world(np.arange(n_frames)).value
+    slit_x_pix = cube.extra_coords["slit x position"].wcs.pixel_to_world(np.arange(n_frames)).value - 1
+    slit_y_pix = cube.extra_coords["slit y position"].wcs.pixel_to_world(np.arange(n_frames)).value - 1
     if exposure_s.shape != (n_frames,) or slit_x_pix.shape != (n_frames,) or slit_y_pix.shape != (n_frames,):
-        raise ValueError("The required per-frame extra coordinates must each have shape (nt,).")
+        msg = "The required per-frame extra coordinates must each have the same shape as the number of frames."
+        raise ValueError(msg)
 
     y_bin = _bin_factor(cube, axis="y")
     x_bin = _bin_factor(cube, axis="x")
@@ -200,14 +187,12 @@ def clean_sji_dust(
                 shifted_x = align_x + shift_x
                 shifted_y = align_y + shift_y
 
-                x_arcsec = (
-                    (shifted_x + 1.0 - align_ref_x_pix[None, :]) * align_x_scale[None, :]
-                    + align_ref_x_arcsec[None, :]
-                )
-                y_arcsec = (
-                    (shifted_y + 1.0 - align_ref_y_pix[None, :]) * align_y_scale[None, :]
-                    + align_ref_y_arcsec[None, :]
-                )
+                x_arcsec = (shifted_x + 1.0 - align_ref_x_pix[None, :]) * align_x_scale[None, :] + align_ref_x_arcsec[
+                    None, :
+                ]
+                y_arcsec = (shifted_y + 1.0 - align_ref_y_pix[None, :]) * align_y_scale[None, :] + align_ref_y_arcsec[
+                    None, :
+                ]
 
                 valid_hits = (
                     (shifted_x >= 0)
@@ -343,6 +328,18 @@ def clean_sji_dust(
     return cleaned_cube
 
 
+@data_manager.require(
+    "iris_sji_flat_index",
+    ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_flat.genx"],
+    "40de195c55b0c5e04acb5f6f55883603c74a71bac6a5d639ec73f9d39d076b24",
+    defer_download=True,
+)
+@data_manager.require(
+    "iris_sji_bad_pixel_map",
+    ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_badpix.geny"],
+    "c4d1884fb1a4f09b6ce4fe150a0aadab2664e479d86ae0ae063d8daa559e230d",
+    defer_download=True,
+)
 def get_sji_dust_params(*, date_obs: str, sji_name: str) -> dict:
     """
     Return the detector dust-mask arguments needed by ``clean_sji_dust``.
@@ -353,21 +350,25 @@ def get_sji_dust_params(*, date_obs: str, sji_name: str) -> dict:
         Observation start time in FITS format.
     sji_name : str
         SJI descriptor such as ``"SJI_2796"``.
+
     Returns
     -------
     dict
         Minimal keyword arguments for ``clean_sji_dust``.
     """
-    flat_index_path, bad_pixel_path = _sji_dust_calibration_paths()
+    flat_index_path = str(data_manager.get("iris_sji_flat_index"))
+    bad_pixel_path = str(data_manager.get("iris_sji_bad_pixel_map"))
 
     obs_tai = Time(date_obs, format="fits", scale="utc").unix_tai
 
     if not sji_name.startswith("SJI_"):
-        raise ValueError(f"Unsupported TDESC1 for SJI dust mask lookup: {sji_name!r}")
+        msg = f"Unsupported TDESC1 for SJI dust mask lookup: {sji_name!r}"
+        raise ValueError(msg)
     channel = sji_name.split("_", 1)[1]
     suffix = SJI_CHANNEL_SUFFIX.get(channel)
     if suffix is None:
-        raise ValueError(f"Unsupported SJI channel: {channel!r}")
+        msg = f"Unsupported SJI channel: {channel!r}"
+        raise ValueError(msg)
     slit_center = (
         POINTING_INFO[f"CPX1_{suffix}"] - 1.0,
         POINTING_INFO[f"CPX2_{suffix}"] - 1.0,
@@ -378,7 +379,8 @@ def get_sji_dust_params(*, date_obs: str, sji_name: str) -> dict:
     bad_pixel_map = read_geny(bad_pixel_path)["p0"]
     matching_rows = [row for row in flat_index if row["IMG_PATH"] == sji_name]
     if not matching_rows:
-        raise ValueError(f"No flat-index rows matched img_path={sji_name!r}")
+        msg = f"No flat-index rows matched img_path={sji_name!r}"
+        raise ValueError(msg)
     row_tai = np.array([row["FILETAI"] for row in matching_rows])
     record_ids = np.array([row["RECNUM"] for row in matching_rows])
     field_name = f"F{record_ids[np.argmin(np.abs(row_tai - obs_tai))]}"

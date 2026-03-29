@@ -6,7 +6,6 @@ from astropy.time import Time
 from astropy.wcs import WCS
 
 from ndcube.meta import NDMeta
-
 from sunpy.util import MetaDict
 
 from irispy import SJICube, utils
