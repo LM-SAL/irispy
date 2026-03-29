@@ -33,30 +33,11 @@ _BAD_PIXEL_SHA256 = "c4d1884fb1a4f09b6ce4fe150a0aadab2664e479d86ae0ae063d8daa559
 
 
 def _coord_values(cube: Any, name: str) -> np.ndarray:
-    extra_coords = getattr(cube, "extra_coords", None)
-    if extra_coords is not None and hasattr(extra_coords, "keys") and name in extra_coords.keys():
-        named_coord = extra_coords[name]
-        lookup_tables = getattr(named_coord, "_lookup_tables", None)
-        if lookup_tables:
-            table = lookup_tables[0][1].table
-            if table:
-                values = table[0]
-                return np.asarray(getattr(values, "value", values))
-
-    values = cube.axis_world_coords(name, wcs=extra_coords)[0]
-    return np.asarray(getattr(values, "value", values))
+    return np.asarray(cube.extra_coords[name]._lookup_tables[0][1].table[0].value)
 
 
 def _bin_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
-    if axis == "x":
-        value = getattr(cube.meta, "spectral_summing_factor", None)
-        if value is None and hasattr(cube.meta, "get"):
-            value = cube.meta.get("SUMSPTRL")
-    else:
-        value = getattr(cube.meta, "spatial_summing_factor", None)
-        if value is None and hasattr(cube.meta, "get"):
-            value = cube.meta.get("SUMSPAT")
-    return 1 if value is None else int(value)
+    return int(cube.meta["SUMSPTRL" if axis == "x" else "SUMSPAT"])
 
 
 def _align_frame_idx(n_frames: int) -> np.ndarray:
@@ -117,9 +98,9 @@ def clean_sji_dust(
     It expects these data to exist on the cube:
 
     - ``cube.data`` with shape ``(nt, ny, nx)`` or ``(ny, nx)``,
-    - ``cube.basic_wcs`` containing one FITS-style WCS per frame,
-    - ``cube.meta.spatial_summing_factor``,
-    - ``cube.meta.spectral_summing_factor``,
+    - ``cube.basic_wcs`` as a list for cubes and a single WCS for 2D slices,
+    - ``cube.meta["SUMSPAT"]``,
+    - ``cube.meta["SUMSPTRL"]``,
     - extra coordinate ``"exposure time"``,
     - extra coordinate ``"slit x position"``, and
     - extra coordinate ``"slit y position"``.
@@ -137,13 +118,9 @@ def clean_sji_dust(
 
     n_frames, n_y, n_x = data.shape
 
-    frame_wcs = cube.basic_wcs
-    if frame_wcs is None:
+    if cube.basic_wcs is None:
         raise ValueError("cube.basic_wcs is required.")
-    if isinstance(frame_wcs, list):
-        wcs_list = frame_wcs
-    else:
-        wcs_list = [frame_wcs]
+    wcs_list = cube.basic_wcs if input_ndim == 3 else [cube.basic_wcs]
     if len(wcs_list) != n_frames:
         raise ValueError("cube.basic_wcs must contain one WCS per frame.")
 
@@ -354,28 +331,14 @@ def clean_sji_dust(
     cleaned_cube = deepcopy(cube)
     cleaned_cube.data[...] = data[0] if input_ndim == 2 else data
     if dust_pixels.size > 0:
-        if input_ndim == 2:
-            cleaned_cube.data[
-                dust_pixels[:, 1],
-                dust_pixels[:, 2],
-            ] = fill_values
-            if getattr(cleaned_cube, "mask", None) is not None:
-                cleaned_cube.mask[
-                    dust_pixels[:, 1],
-                    dust_pixels[:, 2],
-                ] = False
-        else:
-            cleaned_cube.data[
-                dust_pixels[:, 0],
-                dust_pixels[:, 1],
-                dust_pixels[:, 2],
-            ] = fill_values
-            if getattr(cleaned_cube, "mask", None) is not None:
-                cleaned_cube.mask[
-                    dust_pixels[:, 0],
-                    dust_pixels[:, 1],
-                    dust_pixels[:, 2],
-                ] = False
+        write_index = (
+            (dust_pixels[:, 1], dust_pixels[:, 2])
+            if input_ndim == 2
+            else (dust_pixels[:, 0], dust_pixels[:, 1], dust_pixels[:, 2])
+        )
+        cleaned_cube.data[write_index] = fill_values
+        if cleaned_cube.mask is not None:
+            cleaned_cube.mask[write_index] = False
 
     return cleaned_cube
 
@@ -420,11 +383,7 @@ def get_sji_dust_params(*, date_obs: str, sji_name: str) -> dict:
     record_ids = np.array([row["RECNUM"] for row in matching_rows])
     field_name = f"F{record_ids[np.argmin(np.abs(row_tai - obs_tai))]}"
     field_data = bad_pixel_map[field_name]
-    if field_data.dtype == object:
-        pieces = [np.ravel(piece) for piece in field_data.flat]
-        dust_ids = np.concatenate(pieces).astype(np.int64, copy=False) if pieces else np.empty(0, dtype=np.int64)
-    else:
-        dust_ids = np.asarray(field_data, dtype=np.int64).ravel()
+    dust_ids = np.concatenate([np.ravel(piece) for piece in field_data.flat]).astype(np.int64, copy=False)
     return {
         "dust_ids": dust_ids,
         "slit_center": slit_center,

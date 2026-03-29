@@ -11,14 +11,13 @@ class _FakeCoord:
         self.value = np.asarray(values, dtype=float)
 
 
-class _FakeMeta(dict):
-    @property
-    def spatial_summing_factor(self):
-        return self.get("SUMSPAT")
+class _FakeExtraCoord:
+    def __init__(self, values):
+        self._lookup_tables = [(None, SimpleNamespace(table=(_FakeCoord(values),)))]
 
-    @property
-    def spectral_summing_factor(self):
-        return None
+
+class _FakeExtraCoords(dict):
+    pass
 
 
 class _FakeCube:
@@ -32,15 +31,19 @@ class _FakeCube:
             ],
         )
         self.mask = self.data < 0.5
-        self.meta = _FakeMeta(
+        self.meta = {
+            "DATE_OBS": "2024-01-01T00:00:00.000",
+            "TDESC1": "SJI_2796",
+            "SUMSPAT": 1,
+            "SUMSPTRL": 1,
+        }
+        self.extra_coords = _FakeExtraCoords(
             {
-                "DATE_OBS": "2024-01-01T00:00:00.000",
-                "TDESC1": "SJI_2796",
-                "SUMSPAT": 1,
-                "SUMSPTRL": 1,
-            },
+                "exposure time": _FakeExtraCoord([1.0]),
+                "slit x position": _FakeExtraCoord([2.0]),
+                "slit y position": _FakeExtraCoord([2.0]),
+            }
         )
-        self.extra_coords = object()
         self.basic_wcs = SimpleNamespace(
             wcs=SimpleNamespace(
                 crpix=np.array([1.0, 1.0]),
@@ -49,27 +52,18 @@ class _FakeCube:
             ),
         )
 
-    def axis_world_coords(self, name, *, wcs=None):
-        assert wcs is self.extra_coords
-        values = {
-            "exposure time": [1.0],
-            "slit x position": [2.0],
-            "slit y position": [2.0],
-        }
-        return (_FakeCoord(values[name]),)
-
     def __deepcopy__(self, memo):
         new_cube = type(self).__new__(type(self))
         memo[id(self)] = new_cube
         new_cube.data = self.data.copy()
         new_cube.mask = self.mask.copy()
-        new_cube.meta = _FakeMeta(dict(self.meta))
+        new_cube.meta = dict(self.meta)
         new_cube.extra_coords = self.extra_coords
         new_cube.basic_wcs = self.basic_wcs
         return new_cube
 
 
-def test_clean_sji_dust_supports_sji_header_fallbacks_and_2d_data():
+def test_clean_sji_dust_supports_2d_data():
     cube = _FakeCube()
 
     cleaned_cube = clean_sji_dust(
