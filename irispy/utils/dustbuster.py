@@ -47,7 +47,11 @@ def _clean_sji_with_params(
     mask_scale: float,
     roll_deg: float,
     align: bool = True,
+    fill_mode: Literal["blur", "global"] = "blur",
 ):
+    if fill_mode not in {"blur", "global"}:
+        msg = "fill_mode must be 'blur' or 'global'."
+        raise ValueError(msg)
     data = cube.data
     input_ndim = data.ndim
     if input_ndim == 2:
@@ -213,22 +217,23 @@ def _clean_sji_with_params(
             fill_values *= exposure_s[fill_t]
             needs_spatial_fill = ~np.isfinite(fill_values)
             if np.any(needs_spatial_fill):
-                for frame_idx in np.unique(fill_t[needs_spatial_fill]):
-                    frame_needs = needs_spatial_fill & (fill_t == frame_idx)
-                    frame_data = data[frame_idx].copy()
-                    frame_data[frame_data == BAD_PIXEL_VALUE_SCALED] = np.nan
-                    frame_data[fill_mask[frame_idx]] = np.nan
-                    finite_mask = np.isfinite(frame_data).astype(float)
-                    filled_data = np.where(np.isfinite(frame_data), frame_data, 0.0)
-                    mean_signal = ndimage.uniform_filter(filled_data, size=_SPATIAL_WINDOW, mode="nearest")
-                    mean_weight = ndimage.uniform_filter(finite_mask, size=_SPATIAL_WINDOW, mode="nearest")
-                    with np.errstate(invalid="ignore", divide="ignore"):
-                        frame_fill = mean_signal / mean_weight
-                    frame_fill[mean_weight == 0.0] = np.nan
-                    fill_values[frame_needs] = frame_fill[
-                        fill_y[frame_needs],
-                        fill_x[frame_needs],
-                    ]
+                if fill_mode == "blur":
+                    for frame_idx in np.unique(fill_t[needs_spatial_fill]):
+                        frame_needs = needs_spatial_fill & (fill_t == frame_idx)
+                        frame_data = data[frame_idx].copy()
+                        frame_data[frame_data == BAD_PIXEL_VALUE_SCALED] = np.nan
+                        frame_data[fill_mask[frame_idx]] = np.nan
+                        finite_mask = np.isfinite(frame_data).astype(float)
+                        filled_data = np.where(np.isfinite(frame_data), frame_data, 0.0)
+                        mean_signal = ndimage.uniform_filter(filled_data, size=_SPATIAL_WINDOW, mode="nearest")
+                        mean_weight = ndimage.uniform_filter(finite_mask, size=_SPATIAL_WINDOW, mode="nearest")
+                        with np.errstate(invalid="ignore", divide="ignore"):
+                            frame_fill = mean_signal / mean_weight
+                        frame_fill[mean_weight == 0.0] = np.nan
+                        fill_values[frame_needs] = frame_fill[
+                            fill_y[frame_needs],
+                            fill_x[frame_needs],
+                        ]
                 needs_global_fill = ~np.isfinite(fill_values)
                 if np.any(needs_global_fill):
                     good_values = data[np.isfinite(data) & (data != BAD_PIXEL_VALUE_SCALED)]
@@ -247,7 +252,7 @@ def _clean_sji_with_params(
     return cleaned_cube
 
 
-def clean_sji(cube, *, align: bool = True):
+def clean_sji(cube, *, align: bool = True, fill_mode: Literal["blur", "global"] = "blur"):
     """
     Remove dust-contaminated pixels from an `irispy.sji.SJICube`.
 
@@ -258,6 +263,10 @@ def clean_sji(cube, *, align: bool = True):
     align : bool, optional
         If True (the default), align the projected mask to the darkest valid pixels in the
         cube using a bounded integer search.
+    fill_mode : {"blur", "global"}, optional
+        Fallback used when temporal filling is not possible. ``"blur"`` uses a
+        local smoothed fill before falling back to the overall median.
+        ``"global"`` skips the local fill and goes straight to the overall median.
 
     Returns
     -------
@@ -268,7 +277,7 @@ def clean_sji(cube, *, align: bool = True):
         date_obs=cube.meta["DATE_OBS"],
         sji_name=cube.meta["TDESC1"],
     )
-    return _clean_sji_with_params(cube, align=align, **dust_params)
+    return _clean_sji_with_params(cube, align=align, fill_mode=fill_mode, **dust_params)
 
 
 @data_manager.require(
