@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import pooch
 
 from irispy.io import read_files
-from irispy.utils import clean_sji_dust, get_sji_dust_params
+from irispy.utils import clean_sji, get_sji_dust_params
 
 ###############################################################################
 # We start by downloading the same SJI file used in the crop example.
@@ -44,7 +44,7 @@ dust_params = get_sji_dust_params(
     date_obs=sji_2832.meta["DATE_OBS"],
     sji_name=sji_2832.meta["TDESC1"],
 )
-cleaned_sji_2832 = clean_sji_dust(sji_2832, **dust_params)
+cleaned_sji_2832 = clean_sji(sji_2832, **dust_params)
 cleaned_map = cleaned_sji_2832.to_maps(0)
 
 ax = fig.add_subplot(122, projection=cleaned_map.wcs)
