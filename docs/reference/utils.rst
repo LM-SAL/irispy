@@ -10,6 +10,8 @@ The `irispy.utils` module provides functions useful for development of ``irispy`
 
 .. automodapi:: irispy.utils.cosmic_rays
 
+.. automodapi:: irispy.utils.dust
+
 .. automodapi:: irispy.utils.response
 
 .. automodapi:: irispy.utils.spectrograph

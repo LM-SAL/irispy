@@ -119,14 +119,26 @@ class SJICube(SpectrogramCube):
         if self._basic_wcs is not None and self.data.ndim == 3:
             if isinstance(item, (Integral, slice)):
                 basic_wcs_item = item
-            elif item is Ellipsis or item == ():
+            elif item is Ellipsis:
                 basic_wcs_item = slice(None)
-            elif isinstance(item, tuple) and sum(subitem is Ellipsis for subitem in item) <= 1:
-                first = item[0]
-                if first is Ellipsis:
-                    basic_wcs_item = slice(None)
-                elif isinstance(first, (Integral, slice)):
-                    basic_wcs_item = first
+            elif isinstance(item, tuple):
+                normalized_item = []
+                ellipsis_seen = False
+                for subitem in item:
+                    if subitem is Ellipsis:
+                        if ellipsis_seen:
+                            normalized_item = None
+                            break
+                        ellipsis_seen = True
+                        missing_dims = self.data.ndim - (len(item) - 1)
+                        normalized_item.extend([slice(None)] * missing_dims)
+                    else:
+                        normalized_item.append(subitem)
+                if normalized_item is not None:
+                    if len(normalized_item) < self.data.ndim:
+                        normalized_item.extend([slice(None)] * (self.data.ndim - len(normalized_item)))
+                    if normalized_item and isinstance(normalized_item[0], (Integral, slice)):
+                        basic_wcs_item = normalized_item[0]
         return basic_wcs_item
 
     def __getitem__(self, item):
@@ -219,6 +231,16 @@ class SJICube(SpectrogramCube):
         )
         cleaned_cube.dust_masked = self.dust_masked
         return cleaned_cube
+
+    def remove_dust(self, **kwargs):
+        """
+        Return a new cube with dust-darkened pixels repaired.
+
+        This is a convenience wrapper around `irispy.utils.remove_dust`.
+        """
+        from irispy.utils.dust import remove_dust  # NOQA: PLC0415
+
+        return remove_dust(self, **kwargs)
 
     @property
     def basic_wcs(self):
