@@ -40,7 +40,10 @@ ax.set_title("Original SJI frame")
 # The first call will download and cache the pinned calibration files through
 # SunPy's data manager.
 
-dust_params = get_sji_dust_params(sji_2832)
+dust_params = get_sji_dust_params(
+    date_obs=sji_2832.meta["DATE_OBS"],
+    sji_name=sji_2832.meta["TDESC1"],
+)
 cleaned_sji_2832 = clean_sji_dust(sji_2832, **dust_params)
 cleaned_map = cleaned_sji_2832.to_maps(0)
 

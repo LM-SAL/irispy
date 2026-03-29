@@ -1,12 +1,5 @@
-"""Dust cleaning for ``irispy.sji.SJICube`` objects.
-
-This module implements a clean, direct dust-removal algorithm centered on the
-current ``irispy`` API. It deliberately avoids metadata wrapper classes and
-instead reads what it needs straight from the cube, its ``.meta`` object, its
-per-frame ``basic_wcs``, and its extra coordinates.
-
-The detector dust-mask geometry is still passed in explicitly because that is
-calibration data, not an intrinsic property of the cube.
+"""
+Dust cleaning for `irispy.sji.SJICube` objects.
 """
 
 from __future__ import annotations
@@ -22,7 +15,7 @@ from scipy.io import readsav as read_geny
 from sunpy.data import manager as data_manager
 from sunpy.io.special import read_genx
 
-from irispy.utils.variables import POINTING_INFO
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, POINTING_INFO, SJI_CHANNEL_SUFFIX
 
 __all__ = ["clean_sji_dust", "get_sji_dust_params"]
 
@@ -31,21 +24,12 @@ _MANUAL_OFFSET = (0.0, -0.5)
 _MAX_ALIGNMENT_SHIFT = 7
 _MAX_ALIGNMENT_FRAMES = 8
 _DISK_RADIUS_LIMIT = 880.0
-_INVALID_VALUE = -200.0
-_TEMPORAL_OFFSETS = (-2, -1, 1, 2)
+_TEMPORAL_OFFSETS = np.array((-2, -1, 1, 2))
 _SPATIAL_WINDOW = 9
 _FLAT_INDEX_URLS = ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_flat.genx"]
 _FLAT_INDEX_SHA256 = "40de195c55b0c5e04acb5f6f55883603c74a71bac6a5d639ec73f9d39d076b24"
 _BAD_PIXEL_URLS = ["https://soho.nascom.nasa.gov/sdb/iris/data/20260326_032515_badpix.geny"]
 _BAD_PIXEL_SHA256 = "c4d1884fb1a4f09b6ce4fe150a0aadab2664e479d86ae0ae063d8daa559e230d"
-_SJI_CHANNEL_SUFFIX = {
-    "1330": "133",
-    "1400": "140",
-    "2796": "279",
-    "2832": "283",
-    "1600": "MIR",
-    "5000": "FSI",
-}
 
 
 def _coord_values(cube: Any, name: str) -> np.ndarray:
@@ -57,10 +41,10 @@ def _coord_values(cube: Any, name: str) -> np.ndarray:
             table = lookup_tables[0][1].table
             if table:
                 values = table[0]
-                return np.asarray(getattr(values, "value", values), dtype=float)
+                return np.asarray(getattr(values, "value", values))
 
     values = cube.axis_world_coords(name, wcs=extra_coords)[0]
-    return np.asarray(getattr(values, "value", values), dtype=float)
+    return np.asarray(getattr(values, "value", values))
 
 
 def _bin_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
@@ -77,8 +61,8 @@ def _bin_factor(cube: Any, *, axis: Literal["x", "y"]) -> int:
 
 def _align_frame_idx(n_frames: int) -> np.ndarray:
     if n_frames <= _MAX_ALIGNMENT_FRAMES:
-        return np.arange(n_frames, dtype=np.int64)
-    frame_idx = np.rint(np.linspace(0, n_frames - 1, _MAX_ALIGNMENT_FRAMES)).astype(np.int64)
+        return np.arange(n_frames)
+    frame_idx = np.rint(np.linspace(0, n_frames - 1, _MAX_ALIGNMENT_FRAMES)).astype(int)
     return np.unique(frame_idx)
 
 
@@ -172,12 +156,12 @@ def clean_sji_dust(
     y_bin = _bin_factor(cube, axis="y")
     x_bin = _bin_factor(cube, axis="x")
 
-    ref_x_pix = np.asarray([w.wcs.crpix[0] for w in wcs_list], dtype=float)
-    ref_y_pix = np.asarray([w.wcs.crpix[1] for w in wcs_list], dtype=float)
-    x_scale = np.asarray([w.wcs.cdelt[0] for w in wcs_list], dtype=float)
-    y_scale = np.asarray([w.wcs.cdelt[1] for w in wcs_list], dtype=float)
-    ref_x_arcsec = np.asarray([w.wcs.crval[0] for w in wcs_list], dtype=float)
-    ref_y_arcsec = np.asarray([w.wcs.crval[1] for w in wcs_list], dtype=float)
+    ref_x_pix = np.array([w.wcs.crpix[0] for w in wcs_list])
+    ref_y_pix = np.array([w.wcs.crpix[1] for w in wcs_list])
+    x_scale = np.array([w.wcs.cdelt[0] for w in wcs_list])
+    y_scale = np.array([w.wcs.cdelt[1] for w in wcs_list])
+    ref_x_arcsec = np.array([w.wcs.crval[0] for w in wcs_list])
+    ref_y_arcsec = np.array([w.wcs.crval[1] for w in wcs_list])
     image_scale = 0.5 * (np.abs(x_scale) + np.abs(y_scale))
 
     mask_nx, mask_ny = _MASK_SHAPE
@@ -192,11 +176,11 @@ def clean_sji_dust(
     y_bin_offset = (y_bin - 1.0) / (2.0 * y_bin)
     x_bin_offset = (x_bin - 1.0) / (2.0 * x_bin)
 
-    dust_x_mask = detector_x.astype(float) / float(x_bin) + _MANUAL_OFFSET[0]
-    dust_y_mask = detector_y.astype(float) / float(y_bin) + _MANUAL_OFFSET[1]
+    dust_x_mask = detector_x / x_bin + _MANUAL_OFFSET[0]
+    dust_y_mask = detector_y / y_bin + _MANUAL_OFFSET[1]
 
-    slit_x_mask = slit_center[0] / float(x_bin) + x_bin_offset
-    slit_y_mask = slit_center[1] / float(y_bin) + y_bin_offset
+    slit_x_mask = slit_center[0] / x_bin + x_bin_offset
+    slit_y_mask = slit_center[1] / y_bin + y_bin_offset
 
     dx_mask = dust_x_mask - slit_x_mask
     dy_mask = dust_y_mask - slit_y_mask
@@ -263,13 +247,13 @@ def clean_sji_dust(
                 hit_y = shifted_y[valid_hits]
                 hit_x = shifted_x[valid_hits]
                 hit_values = data[hit_t, hit_y, hit_x]
-                valid_values = (hit_values != _INVALID_VALUE) & np.isfinite(hit_values)
+                valid_values = (hit_values != BAD_PIXEL_VALUE_SCALED) & np.isfinite(hit_values)
                 if not np.any(valid_values):
                     continue
 
                 # Using the sampled values directly keeps the shift ranking stable
                 # while avoiding an expensive per-shift deduplication step.
-                score = float(np.mean(hit_values[valid_values]))
+                score = np.mean(hit_values[valid_values])
                 if score < best_score:
                     best_score = score
                     best_shift = (shift_x, shift_y)
@@ -297,7 +281,7 @@ def clean_sji_dust(
         hit_y = dust_y[valid_hits]
         hit_x = dust_x[valid_hits]
         hit_values = data[hit_t, hit_y, hit_x]
-        valid_values = (hit_values != _INVALID_VALUE) & np.isfinite(hit_values)
+        valid_values = (hit_values != BAD_PIXEL_VALUE_SCALED) & np.isfinite(hit_values)
         if np.any(valid_values):
             dust_pixels = np.stack([hit_t[valid_values], hit_y[valid_values], hit_x[valid_values]], axis=1)
             dust_pixels = np.unique(dust_pixels, axis=0)
@@ -313,8 +297,7 @@ def clean_sji_dust(
             fill_y = dust_pixels[:, 1]
             fill_x = dust_pixels[:, 2]
 
-            time_offsets = np.asarray(_TEMPORAL_OFFSETS, dtype=np.int64)
-            neighbor_t = fill_t[:, None] + time_offsets[None, :]
+            neighbor_t = fill_t[:, None] + _TEMPORAL_OFFSETS[None, :]
             neighbor_y = np.broadcast_to(fill_y[:, None], neighbor_t.shape)
             neighbor_x = np.broadcast_to(fill_x[:, None], neighbor_t.shape)
 
@@ -328,7 +311,7 @@ def clean_sji_dust(
                 neighbor_y[valid_neighbors],
                 neighbor_x[valid_neighbors],
             ]
-            valid_neighbors &= neighbor_values != _INVALID_VALUE
+            valid_neighbors &= neighbor_values != BAD_PIXEL_VALUE_SCALED
             valid_neighbors &= np.isfinite(neighbor_values)
 
             neighbor_values[valid_neighbors] /= exposure_s[clipped_t[valid_neighbors]]
@@ -347,7 +330,7 @@ def clean_sji_dust(
                 for frame_idx in np.unique(fill_t[needs_spatial_fill]):
                     frame_needs = needs_spatial_fill & (fill_t == frame_idx)
                     frame_data = data[frame_idx].copy()
-                    frame_data[frame_data == _INVALID_VALUE] = np.nan
+                    frame_data[frame_data == BAD_PIXEL_VALUE_SCALED] = np.nan
                     frame_data[fill_mask[frame_idx]] = np.nan
 
                     finite_mask = np.isfinite(frame_data).astype(float)
@@ -365,8 +348,8 @@ def clean_sji_dust(
 
                 needs_global_fill = ~np.isfinite(fill_values)
                 if np.any(needs_global_fill):
-                    good_values = data[np.isfinite(data) & (data != _INVALID_VALUE)]
-                    fill_values[needs_global_fill] = float(np.median(good_values))
+                    good_values = data[np.isfinite(data) & (data != BAD_PIXEL_VALUE_SCALED)]
+                    fill_values[needs_global_fill] = np.median(good_values)
 
     cleaned_cube = deepcopy(cube)
     cleaned_cube.data[...] = data[0] if input_ndim == 2 else data
@@ -397,86 +380,51 @@ def clean_sji_dust(
     return cleaned_cube
 
 
-def get_sji_dust_params(
-    cube,
-    *,
-    flat_index_path: str | None = None,
-    bad_pixel_path: str | None = None,
-) -> dict:
+def get_sji_dust_params(*, date_obs: str, sji_name: str) -> dict:
     """
     Return the detector dust-mask arguments needed by ``clean_sji_dust``.
 
     Parameters
     ----------
-    cube : irispy.sji.SJICube
-        Input SJI cube.
-    flat_index_path : str, optional
-        Path to an IRIS ``*flat.genx`` file. If omitted, a pinned calibration
-        file is downloaded and cached through SunPy's data manager.
-    bad_pixel_path : str, optional
-        Path to an IRIS ``*badpix.geny`` file. If omitted, a pinned calibration
-        file is downloaded and cached through SunPy's data manager.
+    date_obs : str
+        Observation start time in FITS format.
+    sji_name : str
+        SJI descriptor such as ``"SJI_2796"``.
     Returns
     -------
     dict
         Minimal keyword arguments for ``clean_sji_dust``.
     """
-    if flat_index_path is None or bad_pixel_path is None:
-        cached_flat_index_path, cached_bad_pixel_path = _sji_dust_calibration_paths()
-        flat_index_path = cached_flat_index_path if flat_index_path is None else flat_index_path
-        bad_pixel_path = cached_bad_pixel_path if bad_pixel_path is None else bad_pixel_path
+    flat_index_path, bad_pixel_path = _sji_dust_calibration_paths()
 
-    date_obs = str(cube.meta["DATE_OBS"])
-    obs_tai = float(Time(date_obs, format="fits", scale="utc").unix_tai)
+    obs_tai = Time(date_obs, format="fits", scale="utc").unix_tai
 
-    sji_name = str(cube.meta["TDESC1"])
     if not sji_name.startswith("SJI_"):
         raise ValueError(f"Unsupported TDESC1 for SJI dust mask lookup: {sji_name!r}")
     channel = sji_name.split("_", 1)[1]
-
-    suffix = _SJI_CHANNEL_SUFFIX.get(channel)
+    suffix = SJI_CHANNEL_SUFFIX.get(channel)
     if suffix is None:
         raise ValueError(f"Unsupported SJI channel: {channel!r}")
-
     slit_center = (
-        float(POINTING_INFO[f"CPX1_{suffix}"]) - 1.0,
-        float(POINTING_INFO[f"CPX2_{suffix}"]) - 1.0,
+        POINTING_INFO[f"CPX1_{suffix}"] - 1.0,
+        POINTING_INFO[f"CPX2_{suffix}"] - 1.0,
     )
-    mask_scale = float(POINTING_INFO[f"CDLT_{suffix}"])
-    roll_deg = float(POINTING_INFO[f"BE_{suffix}"])
+    mask_scale = POINTING_INFO[f"CDLT_{suffix}"]
+    roll_deg = POINTING_INFO[f"BE_{suffix}"]
     flat_index = read_genx(flat_index_path)["SAVEGEN0"]
     bad_pixel_map = read_geny(bad_pixel_path)["p0"]
-
-    matching_rows = [row for row in flat_index if str(row["IMG_PATH"]) == sji_name]
+    matching_rows = [row for row in flat_index if row["IMG_PATH"] == sji_name]
     if not matching_rows:
         raise ValueError(f"No flat-index rows matched img_path={sji_name!r}")
-
-    row_tai = np.array([row["FILETAI"] for row in matching_rows], dtype=float)
-    record_ids = np.array([row["RECNUM"] for row in matching_rows], dtype=int)
-
-    best_idx = int(np.argmin(np.abs(row_tai - obs_tai)))
-    record_id = int(record_ids[best_idx])
-
-    field_name = f"F{record_id}"
-
-    if isinstance(bad_pixel_map, dict):
-        field_data = bad_pixel_map[field_name]
-    else:
-        field_data = getattr(bad_pixel_map, field_name)
-
-    if isinstance(field_data, np.ndarray) and field_data.dtype == object:
-        pieces = [np.asarray(piece, dtype=np.int64).ravel() for piece in field_data.flat]
-        dust_ids = (
-            np.concatenate(pieces) if pieces else np.empty(0, dtype=np.int64)
-        )
-    elif isinstance(field_data, (list, tuple)):
-        pieces = [np.asarray(piece, dtype=np.int64).ravel() for piece in field_data]
-        dust_ids = (
-            np.concatenate(pieces) if pieces else np.empty(0, dtype=np.int64)
-        )
+    row_tai = np.array([row["FILETAI"] for row in matching_rows])
+    record_ids = np.array([row["RECNUM"] for row in matching_rows])
+    field_name = f"F{record_ids[np.argmin(np.abs(row_tai - obs_tai))]}"
+    field_data = bad_pixel_map[field_name]
+    if field_data.dtype == object:
+        pieces = [np.ravel(piece) for piece in field_data.flat]
+        dust_ids = np.concatenate(pieces).astype(np.int64, copy=False) if pieces else np.empty(0, dtype=np.int64)
     else:
         dust_ids = np.asarray(field_data, dtype=np.int64).ravel()
-
     return {
         "dust_ids": dust_ids,
         "slit_center": slit_center,

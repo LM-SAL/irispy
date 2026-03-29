@@ -113,12 +113,20 @@ def test_get_sji_dust_params_uses_sji_header_values(monkeypatch, tmp_path):
     monkeypatch.setattr(
         dustbuster_module,
         "read_geny",
-        lambda path: {"p0": {"F7": np.array([11, 12], dtype=np.int64)}},
+        lambda path: {
+            "p0": np.rec.array(
+                [(np.array([11, 12], dtype=np.int64),)],
+                dtype=[("F7", object)],
+            ),
+        },
     )
 
     with dustbuster_module.data_manager.override_file("iris_sji_flat_index", str(flat_index_path)):
         with dustbuster_module.data_manager.override_file("iris_sji_bad_pixel_map", str(bad_pixel_path)):
-            params = get_sji_dust_params(cube)
+            params = get_sji_dust_params(
+                date_obs=cube.meta["DATE_OBS"],
+                sji_name=cube.meta["TDESC1"],
+            )
 
     np.testing.assert_array_equal(params["dust_ids"], np.array([11, 12], dtype=np.int64))
     assert set(params) == {"dust_ids", "slit_center", "mask_scale", "roll_deg"}
