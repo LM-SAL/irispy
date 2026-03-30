@@ -4,9 +4,9 @@
   "checkout": null,
   "context": {
     "cookiecutter": {
-      "package_name": "irispy-lmsal",
+      "package_name": "irispy",
       "module_name": "irispy",
-      "short_description": "A Python package that provides the tools to read in and analyze data from the IRIS solar-observing satellite.",
+      "short_description": "``irispy`` is a library that provides the tools to read in and analyze data from Interface Region Imaging Spectrograph (IRIS).",
       "author_name": "IRIS Instrument Team",
       "author_email": "https://iris.lmsal.com/contact.html",
       "project_url": "https://pypi.org/project/irispy-lmsal/",
