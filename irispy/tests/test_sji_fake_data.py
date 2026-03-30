@@ -194,8 +194,11 @@ def test_sjicube_apply_dust_mask(dust_cube):
 @pytest.mark.parametrize(
     ("item", "expected_len"),
     [
+        (-1, None),
         (0, None),
         (slice(0, 3), 3),
+        (slice(0, 10, 2), 5),
+        ((slice(0, 3), slice(0, 10)), 3),
         ((slice(0, 3), slice(0, 10), slice(0, 10)), 3),
         ((0, slice(0, 10), slice(0, 10)), None),
         (Ellipsis, 52),
@@ -213,3 +216,15 @@ def test_sjicube_slice_preserves_basic_wcs(sns_sjicube_1330, item, expected_len)
     else:
         assert len(subset.basic_wcs) == expected_len
         assert isinstance(subset.basic_wcs[0], WCS)
+
+
+def test_get_basic_wcs_slice_item_returns_none_for_multiple_ellipsis(sns_sjicube_1330):
+    original_basic_wcs = sns_sjicube_1330.basic_wcs
+
+    assert sns_sjicube_1330._get_basic_wcs_slice_item((Ellipsis, Ellipsis)) is None
+    assert len(sns_sjicube_1330.basic_wcs) == len(original_basic_wcs)
+
+
+def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
+    with pytest.raises((IndexError, ValueError)):
+        sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]
