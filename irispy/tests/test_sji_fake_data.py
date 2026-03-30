@@ -228,3 +228,21 @@ def test_get_basic_wcs_slice_item_returns_none_for_multiple_ellipsis(sns_sjicube
 def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
     with pytest.raises((IndexError, ValueError)):
         sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]
+
+
+def test_sjicube_slice_with_none_basic_wcs_keeps_none(cube):
+    cube._basic_wcs = None
+
+    subset = cube[0:1]
+
+    assert cube._get_basic_wcs_slice_item(slice(0, 1)) is None
+    assert subset.basic_wcs is None
+
+
+def test_get_basic_wcs_slice_item_returns_none_when_data_is_not_3d(cube_2d):
+    cube_2d._basic_wcs = [cube_2d.wcs.to_header()]
+
+    subset = cube_2d[:, :2]
+
+    assert cube_2d._get_basic_wcs_slice_item((slice(None), slice(0, 2))) is None
+    assert subset.data.ndim == 2
