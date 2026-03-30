@@ -189,3 +189,27 @@ def test_sjicube_apply_dust_mask(dust_cube):
         ]
     )
     np.testing.assert_array_equal(dust_cube.mask, before_mask)
+
+
+@pytest.mark.parametrize(
+    ("item", "expected_len"),
+    [
+        (0, None),
+        (slice(0, 3), 3),
+        ((slice(0, 3), slice(0, 10), slice(0, 10)), 3),
+        ((0, slice(0, 10), slice(0, 10)), None),
+        (Ellipsis, 52),
+        ((Ellipsis, slice(0, 10)), 52),
+        ((slice(0, 3), Ellipsis), 3),
+        ((0, Ellipsis), None),
+    ],
+)
+def test_sjicube_slice_preserves_basic_wcs(sns_sjicube_1330, item, expected_len):
+    subset = sns_sjicube_1330[item]
+
+    assert subset.basic_wcs is not None
+    if expected_len is None:
+        assert isinstance(subset.basic_wcs, WCS)
+    else:
+        assert len(subset.basic_wcs) == expected_len
+        assert isinstance(subset.basic_wcs[0], WCS)
