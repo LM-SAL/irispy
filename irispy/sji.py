@@ -112,24 +112,19 @@ class SJICube(SpectrogramCube):
         )
 
     def _get_basic_wcs_slice_item(self, item):
-        if self._basic_wcs is None or self.data.ndim != 3:
-            return None
-        if isinstance(item, (Integral, slice)):
-            return item
-        if item is Ellipsis:
-            return slice(None)
-        if not isinstance(item, tuple):
-            return None
-        if not item:
-            return slice(None)
-        if sum(subitem is Ellipsis for subitem in item) > 1:
-            return None
-        first = item[0]
-        if first is Ellipsis:
-            return slice(None)
-        if isinstance(first, (Integral, slice)):
-            return first
-        return None
+        basic_wcs_item = None
+        if self._basic_wcs is not None and self.data.ndim == 3:
+            if isinstance(item, (Integral, slice)):
+                basic_wcs_item = item
+            elif item is Ellipsis or item == ():
+                basic_wcs_item = slice(None)
+            elif isinstance(item, tuple) and sum(subitem is Ellipsis for subitem in item) <= 1:
+                first = item[0]
+                if first is Ellipsis:
+                    basic_wcs_item = slice(None)
+                elif isinstance(first, (Integral, slice)):
+                    basic_wcs_item = first
+        return basic_wcs_item
 
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
