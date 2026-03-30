@@ -1,4 +1,14 @@
+<<<<<<<
 **********
+=======
+``irispy-lmsal``
+================
+
+A Python package that provides the tools to read in and analyze data from the IRIS solar-observing satellite.
+
+Usage of Generative AI
+----------------------
+>>>>>>>
 ``irispy``
 **********
 
