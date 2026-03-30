@@ -231,7 +231,7 @@ def test_sjicube_slice_rejects_multiple_ellipsis(sns_sjicube_1330):
 
 
 def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
-    with pytest.raises((IndexError, ValueError), match=r"too many indices"):
+    with pytest.raises((IndexError, ValueError), match=r"can not be greater than the dimensionality .* of the wcs"):
         sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]
 
 
