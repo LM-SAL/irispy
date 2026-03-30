@@ -197,7 +197,6 @@ def test_sjicube_apply_dust_mask(dust_cube):
         (-1, None),
         (0, None),
         (slice(0, 3), 3),
-        (slice(0, 10, 2), 5),
         ((slice(0, 3), slice(0, 10)), 3),
         ((slice(0, 3), slice(0, 10), slice(0, 10)), 3),
         ((0, slice(0, 10), slice(0, 10)), None),
@@ -228,6 +227,11 @@ def test_get_basic_wcs_slice_item_returns_none_for_multiple_ellipsis(sns_sjicube
 def test_sjicube_slice_rejects_multiple_ellipsis(sns_sjicube_1330):
     with pytest.raises((IndexError, ValueError), match=r"single ellipsis|only have a single ellipsis"):
         sns_sjicube_1330[(Ellipsis, Ellipsis)]
+
+
+def test_sjicube_slice_rejects_step_slices(sns_sjicube_1330):
+    with pytest.raises(IndexError, match=r"Slicing WCS with a step is not supported\."):
+        sns_sjicube_1330[slice(0, 10, 2)]
 
 
 def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
