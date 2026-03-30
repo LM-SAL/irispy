@@ -3,11 +3,12 @@ import numpy.testing as np_test
 import pytest
 
 from irispy import utils
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 data_dust = np.array(
     [
-        [[-1, 2, -3, 4], [2, -200, 5, 3], [0, 1, 2, -300]],
-        [[2, -200, 5, 1], [10, -5, 2, 2], [10, -3, 3, 0]],
+        [[-1, 2, -3, 4], [2, BAD_PIXEL_VALUE_SCALED, 5, 3], [0, 1, 2, -300]],
+        [[2, BAD_PIXEL_VALUE_SCALED, 5, 1], [10, -5, 2, 2], [10, -3, 3, 0]],
     ],
 )
 dust_mask_expected = np.array(

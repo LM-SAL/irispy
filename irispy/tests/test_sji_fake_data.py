@@ -8,6 +8,7 @@ from astropy.wcs import WCS
 from ndcube.meta import NDMeta
 
 from irispy import SJICube, utils
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 TIMES = Time(["2014-12-11T19:39:00.48", "2014-12-11T19:43:07.6"])
 EXTRA_COORDS = [("time", 0, TIMES)]
@@ -120,8 +121,8 @@ def cube_1d():
 def dust_cube():
     data_dust = np.array(
         [
-            [[-1, 2, -3, 4], [2, -200, 5, 3], [0, 1, 2, -300]],
-            [[2, -200, 5, 1], [10, -5, 2, 2], [10, -3, 3, 0]],
+            [[-1, 2, -3, 4], [2, BAD_PIXEL_VALUE_SCALED, 5, 3], [0, 1, 2, -300]],
+            [[2, BAD_PIXEL_VALUE_SCALED, 5, 1], [10, -5, 2, 2], [10, -3, 3, 0]],
         ],
     )
     header = {
@@ -146,7 +147,7 @@ def dust_cube():
     }
     wcs = WCS(header=header, naxis=3, preserve_units=True)
     unit = utils.constants.DN_UNIT["SJI"]
-    mask_dust = data_dust == -200
+    mask_dust = data_dust == BAD_PIXEL_VALUE_SCALED
 
     uncertainty = 1
     times = Time(["2014-12-11T19:39:00.48", "2014-12-11T19:43:07.6"])

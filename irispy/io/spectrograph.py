@@ -18,7 +18,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import DN_UNIT, READOUT_NOISE, SLIT_WIDTH
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
 
 __all__ = ["read_spectrograph_lvl2"]
 
@@ -167,7 +167,7 @@ def read_spectrograph_lvl2(
                 out_uncertainty = None
                 data_mask = None
                 if not memmap:
-                    data_mask = hdulist[window_fits_indices[i]].data == -200.0
+                    data_mask = hdulist[window_fits_indices[i]].data == BAD_PIXEL_VALUE_SCALED
                 if uncertainty:
                     out_uncertainty = calculate_uncertainty(
                         hdulist[window_fits_indices[i]].data,

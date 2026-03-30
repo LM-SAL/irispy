@@ -10,6 +10,8 @@ from scipy import ndimage
 import astropy.units as u
 from astropy.modeling.models import custom_model
 
+from .constants import BAD_PIXEL_VALUE_SCALED
+
 __all__ = [
     "calculate_dust_mask",
     "calculate_uncertainty",
@@ -134,7 +136,7 @@ def calculate_dust_mask(data_array):
     # Creating a mask with the same shape than the inputted data array.
     mask = np.zeros_like(data_array, dtype=bool)
     # Set the pixel value to True is the pixel is recognized as a dust pixel.
-    mask[(data_array < 0.5) & (data_array > -200)] = True
+    mask[(data_array < 0.5) & (data_array > BAD_PIXEL_VALUE_SCALED)] = True
     # Extending the mask to avoid the neighbours pixel influenced by the dust pixels.
     struct = np.array([np.zeros((3, 3)), np.ones((3, 3)), np.zeros((3, 3))], dtype=bool)
     return ndimage.binary_dilation(mask, structure=struct).astype(mask.dtype)
