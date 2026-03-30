@@ -80,6 +80,25 @@ def test_radiometric_calibration(sns_sg_file):
     assert np.any(new_sequence[0].data != sequence[0].data)
 
 
+def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
+    raster_collection = read_files(sns_sg_file)
+    cube = raster_collection["C II 1336"][0]
+    # The slicing operation, returns a slicedWCS which breaks the code
+    cube_slice = cube[10, :, :]
+    # It also returns a wcs object which does not have the normal lower level wcs attributes
+    assert not hasattr(cube_slice.wcs, "wcs")
+
+    calibrated_full_cube = radiometric_calibration(cube)
+    calibrated_slice = radiometric_calibration(cube_slice)
+    expected_slice = calibrated_full_cube[10, :, :]
+
+    assert isinstance(calibrated_slice, SpectrogramCube)
+    assert calibrated_slice.unit == expected_slice.unit
+    assert calibrated_slice.data.shape == cube_slice.data.shape
+    np.testing.assert_allclose(calibrated_slice.data, expected_slice.data)
+    assert np.array_equal(calibrated_slice.mask, expected_slice.mask)
+
+
 def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]

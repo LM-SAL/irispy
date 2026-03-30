@@ -7,6 +7,8 @@ import numpy as np
 import astropy.units as u
 from astropy import constants
 
+from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
+
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
@@ -62,15 +64,20 @@ def radiometric_calibration(
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
     detector_type = cube.meta.detector
+    underlying_wcs = unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs if not hasattr(cube.wcs, "wcs") else cube.wcs.wcs
     # Get spectral dispersion per pixel.
-    spectral_wcs_index = np.where(np.array(cube.wcs.wcs.ctype) == "WAVE")[0][0]
-    spectral_dispersion_per_pixel = cube.wcs.wcs.cdelt[spectral_wcs_index] * cube.wcs.wcs.cunit[spectral_wcs_index]
+    spectral_wcs_index = np.where(np.array(underlying_wcs.ctype) == "WAVE")[0][0]
+    spectral_dispersion_per_pixel = underlying_wcs.cdelt[spectral_wcs_index] * underlying_wcs.cunit[spectral_wcs_index]
     # Get solid angle from slit width for a pixel.
-    lat_wcs_index = ["HPLT" in c for c in cube.wcs.wcs.ctype]
-    lat_wcs_index = np.arange(len(cube.wcs.wcs.ctype))[lat_wcs_index][0]
-    solid_angle = cube.wcs.wcs.cdelt[lat_wcs_index] * cube.wcs.wcs.cunit[lat_wcs_index] * SLIT_WIDTH
+    lat_wcs_index = ["HPLT" in c for c in underlying_wcs.ctype]
+    lat_wcs_index = np.arange(len(underlying_wcs.ctype))[lat_wcs_index][0]
+    solid_angle = underlying_wcs.cdelt[lat_wcs_index] * underlying_wcs.cunit[lat_wcs_index] * SLIT_WIDTH
     # Get wavelength for each pixel.
-    wavelength_axis_index = np.where(np.array(cube.wcs.wcs.ctype)[::-1] == "WAVE")[0][0]
+    wavelength_axis_index = next(
+        axis
+        for axis, physical_types in enumerate(cube.array_axis_physical_types)
+        if physical_types and "em.wl" in physical_types
+    )
     wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
     time_obs = cube.meta.date_reference
     iris_response = get_latest_response(time_obs)
