@@ -226,12 +226,12 @@ def test_get_basic_wcs_slice_item_returns_none_for_multiple_ellipsis(sns_sjicube
 
 
 def test_sjicube_slice_rejects_multiple_ellipsis(sns_sjicube_1330):
-    with pytest.raises((IndexError, ValueError)):
+    with pytest.raises((IndexError, ValueError), match=r"single ellipsis|only have a single ellipsis"):
         sns_sjicube_1330[(Ellipsis, Ellipsis)]
 
 
 def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
-    with pytest.raises((IndexError, ValueError)):
+    with pytest.raises((IndexError, ValueError), match=r"too many indices"):
         sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]
 
 
