@@ -189,3 +189,69 @@ def test_sjicube_apply_dust_mask(dust_cube):
         ]
     )
     np.testing.assert_array_equal(dust_cube.mask, before_mask)
+
+
+@pytest.mark.parametrize(
+    ("item", "expected_len"),
+    [
+        (-1, None),
+        (0, None),
+        (slice(0, 3), 3),
+        ((slice(0, 3), slice(0, 10)), 3),
+        ((slice(0, 3), slice(0, 10), slice(0, 10)), 3),
+        ((0, slice(0, 10), slice(0, 10)), None),
+        (Ellipsis, 52),
+        ((Ellipsis, slice(0, 10)), 52),
+        ((slice(0, 3), Ellipsis), 3),
+        ((0, Ellipsis), None),
+    ],
+)
+def test_sjicube_slice_preserves_basic_wcs(sns_sjicube_1330, item, expected_len):
+    subset = sns_sjicube_1330[item]
+
+    assert subset.basic_wcs is not None
+    if expected_len is None:
+        assert isinstance(subset.basic_wcs, WCS)
+    else:
+        assert len(subset.basic_wcs) == expected_len
+        assert isinstance(subset.basic_wcs[0], WCS)
+
+
+def test_get_basic_wcs_slice_item_returns_none_for_multiple_ellipsis(sns_sjicube_1330):
+    original_basic_wcs = sns_sjicube_1330.basic_wcs
+
+    assert sns_sjicube_1330._get_basic_wcs_slice_item((Ellipsis, Ellipsis)) is None
+    assert len(sns_sjicube_1330.basic_wcs) == len(original_basic_wcs)
+
+
+def test_sjicube_slice_rejects_multiple_ellipsis(sns_sjicube_1330):
+    with pytest.raises((IndexError, ValueError), match=r"single ellipsis|only have a single ellipsis"):
+        sns_sjicube_1330[(Ellipsis, Ellipsis)]
+
+
+def test_sjicube_slice_rejects_step_slices(sns_sjicube_1330):
+    with pytest.raises(IndexError, match=r"Slicing WCS with a step is not supported\."):
+        sns_sjicube_1330[slice(0, 10, 2)]
+
+
+def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
+    with pytest.raises((IndexError, ValueError), match=r"can not be greater than the dimensionality .* of the wcs"):
+        sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]
+
+
+def test_sjicube_slice_with_none_basic_wcs_keeps_none(cube):
+    cube._basic_wcs = None
+
+    subset = cube[0:1]
+
+    assert cube._get_basic_wcs_slice_item(slice(0, 1)) is None
+    assert subset.basic_wcs is None
+
+
+def test_get_basic_wcs_slice_item_returns_none_when_data_is_not_3d(cube_2d):
+    cube_2d._basic_wcs = [cube_2d.wcs.to_header()]
+
+    subset = cube_2d[:, :2]
+
+    assert cube_2d._get_basic_wcs_slice_item((slice(None), slice(0, 2))) is None
+    assert subset.data.ndim == 2

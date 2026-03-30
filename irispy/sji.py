@@ -111,12 +111,27 @@ class SJICube(SpectrogramCube):
             """,
         )
 
+    def _get_basic_wcs_slice_item(self, item):
+        basic_wcs_item = None
+        if self._basic_wcs is not None and self.data.ndim == 3:
+            if isinstance(item, (Integral, slice)):
+                basic_wcs_item = item
+            elif item is Ellipsis or item == ():
+                basic_wcs_item = slice(None)
+            elif isinstance(item, tuple) and sum(subitem is Ellipsis for subitem in item) <= 1:
+                first = item[0]
+                if first is Ellipsis:
+                    basic_wcs_item = slice(None)
+                elif isinstance(first, (Integral, slice)):
+                    basic_wcs_item = first
+        return basic_wcs_item
+
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
         sliced_self.scaled = self.scaled
-        # Here we are guarding against getting a crop slice
-        if self._basic_wcs is not None and isinstance(item, Integral):
-            sliced_self._basic_wcs = self._basic_wcs[item]
+        basic_wcs_item = self._get_basic_wcs_slice_item(item)
+        if basic_wcs_item is not None:
+            sliced_self._basic_wcs = self._basic_wcs[basic_wcs_item]
         return sliced_self
 
     def plot(self, *args, **kwargs):

@@ -1,0 +1,1 @@
+Fixed `irispy.sji.SJICube` slicing so ``basic_wcs`` is preserved for common slicing operations, allowing sliced cubes to continue working with `irispy.sji.SJICube.to_maps` and other WCS-based workflows.
