@@ -90,10 +90,14 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 
 ###############################################################################
 # Finally we will just see that the spectral profiles are unaffected in either case.
+#
+# We choose a specific helioprojective location and crop the spectrogram down to the
+# spectrum at that point.
 
 iris_observer = wcs_to_celestial_frame(mg_ii_k[0].wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-lower_corner = [None, SkyCoord(-909 * u.arcsec, 294 * u.arcsec, frame=iris_frame)]
+lower_corner = [None, SkyCoord(-908.1 * u.arcsec, 311 * u.arcsec, frame=iris_frame)]
+
 mg_ii_k_unflipped_spectra = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
 mg_ii_k_spectra = mg_ii_k[0].crop(lower_corner, lower_corner)
 

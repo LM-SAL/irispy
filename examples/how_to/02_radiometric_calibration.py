@@ -34,14 +34,14 @@ from irispy.utils.spectrograph import radiometric_calibration
 # In this case, we will use ``pooch`` so to keep this example self-contained
 # but using your browser will also work.
 #
-# Using the url: http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz
+# Using the url: https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/03/08/20260308_051050_3893012099/iris_l2_20260308_051050_3893012099_raster.tar.gz
 # we are after the raster sequence (~300 MB).
 #
-# The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml
+# The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260308_051050_3893012099_2026-03-08T05%3A10%3A502026-03-08T05%3A10%3A50.xml
 #
 raster_filename = pooch.retrieve(
-    "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz",
-    known_hash="8949562149cfa5fba067b5b102e8434b14cea3c3416dd79c06b7f6e211c61a39",
+    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/03/08/20260308_051050_3893012099/iris_l2_20260308_051050_3893012099_raster.tar.gz",
+    known_hash="b76277ae89e79f50e7ddc603a86b9bbf70e23b2e64fc5343dbe99af19a05f854",
 )
 
 ###############################################################################
@@ -56,11 +56,12 @@ raster_filename = pooch.retrieve(
 raster = read_files(raster_filename, memmap=False)
 
 ###############################################################################
-# We will just focus on the Si IV 1403 line which we can select using a key.
+# We will just focus on the Mg II k 2796 line which we can select using a key.
 # Then we will just plot a spectral line selected at random in space.
 
 # There is only one complete scan, so we index that away.
-si_iv_1403 = raster["Si IV 1403"][0]
+# We also only take the first scan of the sequence to avoid memory issues on readthedocs.
+mg_ii_k_2796 = raster["Mg II k 2796"][0][0]
 
 ###############################################################################
 # To convert the spectral units from DN to flux one must do the following calculation:
@@ -80,7 +81,7 @@ si_iv_1403 = raster["Si IV 1403"][0]
 # This is a complex equation and requires careful attention to units.
 # Within `irispy`, there is a function called `irispy.utils.spectrograph.radiometric_calibration` that handles this process.
 
-calibrated_si_iv_1403 = radiometric_calibration(si_iv_1403)
+calibrated_mg_ii_k_2796 = radiometric_calibration(mg_ii_k_2796)
 
 ###############################################################################
 # We will now plot both the before and after spectrums to see the difference.
@@ -91,7 +92,10 @@ color = "tab:red"
 ax.set_xlabel("Wavelength (Å)")
 ax.set_ylabel("Counts (DN)", color=color)
 ax.plot(
-    si_iv_1403.spectral_axis[10:-20].to(u.angstrom), si_iv_1403.data[100, 100, 10:-20], color=color, linestyle="dashed"
+    mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
+    mg_ii_k_2796.data[100, 10:-20],
+    color=color,
+    linestyle="dashed",
 )
 ax.tick_params(axis="y", labelcolor=color)
 
@@ -99,14 +103,14 @@ ax2 = ax.twinx()
 
 color = "tab:blue"
 ax2.plot(
-    calibrated_si_iv_1403.spectral_axis[10:-20].to(u.angstrom),
-    calibrated_si_iv_1403.data[100, 100, 10:-20],
+    calibrated_mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
+    calibrated_mg_ii_k_2796.data[100, 10:-20],
     color=color,
 )
 ax2.set_ylabel("Calibrated Intensity (erg s$^{-1}$ cm$^{-2}$ sr$^{-1}$ Å$^{-1}$)", color=color)
 ax2.tick_params(axis="y", labelcolor=color)
 
-ax.set_title("Si IV 1403 spectrum before and after radiometric calibration")
+ax.set_title("Mg II k 2796 Spectrum")
 fig.tight_layout()
 
 plt.show()
