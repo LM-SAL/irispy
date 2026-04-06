@@ -1,0 +1,1 @@
+Added ``remove_cosmic_rays`` methods both for SJI and raster cubes, with two possible backends: ``rsliding`` and ``astroscrappy``.

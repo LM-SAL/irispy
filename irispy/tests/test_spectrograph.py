@@ -22,3 +22,51 @@ def test_fits_data_comparison(sns_sg_file):
         np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window1].data[0].data, data1)
         np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window2].data[0].data, data2)
         np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window3].data[0].data, data3)
+
+
+def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
+    captured = {}
+
+    def fake_remove_cosmic_rays(data, *, method, mask, sigma, max_iters, method_kwargs):
+        captured["method"] = method
+        captured["mask"] = mask.copy()
+        captured["sigma"] = sigma
+        captured["max_iters"] = max_iters
+        captured["method_kwargs"] = method_kwargs
+        return data + 2, np.zeros_like(data, dtype=bool)
+
+    monkeypatch.setattr("irispy.spectrograph.remove_cosmic_rays", fake_remove_cosmic_rays)
+
+    raster = read_spectrograph_lvl2(sns_sg_file)
+    key = next(iter(raster.keys()))
+    cube = raster[key][0]
+    cleaned_cube = cube.remove_cosmic_rays(
+        method="astroscrappy",
+        sigma=5.0,
+        max_iters=5,
+        method_kwargs={"batch_size": 16},
+    )
+
+    np.testing.assert_array_equal(cleaned_cube.data, cube.data + 2)
+    np.testing.assert_array_equal(cleaned_cube.mask, cube.mask)
+    assert list(cleaned_cube.extra_coords.keys()) == list(cube.extra_coords.keys())
+    assert captured["method"] == "astroscrappy"
+    assert captured["sigma"] == 5.0
+    assert captured["max_iters"] == 5
+    assert captured["method_kwargs"]["batch_size"] == 16
+    np.testing.assert_array_equal(captured["mask"], cube.mask)
+
+
+def test_raster_collection_remove_cosmic_rays(sns_sg_file, monkeypatch):
+    monkeypatch.setattr(
+        "irispy.spectrograph.remove_cosmic_rays",
+        lambda data, **_kwargs: (data + 1, np.zeros_like(data, dtype=bool)),
+    )
+
+    raster = read_spectrograph_lvl2(sns_sg_file)
+    key = next(iter(raster.keys()))
+    cleaned_sequence = raster[key].remove_cosmic_rays(method="astroscrappy")
+    cleaned_collection = raster.remove_cosmic_rays(method="astroscrappy")
+
+    np.testing.assert_array_equal(cleaned_sequence[0].data, raster[key][0].data + 1)
+    np.testing.assert_array_equal(cleaned_collection[key][0].data, raster[key][0].data + 1)
