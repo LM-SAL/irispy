@@ -92,7 +92,7 @@ def remove_cosmic_rays(
 
     Parameters
     ----------
-    cube : cube-like
+    cube : irispy.sji.SJICube or irispy.spectrograph.SpectrogramCube
         Cube object to clean.
     method : ``{"rsliding", "astroscrappy"}``, optional
         Cosmic ray removal backend. ``"rsliding"`` is the default and operates on
@@ -109,7 +109,7 @@ def remove_cosmic_rays(
 
     Returns
     -------
-    cube-like
+    irispy.sji.SJICube or irispy.spectrograph.SpectrogramCube
         A new cube with cleaned data and copied metadata/coordinates.
     """
     method = method.lower()
