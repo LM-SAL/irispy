@@ -46,6 +46,30 @@ def test_remove_cosmic_rays_rsliding_backend(monkeypatch):
     assert np.isnan(cleaned_data[1, 1])
 
 
+def test_remove_cosmic_rays_rsliding_backend_defaults(monkeypatch):
+    captured = {}
+
+    class FakeSlidingSigmaClipping:
+        def __init__(self, data, **kwargs):
+            captured["data"] = data.copy()
+            captured["kwargs"] = kwargs
+            self.clipped = np.ma.masked_array(data.copy(), mask=np.zeros_like(data, dtype=bool))
+
+    monkeypatch.setitem(
+        sys.modules,
+        "rsliding",
+        types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping),
+    )
+
+    data = np.array([[1.0, 2.0], [3.0, 4.0]])
+    remove_cosmic_rays(data, method="rsliding")
+
+    assert captured["kwargs"]["sigma"] == 3.0
+    assert captured["kwargs"]["max_iters"] == 5
+    for key in ("kernel", "threads", "center_choice", "borders"):
+        assert key in captured["kwargs"], f"Default key {key!r} missing from backend kwargs"
+
+
 def test_remove_cosmic_rays_astroscrappy_backend(monkeypatch):
     calls = []
 
@@ -82,6 +106,34 @@ def test_remove_cosmic_rays_astroscrappy_backend(monkeypatch):
     np.testing.assert_array_equal(cosmic_ray_mask[1], calls[1][0] > 10)
     assert cleaned_data[0, 0, 0] == pytest.approx(-1.0)
     assert cleaned_data[1, 2, 3] == pytest.approx(-1.0)
+
+
+def test_remove_cosmic_rays_astroscrappy_inmask_combined(monkeypatch):
+    """Inmask from method_kwargs must be OR-merged with mask before each detect_cosmics call."""
+    calls = []
+
+    def fake_detect_cosmics(frame, *, inmask=None, **kwargs):  # NOQA: ARG001
+        calls.append(inmask.copy())
+        return np.zeros_like(frame, dtype=bool), frame.copy()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "astroscrappy",
+        types.SimpleNamespace(detect_cosmics=fake_detect_cosmics),
+    )
+
+    data = np.ones((2, 3, 4), dtype=float)
+    mask = np.zeros((2, 3, 4), dtype=bool)
+    mask[0, 1, 2] = True
+    inmask = np.zeros((2, 3, 4), dtype=bool)
+    inmask[0, 0, 0] = True
+    inmask[1, 2, 3] = True
+
+    remove_cosmic_rays(data, method="astroscrappy", mask=mask, method_kwargs={"inmask": inmask})
+
+    assert len(calls) == 2
+    np.testing.assert_array_equal(calls[0], mask[0] | inmask[0])
+    np.testing.assert_array_equal(calls[1], mask[1] | inmask[1])
 
 
 @pytest.mark.parametrize("method", ["rsliding", "astroscrappy"])

@@ -186,7 +186,7 @@ class SJICube(SpectrogramCube):
 
         Parameters
         ----------
-        method : {"rsliding", "astroscrappy"}, optional
+        method : ``{"rsliding", "astroscrappy"}``, optional
             Backend used to detect and clean cosmic rays.
         sigma : `float`, optional
             Shared clipping threshold override for the selected backend.

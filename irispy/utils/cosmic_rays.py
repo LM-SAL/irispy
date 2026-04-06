@@ -95,7 +95,7 @@ def remove_cosmic_rays(
     ----------
     data : `numpy.ndarray`
         Array to clean.
-    method : {"rsliding", "astroscrappy"}, optional
+    method : ``{"rsliding", "astroscrappy"}``, optional
         Cosmic ray removal backend. ``"rsliding"`` is the default and operates on
         the full array. ``"astroscrappy"`` is applied frame-by-frame over the last
         two axes.
@@ -138,4 +138,7 @@ def remove_cosmic_rays(
             method_kwargs=kwargs,
         ),
     }
+    if method not in backends:
+        msg = f"Unsupported method {method!r}. Supported methods are: {sorted(backends)}."
+        raise ValueError(msg)
     return backends[method]()

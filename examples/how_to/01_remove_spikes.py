@@ -66,7 +66,7 @@ sji_cleaned = sji_2832.remove_cosmic_rays(
 
 ###############################################################################
 # ``remove_cosmic_rays`` returns a cleaned cube with the same metadata and coordinates.
-# We now convert the a noisy frame to a map for plotting.
+# We now convert a noisy frame to a map for plotting.
 
 sji_map = sji_2832.to_maps(5)
 clean_sji_map = sji_cleaned.to_maps(5)
@@ -83,7 +83,6 @@ ax1.set_title("Cleaned")
 
 ax1.coords[1].set_ticks_visible(False)
 ax1.coords[1].set_ticklabel_visible(False)
-fig.tight_layout()
 
 ###############################################################################
 # For comparison, we will now try to remove the cosmic ray hits from the

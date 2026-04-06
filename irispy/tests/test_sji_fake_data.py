@@ -290,3 +290,11 @@ def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
     assert captured["method_kwargs"] == {"readnoise": 4.0}
     np.testing.assert_array_equal(captured["mask"], cube_2d.mask)
     np.testing.assert_array_equal(cube_2d.data, original_data)
+    # WCS is deep-copied; check equivalence not identity
+    assert dict(cleaned_cube.wcs.to_header()) == dict(cube_2d.wcs.to_header())
+    assert cleaned_cube.basic_wcs == cube_2d.basic_wcs
+    # Input mask must not be mutated
+    np.testing.assert_array_equal(cube_2d.mask, original_data >= 0)
+    # unit and meta keys are preserved on the cleaned cube
+    assert cleaned_cube.unit == cube_2d.unit
+    assert set(cleaned_cube.meta.keys()) == set(cube_2d.meta.keys())

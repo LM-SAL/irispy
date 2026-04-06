@@ -55,6 +55,12 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     assert captured["max_iters"] == 5
     assert captured["method_kwargs"]["batch_size"] == 16
     np.testing.assert_array_equal(captured["mask"], cube.mask)
+    # WCS is deep-copied, so check equivalence not identity
+    assert dict(cleaned_cube.wcs.to_header()) == dict(cube.wcs.to_header())
+    assert list(cleaned_cube.global_coords) == list(cube.global_coords)
+    assert cleaned_cube.unit == cube.unit
+    # meta is an NDMeta subclass that may contain arrays; compare keys only
+    assert set(cleaned_cube.meta.keys()) == set(cube.meta.keys())
 
 
 def test_raster_collection_remove_cosmic_rays(sns_sg_file, monkeypatch):
@@ -70,3 +76,13 @@ def test_raster_collection_remove_cosmic_rays(sns_sg_file, monkeypatch):
 
     np.testing.assert_array_equal(cleaned_sequence[0].data, raster[key][0].data + 1)
     np.testing.assert_array_equal(cleaned_collection[key][0].data, raster[key][0].data + 1)
+
+    # Collection: key order, aligned_axes mapping, and meta are preserved
+    assert list(cleaned_collection.keys()) == list(raster.keys())
+    assert cleaned_collection.aligned_axes == raster.aligned_axes
+    assert cleaned_collection.meta == raster.meta
+
+    # Sequence: length, per-cube WCS, and sequence-level meta are preserved
+    assert len(cleaned_sequence) == len(raster[key])
+    assert dict(cleaned_sequence[0].wcs.to_header()) == dict(raster[key][0].wcs.to_header())
+    assert dict(cleaned_sequence.meta) == dict(raster[key].meta)
