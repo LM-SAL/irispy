@@ -33,6 +33,38 @@ def _local_median_fill(frame, invalid_mask, spatial_box):
         return ndimage.generic_filter(masked_frame, np.nanmedian, size=spatial_box, mode="nearest")
 
 
+def _resolve_exposure_times(cube, frame_count, *, exposure_normalize):
+    """
+    Resolve per-frame exposure times for temporal normalization.
+
+    Returns
+    -------
+    `numpy.ndarray` or None
+        Per-frame exposure times in seconds when available and valid.
+        Returns None when normalization is disabled or metadata are unusable.
+    """
+    if not exposure_normalize:
+        return None
+    try:
+        exposure_times = u.Quantity(cube.exposure_time, copy=False).to_value(u.s)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    exposure_times = np.atleast_1d(np.asarray(exposure_times, dtype=float))
+    if exposure_times.size == 1:
+        return np.repeat(exposure_times, frame_count)
+    if exposure_times.size != frame_count:
+        warnings.warn(
+            "exposure_normalize=True but the number of exposure_time values "
+            f"({exposure_times.size}) does not match the number of frames "
+            f"in the cube ({frame_count}). Temporal exposure "
+            "normalization has been skipped.",
+            UserWarning,
+            stacklevel=3,
+        )
+        return None
+    return exposure_times
+
+
 def remove_dust(
     cube,
     *,
@@ -97,26 +129,11 @@ def remove_dust(
     filled_mask = np.zeros_like(dust_mask, dtype=bool)
 
     if clean_data.ndim == 3 and temporal_window > 0 and np.any(dust_mask):
-        exposure_times = None
-        if exposure_normalize:
-            try:
-                exposure_times = u.Quantity(cube.exposure_time, copy=False).to_value(u.s)
-            except (AttributeError, TypeError, ValueError):
-                exposure_times = None
-            if exposure_times is not None:
-                exposure_times = np.atleast_1d(np.asarray(exposure_times, dtype=float))
-                if exposure_times.size == 1:
-                    exposure_times = np.repeat(exposure_times, clean_data.shape[0])
-                if exposure_times.size != clean_data.shape[0]:
-                    warnings.warn(
-                        "exposure_normalize=True but the number of exposure_time values "
-                        f"({exposure_times.size}) does not match the number of frames "
-                        f"in the cube ({clean_data.shape[0]}). Temporal exposure "
-                        "normalization has been skipped.",
-                        UserWarning,
-                        stacklevel=2,
-                    )
-                    exposure_times = None
+        exposure_times = _resolve_exposure_times(
+            cube,
+            clean_data.shape[0],
+            exposure_normalize=exposure_normalize,
+        )
         for frame_index in range(clean_data.shape[0]):
             target_mask = dust_mask[frame_index]
             if not np.any(target_mask):

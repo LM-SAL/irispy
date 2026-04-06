@@ -20,6 +20,32 @@ from irispy.visualization import IRISPlotter, set_axis_properties
 __all__ = ["AIACube", "SJICube"]
 
 
+def _normalize_tuple_index(item, ndim):
+    """
+    Normalize a tuple index to explicit per-axis entries.
+
+    Returns
+    -------
+    list or None
+        A normalized list of length ``ndim`` when normalization is valid.
+        Returns ``None`` when the tuple contains more than one ellipsis.
+    """
+    normalized_item = []
+    ellipsis_seen = False
+    for subitem in item:
+        if subitem is Ellipsis:
+            if ellipsis_seen:
+                return None
+            ellipsis_seen = True
+            missing_dims = ndim - (len(item) - 1)
+            normalized_item.extend([slice(None)] * missing_dims)
+        else:
+            normalized_item.append(subitem)
+    if len(normalized_item) < ndim:
+        normalized_item.extend([slice(None)] * (ndim - len(normalized_item)))
+    return normalized_item
+
+
 class SJICube(SpectrogramCube):
     """
     Class representing SJI Image described by a single WCS.
@@ -121,23 +147,13 @@ class SJICube(SpectrogramCube):
             elif item is Ellipsis:
                 basic_wcs_item = slice(None)
             elif isinstance(item, tuple):
-                normalized_item = []
-                ellipsis_seen = False
-                for subitem in item:
-                    if subitem is Ellipsis:
-                        if ellipsis_seen:
-                            normalized_item = None
-                            break
-                        ellipsis_seen = True
-                        missing_dims = self.data.ndim - (len(item) - 1)
-                        normalized_item.extend([slice(None)] * missing_dims)
-                    else:
-                        normalized_item.append(subitem)
-                if normalized_item is not None:
-                    if len(normalized_item) < self.data.ndim:
-                        normalized_item.extend([slice(None)] * (self.data.ndim - len(normalized_item)))
-                    if normalized_item and isinstance(normalized_item[0], (Integral, slice)):
-                        basic_wcs_item = normalized_item[0]
+                normalized_item = _normalize_tuple_index(item, self.data.ndim)
+                if (
+                    normalized_item is not None
+                    and normalized_item
+                    and isinstance(normalized_item[0], (Integral, slice))
+                ):
+                    basic_wcs_item = normalized_item[0]
         return basic_wcs_item
 
     def __getitem__(self, item):
