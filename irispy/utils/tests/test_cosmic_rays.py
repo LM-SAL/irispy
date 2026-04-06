@@ -7,7 +7,7 @@ import pytest
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 
 
-def test_remove_cosmic_rays_rsliding_backend(monkeypatch):
+def test_remove_cosmic_rays_rsliding_backend(sns_sjicube_1330, monkeypatch):
     captured = {}
 
     class FakeSlidingSigmaClipping:
@@ -24,11 +24,14 @@ def test_remove_cosmic_rays_rsliding_backend(monkeypatch):
         types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping),
     )
 
+    cube = sns_sjicube_1330[0, :2, :2]
     data = np.array([[1.0, 12.0], [3.0, np.nan]])
     mask = np.array([[False, False], [True, False]])
-    cleaned_data, cosmic_ray_mask = remove_cosmic_rays(
-        data,
-        mask=mask,
+    cube.data[...] = data
+    cube.mask = mask.copy()
+    original_dust_masked = cube.dust_masked
+    cleaned_cube = remove_cosmic_rays(
+        cube,
         sigma=2.5,
         max_iters=7,
         method_kwargs={"kernel": 5, "threads": 2},
@@ -40,13 +43,14 @@ def test_remove_cosmic_rays_rsliding_backend(monkeypatch):
     assert captured["kwargs"]["sigma"] == 2.5
     assert captured["kwargs"]["max_iters"] == 7
     assert captured["kwargs"]["masked_array"] is True
-    np.testing.assert_array_equal(cosmic_ray_mask, [[False, True], [False, False]])
-    assert cleaned_data[0, 1] == pytest.approx(5.0)
-    assert np.isnan(cleaned_data[1, 0])
-    assert np.isnan(cleaned_data[1, 1])
+    assert cleaned_cube.data[0, 1] == pytest.approx(5.0)
+    assert np.isnan(cleaned_cube.data[1, 0])
+    assert np.isnan(cleaned_cube.data[1, 1])
+    np.testing.assert_array_equal(cleaned_cube.mask, mask)
+    assert cleaned_cube.dust_masked == original_dust_masked
 
 
-def test_remove_cosmic_rays_rsliding_backend_defaults(monkeypatch):
+def test_remove_cosmic_rays_rsliding_backend_defaults(sns_sjicube_1330, monkeypatch):
     captured = {}
 
     class FakeSlidingSigmaClipping:
@@ -61,8 +65,10 @@ def test_remove_cosmic_rays_rsliding_backend_defaults(monkeypatch):
         types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping),
     )
 
-    data = np.array([[1.0, 2.0], [3.0, 4.0]])
-    remove_cosmic_rays(data, method="rsliding")
+    cube = sns_sjicube_1330[0, :2, :2]
+    cube.data[...] = np.array([[1.0, 2.0], [3.0, 4.0]])
+    cube.mask = np.zeros(cube.data.shape, dtype=bool)
+    remove_cosmic_rays(cube, method="rsliding")
 
     assert captured["kwargs"]["sigma"] == 3.0
     assert captured["kwargs"]["max_iters"] == 5
@@ -70,7 +76,7 @@ def test_remove_cosmic_rays_rsliding_backend_defaults(monkeypatch):
         assert key in captured["kwargs"], f"Default key {key!r} missing from backend kwargs"
 
 
-def test_remove_cosmic_rays_astroscrappy_backend(monkeypatch):
+def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch):
     calls = []
 
     def fake_detect_cosmics(frame, *, inmask=None, **kwargs):
@@ -80,15 +86,17 @@ def test_remove_cosmic_rays_astroscrappy_backend(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "astroscrappy", types.SimpleNamespace(detect_cosmics=fake_detect_cosmics))
 
+    cube = sns_sjicube_1330[:2, :3, :4]
     data = np.arange(24, dtype=float).reshape(2, 3, 4)
     data[1, 2, 3] = np.nan
     mask = np.zeros_like(data, dtype=bool)
     mask[0, 0, 0] = True
+    cube.data[...] = data
+    cube.mask = mask.copy()
 
-    cleaned_data, cosmic_ray_mask = remove_cosmic_rays(
-        data,
+    cleaned_cube = remove_cosmic_rays(
+        cube,
         method="astroscrappy",
-        mask=mask,
         sigma=2.0,
         max_iters=3,
         method_kwargs={"readnoise": 4.0},
@@ -102,13 +110,11 @@ def test_remove_cosmic_rays_astroscrappy_backend(monkeypatch):
     assert calls[0][1][0, 0]
     assert calls[1][1][2, 3]
     assert calls[1][0][2, 3] == pytest.approx(0.0)
-    np.testing.assert_array_equal(cosmic_ray_mask[0], calls[0][0] > 10)
-    np.testing.assert_array_equal(cosmic_ray_mask[1], calls[1][0] > 10)
-    assert cleaned_data[0, 0, 0] == pytest.approx(-1.0)
-    assert cleaned_data[1, 2, 3] == pytest.approx(-1.0)
+    assert cleaned_cube.data[0, 0, 0] == pytest.approx(-1.0)
+    assert cleaned_cube.data[1, 2, 3] == pytest.approx(-1.0)
 
 
-def test_remove_cosmic_rays_astroscrappy_inmask_combined(monkeypatch):
+def test_remove_cosmic_rays_astroscrappy_inmask_combined(sns_sjicube_1330, monkeypatch):
     """Inmask from method_kwargs must be OR-merged with mask before each detect_cosmics call."""
     calls = []
 
@@ -122,14 +128,17 @@ def test_remove_cosmic_rays_astroscrappy_inmask_combined(monkeypatch):
         types.SimpleNamespace(detect_cosmics=fake_detect_cosmics),
     )
 
+    cube = sns_sjicube_1330[:2, :3, :4]
     data = np.ones((2, 3, 4), dtype=float)
     mask = np.zeros((2, 3, 4), dtype=bool)
     mask[0, 1, 2] = True
     inmask = np.zeros((2, 3, 4), dtype=bool)
     inmask[0, 0, 0] = True
     inmask[1, 2, 3] = True
+    cube.data[...] = data
+    cube.mask = mask.copy()
 
-    remove_cosmic_rays(data, method="astroscrappy", mask=mask, method_kwargs={"inmask": inmask})
+    remove_cosmic_rays(cube, method="astroscrappy", method_kwargs={"inmask": inmask})
 
     assert len(calls) == 2
     np.testing.assert_array_equal(calls[0], mask[0] | inmask[0])
@@ -137,7 +146,7 @@ def test_remove_cosmic_rays_astroscrappy_inmask_combined(monkeypatch):
 
 
 @pytest.mark.parametrize("method", ["rsliding", "astroscrappy"])
-def test_remove_cosmic_rays_missing_optional_dependency(monkeypatch, method):
+def test_remove_cosmic_rays_missing_optional_dependency(sns_sjicube_1330, monkeypatch, method):
     def fake_import_optional_backend(module_name, *, method):
         msg = (
             f"{module_name} is an optional dependency required for method='{method}'. "
@@ -148,6 +157,10 @@ def test_remove_cosmic_rays_missing_optional_dependency(monkeypatch, method):
 
     monkeypatch.setattr("irispy.utils.cosmic_rays._import_optional_backend", fake_import_optional_backend)
 
+    cube = sns_sjicube_1330[0, :3, :3]
+    cube.data[...] = np.ones((3, 3), dtype=float)
+    cube.mask = np.zeros(cube.data.shape, dtype=bool)
+
     expected_module = "rsliding" if method == "rsliding" else "astroscrappy"
     with pytest.raises(ImportError, match=expected_module):
-        remove_cosmic_rays(np.ones((3, 3)), method=method)
+        remove_cosmic_rays(cube, method=method)

@@ -108,6 +108,14 @@ def remove_dust(
                 if exposure_times.size == 1:
                     exposure_times = np.repeat(exposure_times, clean_data.shape[0])
                 if exposure_times.size != clean_data.shape[0]:
+                    warnings.warn(
+                        "exposure_normalize=True but the number of exposure_time values "
+                        f"({exposure_times.size}) does not match the number of frames "
+                        f"in the cube ({clean_data.shape[0]}). Temporal exposure "
+                        "normalization has been skipped.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
                     exposure_times = None
         for frame_index in range(clean_data.shape[0]):
             target_mask = dust_mask[frame_index]

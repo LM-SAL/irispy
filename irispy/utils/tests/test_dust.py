@@ -58,6 +58,30 @@ def test_remove_dust_preserves_sjicube_state(sns_sjicube_1330):
     assert cleaned.to_maps(0).wcs is not None
 
 
+def test_remove_dust_warns_when_exposure_time_length_mismatches_frames(sns_sjicube_1330, monkeypatch):
+    cube = sns_sjicube_1330[:4, :3, :3]
+    cube.data[...] = np.array(
+        [
+            [[10, 10, 10], [10, 10, 10], [10, 10, 10]],
+            [[20, 20, 20], [20, 0, 20], [20, 20, 20]],
+            [[10, 10, 10], [10, 10, 10], [10, 10, 10]],
+            [[20, 20, 20], [20, 20, 20], [20, 20, 20]],
+        ],
+        dtype=float,
+    )
+    cube.mask = np.zeros_like(cube.data, dtype=bool)
+    dust_mask = np.zeros_like(cube.data, dtype=bool)
+    dust_mask[1, 1, 1] = True
+
+    monkeypatch.setattr(type(cube), "exposure_time", property(lambda _self: np.array([1.0, 2.0]) * u.s))
+
+    with pytest.warns(UserWarning, match=r"exposure_normalize=True but the number of exposure_time values"):
+        cleaned = remove_dust(cube, dust_mask=dust_mask, temporal_window=1, exposure_normalize=True)
+
+    assert type(cleaned) is type(cube)
+    assert cleaned.data.shape == cube.data.shape
+
+
 def test_remove_dust_uses_spatial_fallback_for_single_images(sns_sjicube_1330):
     cube = sns_sjicube_1330[0, :3, :3]
     cube.data[...] = np.array(

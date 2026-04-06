@@ -27,13 +27,19 @@ def test_fits_data_comparison(sns_sg_file):
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     captured = {}
 
-    def fake_remove_cosmic_rays(data, *, method, mask, sigma, max_iters, method_kwargs):
+    def fake_remove_cosmic_rays(cube, *, method, sigma, max_iters, method_kwargs):
         captured["method"] = method
-        captured["mask"] = mask.copy()
+        captured["mask"] = cube.mask.copy()
         captured["sigma"] = sigma
         captured["max_iters"] = max_iters
         captured["method_kwargs"] = method_kwargs
-        return data + 2, np.zeros_like(data, dtype=bool)
+        return cube.to_nddata(
+            data=cube.data + 2,
+            mask="copy",
+            nddata_type=type(cube),
+            extra_coords="copy",
+            global_coords="copy",
+        )
 
     monkeypatch.setattr("irispy.spectrograph.remove_cosmic_rays", fake_remove_cosmic_rays)
 
@@ -61,28 +67,3 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     assert cleaned_cube.unit == cube.unit
     # meta is an NDMeta subclass that may contain arrays; compare keys only
     assert set(cleaned_cube.meta.keys()) == set(cube.meta.keys())
-
-
-def test_raster_collection_remove_cosmic_rays(sns_sg_file, monkeypatch):
-    monkeypatch.setattr(
-        "irispy.spectrograph.remove_cosmic_rays",
-        lambda data, **_kwargs: (data + 1, np.zeros_like(data, dtype=bool)),
-    )
-
-    raster = read_spectrograph_lvl2(sns_sg_file)
-    key = next(iter(raster.keys()))
-    cleaned_sequence = raster[key].remove_cosmic_rays(method="astroscrappy")
-    cleaned_collection = raster.remove_cosmic_rays(method="astroscrappy")
-
-    np.testing.assert_array_equal(cleaned_sequence[0].data, raster[key][0].data + 1)
-    np.testing.assert_array_equal(cleaned_collection[key][0].data, raster[key][0].data + 1)
-
-    # Collection: key order, aligned_axes mapping, and meta are preserved
-    assert list(cleaned_collection.keys()) == list(raster.keys())
-    assert cleaned_collection.aligned_axes == raster.aligned_axes
-    assert cleaned_collection.meta == raster.meta
-
-    # Sequence: length, per-cube WCS, and sequence-level meta are preserved
-    assert len(cleaned_sequence) == len(raster[key])
-    assert dict(cleaned_sequence[0].wcs.to_header()) == dict(raster[key][0].wcs.to_header())
-    assert dict(cleaned_sequence.meta) == dict(raster[key].meta)

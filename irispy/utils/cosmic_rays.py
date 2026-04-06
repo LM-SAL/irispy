@@ -80,27 +80,24 @@ def _remove_cosmic_rays_astroscrappy(
 
 
 def remove_cosmic_rays(
-    data,
+    cube,
     *,
     method: str = "rsliding",
-    mask=None,
     sigma: float | None = None,
     max_iters: int | None = None,
     method_kwargs: Mapping[str, Any] | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+):
     """
-    Remove cosmic rays from an array and return the cleaned data and detection mask.
+    Remove cosmic rays from a cube and return a cleaned cube.
 
     Parameters
     ----------
-    data : `numpy.ndarray`
-        Array to clean.
+    cube : cube-like
+        Cube object to clean.
     method : ``{"rsliding", "astroscrappy"}``, optional
         Cosmic ray removal backend. ``"rsliding"`` is the default and operates on
         the full array. ``"astroscrappy"`` is applied frame-by-frame over the last
         two axes.
-    mask : `numpy.ndarray`, optional
-        Boolean mask of pixels to exclude from detection and cleaning.
     sigma : `float`, optional
         Shared clipping threshold override. This maps to ``sigma`` for
         ``rsliding`` and ``sigclip`` for ``astroscrappy``.
@@ -112,26 +109,24 @@ def remove_cosmic_rays(
 
     Returns
     -------
-    cleaned_data : `numpy.ndarray`
-        The cleaned data.
-    cosmic_ray_mask : `numpy.ndarray`
-        Boolean array marking detected cosmic rays.
+    cube-like
+        A new cube with cleaned data and copied metadata/coordinates.
     """
     method = method.lower()
-    working_mask = np.zeros(data.shape, dtype=bool) if mask is None else np.asarray(mask, dtype=bool)
-    if np.issubdtype(data.dtype, np.floating):
-        working_mask = working_mask | np.isnan(data)
+    working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
+    if np.issubdtype(cube.data.dtype, np.floating):
+        working_mask = working_mask | np.isnan(cube.data)
     kwargs = dict(method_kwargs or {})
     backends = {
         "rsliding": lambda: _remove_cosmic_rays_rsliding(
-            data,
+            cube.data,
             working_mask,
             sigma=sigma,
             max_iters=max_iters,
             method_kwargs=kwargs,
         ),
         "astroscrappy": lambda: _remove_cosmic_rays_astroscrappy(
-            data,
+            cube.data,
             working_mask,
             sigma=sigma,
             max_iters=max_iters,
@@ -141,4 +136,20 @@ def remove_cosmic_rays(
     if method not in backends:
         msg = f"Unsupported method {method!r}. Supported methods are: {sorted(backends)}."
         raise ValueError(msg)
-    return backends[method]()
+    cleaned_data, _ = backends[method]()
+
+    cleaned_cube_kwargs = {
+        "data": cleaned_data,
+        "mask": "copy",
+        "nddata_type": type(cube),
+        "extra_coords": "copy",
+        "global_coords": "copy",
+    }
+    if hasattr(cube, "scaled"):
+        cleaned_cube_kwargs["scaled"] = "copy"
+    if hasattr(cube, "_basic_wcs"):
+        cleaned_cube_kwargs["_basic_wcs"] = "copy"
+    cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
+    if hasattr(cleaned_cube, "dust_masked") and hasattr(cube, "dust_masked"):
+        cleaned_cube.dust_masked = cube.dust_masked
+    return cleaned_cube
