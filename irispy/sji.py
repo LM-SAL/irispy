@@ -1,3 +1,4 @@
+import copy
 import textwrap
 import warnings
 from numbers import Integral
@@ -13,6 +14,8 @@ from sunpy.util.exceptions import SunpyMetadataWarning
 from sunraster import SpectrogramCube
 
 from irispy.utils import calculate_dust_mask
+from irispy.utils.cosmic_rays import remove_cosmic_rays
+from irispy.utils.cube_state import _build_cube_init_kwargs
 from irispy.visualization import IRISPlotter, set_axis_properties
 
 __all__ = ["AIACube", "SJICube"]
@@ -169,6 +172,53 @@ class SJICube(SpectrogramCube):
             # If undo kwarg is NOT set, mask dust pixels.
             self.mask[dust_mask] = True
             self.dust_masked = True
+
+    def remove_cosmic_rays(
+        self,
+        *,
+        method="rsliding",
+        sigma: float | None = None,
+        max_iters: int | None = None,
+        method_kwargs=None,
+    ):
+        """
+        Return a cleaned copy of the cube with cosmic rays removed.
+
+        Parameters
+        ----------
+        method : ``{"rsliding", "astroscrappy"}``, optional
+            Backend used to detect and clean cosmic rays.
+        sigma : `float`, optional
+            Shared clipping threshold override for the selected backend.
+        max_iters : `int`, optional
+            Shared iteration-count override for the selected backend.
+        method_kwargs : `dict`, optional
+            Additional keyword arguments passed to the selected backend.
+
+        Returns
+        -------
+        `irispy.sji.SJICube`
+            Cleaned cube with the same metadata and coordinates as the original.
+        """
+        cleaned_data, _ = remove_cosmic_rays(
+            self.data,
+            method=method,
+            mask=self.mask,
+            sigma=sigma,
+            max_iters=max_iters,
+            method_kwargs=method_kwargs,
+        )
+        cleaned_cube = type(self)(
+            cleaned_data,
+            copy.deepcopy(self.wcs),
+            scaled=self.scaled,
+            _basic_wcs=copy.deepcopy(self._basic_wcs),
+            extra_coords=copy.deepcopy(self.extra_coords),
+            global_coords=copy.deepcopy(self.global_coords),
+            **_build_cube_init_kwargs(self),
+        )
+        cleaned_cube.dust_masked = self.dust_masked
+        return cleaned_cube
 
     @property
     def basic_wcs(self):

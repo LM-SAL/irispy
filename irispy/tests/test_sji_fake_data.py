@@ -255,3 +255,46 @@ def test_get_basic_wcs_slice_item_returns_none_when_data_is_not_3d(cube_2d):
 
     assert cube_2d._get_basic_wcs_slice_item((slice(None), slice(0, 2))) is None
     assert subset.data.ndim == 2
+
+
+def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
+    captured = {}
+
+    def fake_remove_cosmic_rays(data, *, method, mask, sigma, max_iters, method_kwargs):
+        captured["method"] = method
+        captured["mask"] = mask.copy()
+        captured["sigma"] = sigma
+        captured["max_iters"] = max_iters
+        captured["method_kwargs"] = method_kwargs
+        return data + 1, np.zeros_like(data, dtype=bool)
+
+    monkeypatch.setattr("irispy.sji.remove_cosmic_rays", fake_remove_cosmic_rays)
+
+    original_data = cube_2d.data.copy()
+    cleaned_cube = cube_2d.remove_cosmic_rays(
+        method="astroscrappy",
+        sigma=2.0,
+        max_iters=3,
+        method_kwargs={"readnoise": 4.0},
+    )
+
+    assert isinstance(cleaned_cube, SJICube)
+    np.testing.assert_array_equal(cleaned_cube.data, cube_2d.data + 1)
+    np.testing.assert_array_equal(cleaned_cube.mask, cube_2d.mask)
+    assert cleaned_cube.scaled == cube_2d.scaled
+    assert cleaned_cube.dust_masked == cube_2d.dust_masked
+    assert list(cleaned_cube.extra_coords.keys()) == list(cube_2d.extra_coords.keys())
+    assert captured["method"] == "astroscrappy"
+    assert captured["sigma"] == 2.0
+    assert captured["max_iters"] == 3
+    assert captured["method_kwargs"] == {"readnoise": 4.0}
+    np.testing.assert_array_equal(captured["mask"], cube_2d.mask)
+    np.testing.assert_array_equal(cube_2d.data, original_data)
+    # WCS is deep-copied; check equivalence not identity
+    assert dict(cleaned_cube.wcs.to_header()) == dict(cube_2d.wcs.to_header())
+    assert cleaned_cube.basic_wcs == cube_2d.basic_wcs
+    # Input mask must not be mutated
+    np.testing.assert_array_equal(cube_2d.mask, original_data >= 0)
+    # unit and meta keys are preserved on the cleaned cube
+    assert cleaned_cube.unit == cube_2d.unit
+    assert set(cleaned_cube.meta.keys()) == set(cube_2d.meta.keys())

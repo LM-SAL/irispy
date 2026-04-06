@@ -1,3 +1,4 @@
+import copy
 import textwrap
 
 import matplotlib.pyplot as plt
@@ -8,6 +9,8 @@ from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
 from sunraster import SpectrogramSequence as SpecSeq
 
+from irispy.utils.cosmic_rays import remove_cosmic_rays
+from irispy.utils.cube_state import _build_cube_init_kwargs
 from irispy.visualization import IRISPlotter, IRISSequencePlotter, set_axis_properties
 
 __all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
@@ -105,6 +108,49 @@ class SpectrogramCube(SpecCube):
         set_axis_properties(ax)
         return ax
 
+    def remove_cosmic_rays(
+        self,
+        *,
+        method="rsliding",
+        sigma: float | None = None,
+        max_iters: int | None = None,
+        method_kwargs=None,
+    ):
+        """
+        Return a cleaned copy of the cube with cosmic rays removed.
+
+        Parameters
+        ----------
+        method : ``{"rsliding", "astroscrappy"}``, optional
+            Backend used to detect and clean cosmic rays.
+        sigma : `float`, optional
+            Shared clipping threshold override for the selected backend.
+        max_iters : `int`, optional
+            Shared iteration-count override for the selected backend.
+        method_kwargs : `dict`, optional
+            Additional keyword arguments passed to the selected backend.
+
+        Returns
+        -------
+        `irispy.spectrograph.SpectrogramCube`
+            Cleaned cube with the same metadata and coordinates as the original.
+        """
+        cleaned_data, _ = remove_cosmic_rays(
+            self.data,
+            method=method,
+            mask=self.mask,
+            sigma=sigma,
+            max_iters=max_iters,
+            method_kwargs=method_kwargs,
+        )
+        return type(self)(
+            cleaned_data,
+            copy.deepcopy(self.wcs),
+            extra_coords=copy.deepcopy(self.extra_coords),
+            global_coords=copy.deepcopy(self.global_coords),
+            **_build_cube_init_kwargs(self),
+        )
+
 
 class SpectrogramCubeSequence(SpecSeq):
     """
@@ -149,6 +195,28 @@ class SpectrogramCubeSequence(SpecSeq):
         set_axis_properties(ax)
         return ax
 
+    def remove_cosmic_rays(
+        self,
+        *,
+        method="rsliding",
+        sigma: float | None = None,
+        max_iters: int | None = None,
+        method_kwargs=None,
+    ):
+        """
+        Return a cleaned copy of each constituent cube in the sequence.
+        """
+        cleaned_cubes = [
+            cube.remove_cosmic_rays(
+                method=method,
+                sigma=sigma,
+                max_iters=max_iters,
+                method_kwargs=method_kwargs,
+            )
+            for cube in self.data
+        ]
+        return type(self)(cleaned_cubes, meta=copy.deepcopy(self.meta), common_axis=self._common_axis)
+
 
 class RasterCollection(NDCollection):
     """
@@ -167,3 +235,29 @@ class RasterCollection(NDCollection):
             Aligned physical types: {self.aligned_axis_physical_types}
             """,
         )
+
+    def remove_cosmic_rays(
+        self,
+        *,
+        method="rsliding",
+        sigma: float | None = None,
+        max_iters: int | None = None,
+        method_kwargs=None,
+    ):
+        """
+        Return a cleaned copy of each spectral window in the collection.
+        """
+        cleaned_pairs = [
+            (
+                key,
+                value.remove_cosmic_rays(
+                    method=method,
+                    sigma=sigma,
+                    max_iters=max_iters,
+                    method_kwargs=method_kwargs,
+                ),
+            )
+            for key, value in self.items()
+        ]
+        aligned_axes = tuple(self.aligned_axes[key] for key, _ in cleaned_pairs)
+        return type(self)(cleaned_pairs, aligned_axes=aligned_axes, meta=copy.deepcopy(self.meta))

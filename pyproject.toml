@@ -43,12 +43,15 @@ dependencies = [
 ]
 
 optional-dependencies.all = [ "irispy-lmsal" ]
-optional-dependencies.dev = [ "irispy-lmsal[docs,tests]" ]
+optional-dependencies.cosmic-rays = [
+  "astroscrappy",
+  "rsliding",
+]
+optional-dependencies.dev = [ "irispy-lmsal[cosmic-rays,docs,tests]" ]
 optional-dependencies.docs = [
   "aiapy",
-  "astroscrappy",
   "dask[distributed]",
-  "irispy-lmsal[all]",
+  "irispy-lmsal[cosmic-rays]",
   "pooch",
   "sphinx",
   "sphinx-automodapi",
@@ -60,7 +63,7 @@ optional-dependencies.docs = [
   "sunpy-sphinx-theme",
 ]
 optional-dependencies.tests = [
-  "irispy-lmsal[all]",
+  "irispy-lmsal[cosmic-rays]",
   "pooch",
   "pytest-astropy",
   "pytest-mpl",
