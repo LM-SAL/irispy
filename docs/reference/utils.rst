@@ -2,13 +2,15 @@
 utils (`irispy.utils`)
 **********************
 
-The `irispy.utils` module provides functions useful for development of ``irispy``.
+The `irispy.utils` module provides functions useful for ``irispy`` users or developers.
 
 .. automodapi:: irispy.utils
 
 .. automodapi:: irispy.utils.constants
 
 .. automodapi:: irispy.utils.cosmic_rays
+
+.. automodapi:: irispy.utils.dust
 
 .. automodapi:: irispy.utils.response
 

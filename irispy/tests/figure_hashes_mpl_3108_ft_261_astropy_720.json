@@ -1,4 +1,5 @@
 {
+  "irispy.utils.tests.test_dust.test_remove_dust_before_after_figure": "bbbeb47b8b0b81901f87be8ee1553fad5ed1683ade20bce1155d26a3f2644088",
   "irispy.utils.tests.test_response.test_plot_idl_vs_python_fuv_sg": "ba253be18e2552c2d3e9c73ed70f123cf0516fbe5b96315ace3a03536f35b2b6",
   "irispy.utils.tests.test_response.test_plot_idl_vs_python_nuv_sg": "3eca254b88254afb59b11ce0ff42206e429acc5641111e3da97aa3a2c6cb2122",
   "irispy.utils.tests.test_response.test_plot_idl_vs_python_sji_1": "1a4bcb4a066913096c50eaa179b0e8a17c76bca79581a9420516d64b083b0b3f",
