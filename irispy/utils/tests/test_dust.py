@@ -58,6 +58,116 @@ def test_remove_dust_preserves_sjicube_state(sns_sjicube_1330):
     assert cleaned.to_maps(0).wcs is not None
 
 
+def test_remove_dust_exposure_normalize_uses_exposure_time(sns_sjicube_1330):
+    # Use a small cube with a single spatial pixel so temporal behavior is clear
+    cube = sns_sjicube_1330[:4, :1, :1]
+    cube.data[...] = 0.0
+    cube.mask = np.zeros_like(cube.data, dtype=bool)
+
+    # Exposure times vary so a simple median in data space would differ
+    exposure_times = u.Quantity([1, 2, 4, 8], u.s)
+    cube.exposure_time = exposure_times
+
+    scale = 10.0
+    for i, t in enumerate(exposure_times.value):
+        cube.data[i, 0, 0] = scale * t
+
+    # Introduce a dust pixel in the second frame
+    dust_mask = np.zeros_like(cube.data, dtype=bool)
+    dust_mask[1, 0, 0] = True
+    cube.data[1, 0, 0] = 0.0
+    cube.mask[1, 0, 0] = True
+
+    cleaned = remove_dust(
+        cube,
+        dust_mask=dust_mask,
+        temporal_window=1,
+        exposure_normalize=True,
+    )
+
+    # If exposure normalization is used, the repaired value should scale with the
+    # local exposure time (i.e. be proportional to exposure_time[1])
+    expected_value = scale * exposure_times[1].value
+    assert cleaned.data[1, 0, 0] == expected_value
+
+    # And it should *not* equal the median of the un-normalized neighboring values
+    # (which would be 10, 40, 80 -> median 40)
+    assert cleaned.data[1, 0, 0] != np.median([10.0, 40.0, 80.0])
+
+
+def test_remove_dust_exposure_normalize_scalar_exposure_time_falls_back(sns_sjicube_1330):
+    # Two otherwise-identical cubes: one with exposure_normalize=True and a bad
+    # exposure_time, and one with exposure_normalize=False
+    cube_norm = sns_sjicube_1330[:4, :1, :1]
+    cube_no_norm = sns_sjicube_1330[:4, :1, :1]
+
+    for cube in (cube_norm, cube_no_norm):
+        cube.data[...] = 1.0
+        cube.mask = np.zeros_like(cube.data, dtype=bool)
+
+    dust_mask = np.zeros_like(cube_norm.data, dtype=bool)
+    dust_mask[1, 0, 0] = True
+    cube_norm.data[1, 0, 0] = 0.0
+    cube_no_norm.data[1, 0, 0] = 0.0
+    cube_norm.mask[1, 0, 0] = True
+    cube_no_norm.mask[1, 0, 0] = True
+
+    # Bad exposure_time: scalar instead of 1D array matching the time axis
+    cube_norm.exposure_time = 2.0 * u.s
+
+    cleaned_no_norm = remove_dust(
+        cube_no_norm,
+        dust_mask=dust_mask,
+        temporal_window=1,
+        exposure_normalize=False,
+    )
+    cleaned_norm = remove_dust(
+        cube_norm,
+        dust_mask=dust_mask,
+        temporal_window=1,
+        exposure_normalize=True,
+    )
+
+    # With an invalid exposure_time, the function should fall back to the
+    # non-normalized behavior without raising
+    np.testing.assert_allclose(cleaned_norm.data, cleaned_no_norm.data)
+
+
+def test_remove_dust_exposure_normalize_wrong_length_exposure_time_falls_back(sns_sjicube_1330):
+    cube_norm = sns_sjicube_1330[:4, :1, :1]
+    cube_no_norm = sns_sjicube_1330[:4, :1, :1]
+
+    for cube in (cube_norm, cube_no_norm):
+        cube.data[...] = 1.0
+        cube.mask = np.zeros_like(cube.data, dtype=bool)
+
+    dust_mask = np.zeros_like(cube_norm.data, dtype=bool)
+    dust_mask[2, 0, 0] = True
+    cube_norm.data[2, 0, 0] = 0.0
+    cube_no_norm.data[2, 0, 0] = 0.0
+    cube_norm.mask[2, 0, 0] = True
+    cube_no_norm.mask[2, 0, 0] = True
+
+    # Bad exposure_time: array length does not match number of time steps (4)
+    cube_norm.exposure_time = u.Quantity([1, 2, 3], u.s)
+
+    cleaned_no_norm = remove_dust(
+        cube_no_norm,
+        dust_mask=dust_mask,
+        temporal_window=1,
+        exposure_normalize=False,
+    )
+    cleaned_norm = remove_dust(
+        cube_norm,
+        dust_mask=dust_mask,
+        temporal_window=1,
+        exposure_normalize=True,
+    )
+
+    # Again, we should fall back to the same behavior as exposure_normalize=False
+    np.testing.assert_allclose(cleaned_norm.data, cleaned_no_norm.data)
+
+
 def test_remove_dust_warns_when_exposure_time_length_mismatches_frames(sns_sjicube_1330, monkeypatch):
     cube = sns_sjicube_1330[:4, :3, :3]
     cube.data[...] = np.array(
