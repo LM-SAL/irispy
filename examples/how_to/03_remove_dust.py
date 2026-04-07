@@ -25,13 +25,13 @@ filename = pooch.retrieve(
 
 sji_2832 = read_files(filename, memmap=False)
 # We crop the cube to make the example run faster, but the method works on the full cube as well.
-sji_subset = sji_2832[40:60]
+sji_subset = sji_2832[44:46]
 clean_subset = sji_subset.remove_dust()
 
 ###############################################################################
 # Finally, we can compare one frame before and after dust treatment.
 
-frame_index = 5
+frame_index = 1
 original_frame = sji_subset[frame_index]
 cleaned_frame = clean_subset[frame_index]
 
