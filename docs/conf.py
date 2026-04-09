@@ -150,7 +150,9 @@ copybutton_prompt_is_regexp = True
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 html_theme = "sunpy"
-
+html_context = {
+    "is_development": not is_release,
+}
 # Render inheritance diagrams in SVG
 graphviz_output_format = "svg"
 
@@ -206,3 +208,32 @@ sphinx_gallery_conf = {
     "only_warn_on_example_error": True,
     "matplotlib_animations": True,
 }
+
+
+def jinja_to_rst(app, docname, source):
+    """
+    Render our pages as a jinja template for fancy templating goodness.
+
+    Depending on the building format, we render the page as a jinja template.
+
+    For the linkchecker, we bypass templating as it doesn't support jinja, but we
+    remove the jinja blocks so the page is still valid for checking.
+    """
+    jinja_pages = ["index"]
+    if app.builder.format == "html":
+        if docname in jinja_pages:
+            rendered = app.builder.templates.render_string(source[0], app.config.html_context)
+            source[0] = rendered
+    elif docname == "index":
+        # This page only has a single jinja block that renders if the docs are
+        # being built in development mode. We can simply  remove this block.
+        for to_replace in ["{% if is_development %}", "{%else%}", "{% endif %}"]:
+            source[0] = source[0].replace(to_replace, "")
+
+
+# -- Sphinx setup --------------------------------------------------------------
+
+
+def setup(app):
+    # Handles the templating for the jinja pages in our docs
+    app.connect("source-read", jinja_to_rst)

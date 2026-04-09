@@ -4,6 +4,15 @@
 ``irispy`` documentation
 ************************
 
+
+{% if is_development %}
+
+.. warning::
+
+    This documentation is for a development version of ``irispy``. It may contain features that are not yet released, and may be unstable. For the latest stable release, please refer to the `latest stable documentation <https://irispy.readthedocs.io/en/stable/>`__.
+
+{% endif %}
+
 ``irispy`` is an open-source Python package that provides tools to read, manipulate, and visualize `Interface Region Imaging Spectrograph (IRIS) <https://iris.lmsal.com/>`__ data.
 `The data is publicly available and provides access to co-aligned SDO/AIA data and more. <https://iris.lmsal.com/search/>`__
 
