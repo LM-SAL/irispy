@@ -79,6 +79,27 @@ def _remove_cosmic_rays_astroscrappy(
     return cleaned_data, cosmic_ray_mask
 
 
+def _run_cr_numpy(
+    data: np.ndarray,
+    mask: np.ndarray,
+    *,
+    method: str,
+    sigma: float | None,
+    max_iters: int | None,
+    method_kwargs: dict[str, Any],
+) -> np.ndarray:
+    """Module-level helper so dask.delayed can pickle it."""
+    # Backends require float (NaN masking of bad pixels); cast integer data here.
+    if not np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
+    mask = mask | np.isnan(data)
+    if method == "rsliding":
+        cleaned, _ = _remove_cosmic_rays_rsliding(data, mask, sigma=sigma, max_iters=max_iters, method_kwargs=method_kwargs)
+    else:
+        cleaned, _ = _remove_cosmic_rays_astroscrappy(data, mask, sigma=sigma, max_iters=max_iters, method_kwargs=method_kwargs)
+    return cleaned
+
+
 def remove_cosmic_rays(
     cube,
     *,
@@ -111,12 +132,58 @@ def remove_cosmic_rays(
     -------
     irispy.sji.SJICube or irispy.spectrograph.SpectrogramCube
         A new cube with cleaned data and copied metadata/coordinates.
+
+    Notes
+    -----
+    When the cube is dask-backed (loaded with ``memmap=True``), the cosmic-ray
+    removal is deferred: the returned cube holds a lazy dask array and no
+    computation is performed until ``.data.compute()`` is called.
     """
+    if method.lower() not in {"rsliding", "astroscrappy"}:
+        msg = f"Unsupported method {method!r}. Supported methods are: {sorted({'rsliding', 'astroscrappy'})}."
+        raise ValueError(msg)
     method = method.lower()
+    kwargs = dict(method_kwargs or {})
+
+    try:
+        import dask
+        import dask.array as da
+
+        if isinstance(cube.data, da.Array):
+            mask_np = (
+                np.zeros(cube.data.shape, dtype=bool)
+                if cube.mask is None
+                else np.asarray(cube.mask, dtype=bool)
+            )
+            lazy_cleaned = da.from_delayed(
+                dask.delayed(_run_cr_numpy)(
+                    cube.data, mask_np,
+                    method=method, sigma=sigma, max_iters=max_iters, method_kwargs=kwargs,
+                ),
+                shape=cube.data.shape,
+                dtype=cube.data.dtype if np.issubdtype(cube.data.dtype, np.floating) else np.float32,
+            )
+            cleaned_cube_kwargs = {
+                "data": lazy_cleaned,
+                "mask": "copy",
+                "nddata_type": type(cube),
+                "extra_coords": "copy",
+                "global_coords": "copy",
+            }
+            if hasattr(cube, "scaled"):
+                cleaned_cube_kwargs["scaled"] = "copy"
+            if hasattr(cube, "_basic_wcs"):
+                cleaned_cube_kwargs["_basic_wcs"] = "copy"
+            cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
+            if hasattr(cleaned_cube, "dust_masked") and hasattr(cube, "dust_masked"):
+                cleaned_cube.dust_masked = cube.dust_masked
+            return cleaned_cube
+    except ImportError:
+        pass
+
     working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
     if np.issubdtype(cube.data.dtype, np.floating):
         working_mask = working_mask | np.isnan(cube.data)
-    kwargs = dict(method_kwargs or {})
     backends = {
         "rsliding": lambda: _remove_cosmic_rays_rsliding(
             cube.data,
@@ -133,9 +200,6 @@ def remove_cosmic_rays(
             method_kwargs=kwargs,
         ),
     }
-    if method not in backends:
-        msg = f"Unsupported method {method!r}. Supported methods are: {sorted(backends)}."
-        raise ValueError(msg)
     cleaned_data, _ = backends[method]()
 
     cleaned_cube_kwargs = {

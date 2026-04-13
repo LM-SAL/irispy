@@ -120,6 +120,22 @@ def remove_dust(
         msg = "fallback must be 'spatial' or None."
         raise ValueError(msg)
 
+    try:
+        import dask.array as da
+        if isinstance(cube.data, da.Array):
+            raise TypeError(
+                "remove_dust() is not supported on dask-backed cubes (loaded with "
+                "memmap=True). Reload with memmap=False to use dust removal."
+            )
+    except ImportError:
+        pass
+
+    if not getattr(cube, "scaled", True):
+        raise TypeError(
+            "remove_dust() requires scaled data. "
+            "Reload with memmap=False to use dust removal."
+        )
+
     clean_data = np.asarray(cube.data, dtype=float).copy()
     if cube.mask is None:
         original_mask = np.zeros(cube.data.shape, dtype=bool)

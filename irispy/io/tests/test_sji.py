@@ -109,3 +109,23 @@ def test_smoke_read_sji_lvl2(
     read_sji_lvl2(raster_sji_1400_file)
     read_sji_lvl2(raster_sji_2796_file)
     read_sji_lvl2(raster_sji_2832_file)
+
+
+def test_memmap_read_sji_lvl2(raster_sji_1400_file):
+    import dask.array as da
+
+    from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED, DN_UNIT
+
+    cube = read_sji_lvl2(raster_sji_1400_file, memmap=True)
+    assert isinstance(cube.data, da.Array)
+    assert cube.data.shape == (54, 109, 110)
+    # Unscaled path: raw DN integers, not the scaled SJI unit
+    assert cube.unit == DN_UNIT["SJI_UNSCALED"]
+    assert cube.scaled is False
+    # Lazy mask must exist — bad pixels should be flagged
+    assert isinstance(cube.mask, da.Array)
+    assert cube.mask.shape == cube.data.shape
+    # Trigger an actual compute; bad-pixel sentinel must be zeroed in data
+    frame = cube.data[0].compute()
+    assert frame.shape == (109, 110)
+    assert BAD_PIXEL_VALUE_UNSCALED not in frame

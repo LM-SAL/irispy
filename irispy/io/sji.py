@@ -1,5 +1,7 @@
 import numpy as np
 
+import dask.array as da
+
 import astropy.modeling.models as m
 import astropy.units as u
 import gwcs
@@ -163,10 +165,10 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         If `True` (not the default), will compute the uncertainty for the data (slower and
         uses more memory). If ``memmap=True``, the uncertainty is never computed.
     memmap : `bool`, optional
-        If `True` (not the default), will not load arrays into memory, and will only read from
-        the file into memory when needed. This option is faster and uses a
-        lot less memory. However, because FITS scaling is not done on-the-fly,
-        the data units will be unscaled, not the usual data numbers (DN).
+        If `True` (not the default), data is loaded lazily using Dask — frames are
+        not read from disk until accessed. Data is unscaled (raw DN integers).
+        Bad-pixel sentinel values are zeroed and a lazy mask is built.
+        Uncertainties are not computed in this mode.
 
     Returns
     -------
@@ -211,8 +213,15 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         data_nan_masked = hdulist[0].data
         out_uncertainty = None
         if memmap:
-            data_nan_masked[data == BAD_PIXEL_VALUE_UNSCALED] = 0
-            mask = None
+            # Wrap the read-only numpy memmap in a dask array, chunked by frame.
+            # chunks derived from ndim so this works for both SJI (3D) and AIA cubes.
+            # da.from_array holds a reference to the memmap, keeping the OS mapping
+            # alive after the file handle is released at the end of the with block.
+            raw = hdulist[0].data
+            chunks = (1,) + (-1,) * (raw.ndim - 1)
+            data = da.from_array(raw, chunks=chunks)
+            data_nan_masked = da.where(data == BAD_PIXEL_VALUE_UNSCALED, 0, data)
+            mask = data == BAD_PIXEL_VALUE_UNSCALED
             scaled = False
             unit = DN_UNIT["SJI_UNSCALED"]
         else:

@@ -2,6 +2,8 @@ import textwrap
 import warnings
 from numbers import Integral
 
+import numpy as np
+
 import matplotlib.pyplot as plt
 
 from astropy.wcs import WCS
@@ -190,6 +192,18 @@ class SJICube(SpectrogramCube):
             If True, dust particles positions mask will be removed.
             Default=False
         """
+        import dask.array as da
+
+        if isinstance(self.data, da.Array) or isinstance(self.mask, da.Array):
+            raise TypeError(
+                "apply_dust_mask() is not supported on dask-backed cubes (loaded with "
+                "memmap=True). Reload with memmap=False to use dust masking."
+            )
+        if not getattr(self, "scaled", True):
+            raise TypeError(
+                "apply_dust_mask() requires scaled data. "
+                "Reload with memmap=False to use dust masking."
+            )
         dust_mask = calculate_dust_mask(self.data)
         if undo:
             # If undo kwarg IS set, unmask dust pixels.
@@ -272,6 +286,18 @@ class SJICube(SpectrogramCube):
         `irispy.sji.SJICube`
             Cleaned cube with dust-darkened pixels repaired.
         """
+        import dask.array as da
+
+        if isinstance(self.data, da.Array):
+            raise TypeError(
+                "remove_dust() is not supported on dask-backed cubes (loaded with "
+                "memmap=True). Reload with memmap=False to use dust removal."
+            )
+        if not getattr(self, "scaled", True):
+            raise TypeError(
+                "remove_dust() requires scaled data. "
+                "Reload with memmap=False to use dust removal."
+            )
         return _remove_dust(
             self,
             dust_mask=dust_mask,
@@ -289,8 +315,8 @@ class SJICube(SpectrogramCube):
         if self._basic_wcs is None:
             return None
         if isinstance(self._basic_wcs, MetaDict):
-            return WCS(self._basic_wcs, preserve_units=True)
-        return [WCS(wcs_header, preserve_units=True) for wcs_header in self._basic_wcs]
+            return WCS(self._basic_wcs)
+        return [WCS(wcs_header) for wcs_header in self._basic_wcs]
 
     def to_maps(self, index: int | list[int] | None = None):
         """
@@ -317,8 +343,8 @@ class SJICube(SpectrogramCube):
         # We can shortcut if the Cube has been reduced to a 2D slice
         if self.wcs.world_n_dim == 2:
             # TODO: Missing metadata
-            return Map(self.data, self.basic_wcs)
-        data_wcs = ((self.data[i], self.basic_wcs[i]) for i in idx_list)
+            return Map(np.asarray(self.data), self.basic_wcs)
+        data_wcs = ((np.asarray(self.data[i]), self.basic_wcs[i]) for i in idx_list)
         times_iso = (self.wcs.pixel_to_world(0, 0, i)[-1].utc.isot for i in idx_list)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SunpyMetadataWarning)

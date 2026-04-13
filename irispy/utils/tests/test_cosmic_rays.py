@@ -164,3 +164,60 @@ def test_remove_cosmic_rays_missing_optional_dependency(sns_sjicube_1330, monkey
     expected_module = "rsliding" if method == "rsliding" else "astroscrappy"
     with pytest.raises(ImportError, match=expected_module):
         remove_cosmic_rays(cube, method=method)
+
+
+def test_remove_cosmic_rays_dask_returns_lazy_cube(sns_sjicube_1330_dask, monkeypatch):
+    import sys
+    import types
+
+    import dask.array as da
+
+    called = []
+
+    class FakeSlidingSigmaClipping:
+        def __init__(self, data, **kwargs):
+            called.append(True)
+            self.clipped = np.ma.masked_array(data.copy(), mask=np.zeros_like(data, dtype=bool))
+
+    monkeypatch.setitem(sys.modules, "rsliding", types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping))
+
+    cube = sns_sjicube_1330_dask[:3, :4, :4]
+    result = remove_cosmic_rays(cube)
+
+    assert isinstance(result.data, da.Array)
+    assert result.data.shape == cube.data.shape
+    # Backend must NOT have been called yet — deferred until .compute()
+    assert not called, "Backend was called eagerly; computation should be deferred"
+
+    result.data.compute()
+    assert called, "Backend was never called even after .compute()"
+
+
+def test_remove_cosmic_rays_dask_computes_correctly(sns_sjicube_1330_dask, monkeypatch):
+    import sys
+    import types
+
+    import dask.array as da
+
+    captured = {}
+
+    class FakeSlidingSigmaClipping:
+        def __init__(self, data, **kwargs):
+            captured["called"] = True
+            captured["dtype"] = data.dtype
+            self.clipped = np.ma.masked_array(data.copy(), mask=np.zeros_like(data, dtype=bool))
+
+    monkeypatch.setitem(sys.modules, "rsliding", types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping))
+
+    # Use the real memmap mask (may have True values) to exercise the int16→float32 cast path.
+    cube = sns_sjicube_1330_dask[:2, :3, :3]
+    result = remove_cosmic_rays(cube)
+    assert isinstance(result.data, da.Array)
+
+    computed = result.data.compute()
+    assert isinstance(computed, np.ndarray)
+    assert computed.shape == (2, 3, 3)
+    # int16 input must be cast to float before being passed to the backend
+    assert np.issubdtype(computed.dtype, np.floating)
+    assert captured.get("called") is True
+    assert np.issubdtype(captured["dtype"], np.floating), "Backend received non-float data"

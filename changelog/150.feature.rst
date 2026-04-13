@@ -1,0 +1,1 @@
+Added an inverse-capable 5-axis raster spectrograph gWCS with an explicit raster-step world axis, enabling full world-coordinate round trips and official `ndcube` crop support when complete world points are supplied.

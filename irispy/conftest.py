@@ -188,6 +188,11 @@ def raster_sjicube_2832():
     return read_sji_lvl2(get_test_filepath("raster/iris_l2_20140329_140938_3860258481_SJI_2832_t000.fits"))
 
 
+@pytest.fixture
+def sns_sjicube_1330_dask():
+    return read_sji_lvl2(get_test_filepath("sns/iris_l2_20210905_001833_3620258102_SJI_1330_t000.fits"), memmap=True)
+
+
 @pytest.fixture(scope="session")
 def fake_long_sns_obs(tmp_path_factory):
     header = fits.getheader(get_test_filepath("raster/iris_l2_20140329_140938_3860258481_SJI_2832_t000.fits"))

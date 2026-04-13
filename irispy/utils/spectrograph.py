@@ -21,6 +21,117 @@ __all__ = [
 ]
 
 
+def _get_wcs_pixel_scales(cube):
+    """
+    Return ``(spectral_dispersion_per_pixel, slit_pixel_scale)`` from any SpectrogramCube WCS.
+
+    Works with astropy FITS WCS, ndcube SlicedLowLevelWCS, and gWCS objects.
+
+    Returns
+    -------
+    spectral_dispersion_per_pixel : `~astropy.units.Quantity`
+        Wavelength covered per dispersion pixel (e.g. Å/pix).
+    slit_pixel_scale : `~astropy.units.Quantity`
+        Angular size of one slit pixel (e.g. arcsec/pix).
+    """
+    if hasattr(cube.wcs, "wcs"):
+        # Non-sliced astropy FITS WCS
+        wcs = cube.wcs.wcs
+        spectral_idx = np.where(np.array(wcs.ctype) == "WAVE")[0][0]
+        lat_idx = np.arange(len(wcs.ctype))[["HPLT" in c for c in wcs.ctype]][0]
+        return (
+            wcs.cdelt[spectral_idx] * wcs.cunit[spectral_idx],
+            wcs.cdelt[lat_idx] * wcs.cunit[lat_idx],
+        )
+    try:
+        # ndcube SlicedLowLevelWCS wrapping an astropy FITS WCS
+        wcs = unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs
+        spectral_idx = np.where(np.array(wcs.ctype) == "WAVE")[0][0]
+        lat_idx = np.arange(len(wcs.ctype))[["HPLT" in c for c in wcs.ctype]][0]
+        return (
+            wcs.cdelt[spectral_idx] * wcs.cunit[spectral_idx],
+            wcs.cdelt[lat_idx] * wcs.cunit[lat_idx],
+        )
+    except TypeError:
+        pass
+    # gWCS or other non-FITS WCS: try to read pixel scales from the
+    # VaryingCelestialTransform.cdelt (constant across steps), then fall back
+    # to evaluating adjacent pixels.  The cdelt approach avoids a ~1e-7
+    # relative error caused by the varying PC matrix making SkyCoord.separation
+    # return slightly different values depending on which raster step the WCS
+    # is locked to (e.g., 3-D cube at step 0 vs 2-D slice at step 10).
+    from dkist.wcs.models import VaryingCelestialTransform  # NOQA: PLC0415
+
+    def _find_vct(model):
+        if isinstance(model, VaryingCelestialTransform):
+            return model
+        for attr in ("left", "right"):
+            sub = getattr(model, attr, None)
+            if sub is not None:
+                found = _find_vct(sub)
+                if found is not None:
+                    return found
+        return None
+
+    # The WCS may be wrapped in HighLevelWCSWrapper / SlicedLowLevelWCS layers.
+    # Unwrap all layers to get to the underlying gWCS.
+    underlying = cube.wcs
+    for _ in range(10):  # guard against infinite loops
+        if hasattr(underlying, "forward_transform"):
+            break
+        if hasattr(underlying, "low_level_wcs"):
+            underlying = underlying.low_level_wcs
+        elif hasattr(underlying, "_wcs"):
+            underlying = underlying._wcs
+        else:
+            break
+
+    if hasattr(underlying, "forward_transform"):
+        vct = _find_vct(underlying.forward_transform)
+        if vct is not None:
+            # cdelt = [CDELT_slit, CDELT_step] arcsec/pix; only slit matters.
+            # Strip /pix — the rest of the code treats these as Å and arcsec
+            # (the per-pixel denominator is implicit, matching FITS WCS cdelt).
+            slit_scale = abs(vct.cdelt.quantity[0]).to(u.arcsec / u.pix).value * u.arcsec
+            # Spectral: use the Linear1D slope in the forward_transform.
+            spectral = next(
+                (
+                    m
+                    for m in underlying.forward_transform
+                    if hasattr(m, "slope")
+                    and getattr(m, "slope", None) is not None
+                    and hasattr(m.slope, "unit")
+                    and m.slope.unit.is_equivalent(u.AA / u.pix)
+                ),
+                None,
+            )
+            if spectral is not None:
+                disp = abs(spectral.slope.quantity).to(u.AA / u.pix)
+                return disp.value * u.AA, slit_scale.to(u.arcsec)
+
+    n_pix = cube.wcs.pixel_n_dim
+    p0 = [0.0] * n_pix
+    p_d = list(p0)
+    p_d[0] = 1.0
+    p_s = list(p0)
+    p_s[min(1, n_pix - 1)] = 1.0
+    w0 = cube.wcs.pixel_to_world(*p0)
+    w_d = cube.wcs.pixel_to_world(*p_d)
+    w_s = cube.wcs.pixel_to_world(*p_s)
+
+    def _to_list(w):
+        return list(w) if isinstance(w, (list, tuple)) else [w]
+
+    w0l, wdl, wsl = _to_list(w0), _to_list(w_d), _to_list(w_s)
+    spectral_dispersion = next(
+        abs((wc1 - wc0).to(u.AA))
+        for wc0, wc1 in zip(w0l, wdl, strict=False)
+        if hasattr(wc0, "unit") and wc0.unit.is_equivalent(u.AA)
+    )
+    sky0, sky1 = next((wc0, wc1) for wc0, wc1 in zip(w0l, wsl, strict=False) if hasattr(wc0, "separation"))
+    return spectral_dispersion, sky0.separation(sky1).to(u.arcsec)
+
+
 def radiometric_calibration(
     cube: SpectrogramCube | SpectrogramCubeSequence,
 ) -> SpectrogramCube | SpectrogramCubeSequence:
@@ -64,14 +175,8 @@ def radiometric_calibration(
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
     detector_type = cube.meta.detector
-    underlying_wcs = unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs if not hasattr(cube.wcs, "wcs") else cube.wcs.wcs
-    # Get spectral dispersion per pixel.
-    spectral_wcs_index = np.where(np.array(underlying_wcs.ctype) == "WAVE")[0][0]
-    spectral_dispersion_per_pixel = underlying_wcs.cdelt[spectral_wcs_index] * underlying_wcs.cunit[spectral_wcs_index]
-    # Get solid angle from slit width for a pixel.
-    lat_wcs_index = ["HPLT" in c for c in underlying_wcs.ctype]
-    lat_wcs_index = np.arange(len(underlying_wcs.ctype))[lat_wcs_index][0]
-    solid_angle = underlying_wcs.cdelt[lat_wcs_index] * underlying_wcs.cunit[lat_wcs_index] * SLIT_WIDTH
+    spectral_dispersion_per_pixel, slit_pixel_scale = _get_wcs_pixel_scales(cube)
+    solid_angle = slit_pixel_scale * SLIT_WIDTH
     # Get wavelength for each pixel.
     wavelength_axis_index = next(
         axis
@@ -81,14 +186,12 @@ def radiometric_calibration(
     wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
     time_obs = cube.meta.date_reference
     iris_response = get_latest_response(time_obs)
-    exp_corrected_cube = cube.apply_exposure_time_correction()
+    corrected_cube = cube.apply_exposure_time_correction()
+    unit_factor = corrected_cube.unit.to(u.photon / u.s)
     # Convert to radiance units.
-    data_quantities = (exp_corrected_cube.data * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s),)
-    if exp_corrected_cube.uncertainty is not None:
-        uncertainty = (
-            exp_corrected_cube.uncertainty.array * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s)
-        )
-        data_quantities += (uncertainty,)
+    data_quantities = (corrected_cube.data * unit_factor * (u.photon / u.s),)
+    if corrected_cube.uncertainty is not None:
+        data_quantities += (corrected_cube.uncertainty.array * unit_factor * (u.photon / u.s),)
     new_data_quantities = convert_photons_per_sec_to_radiance(
         data_quantities=data_quantities,
         iris_response=iris_response,
@@ -100,16 +203,19 @@ def radiometric_calibration(
     new_data = new_data_quantities[0].value
     new_uncertainty = new_data_quantities[1].value if len(new_data_quantities) > 1 else None
     new_unit = new_data_quantities[0].unit
-    new_cube = SpectrogramCube(
-        new_data,
-        cube.wcs,
-        new_uncertainty,
-        new_unit,
-        cube.meta,
-        mask=cube.mask,
+    new_cube_kwargs = {
+        "data": new_data,
+        "uncertainty": new_uncertainty,
+        "unit": new_unit,
+        "mask": "copy",
+        "nddata_type": type(cube),
+        "extra_coords": "copy",
+        "global_coords": "copy",
+        "_basic_wcs": "copy",
+    }
+    return cube.to_nddata(
+        **new_cube_kwargs,
     )
-    new_cube._extra_coords = cube.extra_coords
-    return new_cube
 
 
 def convert_photons_per_sec_to_radiance(

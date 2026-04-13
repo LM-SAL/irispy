@@ -356,3 +356,43 @@ def test_remove_dust_before_after_figure(sns_sjicube_1330):
         ax.coords[1].set_ticklabel_visible(False)
 
     return fig
+
+
+def test_apply_dust_mask_raises_on_dask_backed_cube(sns_sjicube_1330_dask):
+    with pytest.raises(TypeError, match="memmap=True"):
+        sns_sjicube_1330_dask.apply_dust_mask()
+
+
+def test_apply_dust_mask_raises_on_unscaled_cube(sns_sjicube_1330):
+    cube = sns_sjicube_1330[:4, :3, :3]
+    cube.scaled = False
+    with pytest.raises(TypeError, match="scaled data"):
+        cube.apply_dust_mask()
+
+
+def test_remove_dust_method_raises_on_dask_backed_cube(sns_sjicube_1330_dask):
+    dust_mask = np.zeros(sns_sjicube_1330_dask.data.shape, dtype=bool)
+    with pytest.raises(TypeError, match="memmap=True"):
+        sns_sjicube_1330_dask.remove_dust(dust_mask=dust_mask)
+
+
+def test_remove_dust_method_raises_on_unscaled_cube(sns_sjicube_1330):
+    cube = sns_sjicube_1330[:4, :3, :3]
+    cube.scaled = False
+    dust_mask = np.zeros_like(cube.data, dtype=bool)
+    with pytest.raises(TypeError, match="scaled data"):
+        cube.remove_dust(dust_mask=dust_mask)
+
+
+def test_remove_dust_utility_raises_on_dask_backed_cube(sns_sjicube_1330_dask):
+    dust_mask = np.zeros(sns_sjicube_1330_dask.data.shape, dtype=bool)
+    with pytest.raises(TypeError, match="memmap=True"):
+        remove_dust(sns_sjicube_1330_dask, dust_mask=dust_mask)
+
+
+def test_remove_dust_utility_raises_on_unscaled_cube(sns_sjicube_1330):
+    cube = sns_sjicube_1330[:4, :3, :3]
+    cube.scaled = False
+    dust_mask = np.zeros_like(cube.data, dtype=bool)
+    with pytest.raises(TypeError, match="scaled data"):
+        remove_dust(cube, dust_mask=dust_mask)

@@ -1,0 +1,1 @@
+Fixed raster spectrograph reading so directory and file-list inputs preserve full raster sequences, tolerate blank ``DATE_OBS`` values in affected local raster files, and keep the restored raster examples working with the original sequence-based API.
