@@ -71,9 +71,17 @@ def _get_spec_group_key(file):
     -------
     `tuple`
         Key built from stable observation-identifying header metadata.
+        Falls back to a per-file key if the header cannot be read or if
+        the observation-grouping metadata is missing.
     """
-    obsid = fits.getval(file, "OBSID")
-    startobs = fits.getval(file, "STARTOBS")
+    try:
+        header = fits.getheader(file)
+    except OSError:
+        return (file,)
+    obsid = header.get("OBSID")
+    startobs = header.get("STARTOBS")
+    if obsid is None or not startobs:
+        return (file,)
     return obsid, startobs
 
 
@@ -162,11 +170,11 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
     returns = {}
     spec_groups = {}
     for filename in filenames:
-        sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
-        raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
-        instrume, describe = _get_simple_metadata(filename)
-        log.debug(f"Processing file: {filename} with instrume: {instrume}")
         try:
+            sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
+            raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
+            instrume, describe = _get_simple_metadata(filename)
+            log.debug(f"Processing file: {filename} with instrume: {instrume}")
             if sdo_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith("AIA"):
                 file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
                 for f in file:

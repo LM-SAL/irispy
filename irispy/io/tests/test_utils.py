@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from irispy.io.utils import fits_info, read_files
+from irispy.io.utils import _get_spec_group_key, fits_info, read_files
 
 
 def test_fits_info(capsys, sns_sg_file, sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
@@ -39,7 +39,40 @@ def test_read_files_raster(sns_sg_file):
 
 def test_read_files_raster_file_list(raster_sg_files):
     returns = read_files(raster_sg_files)
+    assert set(returns.keys()) == {
+        "C II 1336",
+        "1343",
+        "Fe XII 1349",
+        "O I 1356",
+        "Si IV 1403",
+        "2832",
+        "2826",
+        "2814",
+        "Mg II k 2796",
+    }
     assert len(returns["Si IV 1403"]) == len(raster_sg_files)
+
+
+def test_get_spec_group_key_falls_back_when_metadata_is_missing(monkeypatch, tmp_path):
+    filename = tmp_path / "missing-grouping-metadata.fits"
+    filename.touch()
+
+    monkeypatch.setattr("irispy.io.utils.fits.getheader", lambda _: {"OBSID": None, "STARTOBS": ""})
+
+    assert _get_spec_group_key(filename) == (filename,)
+
+
+def test_get_spec_group_key_falls_back_when_header_read_fails(monkeypatch, tmp_path):
+    filename = tmp_path / "unreadable-header.fits"
+    filename.touch()
+
+    def raise_oserror(_):
+        msg = "cannot read header"
+        raise OSError(msg)
+
+    monkeypatch.setattr("irispy.io.utils.fits.getheader", raise_oserror)
+
+    assert _get_spec_group_key(filename) == (filename,)
 
 
 def test_read_files_sji(sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
