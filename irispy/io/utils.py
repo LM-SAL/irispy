@@ -30,8 +30,9 @@ def _get_simple_metadata(file):
     """
     if not file.name.endswith(".fits") and not file.name.endswith(".fits.gz"):
         return "", ""
-    instrume = fits.getval(file, "INSTRUME")
-    describe = fits.getval(file, "TDESC1")
+    header = fits.getheader(file)
+    instrume = header.get("INSTRUME", "")
+    describe = header.get("TDESC1", "")
     return instrume, describe
 
 
@@ -83,6 +84,20 @@ def _get_spec_group_key(file):
     if obsid is None or not startobs:
         return (file,)
     return obsid, startobs
+
+
+def _get_spec_return_key(file_group, describe, returns):
+    key = f"{describe}"
+    if key not in returns:
+        return key
+    group_key = _get_spec_group_key(file_group[0])
+    if len(group_key) == 1:
+        return f"{describe} ({Path(group_key[0]).stem})"
+    obsid, startobs = group_key
+    key = f"{describe} ({obsid})"
+    if key not in returns:
+        return key
+    return f"{describe} ({obsid}, {startobs})"
 
 
 def fits_info(filename: str) -> None:
@@ -148,10 +163,13 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
         If `True` (not the default), will compute the uncertainty for the data (slower and
         uses more memory). If ``memmap=True``, the uncertainty is never computed.
     memmap : `bool`, optional
-        If `True` (not the default), data is loaded lazily using Dask — arrays
-        are not read from disk until accessed. This keeps memory usage low when
-        working with many files at once. If ``memmap=True``, the uncertainty is
-        never computed.
+        If `True` (not the default), FITS data are opened using Astropy/NumPy
+        memory mapping rather than being fully read into memory at once. This
+        can keep memory usage low when working with many files, since array
+        data are accessed from disk on demand. In this mode FITS image scaling
+        is disabled, so the returned data are unscaled/raw FITS values rather
+        than automatically scaled physical values. If ``memmap=True``, the
+        uncertainty is never computed.
     allow_errors : `bool`, optional
         Will continue loading the files if one fails to load.
         Defaults to `False`.
@@ -197,8 +215,15 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                 continue
             raise
     for file_group in spec_groups.values():
-        instrume, describe = _get_simple_metadata(file_group[0])
-        returns[f"{describe}"] = read_spectrograph_lvl2(
-            file_group, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
-        )
+        try:
+            instrume, describe = _get_simple_metadata(file_group[0])
+            key = _get_spec_return_key(file_group, describe, returns)
+            returns[key] = read_spectrograph_lvl2(
+                file_group, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
+            )
+        except Exception as e:
+            if allow_errors:
+                log.warning(f"File group {file_group} failed to load with {e}")
+                continue
+            raise
     return NDCollection(returns.items()) if len(returns) > 1 else next(iter(returns.values()))

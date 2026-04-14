@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from astropy.io import fits
+
 from irispy.io.utils import _get_spec_group_key, fits_info, read_files
 
 
@@ -73,6 +75,36 @@ def test_get_spec_group_key_falls_back_when_header_read_fails(monkeypatch, tmp_p
     monkeypatch.setattr("irispy.io.utils.fits.getheader", raise_oserror)
 
     assert _get_spec_group_key(filename) == (filename,)
+
+
+def test_read_files_raster_file_list_multiple_observations_use_unique_keys(raster_sg_file, sns_sg_file):
+    filenames = sorted([raster_sg_file, sns_sg_file])
+    first_describe = fits.getheader(filenames[0]).get("TDESC1")
+    second_obsid = fits.getheader(filenames[1]).get("OBSID")
+
+    returns = read_files(filenames)
+
+    assert len(returns) == 2
+    assert set(returns.keys()) == {first_describe, f"{first_describe} ({second_obsid})"}
+
+
+def test_read_files_grouped_spectrograph_honors_allow_errors(
+    monkeypatch,
+    raster_sg_files,
+    sns_sji_1330_file,
+    sns_sji_1400_file,
+):
+    expected = read_files([sns_sji_1330_file, sns_sji_1400_file])
+
+    def raise_value_error(*_args, **_kwargs):
+        msg = "grouped spectrograph load failed"
+        raise ValueError(msg)
+
+    monkeypatch.setattr("irispy.io.utils.read_spectrograph_lvl2", raise_value_error)
+
+    returns = read_files([sns_sji_1330_file, sns_sji_1400_file, *raster_sg_files], allow_errors=True)
+
+    assert list(returns.keys()) == list(expected.keys())
 
 
 def test_read_files_sji(sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
