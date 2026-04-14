@@ -37,6 +37,11 @@ def test_read_files_raster(sns_sg_file):
     assert read_files([sns_sg_file])
 
 
+def test_read_files_raster_file_list(raster_sg_files):
+    returns = read_files(raster_sg_files)
+    assert len(returns["Si IV 1403"]) == len(raster_sg_files)
+
+
 def test_read_files_sji(sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
     # Simple test to ensure it does not error
     assert read_files(sns_sji_1330_file)

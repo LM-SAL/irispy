@@ -58,6 +58,25 @@ def _extract_tarfile(filenames):
     return expanded_files
 
 
+def _get_spec_group_key(file):
+    """
+    Group spectrograph FITS files that belong to the same observation.
+
+    Parameters
+    ----------
+    file : `pathlib.Path`
+        The FITS file to inspect.
+
+    Returns
+    -------
+    `tuple`
+        Key built from stable observation-identifying header metadata.
+    """
+    obsid = fits.getval(file, "OBSID")
+    startobs = fits.getval(file, "STARTOBS")
+    return obsid, startobs
+
+
 def fits_info(filename: str) -> None:
     """
     Prints information about the extension of a raster or SJI level 2 data file.
@@ -121,10 +140,10 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
         If `True` (not the default), will compute the uncertainty for the data (slower and
         uses more memory). If ``memmap=True``, the uncertainty is never computed.
     memmap : `bool`, optional
-        If `True` (not the default), will not load arrays into memory, and will only read from
-        the file into memory when needed. This option is faster and uses a
-        lot less memory. However, because FITS scaling is not done on-the-fly,
-        the data units will be unscaled, not the usual data numbers (DN).
+        If `True` (not the default), data is loaded lazily using Dask — arrays
+        are not read from disk until accessed. This keeps memory usage low when
+        working with many files at once. If ``memmap=True``, the uncertainty is
+        never computed.
     allow_errors : `bool`, optional
         Will continue loading the files if one fails to load.
         Defaults to `False`.
@@ -141,6 +160,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
     filenames = sorted(filenames)
     filenames = [Path(f) for f in filenames]
     returns = {}
+    spec_groups = {}
     for filename in filenames:
         sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
         raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
@@ -152,12 +172,15 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                 for f in file:
                     instrume, describe = _get_simple_metadata(f)
                     returns[f"{describe}"] = read_sji_lvl2(f, memmap=memmap, uncertainty=uncertainty, **kwargs)
-            elif raster_tarfile or instrume == "SPEC":
+            elif raster_tarfile:
                 file = _extract_tarfile([filename]) if raster_tarfile else [filename]
                 instrume, describe = _get_simple_metadata(file[0])
                 returns[f"{describe}"] = read_spectrograph_lvl2(
                     file, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
                 )
+            elif instrume == "SPEC":
+                group_key = _get_spec_group_key(filename)
+                spec_groups.setdefault(group_key, []).append(filename)
             else:
                 log.warning(f"INSTRUME: {instrume} was not recognized and not loaded")
         except Exception as e:
@@ -165,4 +188,9 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                 log.warning(f"File {filename} failed to load with {e}")
                 continue
             raise
+    for file_group in spec_groups.values():
+        instrume, describe = _get_simple_metadata(file_group[0])
+        returns[f"{describe}"] = read_spectrograph_lvl2(
+            file_group, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
+        )
     return NDCollection(returns.items()) if len(returns) > 1 else next(iter(returns.values()))

@@ -44,7 +44,7 @@ def cube():
         "CRVAL3": 0,
         "NAXIS3": 2,
     }
-    wcs = WCS(header=header, naxis=3, preserve_units=True)
+    wcs = WCS(header=header, naxis=3)
     cube = SJICube(
         data,
         wcs,
@@ -77,7 +77,7 @@ def cube_2d():
         "NAXIS2": 3,
     }
     exposure_times = 2 * np.ones((2), float) * u.s
-    wcs_2d = WCS(header=header_2d, naxis=2, preserve_units=True)
+    wcs_2d = WCS(header=header_2d, naxis=2)
     cube_2d = SJICube(
         data_2d,
         wcs_2d,
@@ -102,7 +102,7 @@ def cube_1d():
         "NAXIS1": 2,
     }
     exposure_times = 2 * np.ones((2), float) * u.s
-    wcs_1d = WCS(header=header_1d, naxis=1, preserve_units=True)
+    wcs_1d = WCS(header=header_1d, naxis=1)
     data_1d = np.array([1, 2])
     cube_1d = SJICube(
         data_1d,
@@ -145,7 +145,7 @@ def dust_cube():
         "CRVAL3": 0,
         "NAXIS3": 2,
     }
-    wcs = WCS(header=header, naxis=3, preserve_units=True)
+    wcs = WCS(header=header, naxis=3)
     unit = utils.constants.DN_UNIT["SJI"]
     mask_dust = data_dust == BAD_PIXEL_VALUE_SCALED
 
