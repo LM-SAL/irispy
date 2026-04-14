@@ -1,0 +1,1 @@
+Removed ``preserve_units=True`` WCS construction paths due to an upstream bug in Astropy.

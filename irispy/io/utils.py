@@ -30,8 +30,9 @@ def _get_simple_metadata(file):
     """
     if not file.name.endswith(".fits") and not file.name.endswith(".fits.gz"):
         return "", ""
-    instrume = fits.getval(file, "INSTRUME")
-    describe = fits.getval(file, "TDESC1")
+    header = fits.getheader(file)
+    instrume = header.get("INSTRUME", "")
+    describe = header.get("TDESC1", "")
     return instrume, describe
 
 
@@ -56,6 +57,47 @@ def _extract_tarfile(filenames):
         else:
             expanded_files.append(filename)
     return expanded_files
+
+
+def _get_spec_group_key(file):
+    """
+    Group spectrograph FITS files that belong to the same observation.
+
+    Parameters
+    ----------
+    file : `pathlib.Path`
+        The FITS file to inspect.
+
+    Returns
+    -------
+    `tuple`
+        Key built from stable observation-identifying header metadata.
+        Falls back to a per-file key if the header cannot be read or if
+        the observation-grouping metadata is missing.
+    """
+    try:
+        header = fits.getheader(file)
+    except OSError:
+        return file, None
+    obsid = header.get("OBSID")
+    startobs = header.get("STARTOBS")
+    if obsid is None or not startobs:
+        return file, None
+    return obsid, startobs
+
+
+def _get_spec_return_key(file_group, describe, returns):
+    key = f"{describe}"
+    if key not in returns:
+        return key
+    group_key = _get_spec_group_key(file_group[0])
+    obsid, startobs = group_key
+    if startobs is None:
+        return f"{describe} ({Path(obsid).stem})"
+    key = f"{describe} ({obsid})"
+    if key not in returns:
+        return key
+    return f"{describe} ({obsid}, {startobs})"
 
 
 def fits_info(filename: str) -> None:
@@ -121,10 +163,13 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
         If `True` (not the default), will compute the uncertainty for the data (slower and
         uses more memory). If ``memmap=True``, the uncertainty is never computed.
     memmap : `bool`, optional
-        If `True` (not the default), will not load arrays into memory, and will only read from
-        the file into memory when needed. This option is faster and uses a
-        lot less memory. However, because FITS scaling is not done on-the-fly,
-        the data units will be unscaled, not the usual data numbers (DN).
+        If `True` (not the default), FITS data are opened using Astropy/NumPy
+        memory mapping rather than being fully read into memory at once. This
+        can keep memory usage low when working with many files, since array
+        data are accessed from disk on demand. In this mode FITS image scaling
+        is disabled, so the returned data are unscaled/raw FITS values rather
+        than automatically scaled physical values. If ``memmap=True``, the
+        uncertainty is never computed.
     allow_errors : `bool`, optional
         Will continue loading the files if one fails to load.
         Defaults to `False`.
@@ -141,28 +186,44 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
     filenames = sorted(filenames)
     filenames = [Path(f) for f in filenames]
     returns = {}
+    spec_groups = {}
     for filename in filenames:
-        sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
-        raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
-        instrume, describe = _get_simple_metadata(filename)
-        log.debug(f"Processing file: {filename} with instrume: {instrume}")
         try:
+            sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
+            raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
+            instrume, describe = _get_simple_metadata(filename)
+            log.debug(f"Processing file: {filename} with instrume: {instrume}")
             if sdo_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith("AIA"):
                 file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
                 for f in file:
                     instrume, describe = _get_simple_metadata(f)
                     returns[f"{describe}"] = read_sji_lvl2(f, memmap=memmap, uncertainty=uncertainty, **kwargs)
-            elif raster_tarfile or instrume == "SPEC":
+            elif raster_tarfile:
                 file = _extract_tarfile([filename]) if raster_tarfile else [filename]
                 instrume, describe = _get_simple_metadata(file[0])
                 returns[f"{describe}"] = read_spectrograph_lvl2(
                     file, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
                 )
+            elif instrume == "SPEC":
+                group_key = _get_spec_group_key(filename)
+                spec_groups.setdefault(group_key, []).append(filename)
             else:
                 log.warning(f"INSTRUME: {instrume} was not recognized and not loaded")
         except Exception as e:
             if allow_errors:
                 log.warning(f"File {filename} failed to load with {e}")
+                continue
+            raise
+    for file_group in spec_groups.values():
+        try:
+            instrume, describe = _get_simple_metadata(file_group[0])
+            key = _get_spec_return_key(file_group, describe, returns)
+            returns[key] = read_spectrograph_lvl2(
+                file_group, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
+            )
+        except Exception as e:
+            if allow_errors:
+                log.warning(f"File group {file_group} failed to load with {e}")
                 continue
             raise
     return NDCollection(returns.items()) if len(returns) > 1 else next(iter(returns.values()))

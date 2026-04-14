@@ -289,8 +289,8 @@ class SJICube(SpectrogramCube):
         if self._basic_wcs is None:
             return None
         if isinstance(self._basic_wcs, MetaDict):
-            return WCS(self._basic_wcs, preserve_units=True)
-        return [WCS(wcs_header, preserve_units=True) for wcs_header in self._basic_wcs]
+            return WCS(self._basic_wcs)
+        return [WCS(wcs_header) for wcs_header in self._basic_wcs]
 
     def to_maps(self, index: int | list[int] | None = None):
         """
