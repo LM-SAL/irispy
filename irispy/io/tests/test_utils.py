@@ -61,7 +61,7 @@ def test_get_spec_group_key_falls_back_when_metadata_is_missing(monkeypatch, tmp
 
     monkeypatch.setattr("irispy.io.utils.fits.getheader", lambda _: {"OBSID": None, "STARTOBS": ""})
 
-    assert _get_spec_group_key(filename) == (filename,)
+    assert _get_spec_group_key(filename) == (filename, None)
 
 
 def test_get_spec_group_key_falls_back_when_header_read_fails(monkeypatch, tmp_path):
@@ -74,7 +74,7 @@ def test_get_spec_group_key_falls_back_when_header_read_fails(monkeypatch, tmp_p
 
     monkeypatch.setattr("irispy.io.utils.fits.getheader", raise_oserror)
 
-    assert _get_spec_group_key(filename) == (filename,)
+    assert _get_spec_group_key(filename) == (filename, None)
 
 
 def test_read_files_raster_file_list_multiple_observations_use_unique_keys(raster_sg_file, sns_sg_file):

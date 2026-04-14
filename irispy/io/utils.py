@@ -78,11 +78,11 @@ def _get_spec_group_key(file):
     try:
         header = fits.getheader(file)
     except OSError:
-        return (file,)
+        return file, None
     obsid = header.get("OBSID")
     startobs = header.get("STARTOBS")
     if obsid is None or not startobs:
-        return (file,)
+        return file, None
     return obsid, startobs
 
 
@@ -91,9 +91,9 @@ def _get_spec_return_key(file_group, describe, returns):
     if key not in returns:
         return key
     group_key = _get_spec_group_key(file_group[0])
-    if len(group_key) == 1:
-        return f"{describe} ({Path(group_key[0]).stem})"
     obsid, startobs = group_key
+    if startobs is None:
+        return f"{describe} ({Path(obsid).stem})"
     key = f"{describe} ({obsid})"
     if key not in returns:
         return key
