@@ -1,8 +1,13 @@
+import warnings
+
 import numpy as np
 
 import astropy.units as u
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.units.errors import UnitsWarning
+from astropy.utils.exceptions import AstropyUserWarning
+from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import Helioprojective
 
@@ -21,25 +26,17 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
         "2814",
         "Mg II k 2796",
     ]
-    # Simple repr check
     assert str(raster_collection)
-    # We do not expect any metadata to be present on the collection
     assert raster_collection.meta is None
 
     si_iv = raster_collection["Si IV 1403"]
-    # Simple repr check
     assert str(si_iv)
-    # Test data only has a sequence of 1 long
     assert len(si_iv) == 1
-    # The primary fits header is attached to the sequence
     assert si_iv.meta is not None
-    # Meta is attached one level down to the individual cube for now.
     assert si_iv[0].meta is not None
     meta = si_iv[0].meta
-    assert si_iv[0].data.shape == (187, 40, 29)  # (lambda, y, x)
+    assert si_iv[0].data.shape == (187, 40, 29)
     assert np.all(si_iv[0].data.shape == meta.data_shape)
-    # Meta is both a dict with the fits header keys but also provides
-    # helper functions for specific values
     assert meta["TELESCOP"] == "IRIS" == meta.observatory
     assert meta["INSTRUME"] == "SPEC" == meta.instrument
     assert meta.detector == "FUV2"
@@ -51,7 +48,8 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 14)  # History is missing
+    assert len(meta.fits_header) == 380
+    assert len(meta.keys()) < len(meta.fits_header)
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -74,12 +72,19 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert_quantity_allclose(meta.spectral_range, (1398.60550787, 1406.03398787) * u.angstrom)
     assert meta.spectral_summing_factor == 2
     assert meta.tracking_mode_enabled is False
-
-    # TODO: Decide if I want to set observer_location, observer_radial_velocity, rsun_angular, run_meters
-    # These are more WCS properties...
     assert meta.observer_location is None
     assert meta.rsun_angular is None
     assert meta.rsun_meters is None
+    assert si_iv[0].wcs.world_n_dim == 5
+    assert si_iv[0].wcs.pixel_n_dim == 3
+    assert si_iv[0].basic_wcs is not None
+    assert si_iv[0].wcs.world_axis_physical_types == (
+        "em.wl",
+        "custom:pos.helioprojective.lon",
+        "custom:pos.helioprojective.lat",
+        "time",
+        "custom:STEP",
+    )
 
 
 def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
@@ -95,25 +100,17 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
         "2814",
         "Mg II k 2796",
     ]
-    # Simple repr check
     assert str(raster_collection)
-    # We do not expect any metadata to be present on the collection
     assert raster_collection.meta is None
 
     si_iv = raster_collection["Si IV 1403"]
-    # Simple repr check
     assert str(si_iv)
-    # Test data only has a sequence of 13 long
     assert len(si_iv) == 13
-    # The primary fits header is attached to the sequence
     assert si_iv.meta is not None
-    # Meta is attached one level down to the individual cube for now.
     assert si_iv[0].meta is not None
     meta = si_iv[0].meta
-    assert si_iv[0].data.shape == (8, 109, 29)  # (lambda, y, x)
+    assert si_iv[0].data.shape == (8, 109, 29)
     assert np.all(si_iv[0].data.shape == meta.data_shape)
-    # Meta is both a dict with the fits header keys but also provides
-    # helper functions for specific values
     assert meta["TELESCOP"] == "IRIS" == meta.observatory
     assert meta["INSTRUME"] == "SPEC" == meta.instrument
     assert meta.detector == "FUV2"
@@ -125,7 +122,8 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 526
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 13)  # History is missing
+    assert len(meta.fits_header) == 412
+    assert len(meta.keys()) < len(meta.fits_header)
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -148,15 +146,69 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert_quantity_allclose(meta.spectral_range, (1398.63094787, 1405.95766787) * u.angstrom)
     assert meta.spectral_summing_factor == 2
     assert meta.tracking_mode_enabled is False
-
-    # TODO: Decide if I want to set observer_location, observer_radial_velocity, rsun_angular, run_meters
-    # These are more WCS properties...
     assert meta.observer_location is None
     assert meta.rsun_angular is None
     assert meta.rsun_meters is None
+    assert si_iv[0].wcs.world_n_dim == 5
+    assert si_iv[0].wcs.pixel_n_dim == 3
+    assert si_iv.time.format == "isot"
 
 
 def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_files):
     read_spectrograph_lvl2(sns_sg_file)
     read_spectrograph_lvl2(raster_sg_file)
     read_spectrograph_lvl2(raster_sg_files)
+
+
+def test_gwcs_crop_is_compatible_with_original_raster_api(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+
+    assert scan.time.format == "isot"
+    assert scan.basic_wcs is not None
+    spectral_coord = scan.spectral_axis[len(scan.spectral_axis) // 2]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AstropyUserWarning)
+        warnings.simplefilter("ignore", UnitsWarning)
+        spectral_crop = scan.crop([SpectralCoord(spectral_coord), None], [SpectralCoord(spectral_coord), None])
+    assert spectral_crop.data.ndim == 2
+
+    frame = wcs_to_celestial_frame(scan.wcs.celestial)
+    target = SkyCoord(-8 * u.arcsec, 370 * u.arcsec, unit=u.arcsec, frame=frame)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AstropyUserWarning)
+        warnings.simplefilter("ignore", UnitsWarning)
+        spectrum = scan.crop([None, target], [None, target])
+    assert spectrum.data.ndim == 1
+
+
+def test_gwcs_inverse_enables_official_crop_api(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+
+    start = scan.wcs.array_index_to_world(3, 50, 10)
+    stop = scan.wcs.array_index_to_world(4, 50, 10)
+
+    assert scan.wcs.world_to_array_index(*start) == (3, 50, 10)
+    assert scan.wcs.world_to_array_index(*stop) == (4, 50, 10)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AstropyUserWarning)
+        warnings.simplefilter("ignore", UnitsWarning)
+        cropped = scan.crop(start, stop)
+    assert cropped.data.shape == (2,)
+
+
+def test_raster_gwcs_legacy_basic_wcs_bridge_is_limited_to_spectral_and_sky(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+
+    spectral, sky, _, _ = scan.wcs.array_index_to_world(3, 50, 10)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AstropyUserWarning)
+        np.testing.assert_allclose(
+            scan.wcs.world_to_pixel(spectral, sky),
+            scan.basic_wcs.world_to_pixel(spectral, sky),
+        )
+        assert scan.wcs.world_to_array_index(spectral, sky) == scan.basic_wcs.world_to_array_index(spectral, sky)

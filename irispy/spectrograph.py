@@ -3,6 +3,8 @@ import textwrap
 import matplotlib.pyplot as plt
 import numpy as np
 
+import astropy.units as u
+
 from ndcube import NDCollection
 from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
@@ -53,18 +55,81 @@ class SpectrogramCube(SpecCube):
     """
 
     def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
+        self._basic_wcs = kwargs.pop("_basic_wcs", None)
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
+
+    @property
+    def time(self):
+        time = super().time
+        if time.format == "jd":
+            time = time.copy()
+            time.format = "isot"
+        return time
 
     def __getitem__(self, item):
         result = super().__getitem__(item)
-        return SpectrogramCube(
+        extra_coords = result.extra_coords if not result.extra_coords.is_empty else None
+        new_sc = SpectrogramCube(
             result.data,
             result.wcs,
             result.uncertainty,
             result.unit,
             result.meta,
             mask=result.mask,
+            extra_coords=extra_coords,
+            _basic_wcs=self._basic_wcs,
         )
+        # ndcube promotes scalar-indexed extra_coords to global_coords.
+        # Copy them explicitly so they are bound to the new cube, not result.
+        for name, coord in result.global_coords.items():
+            physical_type = result.global_coords.physical_types[name]
+            if isinstance(physical_type, tuple):
+                physical_type = physical_type[0]
+            new_sc.global_coords.add(name, physical_type, coord)
+        return new_sc
+
+    @staticmethod
+    def _slice_or_index(lower, upper, keepdims):
+        if lower == upper and not keepdims:
+            return lower
+        return slice(lower, upper + 1)
+
+    def _nearest_spatial_indices(self, coordinate):
+        sample_world = self.wcs.pixel_to_world(*([0] * self.wcs.pixel_n_dim))
+        sample_world = sample_world if isinstance(sample_world, (list, tuple)) else [sample_world]
+        frame = next(world.frame for world in sample_world if hasattr(world, "frame"))
+        coord = coordinate.transform_to(frame)
+        lon = self.axis_world_coords_values("custom:pos.helioprojective.lon")[0].to_value(u.arcsec)
+        lat = self.axis_world_coords_values("custom:pos.helioprojective.lat")[0].to_value(u.arcsec)
+        distance = (lon - coord.Tx.to_value(u.arcsec)) ** 2 + (lat - coord.Ty.to_value(u.arcsec)) ** 2
+        return np.unravel_index(np.nanargmin(distance), distance.shape)
+
+    def _manual_crop_item(self, points, keepdims):
+        if self.data.ndim != 3 or len(points) != 2:
+            return None
+        if any(not isinstance(point, (tuple, list)) or len(point) != 2 for point in points):
+            return None
+
+        spectral_points = [point[0] for point in points if point[0] is not None]
+        spatial_points = [point[1] for point in points if point[1] is not None]
+        if not spectral_points and not spatial_points:
+            return None
+
+        item = [slice(None)] * self.data.ndim
+        if spectral_points:
+            spectral_axis = self.spectral_axis.to_value(self.spectral_axis.unit)
+            spectral_indices = [
+                int(np.nanargmin(np.abs(spectral_axis - spectral_point.to_value(self.spectral_axis.unit))))
+                for spectral_point in spectral_points
+            ]
+            item[2] = self._slice_or_index(min(spectral_indices), max(spectral_indices), keepdims)
+        if spatial_points:
+            spatial_indices = [self._nearest_spatial_indices(spatial_point) for spatial_point in spatial_points]
+            raster_indices = [idx[0] for idx in spatial_indices]
+            slit_indices = [idx[1] for idx in spatial_indices]
+            item[0] = self._slice_or_index(min(raster_indices), max(raster_indices), keepdims)
+            item[1] = self._slice_or_index(min(slit_indices), max(slit_indices), keepdims)
+        return tuple(item)
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -75,9 +140,20 @@ class SpectrogramCube(SpecCube):
         if self.global_coords and "time" in self.global_coords:
             instance_start = self.global_coords["time"].min().isot
             instance_end = self.global_coords["time"].max().isot
-        elif self.extra_coords and self.axis_world_coords("time", wcs=self.extra_coords):
-            instance_start = self.axis_world_coords("time", wcs=self.extra_coords)[0].min().isot
-            instance_end = self.axis_world_coords("time", wcs=self.extra_coords)[0].max().isot
+        elif self.extra_coords:
+            try:
+                extra_coord_time = self.axis_world_coords("time", wcs=self.extra_coords)
+            except ValueError:
+                extra_coord_time = None
+            if extra_coord_time:
+                instance_start = extra_coord_time[0].min().isot
+                instance_end = extra_coord_time[0].max().isot
+        if instance_start is None or instance_end is None:
+            try:
+                instance_start = self.time.min().isot
+                instance_end = self.time.max().isot
+            except ValueError:
+                pass
         return textwrap.dedent(
             f"""
             SpectrogramCube
@@ -105,6 +181,23 @@ class SpectrogramCube(SpecCube):
         ax = IRISPlotter(ndcube=self).plot(*args, **kwargs)
         set_axis_properties(ax)
         return ax
+
+    @property
+    def basic_wcs(self):
+        """
+        Return a standard astropy WCS, when one is available alongside the gWCS.
+        """
+        return self._basic_wcs
+
+    def crop(self, *points, wcs=None, keepdims=False):
+        manual_item = None
+        if wcs is None:
+            # Keep supporting the pre-gWCS raster shorthand where crop points
+            # are just (spectral, sky) pairs with omitted time/step entries.
+            manual_item = self._manual_crop_item(points, keepdims)
+        if manual_item is not None:
+            return self[manual_item]
+        return super().crop(*points, wcs=wcs, keepdims=keepdims)
 
     def remove_cosmic_rays(
         self,

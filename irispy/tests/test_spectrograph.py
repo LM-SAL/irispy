@@ -19,9 +19,9 @@ def test_fits_data_comparison(sns_sg_file):
         data1 = copy.deepcopy(hdulist[1].data)
         data2 = copy.deepcopy(hdulist[2].data)
         data3 = copy.deepcopy(hdulist[3].data)
-        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window1].data[0].data, data1)
-        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window2].data[0].data, data2)
-        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window3].data[0].data, data3)
+        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window1][0].data, data1)
+        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window2][0].data, data2)
+        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window3][0].data, data3)
 
 
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
@@ -61,8 +61,8 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     assert captured["max_iters"] == 5
     assert captured["method_kwargs"]["batch_size"] == 16
     np.testing.assert_array_equal(captured["mask"], cube.mask)
-    # WCS is deep-copied, so check equivalence not identity
-    assert dict(cleaned_cube.wcs.to_header()) == dict(cube.wcs.to_header())
+    # WCS is preserved by to_nddata; gWCS has no to_header(), so compare by identity/type.
+    assert type(cleaned_cube.wcs) is type(cube.wcs)
     assert list(cleaned_cube.global_coords) == list(cube.global_coords)
     assert cleaned_cube.unit == cube.unit
     # meta is an NDMeta subclass that may contain arrays; compare keys only
