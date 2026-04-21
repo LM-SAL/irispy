@@ -12,7 +12,7 @@ from irispy.io.utils import read_files
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.response import get_latest_response
-from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiometric_calibration
+from irispy.utils.spectrograph import _get_wcs_pixel_scales, calculate_dn_to_radiance_factor, radiometric_calibration
 
 
 @pytest.fixture
@@ -33,9 +33,9 @@ def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_out
     idl_wavelength = idl_input_rad_cal["wavelength"] * u.Angstrom
     idl_factor_cgs = idl_output_rad_cal["factor"]
 
-    spectral_dispersion_per_pixel = cube.wcs.wcs.cdelt[0] * cube.wcs.wcs.cunit[0]
+    spectral_dispersion_per_pixel, slit_pixel_scale = _get_wcs_pixel_scales(cube)
     # The slit width is divided by 2 in the IDL code, unsure why.
-    solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH / 2)
+    solid_angle = slit_pixel_scale * (SLIT_WIDTH / 2)
     iris_response = get_latest_response(parse_time("2025-01-01"))
     factor = calculate_dn_to_radiance_factor(
         iris_response=iris_response,
@@ -99,12 +99,42 @@ def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
     assert np.array_equal(calibrated_slice.mask, expected_slice.mask)
 
 
+def test_apply_exposure_time_correction_single_sliced_raster_cube(sns_sg_file):
+    raster_collection = read_files(sns_sg_file)
+    cube = raster_collection["C II 1336"][0]
+    cube_slice = cube[10, :, :]
+
+    corrected_full_cube = cube.apply_exposure_time_correction()
+    corrected_slice = cube_slice.apply_exposure_time_correction()
+    expected_slice = corrected_full_cube[10, :, :]
+
+    assert corrected_slice.unit == expected_slice.unit
+    np.testing.assert_allclose(corrected_slice.data, expected_slice.data)
+
+
+def test_radiometric_calibration_dask_backed(raster_sg_files):
+    from irispy.io.spectrograph import read_spectrograph_lvl2  # NOQA: PLC0415
+
+    eager_sequence = read_spectrograph_lvl2(raster_sg_files)["Si IV 1403"]
+    dask_sequence = read_spectrograph_lvl2(raster_sg_files, memmap=True)["Si IV 1403"]
+    result_eager = radiometric_calibration(eager_sequence[0])
+    result_dask = radiometric_calibration(dask_sequence[0])
+
+    assert result_dask.unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
+    assert result_dask.data.shape == dask_sequence[0].data.shape
+
+    frame_dask = np.asarray(result_dask.data[0])
+    frame_eager = result_eager.data[0]
+    assert frame_dask.shape == frame_eager.shape
+    np.testing.assert_allclose(frame_dask, frame_eager, rtol=1e-5)
+
+
 def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
 
-    solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH)
-    spectral_dispersion_per_pixel = cube.wcs.wcs.cdelt[0] * cube.wcs.wcs.cunit[0]
+    spectral_dispersion_per_pixel, slit_pixel_scale = _get_wcs_pixel_scales(cube)
+    solid_angle = slit_pixel_scale * SLIT_WIDTH
     iris_response = get_latest_response(parse_time("2014-09-10"))
     factor = calculate_dn_to_radiance_factor(
         iris_response=iris_response,

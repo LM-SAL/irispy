@@ -1,4 +1,5 @@
 import textwrap
+from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -59,6 +60,27 @@ class SpectrogramCube(SpecCube):
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     @property
+    def exposure_time(self):
+        try:
+            return super().exposure_time
+        except ValueError:
+            # After scalar slicing, ndcube promotes axis-specific extra_coords to
+            # global_coords. Check there first before falling back to FITS EXPTIME.
+            gc = self.global_coords
+            if gc:
+                from sunraster.spectrogram import SUPPORTED_EXPOSURE_NAMES  # NOQA: PLC0415
+
+                for name in SUPPORTED_EXPOSURE_NAMES:
+                    if name in gc:
+                        return gc[name]
+            exptime = self.meta.get("EXPTIME")
+            if exptime is not None:
+                import astropy.units as u  # NOQA: PLC0415
+
+                return exptime * u.s
+            raise
+
+    @property
     def time(self):
         time = super().time
         if time.format == "jd":
@@ -87,6 +109,66 @@ class SpectrogramCube(SpecCube):
                 physical_type = physical_type[0]
             new_sc.global_coords.add(name, physical_type, coord)
         return new_sc
+
+    def _exposure_time_array_axis(self):
+        exposure_time_name = self._exposure_time_name
+        extra_coord_names = tuple(self.extra_coords.keys())
+        if exposure_time_name is None and "exposure time" in extra_coord_names:
+            exposure_time_name = "exposure time"
+        if exposure_time_name is not None and exposure_time_name in extra_coord_names:
+            mapping = self.extra_coords[exposure_time_name].mapping
+            if len(mapping) == 1:
+                return self.data.ndim - 1 - int(mapping[0])
+        if self._exposure_time_name is not None and self._exposure_time_loc is not None:
+            exposure_axis = self._get_axis_coord_index(self._exposure_time_name, self._exposure_time_loc)
+            if isinstance(exposure_axis, tuple):
+                exposure_axis = exposure_axis[0]
+            return int(exposure_axis)
+        matching_axes = [
+            axis for axis, size in enumerate(self.data.shape) if size == np.asarray(self.exposure_time).shape[0]
+        ]
+        if len(matching_axes) == 1:
+            return matching_axes[0]
+        msg = "Unable to determine exposure time array axis."
+        raise ValueError(msg)
+
+    def apply_exposure_time_correction(self, undo=False, force=False):  # noqa: FBT002
+        try:
+            return super().apply_exposure_time_correction(undo=undo, force=force)
+        except (TypeError, ValueError):
+            from sunraster.spectrogram import (  # NOQA: PLC0415
+                _calculate_exposure_time_correction,
+                _uncalculate_exposure_time_correction,
+            )
+
+            exposure_time_s = self.exposure_time.to(u.s).value
+            if not np.isscalar(exposure_time_s):
+                exposure_axis = self._exposure_time_array_axis()
+                item = [np.newaxis] * self.data.ndim
+                item[exposure_axis] = slice(None)
+                exposure_time_s = exposure_time_s[tuple(item)]
+            if undo is True:
+                new_data, new_uncertainty, new_unit = _uncalculate_exposure_time_correction(
+                    self.data,
+                    self.uncertainty,
+                    self.unit,
+                    exposure_time_s,
+                    force=force,
+                )
+            else:
+                new_data, new_uncertainty, new_unit = _calculate_exposure_time_correction(
+                    self.data,
+                    self.uncertainty,
+                    self.unit,
+                    exposure_time_s,
+                    force=force,
+                )
+            new_cube = deepcopy(self)
+            new_cube._data = new_data
+            new_cube._uncertainty = new_uncertainty
+            new_cube._extra_coords = self.extra_coords
+            new_cube._unit = new_unit
+            return new_cube
 
     @staticmethod
     def _slice_or_index(lower, upper, keepdims):

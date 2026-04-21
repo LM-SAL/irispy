@@ -1,5 +1,6 @@
 import warnings
 
+import dask.array as da
 import numpy as np
 
 import astropy.units as u
@@ -160,6 +161,18 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(raster_sg_files)
 
 
+def test_memmap_read_spectrograph_lvl2(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files, memmap=True)
+    cube = raster_collection["Si IV 1403"][0]
+    assert isinstance(cube.data, da.Array)
+    assert cube.data.shape == (8, 109, 29)
+    assert isinstance(cube.mask, da.Array)
+    assert cube.mask.shape == cube.data.shape
+    frame = cube.data[0].compute()
+    assert frame.shape == (109, 29)
+    assert frame.dtype == np.float32
+
+
 def test_gwcs_crop_is_compatible_with_original_raster_api(raster_sg_files):
     raster_collection = read_spectrograph_lvl2(raster_sg_files)
     scan = raster_collection["Si IV 1403"][0]
@@ -214,6 +227,18 @@ def test_gwcs_inverse_roundtrips_sit_and_stare_exposures(sns_sg_file):
         warnings.simplefilter("ignore", UnitsWarning)
         cropped = scan.crop(start, stop)
     assert cropped.data.shape == (2,)
+
+
+def test_scalar_slice_preserves_promoted_global_coords(sns_sg_file):
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
+    cube = raster_collection["C II 1336"][0]
+    sliced = cube[10, 20]
+
+    assert "time" in sliced.global_coords
+    assert "exposure time" in sliced.global_coords
+    assert "helioprojective" in sliced.global_coords
+    assert sliced.global_coords["time"] == cube.time[10]
+    assert sliced.exposure_time == cube.exposure_time[10]
 
 
 def test_raster_gwcs_legacy_basic_wcs_bridge_is_limited_to_spectral_and_sky(raster_sg_files):
