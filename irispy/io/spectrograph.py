@@ -98,7 +98,7 @@ def _pc_matrix(lam, angle_1, angle_2):
     return angle_1, -1 * lam * angle_2, 1 / lam * angle_2, angle_1
 
 
-def _create_basic_raster_wcs(header, aux_data, spectral_band, observer, *, flip):
+def _prepare_raster_wcs_header(header, aux_data, spectral_band, *, flip):
     header = copy(header)
     if header.get("CUNIT1", "").lower() == "angstrom":
         header["CUNIT1"] = "nm"
@@ -123,6 +123,10 @@ def _create_basic_raster_wcs(header, aux_data, spectral_band, observer, *, flip)
         header["PC3_2"] = -header["PC3_2"]
         header["CDELT3"] = -header["CDELT3"]
         header["CRPIX3"] = header["NAXIS3"] - header["CRPIX3"] + 1
+    return header
+
+
+def _create_basic_raster_wcs(header, observer):
     wcs = WCS(header)
     _set_wcs_aux_obs_coord(wcs, observer)
     return wcs
@@ -155,25 +159,34 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     from dkist.wcs.models import AsymmetricMapping, CoupledCompoundModel, VaryingCelestialTransform  # NOQA: PLC0415
     from sunpy.time import parse_time  # NOQA: PLC0415
 
-    cdelt1 = window_header["CDELT1"]
-    crval1 = window_header["CRVAL1"]
+    if window_header.get("CUNIT1", "").lower() == "angstrom":
+        cdelt1 = window_header["CDELT1"] * 0.1
+        crval1 = window_header["CRVAL1"] * 0.1
+    else:
+        cdelt1 = window_header["CDELT1"]
+        crval1 = window_header["CRVAL1"]
     crpix1 = window_header.get("CRPIX1", 1.0)
-    # Use nm to avoid the VOUnit 'Angstrom' deprecation warning emitted by
-    # gwcs when it serialises output-frame units via world_axis_units().
     spectral = m.Linear1D(
-        slope=cdelt1 * 0.1 * u.nm / u.pix,
-        intercept=(crval1 - cdelt1 * (crpix1 - 1)) * 0.1 * u.nm,
+        slope=cdelt1 * u.nm / u.pix,
+        intercept=(crval1 - cdelt1 * (crpix1 - 1)) * u.nm,
         name="Wavelength",
     )
 
     crpix_table = np.array([window_header["CRPIX2"], window_header["CRPIX3"]]) * u.pix
     cdelt = np.array([window_header["CDELT2"], window_header["CDELT3"]]) * (u.arcsec / u.pix)
-    celestial = VaryingCelestialTransform(
+    celestial_raw = VaryingCelestialTransform(
         cdelt=cdelt,
         pc_table=pc_all,
         crval_table=crval_all,
         crpix_table=crpix_table,
     )
+    if np.isclose(window_header["CDELT3"], 1e-10):
+        celestial = celestial_raw
+    else:
+        celestial = celestial_raw | m.Mapping((1, 0), name="SwapHelioprojectiveAxes")
+        celestial.inverse = m.Mapping((1, 0, 2), n_inputs=3, name="SwapHelioprojectiveAxesInverseInputs") | (
+            celestial_raw.inverse
+        )
 
     temporal = m.Tabular1D(
         np.arange(pc_all.shape[0]) * u.pix,
@@ -190,10 +203,12 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         1, name="step"
     )
     non_spectral = slit_step_mapping | non_spectral_rhs
+    # The explicit scan-step axis is the authoritative inverse for the raster/time dimension.
+    # This keeps round-trips stable when sky coordinates repeat, e.g. sit-and-stare exposures.
     non_spectral.inverse = non_spectral_rhs.inverse | m.Mapping(
-        (0, 1),
+        (0, 3),
         n_inputs=4,
-        name="SelectSlitAndStep",
+        name="SelectSlitAndExplicitStep",
     )
     forward_transform = spectral & non_spectral
     forward_transform.inverse = spectral.inverse & non_spectral.inverse
@@ -346,8 +361,8 @@ def read_spectrograph_lvl2(
             aux = hdulist[-2]
             file_startobs = _header_time(file_primary_header, "STARTOBS", "DATE_OBS")
 
-            pc = aux.data[:, aux.header["PC2_2IX"] : aux.header["PC3_3IX"] + 1].reshape(-1, 2, 2) * u.pix
-            crval = aux.data[:, aux.header["XCENIX"] : aux.header["YCENIX"] + 1] * u.arcsec
+            pc_indices = [aux.header[key] for key in ("PC2_2IX", "PC2_3IX", "PC3_2IX", "PC3_3IX")]
+            pc = aux.data[:, pc_indices].reshape(-1, 2, 2) * u.pix
             times = file_startobs + TimeDelta(aux.data[:, aux.header["TIME"]] * u.s)
             exp_fuv = aux.data[:, aux.header["EXPTIMEF"]] * u.s
             exp_nuv = aux.data[:, aux.header["EXPTIMEN"]] * u.s
@@ -356,7 +371,6 @@ def read_spectrograph_lvl2(
 
             if v34 and not revert_v34:
                 pc = pc[::-1]
-                crval = crval[::-1]
                 times = times[::-1]
                 exp_fuv = exp_fuv[::-1]
                 exp_nuv = exp_nuv[::-1]
@@ -373,13 +387,26 @@ def read_spectrograph_lvl2(
                     window_name,
                     data_shape=(window_header["NAXIS3"], window_header["NAXIS2"], window_header["NAXIS1"]),
                 )
-                basic_wcs = _create_basic_raster_wcs(
+                prepared_wcs_header = _prepare_raster_wcs_header(
                     window_header,
                     aux.data,
                     meta.spectral_band,
-                    observer,
                     flip=flip,
                 )
+                if np.isclose(window_header["CDELT3"], 0):
+                    crval = np.repeat(
+                        [[prepared_wcs_header["CRVAL3"], prepared_wcs_header["CRVAL2"]]],
+                        len(times),
+                        axis=0,
+                    ) * u.arcsec
+                else:
+                    offset_index = 34 if meta.spectral_band == "FUV" else 45
+                    xcen = aux.data[:, aux.header["XCENIX"]] - aux.data[:, offset_index] * (SLIT_WIDTH.value / 2)
+                    ycen = aux.data[:, aux.header["YCENIX"]]
+                    crval = np.column_stack((ycen, xcen)) * u.arcsec
+                    if flip:
+                        crval = crval[::-1]
+                basic_wcs = _create_basic_raster_wcs(prepared_wcs_header, observer)
 
                 is_fuv = "FUV" in meta.detector
                 dn_unit = DN_UNIT["FUV"] if is_fuv else DN_UNIT["NUV"]
@@ -402,7 +429,7 @@ def read_spectrograph_lvl2(
                 cube = SpectrogramCube(
                     data,
                     wcs=_create_raster_gwcs(
-                        window_header,
+                        prepared_wcs_header,
                         pc,
                         crval,
                         dt,

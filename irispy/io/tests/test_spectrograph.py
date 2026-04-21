@@ -199,6 +199,23 @@ def test_gwcs_inverse_enables_official_crop_api(raster_sg_files):
     assert cropped.data.shape == (2,)
 
 
+def test_gwcs_inverse_roundtrips_sit_and_stare_exposures(sns_sg_file):
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
+    scan = raster_collection["Si IV 1403"][0]
+
+    start = scan.wcs.array_index_to_world(3, 20, 10)
+    stop = scan.wcs.array_index_to_world(4, 20, 10)
+
+    assert scan.wcs.world_to_array_index(*start) == (3, 20, 10)
+    assert scan.wcs.world_to_array_index(*stop) == (4, 20, 10)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AstropyUserWarning)
+        warnings.simplefilter("ignore", UnitsWarning)
+        cropped = scan.crop(start, stop)
+    assert cropped.data.shape == (2,)
+
+
 def test_raster_gwcs_legacy_basic_wcs_bridge_is_limited_to_spectral_and_sky(raster_sg_files):
     raster_collection = read_spectrograph_lvl2(raster_sg_files)
     scan = raster_collection["Si IV 1403"][0]
@@ -212,3 +229,19 @@ def test_raster_gwcs_legacy_basic_wcs_bridge_is_limited_to_spectral_and_sky(rast
             scan.basic_wcs.world_to_pixel(spectral, sky),
         )
         assert scan.wcs.world_to_array_index(spectral, sky) == scan.basic_wcs.world_to_array_index(spectral, sky)
+
+
+def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AstropyUserWarning)
+        warnings.simplefilter("ignore", UnitsWarning)
+        for array_index in ((0, 50, 3), (3, 50, 10), (7, 80, 20)):
+            spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
+            basic_spectral, basic_sky = scan.basic_wcs.array_index_to_world(*array_index)
+
+            assert_quantity_allclose(spectral.to(u.nm), basic_spectral.to(u.nm))
+            assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=10 * u.arcsec)
+            assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=1 * u.arcsec)
