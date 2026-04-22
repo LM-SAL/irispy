@@ -1,19 +1,24 @@
+import warnings
 from copy import copy
 from pathlib import Path
 
 import numpy as np
 
+import astropy.modeling.models as m
 import astropy.units as u
+import gwcs
+import gwcs.coordinate_frames as cf
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.time import Time, TimeDelta
 from astropy.wcs import WCS
 
-from sunpy import log as logger
+from dkist.wcs.models import AsymmetricMapping, CoupledCompoundModel, VaryingCelestialTransform
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import HeliographicStonyhurst, Helioprojective
 from sunpy.coordinates.screens import SphericalScreen
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
+from sunpy.time import parse_time
 
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
@@ -25,6 +30,208 @@ __all__ = ["read_spectrograph_lvl2"]
 
 def _pc_matrix(lam, angle_1, angle_2):
     return angle_1, -1 * lam * angle_2, 1 / lam * angle_2, angle_1
+
+
+def _header_time(header, *keys):
+    for key in keys:
+        value = header.get(key)
+        if value:
+            return Time(value, format="isot", scale="utc")
+    msg = f"Header is missing all usable time keys: {keys}"
+    raise ValueError(msg)
+
+
+def _make_observer(primary_header):
+    base_time = _header_time(primary_header, "DATE_OBS", "STARTOBS")
+    location = get_body_heliographic_stonyhurst("Earth", base_time.isot)
+    observer = Helioprojective(
+        primary_header["XCEN"] * u.arcsec,
+        primary_header["YCEN"] * u.arcsec,
+        observer=location,
+        obstime=base_time,
+    )
+    with SphericalScreen(observer.observer):
+        return observer.transform_to(HeliographicStonyhurst(obstime=base_time))
+
+
+def _raster_wcs_bad_row_mask(pc, crval):
+    """Return AUX rows whose PC or CRVAL table entries are unusable."""
+    pc_bad = np.array([np.allclose(pc[i], 0) for i in range(pc.shape[0])])
+    crval_bad = np.array([np.allclose(crval[i], 0) for i in range(crval.shape[0])])
+    return pc_bad | crval_bad
+
+
+def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None):
+    """Replace all-zero PC/crval rows via neighbour interpolation or fallback."""
+    bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+    if not bad_rows.any():
+        return pc, crval
+
+    n_bad = int(bad_rows.sum())
+    warnings.warn(
+        f"Found {n_bad} step(s) with all-zero WCS tables in raster aux data. "
+        "Interpolating from neighbouring steps.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+    good_indices = np.nonzero(~bad_rows)[0]
+    if good_indices.size == 0:
+        if fallback_pc is None or fallback_crval is None:
+            msg = "All WCS table rows are bad and no fallback values are available."
+            raise ValueError(msg)
+        warnings.warn(
+            "All steps in this file have bad WCS tables. Using fallback values from observation mean.",
+            UserWarning,
+            stacklevel=3,
+        )
+        for i in range(pc.shape[0]):
+            pc[i] = fallback_pc
+            crval[i] = fallback_crval
+        return pc, crval
+
+    for i in np.where(bad_rows)[0]:
+        before = good_indices[good_indices < i]
+        after = good_indices[good_indices > i]
+        if before.size > 0 and after.size > 0:
+            b = before[-1]
+            a = after[0]
+            weight = (i - b) / (a - b)
+            pc[i] = pc[b] * (1 - weight) + pc[a] * weight
+            crval[i] = crval[b] * (1 - weight) + crval[a] * weight
+        elif before.size > 0:
+            pc[i] = pc[before[-1]]
+            crval[i] = crval[before[-1]]
+        elif after.size > 0:
+            pc[i] = pc[after[0]]
+            crval[i] = crval[after[0]]
+    return pc, crval
+
+
+def _prepare_raster_wcs_header(header, aux_data, spectral_band, *, flip):
+    header = copy(header)
+    if header.get("CUNIT1", "").lower() == "angstrom":
+        header["CUNIT1"] = "nm"
+        header["CRVAL1"] *= 0.1
+        header["CDELT1"] *= 0.1
+    offset_index = 34 if spectral_band == "FUV" else 45
+    header["CRVAL3"] -= aux_data[:, offset_index].mean() * (SLIT_WIDTH.value / 2)
+    if header["CDELT3"] == 0:
+        header["CDELT3"] = 1e-10
+        ang1, ang2, ang3, ang4 = _pc_matrix(
+            header["CDELT3"] / header["CDELT2"],
+            aux_data[:, 20].mean(),
+            aux_data[:, 22].mean(),
+        )
+        header["PC2_2"] = ang1
+        header["PC2_3"] = ang2
+        header["PC3_2"] = ang3
+        header["PC3_3"] = ang4
+    if flip:
+        header["PC1_3"] = 0
+        header["PC2_3"] = -header["PC2_3"]
+        header["PC3_2"] = -header["PC3_2"]
+        header["CDELT3"] = -header["CDELT3"]
+        header["CRPIX3"] = header["NAXIS3"] - header["CRPIX3"] + 1
+    return header
+
+
+def _create_basic_raster_wcs(header, observer):
+    wcs = WCS(header)
+    _set_wcs_aux_obs_coord(wcs, observer)
+    return wcs
+
+
+def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observer):
+    """
+    Build the raster gWCS from per-step AUX sky and timing tables.
+
+    The spectral axis stays a 1D linear transform. The scan axis expands into
+    helioprojective sky coordinates, elapsed time from ``t_ref``, and an
+    explicit scan-step coordinate so the inverse stays stable for crops and
+    other round-trips where sky or time alone are not unique.
+    """
+    if window_header.get("CUNIT1", "").lower() == "angstrom":
+        cdelt1 = window_header["CDELT1"] * 0.1
+        crval1 = window_header["CRVAL1"] * 0.1
+    else:
+        cdelt1 = window_header["CDELT1"]
+        crval1 = window_header["CRVAL1"]
+    crpix1 = window_header.get("CRPIX1", 1.0)
+    spectral = m.Linear1D(
+        slope=cdelt1 * u.nm / u.pix,
+        intercept=(crval1 - cdelt1 * (crpix1 - 1)) * u.nm,
+        name="Wavelength",
+    )
+
+    crpix_table = np.array([window_header["CRPIX2"], window_header["CRPIX3"]]) * u.pix
+    cdelt = np.array([window_header["CDELT2"], window_header["CDELT3"]]) * (u.arcsec / u.pix)
+    celestial_raw = VaryingCelestialTransform(
+        cdelt=cdelt,
+        pc_table=pc_all,
+        crval_table=crval_all,
+        crpix_table=crpix_table,
+    )
+    if np.isclose(window_header["CDELT3"], 1e-10):
+        celestial = celestial_raw
+    else:
+        celestial = celestial_raw | m.Mapping((1, 0), name="SwapHelioprojectiveAxes")
+        celestial.inverse = m.Mapping((1, 0, 2), n_inputs=3, name="SwapHelioprojectiveAxesInverseInputs") | (
+            celestial_raw.inverse
+        )
+
+    temporal = m.Tabular1D(
+        np.arange(pc_all.shape[0]) * u.pix,
+        lookup_table=dt_all,
+        fill_value=np.nan,
+        bounds_error=False,
+        method="linear",
+        name="Time",
+    )
+    slit_step_mapping = AsymmetricMapping([0, 1, 1, 1], [0, 1], name="SlitStepMapping")
+    non_spectral_rhs = CoupledCompoundModel("&", left=celestial, right=temporal, shared_inputs=1) & m.Identity(
+        1, name="step"
+    )
+    non_spectral = slit_step_mapping | non_spectral_rhs
+    non_spectral.inverse = non_spectral_rhs.inverse | m.Mapping(
+        (0, 3),
+        n_inputs=4,
+        name="SelectSlitAndExplicitStep",
+    )
+    forward_transform = spectral & non_spectral
+    forward_transform.inverse = spectral.inverse & non_spectral.inverse
+
+    base_time = parse_time(t_ref)
+    spectral_frame = cf.SpectralFrame(axes_order=(0,), unit=u.nm, name="wavelength", axes_names=("wavelength",))
+    celestial_frame = cf.CelestialFrame(
+        axes_order=(1, 2),
+        unit=(u.arcsec, u.arcsec),
+        reference_frame=Helioprojective(observer=observer, obstime=observer.obstime),
+        axis_physical_types=["custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"],
+        axes_names=("helioprojective longitude", "helioprojective latitude"),
+    )
+    temporal_frame = cf.TemporalFrame(base_time, unit=(u.s,), axes_order=(3,), axes_names=("Seconds from Start (s)",))
+    step_frame = cf.CoordinateFrame(
+        naxes=1,
+        axes_order=(4,),
+        axes_names=("scan_step",),
+        axes_type=("STEP",),
+        unit=(u.pix,),
+        name="step",
+    )
+    output_frame = cf.CompositeFrame([spectral_frame, celestial_frame, temporal_frame, step_frame])
+    pixel_frame = cf.CoordinateFrame(
+        naxes=3,
+        axes_order=(0, 1, 2),
+        axes_names=["dispersion axis", "spatial along slit", "scan/step number"],
+        axes_type=["PIXEL", "PIXEL", "PIXEL"],
+        unit=(u.pix, u.pix, u.pix),
+    )
+    return gwcs.WCS(
+        forward_transform,
+        input_frame=pixel_frame,
+        output_frame=output_frame,
+    )
 
 
 def read_spectrograph_lvl2(
@@ -67,17 +274,13 @@ def read_spectrograph_lvl2(
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
-    # Collecting the window observations
     with fits.open(filenames[0], memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
-        # After a discussion with the IRIS team, it was decided that instead of the
-        # OBSID, we will use STEPS_AV less than -0.01 to identify V34 observations.
         v34 = hdulist[0].header["STEPS_AV"] < -0.01
         hdulist.verify("silentfix")
+        primary_header = hdulist[0].header.copy()
         windows_in_obs = np.array(
-            [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)],
+            [primary_header[f"TDESC{i}"] for i in range(1, primary_header["NWIN"] + 1)],
         )
-        # If spectral_window is not set then get every window.
-        # Else take the appropriate windows
         if not spectral_windows:
             spectral_windows_req = windows_in_obs
             window_fits_indices = range(1, len(hdulist) - 2)
@@ -86,41 +289,50 @@ def read_spectrograph_lvl2(
             spectral_windows_req = np.asarray(spectral_windows_req, dtype="U")
             window_is_in_obs = np.asarray([window in windows_in_obs for window in spectral_windows_req])
             if not all(window_is_in_obs):
-                missing_windows = window_is_in_obs is False
-                msg = f"Spectral windows {spectral_windows[missing_windows]} not in file {filenames[0]}"
+                missing_windows = spectral_windows_req[~window_is_in_obs]
+                msg = f"Spectral windows {missing_windows.tolist()} not in file {filenames[0]}"
                 raise ValueError(msg)
             window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
         data_dict = {window_name: [] for window_name in spectral_windows_req}
-        # No observer information in the header, so we just assume its at Earth.
-        base_time = Time(hdulist[0].header["DATE_OBS"])
-        location = get_body_heliographic_stonyhurst("Earth", (base_time).isot)
-        observer = Helioprojective(
-            hdulist[0].header["XCEN"] * u.arcsec,
-            hdulist[0].header["YCEN"] * u.arcsec,
-            observer=location,
-            obstime=base_time,
-        )
-        with SphericalScreen(observer.observer):
-            observer = observer.transform_to(HeliographicStonyhurst(obstime=base_time))
+        observer = _make_observer(primary_header)
+
+    # Running mean of good WCS table rows across files (used as fallback).
+    running_pc_sum = np.zeros((2, 2))
+    running_crval_sum = np.zeros(2)
+    running_count = 0
+
     for filename in filenames:
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
             hdulist.verify("silentfix")
-            # Extract axis-aligned metadata.
-            times = Time(hdulist[0].header["STARTOBS"]) + TimeDelta(
-                hdulist[-2].data[:, hdulist[-2].header["TIME"]],
-                format="sec",
-            )
+            aux = hdulist[-2]
+            file_startobs = _header_time(hdulist[0].header, "STARTOBS", "DATE_OBS")
+            times = file_startobs + TimeDelta(aux.data[:, aux.header["TIME"]] * u.s)
             fov_center = SkyCoord(
-                Tx=hdulist[-2].data[:, hdulist[-2].header["XCENIX"]],
-                Ty=hdulist[-2].data[:, hdulist[-2].header["YCENIX"]],
+                Tx=aux.data[:, aux.header["XCENIX"]],
+                Ty=aux.data[:, aux.header["YCENIX"]],
                 unit=u.arcsec,
                 frame=Helioprojective,
             )
-            obs_vrix = hdulist[-2].data[:, hdulist[-2].header["OBS_VRIX"]] * u.m / u.s
-            ophaseix = hdulist[-2].data[:, hdulist[-2].header["OPHASEIX"]]
-            exposure_times_fuv = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEF"]] * u.s
-            exposure_times_nuv = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEN"]] * u.s
+            obs_vrix = aux.data[:, aux.header["OBS_VRIX"]] * u.m / u.s
+            ophaseix = aux.data[:, aux.header["OPHASEIX"]]
+            exposure_times_fuv = aux.data[:, aux.header["EXPTIMEF"]] * u.s
+            exposure_times_nuv = aux.data[:, aux.header["EXPTIMEN"]] * u.s
+            pc_indices = [aux.header[key] for key in ("PC2_2IX", "PC2_3IX", "PC3_2IX", "PC3_3IX")]
+            pc = aux.data[:, pc_indices].reshape(-1, 2, 2) * u.pix
+
+            flip = v34 and not revert_v34
+            if flip:
+                times = times[::-1]
+                obs_vrix = obs_vrix[::-1]
+                ophaseix = ophaseix[::-1]
+                exposure_times_fuv = exposure_times_fuv[::-1]
+                exposure_times_nuv = exposure_times_nuv[::-1]
+                pc = pc[::-1]
+            t_ref = times[0]
+            dt = (times - t_ref).to_value(u.s) * u.s
+
             for i, window_name in enumerate(spectral_windows_req):
+                window_header = hdulist[window_fits_indices[i]].header.copy()
                 meta = SGMeta(
                     hdulist[0].header,
                     window_name,
@@ -137,33 +349,49 @@ def read_spectrograph_lvl2(
                 meta.add("exposure FOV center", fov_center, None, 0)
                 meta.add("observer radial velocity", obs_vrix, None, 0)
                 meta.add("orbital phase", ophaseix, None, 0)
-                # Sit-and-stare have a CDELT of 0 which causes issues in WCS.
-                # In this case, set CDELT to a small number.
-                header = copy(hdulist[window_fits_indices[i]].header)
-                # Account for a slit offset (POFFYNUV (45) or POFFYFUV (34))
-                idx = 34 if meta.spectral_band == "FUV" else 45
-                header["CRVAL3"] -= hdulist[-2].data[:, idx].mean() * (SLIT_WIDTH.value / 2)
-                if header["CDELT3"] == 0:
-                    header["CDELT3"] = 1e-10
-                    ang1, ang2, ang3, ang4 = _pc_matrix(
-                        header["CDELT3"] / header["CDELT2"],
-                        hdulist[-2].data[:, 20].mean(),
-                        hdulist[-2].data[:, 22].mean(),
+                prepared_wcs_header = _prepare_raster_wcs_header(
+                    window_header,
+                    aux.data,
+                    meta.spectral_band,
+                    flip=flip,
+                )
+                if np.isclose(window_header["CDELT3"], 0):
+                    # Sit-and-stare: CRVAL comes from the header, only PC may need fallback.
+                    crval = (
+                        np.repeat(
+                            [[prepared_wcs_header["CRVAL3"], prepared_wcs_header["CRVAL2"]]],
+                            len(times),
+                            axis=0,
+                        )
+                        * u.arcsec
                     )
-                    header["PC2_2"] = ang1
-                    header["PC2_3"] = ang2
-                    header["PC3_2"] = ang3
-                    header["PC3_3"] = ang4
-                try:
-                    wcs = WCS(header)
-                except Exception as e:  # NOQA: BLE001
-                    msg = (
-                        f"WCS failed to load while reading one step of the raster due to {e}"
-                        "The loading will continue but this will be missing in the final cube. "
-                        f"Spectral window: {window_name}, step {i} in file: {filename}"
-                    )
-                    logger.warning(msg)
-                    continue
+                else:
+                    offset_index = 34 if meta.spectral_band == "FUV" else 45
+                    xcen = aux.data[:, aux.header["XCENIX"]] - aux.data[:, offset_index] * (SLIT_WIDTH.value / 2)
+                    ycen = aux.data[:, aux.header["YCENIX"]]
+                    crval = np.column_stack((ycen, xcen)) * u.arcsec
+                    if flip:
+                        crval = crval[::-1]
+
+                # Update running mean from good rows in the first window of each file.
+                if i == 0:
+                    good_mask = ~_raster_wcs_bad_row_mask(pc, crval)
+                    if good_mask.any():
+                        running_pc_sum += pc[good_mask].sum(axis=0).to_value(u.pix)
+                        running_crval_sum += crval[good_mask].sum(axis=0).to_value(u.arcsec)
+                        running_count += good_mask.sum()
+
+                fallback_pc = (
+                    (running_pc_sum / running_count * u.pix)
+                    if running_count > 0 else None
+                )
+                fallback_crval = (
+                    (running_crval_sum / running_count * u.arcsec)
+                    if running_count > 0 else None
+                )
+                pc_sanitized, crval = _sanitize_raster_wcs_tables(pc.copy(), crval, fallback_pc, fallback_crval)
+                basic_wcs = _create_basic_raster_wcs(prepared_wcs_header, observer)
+
                 out_uncertainty = None
                 data_mask = None
                 if not memmap:
@@ -174,30 +402,30 @@ def read_spectrograph_lvl2(
                         readout_noise,
                         dn_unit,
                     )
-                if v34 and not revert_v34:
-                    times = times[::-1]
+                if flip:
                     data = np.flip(hdulist[window_fits_indices[i]].data, axis=0)
-                    header["PC1_3"] = 0
-                    header["PC2_3"] = -header["PC2_3"]
-                    header["PC3_2"] = -header["PC3_2"]
-                    header["CDELT3"] = -header["CDELT3"]
-                    header["CRPIX3"] = header["NAXIS3"] - header["CRPIX3"] + 1
-                    wcs = WCS(header)
                 else:
                     data = hdulist[window_fits_indices[i]].data
-                _set_wcs_aux_obs_coord(wcs, observer)
                 cube = SpectrogramCube(
                     data,
-                    wcs=wcs,
+                    wcs=_create_raster_gwcs(
+                        prepared_wcs_header,
+                        pc_sanitized,
+                        crval,
+                        dt,
+                        t_ref,
+                        observer,
+                    ),
                     uncertainty=out_uncertainty,
                     unit=dn_unit,
                     meta=meta,
                     mask=data_mask,
+                    _basic_wcs=basic_wcs,
                 )
                 cube.extra_coords.add("time", 0, times, physical_types="time")
                 data_dict[window_name].append(cube)
     window_data_pairs = [
-        (window_name, SpectrogramCubeSequence(data_dict[window_name], common_axis=0, meta=hdulist[0].header))
+        (window_name, SpectrogramCubeSequence(data_dict[window_name], common_axis=0, meta=primary_header))
         for window_name in spectral_windows_req
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1, 2))

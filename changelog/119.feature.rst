@@ -1,0 +1,2 @@
+Replaced the raster WCS with a gWCS implementation.
+This mirrors the SJI but allows for more flexible handling of the WCS.

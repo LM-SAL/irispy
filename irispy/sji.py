@@ -15,7 +15,7 @@ from sunraster import SpectrogramCube
 from irispy.utils import calculate_dust_mask
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import remove_dust as _remove_dust
-from irispy.visualization import IRISPlotter, set_axis_properties
+from irispy.visualization import IRISPlotter, finalize_iris_plot
 
 __all__ = ["AIACube", "SJICube"]
 
@@ -173,9 +173,7 @@ class SJICube(SpectrogramCube):
                 logger.debug(e)
                 cmap = "viridis"
         kwargs["cmap"] = cmap
-        ax = IRISPlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
 
     def apply_dust_mask(self, *, undo=False):
         """

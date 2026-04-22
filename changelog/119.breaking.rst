@@ -1,0 +1,3 @@
+Raster spectrograph ``crop`` calls now require full gWCS world tuples instead of the older
+two-component shorthand, and the raster examples and tutorials show how to build those tuples with
+``cube.wcs.array_index_to_world``.

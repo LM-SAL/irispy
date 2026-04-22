@@ -6,11 +6,12 @@ import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
 from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
 
-__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter"]
+__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter", "finalize_iris_plot"]
 
 
 LAT_LABELS = [
     "custom:pos.helioprojective.lat",
+    "helioprojective latitude",
     "hplt-tan",
     "hplt",
     "lat",
@@ -18,19 +19,22 @@ LAT_LABELS = [
 ]
 LON_LABELS = [
     "custom:pos.helioprojective.lon",
+    "helioprojective longitude",
     "hpln-tan",
     "hpln",
     "lon",
     "longitude",
 ]
+TIME_LABEL_PRIORITY = ["seconds from start (s)", "time (utc)", "time"]
+SCAN_STEP_LABELS = ["custom:step", "scan_step"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
 
 
-def set_axis_properties(ax):
+def set_axis_properties(ax, axes_coordinates=None, *, animate=False):
     """
-    Set the axis colors and labels for IRIS SJI and Raster data.
+    Set IRIS axis labels and, for raster animations, the visible scan coordinate.
     """
-    if isinstance(ax, ArrayAnimatorWCS):
+    if hasattr(ax, "axes") and not hasattr(ax, "coords"):
         ax = ax.axes
     for axis in ax.coords:
         if axis.default_label.lower() in WAVELENGTH_LABELS:
@@ -41,6 +45,21 @@ def set_axis_properties(ax):
             _set_axis_properties(axis, "Helioprojective Latitude [arcsec]", "red")
         elif axis.default_label.lower() in LON_LABELS:
             _set_axis_properties(axis, "Helioprojective Longitude [arcsec]", "black")
+    if animate:
+        _set_raster_animation_axis_properties(ax, axes_coordinates)
+
+
+def finalize_iris_plot(ax, axes_coordinates=None):
+    """
+    Store requested axis-selection state and apply IRIS-specific axis formatting.
+    """
+    ax._iris_requested_axes_coordinates = axes_coordinates
+    set_axis_properties(
+        ax,
+        axes_coordinates=axes_coordinates,
+        animate=hasattr(ax, "slider_axes"),
+    )
+    return ax
 
 
 def _set_axis_properties(axis, label, color):
@@ -60,10 +79,103 @@ def _set_axis_properties(axis, label, color):
     axis.set_axislabel(label, color=color, fontsize=8)
 
 
+def _get_matching_coords(ax, labels):
+    return [coord for coord in ax.coords if coord.default_label.lower() in labels]
+
+
+def _set_coord_position(coord, position):
+    coord.set_ticks_visible(True)
+    coord.set_ticklabel_visible(True)
+    coord.set_ticks_position(position)
+    coord.set_ticklabel_position(position)
+    coord.set_axislabel_position(position)
+
+
+def _hide_coord(coord):
+    coord.set_ticks_visible(False)
+    coord.set_ticklabel_visible(False)
+    coord.set_ticks_position("#")
+    coord.set_ticklabel_position("#")
+    coord.set_axislabel_position("#")
+    coord.set_axislabel("")
+
+
+def _has_visible_edge(coord):
+    return bool(coord.get_ticks_position())
+
+
+def _select_scan_coord_kind(axes_coordinates):
+    if axes_coordinates:
+        lowered = {coord.lower() for coord in axes_coordinates if isinstance(coord, str)}
+        if lowered.intersection(TIME_LABEL_PRIORITY):
+            return "time"
+    return "longitude"
+
+
+def _pick_time_coord(time_coords):
+    for preferred_label in TIME_LABEL_PRIORITY:
+        for coord in time_coords:
+            if coord.default_label.lower() == preferred_label:
+                return coord
+    return None
+
+
+def _set_raster_animation_axis_properties(ax, axes_coordinates):
+    """
+    Place the raster scan coordinate on the frame edge selected by the user.
+
+    Raster image animations can expose either helioprojective longitude or time
+    on the scan axis. This helper keeps latitude on the left edge, hides the
+    auxiliary scan-step helper, and moves the selected scan coordinate onto the
+    visible frame edge.
+    """
+    if not _get_matching_coords(ax, SCAN_STEP_LABELS):
+        return
+
+    wavelength_coords = _get_matching_coords(ax, WAVELENGTH_LABELS)
+    lon_coords = _get_matching_coords(ax, LON_LABELS)
+    lat_coords = _get_matching_coords(ax, LAT_LABELS)
+    time_coords = _get_matching_coords(ax, TIME_LABEL_PRIORITY)
+    if not lon_coords or not lat_coords or not time_coords:
+        return
+    if wavelength_coords and _has_visible_edge(wavelength_coords[0]):
+        return
+
+    selected_scan_kind = _select_scan_coord_kind(axes_coordinates)
+    selected_scan_coord = lon_coords[0]
+    if selected_scan_kind == "time":
+        selected_time_coord = _pick_time_coord(time_coords)
+        if selected_time_coord is not None:
+            selected_scan_coord = selected_time_coord
+
+    scan_step_coords = _get_matching_coords(ax, SCAN_STEP_LABELS)
+    for coord in scan_step_coords:
+        _hide_coord(coord)
+    for coord in time_coords:
+        if coord is not selected_scan_coord:
+            _hide_coord(coord)
+    if selected_scan_kind != "time":
+        for coord in lon_coords[1:]:
+            _hide_coord(coord)
+
+    if selected_scan_kind == "time":
+        _set_coord_position(lon_coords[0], "r")
+        _set_coord_position(selected_scan_coord, "b")
+    else:
+        _set_coord_position(selected_scan_coord, ["b", "r"])
+    _set_coord_position(lat_coords[0], "l")
+
+
 class Plot2DMixin:
-    def update_plot_2d(self, val, im, slider):
-        super().update_plot_2d(val, im, slider)
-        set_axis_properties(self.axes)
+    def update_plot(self, val, artist, slider):
+        result = super().update_plot(val, artist, slider)
+        if self.plot_dimensionality == 2:
+            set_axis_properties(
+                self.axes,
+                axes_coordinates=getattr(self, "_iris_requested_axes_coordinates", None),
+                animate=True,
+            )
+        return result
 
 
 class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
@@ -86,14 +198,9 @@ class IRISPlotter(MatplotlibPlotter):
         data_unit=None,
         **kwargs,
     ):
-        # This is a copy of the super method, but with the replacement
-        # of the ArrayAnimatorWCS with IRISArrayAnimatorWCS.
         data, wcs, plot_axes, coord_params = self._prep_animate_args(wcs, plot_axes, axes_units, data_unit)
         ax = IRISArrayAnimatorWCS(data, wcs, plot_axes, coord_params=coord_params, **kwargs)
-        # We need to modify the visible axes after the axes object has been created.
-        # This call affects only the initial draw
         self._apply_axes_coordinates(ax.axes, axes_coordinates)
-        # This changes the parameters for future iterations
         for hidden in self._not_visible_coords(ax.axes, axes_coordinates):
             param = ax.coord_params.get(hidden, {})
             param["ticks"] = False

@@ -71,13 +71,26 @@ fig = plt.figure()
 mg_ii.plot(fig=fig)
 
 ###############################################################################
-# If we want to "raster" over wavelength, we can do the following
+# If we want to "raster" over wavelength, we can do the following:
 
 fig = plt.figure()
 # This will also "transpose" the data but this is only for visualization purposes
 # We have to set the vmin and vmax, as by default "plot" works out the
 # vmin,vmax from the first slice which in this case is 0.
+# By default, the raster scan axis is shown as helioprojective longitude.
 mg_ii.plot(fig=fig, plot_axes=["x", "y", None], vmin=0, vmax=1000)
+
+###############################################################################
+# If you want to view the raster scan as time instead, select time explicitly.
+
+fig = plt.figure()
+mg_ii.plot(
+    fig=fig,
+    plot_axes=["x", "y", None],
+    axes_coordinates=["time", "custom:pos.helioprojective.lat", None],
+    vmin=0,
+    vmax=1000,
+)
 
 ###############################################################################
 # This object is sliceable, so we can do things like this:
@@ -90,15 +103,6 @@ ax = fig.add_subplot(111, projection=mg_ii[120, 200].wcs)
 mg_ii[120, 200].plot(axes=ax)
 
 ###############################################################################
-# We can also plot using the data directly. We can read the wavelengths of the
-# Mg window by calling `ndcube.NDCube.axis_world_coords` for "wl" (wavelength), and redo the plot.
-
-(mg_wave,) = mg_ii.axis_world_coords("wl")
-
-fig, ax = plt.subplots()
-ax.plot(mg_wave.to("AA"), mg_ii.data[120, 200])
-
-###############################################################################
 # When we use the underlying data directly, we lose all the metadata and WCS information.
 #
 # If you are unfamiliar with WCS, the following links are quite useful:
@@ -109,38 +113,56 @@ ax.plot(mg_wave.to("AA"), mg_ii.data[120, 200])
 # Some of the higher-level utilities are via ndcube, e.g., coordinate transformations: https://docs.sunpy.org/projects/ndcube/en/stable/explaining_ndcube/coordinates.html.
 #
 # Now, let's take a look at the WCS information.
-# For example, what is the wavelength position that corresponds to Mg II k core (279.63 nm)?
+# For raster data, the full gWCS uses ``(spectral, sky, time, scan_step)``
+# world inputs, so wavelength-plus-sky queries go through ``basic_wcs``.
+# For example, what is the wavelength position that corresponds to
+# Mg II k core (279.63 nm)?
 
-iris_observer = wcs_to_celestial_frame(mg_ii.wcs.celestial).observer
+iris_observer = wcs_to_celestial_frame(mg_ii.basic_wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-wcs_loc = mg_ii.wcs.world_to_pixel(
+step_index = mg_ii.data.shape[0] // 2
+slit_index = mg_ii.data.shape[1] // 2
+_, center_sky = mg_ii.basic_wcs.array_index_to_world(step_index, slit_index, 0)
+wcs_loc = mg_ii.basic_wcs.world_to_pixel(
     SpectralCoord(279.63, unit=u.nm),
-    SkyCoord(0 * u.arcsec, 0 * u.arcsec, frame=iris_frame),
+    center_sky,
 )
 mg_index = int(np.round(wcs_loc[0]))
 print(mg_index)
 
 ###############################################################################
-# Now we will plot spectroheliogram for Mg II k core wavelength.
-# We can use the ``crop`` method to get this information, this will
-# require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
-
-# None, means that the axis is not cropped
-# Note that this has to be in axis order
-lower_corner = [SpectralCoord(280, unit=u.nm), None]
-upper_corner = [SpectralCoord(280, unit=u.nm), None]
+# Now we will plot a spectroheliogram for the Mg II k core wavelength.
+# As the raster uses a 4D gWCS, we need to provide the full world-object order
+# ``(spectral, sky, time, scan_step)``. Here we only constrain wavelength.
+lower_corner = [SpectralCoord(280, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(280, unit=u.nm), None, None, None]
 mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()
-ax = fig.add_subplot(111, projection=mg_spec_crop.wcs)
-mg_spec_crop.plot(axes=ax)
+ax = fig.add_subplot(111, projection=mg_spec_crop.basic_wcs)
+ax.imshow(mg_spec_crop.data, origin="lower", aspect="auto")
+ax.coords[0].set_format_unit(u.arcsec)
+ax.coords[0].set_axislabel("Helioprojective Latitude [arcsec]")
+ax.coords[1].set_format_unit(u.arcsec)
+ax.coords[1].set_axislabel("Helioprojective Longitude [arcsec]")
 
 ###############################################################################
+# Plotting against ``basic_wcs`` shows the sky coordinates directly.
+# If you want to view the raster scan as time versus slit position instead,
+# plot against the full gWCS via ``mg_spec_crop.plot(...)``.
+#
+#
 # Imagine there's a really cool feature at (-338", 275"), how can you plot
-# the spectrum at that location?
+# the spectrum at that location? First locate the nearest raster pixel, then
+# convert that pixel back into the full world tuples expected by ``crop``.
 
-lower_corner = [None, SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=iris_frame)]
-upper_corner = [None, SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=iris_frame)]
+target = SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=iris_frame)
+lon = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0].to_value(u.arcsec)
+lat = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0].to_value(u.arcsec)
+distance = (lon - target.Tx.to_value(u.arcsec)) ** 2 + (lat - target.Ty.to_value(u.arcsec)) ** 2
+step_index, slit_index = np.unravel_index(np.nanargmin(distance), distance.shape)
+lower_corner = mg_ii.wcs.array_index_to_world(step_index, slit_index, 0)
+upper_corner = mg_ii.wcs.array_index_to_world(step_index, slit_index, mg_ii.data.shape[-1] - 1)
 mg_ii_cut = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()

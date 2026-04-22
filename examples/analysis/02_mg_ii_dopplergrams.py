@@ -70,8 +70,8 @@ plt.xlabel("Wavelength (nm)")
 # For this dataset, the line core of this line falls around index 350.
 # Here though, we will crop in wavelength space.
 
-lower_corner = [SpectralCoord(280.2, unit=u.nm), None]
-upper_corner = [SpectralCoord(280.2, unit=u.nm), None]
+lower_corner = [SpectralCoord(280.2, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(280.2, unit=u.nm), None, None, None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 # We will "crunch" the image a bit
 mg_crop.plot(aspect="auto")

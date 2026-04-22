@@ -1,12 +1,12 @@
 exclude: "(.*/)?CITATION.rst$|.*(.fits|.fts|.fit|.header|.txt|tca.*|extern.*|irispy/extern)$"
 repos:
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.23.1
+    rev: v1.24.1
     hooks:
       - id: zizmor
     # This should be before any formatting hooks like isort
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.15.9"
+    rev: "v0.15.11"
     hooks:
       - id: ruff
         args: ["--fix", "--unsafe-fixes"]
@@ -50,7 +50,7 @@ repos:
         types_or: [python, rst, yaml, json]
   # See https://github.com/python-trio/trio/pull/3255
   -   repo: https://github.com/adhtruong/mirrors-typos
-      rev: v1.45.0
+      rev: v1.45.1
       hooks:
       - id: typos
         exclude: *exclude_dirs
