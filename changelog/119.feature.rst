@@ -1,0 +1,3 @@
+Replaced the raster WCS with a gWCS implementation.
+This mirrors the SJI but allows for more flexible handling of the WCS.
+Added ``SpectrogramCube.spectrum_at`` as a convenience wrapper for raster sky-position lookups.

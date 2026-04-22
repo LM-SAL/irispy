@@ -1,8 +1,10 @@
 import numpy as np
+import pytest
 
 import astropy.units as u
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import Helioprojective
 
@@ -80,6 +82,9 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert meta.observer_location is None
     assert meta.rsun_angular is None
     assert meta.rsun_meters is None
+    assert si_iv[0].wcs.world_n_dim == 5
+    assert si_iv[0].wcs.pixel_n_dim == 3
+    assert si_iv[0].basic_wcs is not None
 
 
 def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
@@ -154,9 +159,99 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert meta.observer_location is None
     assert meta.rsun_angular is None
     assert meta.rsun_meters is None
+    assert si_iv[0].wcs.world_n_dim == 5
+    assert si_iv[0].wcs.pixel_n_dim == 3
+    assert si_iv.time.format == "isot"
 
 
 def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_files):
     read_spectrograph_lvl2(sns_sg_file)
     read_spectrograph_lvl2(raster_sg_file)
     read_spectrograph_lvl2(raster_sg_files)
+
+
+def test_read_spectrograph_lvl2_reports_all_missing_spectral_windows(raster_sg_file):
+    with pytest.raises(ValueError, match=r"Spectral windows .* not in file") as excinfo:
+        read_spectrograph_lvl2(raster_sg_file, spectral_windows=["NOPE1", "NOPE2"])
+    message = str(excinfo.value)
+    assert "NOPE1" in message
+    assert "NOPE2" in message
+
+
+def test_gwcs_crop_supports_full_world_component_api(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+
+    spectral_coord = scan.spectral_axis[len(scan.spectral_axis) // 2]
+    spectral_crop = scan.crop(
+        [SpectralCoord(spectral_coord), None, None, None],
+        [SpectralCoord(spectral_coord), None, None, None],
+    )
+    assert spectral_crop.data.ndim == 2
+    spectrum = scan.crop(
+        scan.wcs.array_index_to_world(3, 50, 0),
+        scan.wcs.array_index_to_world(3, 50, scan.data.shape[-1] - 1),
+    )
+    assert spectrum.data.ndim == 1
+
+    spectrum_by_values = scan.crop_by_values(
+        scan.wcs.array_index_to_world_values(3, 50, 0),
+        scan.wcs.array_index_to_world_values(3, 50, scan.data.shape[-1] - 1),
+        units=(u.nm, u.arcsec, u.arcsec, u.s, u.pix),
+    )
+    assert spectrum_by_values.data.ndim == 1
+
+
+def test_gwcs_crop_rejects_removed_two_component_shorthand(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+    spectral_coord = scan.spectral_axis[len(scan.spectral_axis) // 2]
+    frame = wcs_to_celestial_frame(scan.basic_wcs.celestial)
+    target = SkyCoord(-8 * u.arcsec, 370 * u.arcsec, unit=u.arcsec, frame=frame)
+
+    with pytest.raises(ValueError, match="do not match WCS"):
+        scan.crop([SpectralCoord(spectral_coord), None], [SpectralCoord(spectral_coord), None])
+
+    with pytest.raises(ValueError, match="do not match WCS"):
+        scan.crop([None, target], [None, target])
+
+
+def test_gwcs_inverse_enables_official_crop_api(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+
+    start = scan.wcs.array_index_to_world(3, 50, 10)
+    stop = scan.wcs.array_index_to_world(4, 50, 10)
+
+    assert scan.wcs.world_to_array_index(*start) == (3, 50, 10)
+    assert scan.wcs.world_to_array_index(*stop) == (4, 50, 10)
+
+    cropped = scan.crop(start, stop)
+    assert cropped.data.shape == (2,)
+
+
+def test_gwcs_inverse_roundtrips_sit_and_stare_exposures(sns_sg_file):
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
+    scan = raster_collection["Si IV 1403"][0]
+
+    start = scan.wcs.array_index_to_world(3, 20, 10)
+    stop = scan.wcs.array_index_to_world(4, 20, 10)
+
+    assert scan.wcs.world_to_array_index(*start) == (3, 20, 10)
+    assert scan.wcs.world_to_array_index(*stop) == (4, 20, 10)
+
+    cropped = scan.crop(start, stop)
+    assert cropped.data.shape == (2,)
+
+
+def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"][0]
+
+    for array_index in ((0, 50, 3), (3, 50, 10), (7, 80, 20)):
+        spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
+        basic_spectral, basic_sky = scan.basic_wcs.array_index_to_world(*array_index)
+
+        assert_quantity_allclose(spectral.to(u.nm), basic_spectral.to(u.nm))
+        assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=10 * u.arcsec)
+        assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=1 * u.arcsec)

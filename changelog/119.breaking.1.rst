@@ -1,0 +1,36 @@
+IRIS spectrograph rasters now use a full gWCS, so raster crops must be written against the world-object order returned by ``cube.wcs.array_index_to_world(step, slit, spectral)``.
+For rasters that order is ``(spectral, skycoord, time, scan_step)``.
+
+The old two-component shorthand is no longer supported:
+
+.. code-block:: python
+
+   cube.crop([SpectralCoord(140.277 * u.nm), None], [SpectralCoord(140.277 * u.nm), None])
+   cube.crop([None, target_skycoord], [None, target_skycoord])
+
+Use one of these patterns instead.
+
+If you only want to constrain wavelength, pass the full four-component raster world tuple and use ``None`` for the unconstrained axes:
+
+.. code-block:: python
+
+   line_core = SpectralCoord(140.277 * u.nm)
+   image = cube.crop(
+       [line_core, None, None, None],
+       [line_core, None, None, None],
+   )
+
+If you already know the pixel corners you want, convert them to full world tuples and pass those directly into ``crop``:
+
+.. code-block:: python
+
+   start = cube.wcs.array_index_to_world(50, 200, 10)
+   stop = cube.wcs.array_index_to_world(150, 600, 25)
+   subcube = cube.crop(start, stop)
+
+If you start from a ``SkyCoord`` and want the spectrum nearest that sky position, use the raster convenience method:
+
+.. code-block:: python
+
+   target = SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=target_frame)
+   spectrum = cube.spectrum_at(target)

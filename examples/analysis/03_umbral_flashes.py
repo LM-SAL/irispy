@@ -55,8 +55,8 @@ mg_ii = raster["Mg II k 2796"][0]
 c_ii = raster["C II 1336"][0]
 
 # Instead of using a pixel index, we can crop the data in wavelength space.
-lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
-upper_corner = [SpectralCoord(279.63, unit=u.nm), None]
+lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()

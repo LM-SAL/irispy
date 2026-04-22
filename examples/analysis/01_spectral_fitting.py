@@ -16,13 +16,10 @@ import pooch
 
 import astropy.units as u
 from astropy import constants
-from astropy.coordinates import SkyCoord, SpectralCoord
+from astropy.coordinates import SpectralCoord
 from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.visualization import time_support
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 
@@ -63,18 +60,17 @@ raster = read_files(raster_filename, memmap=False)
 si_iv_1403 = raster["Si IV 1403"][0]
 
 # However, before we get to that, we will shrink the data cube to make it easier to work with.
-iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
-top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-bottom_right = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
-si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
+# This is just a smaller subarray for speed, so direct slicing is simpler than
+# converting pixel bounds through the full gWCS.
+n_steps, n_slit, _ = si_iv_1403.data.shape
+si_iv_1403 = si_iv_1403[n_steps // 4 : 3 * n_steps // 4, n_slit // 4 : 3 * n_slit // 4, :]
 
 ###############################################################################
 # Let us just check the full field of view at the line core.
 
 si_iv_core = 140.277 * u.nm
-lower_corner = [SpectralCoord(si_iv_core), None]
-upper_corner = [SpectralCoord(si_iv_core), None]
+lower_corner = [SpectralCoord(si_iv_core), None, None, None]
+upper_corner = [SpectralCoord(si_iv_core), None, None, None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
 fig = plt.figure()

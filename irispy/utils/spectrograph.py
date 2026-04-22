@@ -2,6 +2,8 @@
 This module provides general utility functions called by code in spectrograph.
 """
 
+from copy import deepcopy
+
 import numpy as np
 
 import astropy.units as u
@@ -21,6 +23,24 @@ __all__ = [
 ]
 
 
+def _get_calibration_fits_wcs(cube):
+    """
+    Return the FITS WCS used to derive spectral dispersion and slit solid angle.
+
+    Raster cubes may carry a gWCS on ``cube.wcs`` and a FITS WCS bridge on
+    ``cube.basic_wcs``. This helper prefers a direct FITS WCS and falls back to
+    unwrapping sliced FITS-WCS adapters when needed.
+    """
+    if hasattr(cube.wcs, "wcs"):
+        return cube.wcs.wcs
+    basic_wcs = getattr(cube, "basic_wcs", None)
+    if basic_wcs is not None:
+        if hasattr(basic_wcs, "wcs"):
+            return basic_wcs.wcs
+        return unwrap_wcs_to_fitswcs(basic_wcs)[0].wcs
+    return unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs
+
+
 def radiometric_calibration(
     cube: SpectrogramCube | SpectrogramCubeSequence,
 ) -> SpectrogramCube | SpectrogramCubeSequence:
@@ -35,11 +55,10 @@ def radiometric_calibration(
     Which is different from the IDL code as does not take spectral dispersion into account.
     If you want the same results as the IDL code, can multiply the output by the spectral dispersion.
 
-    The spectral dispersion and solid angle are calculated using the WCS information.
-    The wavelength axis and spatial axis should be determined dynamically from the WCS, rather than assuming fixed axis indices.
-    For example, the spectral dispersion is calculated as ``cube.wcs.wcs.cdelt[wavelength_axis] * cube.wcs.wcs.cunit[wavelength_axis]``,
-    and the solid angle as ``cube.wcs.wcs.cdelt[spatial_axis] * cube.wcs.wcs.cunit[spatial_axis] * SLIT_WIDTH``,
-    where ``wavelength_axis`` and ``spatial_axis`` are determined from the WCS.
+    The spectral dispersion and solid angle are calculated using an underlying FITS WCS.
+    For FITS-WCS-backed cubes this comes directly from ``cube.wcs``; for raster gWCS-backed cubes
+    it falls back to ``cube.basic_wcs``. The wavelength axis and spatial axis are determined
+    dynamically from that WCS rather than assuming fixed axis indices.
 
     Parameters
     ----------
@@ -49,7 +68,13 @@ def radiometric_calibration(
     Returns
     -------
     `irispy.spectrograph.SpectrogramCube` or `irispy.spectrograph.SpectrogramCubeSequence`
-        New cube in new units.
+        New cube in radiance units.
+
+    Raises
+    ------
+    ValueError
+        If the input does not expose a spectral axis, for example a
+        fixed-wavelength raster image.
 
     Notes
     -----
@@ -62,9 +87,13 @@ def radiometric_calibration(
     Notice the extra :math:`Å^{-1}` in the units.
     """
     if isinstance(cube, SpectrogramCubeSequence):
-        return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
+        return SpectrogramCubeSequence(
+            [radiometric_calibration(c) for c in cube],
+            meta=deepcopy(cube.meta),
+            common_axis=getattr(cube, "_common_axis", None),
+        )
     detector_type = cube.meta.detector
-    underlying_wcs = unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs if not hasattr(cube.wcs, "wcs") else cube.wcs.wcs
+    underlying_wcs = _get_calibration_fits_wcs(cube)
     # Get spectral dispersion per pixel.
     spectral_wcs_index = np.where(np.array(underlying_wcs.ctype) == "WAVE")[0][0]
     spectral_dispersion_per_pixel = underlying_wcs.cdelt[spectral_wcs_index] * underlying_wcs.cunit[spectral_wcs_index]
@@ -73,11 +102,15 @@ def radiometric_calibration(
     lat_wcs_index = np.arange(len(underlying_wcs.ctype))[lat_wcs_index][0]
     solid_angle = underlying_wcs.cdelt[lat_wcs_index] * underlying_wcs.cunit[lat_wcs_index] * SLIT_WIDTH
     # Get wavelength for each pixel.
-    wavelength_axis_index = next(
-        axis
-        for axis, physical_types in enumerate(cube.array_axis_physical_types)
-        if physical_types and "em.wl" in physical_types
-    )
+    try:
+        wavelength_axis_index = next(
+            axis
+            for axis, physical_types in enumerate(cube.array_axis_physical_types)
+            if physical_types and "em.wl" in physical_types
+        )
+    except StopIteration as exc:
+        msg = "radiometric_calibration requires a spectral axis. Fixed-wavelength raster images are not supported."
+        raise ValueError(msg) from exc
     wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
     time_obs = cube.meta.date_reference
     iris_response = get_latest_response(time_obs)
@@ -100,16 +133,15 @@ def radiometric_calibration(
     new_data = new_data_quantities[0].value
     new_uncertainty = new_data_quantities[1].value if len(new_data_quantities) > 1 else None
     new_unit = new_data_quantities[0].unit
-    new_cube = SpectrogramCube(
-        new_data,
-        cube.wcs,
-        new_uncertainty,
-        new_unit,
-        cube.meta,
-        mask=cube.mask,
+    return cube.to_nddata(
+        data=new_data,
+        uncertainty=new_uncertainty,
+        unit=new_unit,
+        nddata_type=type(cube),
+        extra_coords="copy",
+        global_coords="copy",
+        _basic_wcs=getattr(cube, "basic_wcs", None),
     )
-    new_cube._extra_coords = cube.extra_coords
-    return new_cube
 
 
 def convert_photons_per_sec_to_radiance(

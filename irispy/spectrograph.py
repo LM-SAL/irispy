@@ -1,4 +1,5 @@
 import textwrap
+from numbers import Integral
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,9 +10,35 @@ from sunraster import SpectrogramCube as SpecCube
 from sunraster import SpectrogramSequence as SpecSeq
 
 from irispy.utils.cosmic_rays import remove_cosmic_rays
-from irispy.visualization import IRISPlotter, IRISSequencePlotter, set_axis_properties
+from irispy.visualization import IRISPlotter, IRISSequencePlotter, finalize_iris_plot
 
 __all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
+
+
+def _normalize_tuple_index(item, ndim):
+    """
+    Normalize a tuple index to explicit per-axis entries.
+
+    Returns
+    -------
+    list or None
+        A normalized list of length ``ndim`` when normalization is valid.
+        Returns ``None`` when the tuple contains more than one ellipsis.
+    """
+    normalized_item = []
+    ellipsis_seen = False
+    for subitem in item:
+        if subitem is Ellipsis:
+            if ellipsis_seen:
+                return None
+            ellipsis_seen = True
+            missing_dims = ndim - (len(item) - 1)
+            normalized_item.extend([slice(None)] * missing_dims)
+        else:
+            normalized_item.append(subitem)
+    if len(normalized_item) < ndim:
+        normalized_item.extend([slice(None)] * (ndim - len(normalized_item)))
+    return normalized_item
 
 
 class SpectrogramCube(SpecCube):
@@ -53,18 +80,37 @@ class SpectrogramCube(SpecCube):
     """
 
     def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
+        self._basic_wcs = kwargs.pop("_basic_wcs", None)
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
+    @property
+    def time(self):
+        time = super().time
+        if time.format == "jd":
+            time = time.copy()
+            time.format = "isot"
+        return time
+
+    def _slice_basic_wcs(self, item):
+        if self._basic_wcs is None:
+            return None
+        if isinstance(item, tuple):
+            item = _normalize_tuple_index(item, self.data.ndim)
+            if item is None or not all(isinstance(subitem, (Integral, slice)) for subitem in item):
+                return None
+            item = tuple(item)
+        elif not isinstance(item, (Integral, slice)) and item is not Ellipsis:
+            return None
+        try:
+            return self._basic_wcs.slice(item, numpy_order=True)
+        except (IndexError, NotImplementedError, TypeError, ValueError) as e:
+            logger.debug(f"Unable to slice SpectrogramCube basic_wcs with item {item!r}: {e}")
+            return None
+
     def __getitem__(self, item):
-        result = super().__getitem__(item)
-        return SpectrogramCube(
-            result.data,
-            result.wcs,
-            result.uncertainty,
-            result.unit,
-            result.meta,
-            mask=result.mask,
-        )
+        sliced_self = super().__getitem__(item)
+        sliced_self._basic_wcs = self._slice_basic_wcs(item)
+        return sliced_self
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -75,9 +121,23 @@ class SpectrogramCube(SpecCube):
         if self.global_coords and "time" in self.global_coords:
             instance_start = self.global_coords["time"].min().isot
             instance_end = self.global_coords["time"].max().isot
-        elif self.extra_coords and self.axis_world_coords("time", wcs=self.extra_coords):
-            instance_start = self.axis_world_coords("time", wcs=self.extra_coords)[0].min().isot
-            instance_end = self.axis_world_coords("time", wcs=self.extra_coords)[0].max().isot
+        elif self.extra_coords:
+            try:
+                extra_coord_time = self.axis_world_coords("time", wcs=self.extra_coords)
+            except ValueError as e:
+                logger.debug(f"Unable to determine time bounds for SpectrogramCube string representation: {e}")
+                extra_coord_time = None
+            if extra_coord_time:
+                instance_start = extra_coord_time[0].min().isot
+                instance_end = extra_coord_time[0].max().isot
+        if instance_start is None or instance_end is None:
+            try:
+                instance_start = self.time.min().isot
+                instance_end = self.time.max().isot
+            except ValueError as e:
+                logger.debug(f"Unable to determine time bounds for SpectrogramCube string representation: {e}")
+                instance_start = "Unknown"
+                instance_end = "Unknown"
         return textwrap.dedent(
             f"""
             SpectrogramCube
@@ -102,9 +162,47 @@ class SpectrogramCube(SpecCube):
         kwargs["cmap"] = cmap
         if len(self.shape) == 1:
             kwargs.pop("cmap")
-        ax = IRISPlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
+
+    @property
+    def basic_wcs(self):
+        return self._basic_wcs
+
+    def spectrum_at(self, target, *, clip=True):
+        """
+        Return the spectrum at the raster pixel nearest a sky coordinate.
+
+        Parameters
+        ----------
+        target : `astropy.coordinates.SkyCoord`
+            Sky coordinate to sample.
+        clip : `bool`, optional
+            If `True`, off-raster targets are clipped to the nearest edge pixel.
+            If `False`, out-of-bounds targets raise `ValueError`.
+
+        Returns
+        -------
+        `irispy.spectrograph.SpectrogramCube`
+            One-dimensional spectrum extracted from the nearest raster pixel.
+        """
+        if self.data.ndim != 3 or self.basic_wcs is None:
+            msg = "spectrum_at requires a 3D raster cube with a basic_wcs bridge."
+            raise ValueError(msg)
+
+        step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target)
+        if clip:
+            step_index = int(np.clip(step_index, 0, self.shape[0] - 1))
+            slit_index = int(np.clip(slit_index, 0, self.shape[1] - 1))
+        else:
+            step_index = int(step_index)
+            slit_index = int(slit_index)
+            if not (0 <= step_index < self.shape[0] and 0 <= slit_index < self.shape[1]):
+                msg = "Target is outside the raster bounds."
+                raise ValueError(msg)
+
+        start = self.wcs.array_index_to_world(step_index, slit_index, 0)
+        stop = self.wcs.array_index_to_world(step_index, slit_index, self.shape[-1] - 1)
+        return self.crop(start, stop)
 
     def remove_cosmic_rays(
         self,
@@ -162,14 +260,12 @@ class SpectrogramCubeSequence(SpecSeq):
     """
 
     def __init__(self, data_list, meta=None, common_axis=0, **kwargs) -> None:
-        # Check that all spectrograms are from same spectral window and OBS ID.
-        if len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
+        if data_list and len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
             msg = "Constituent SpectrogramCube objects must have same value of 'OBSID' in its meta."
             raise ValueError(msg)
         super().__init__(data_list, meta=meta, common_axis=common_axis, **kwargs)
 
     def __str__(self) -> str:
-        # Overload it get the class name in the string
         return super().__str__()
 
     def plot(self, *args, **kwargs):
@@ -183,9 +279,31 @@ class SpectrogramCubeSequence(SpecSeq):
         kwargs["cmap"] = cmap
         if len(self.shape) == 1:
             kwargs.pop("cmap")
-        ax = IRISSequencePlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return finalize_iris_plot(
+            IRISSequencePlotter(ndcube=self).plot(*args, **kwargs),
+            kwargs.get("axes_coordinates"),
+        )
+
+    def remove_cosmic_rays(
+        self,
+        *,
+        method="rsliding",
+        sigma: float | None = None,
+        max_iters: int | None = None,
+        method_kwargs=None,
+    ):
+        """
+        Return a cleaned copy of each cube in the sequence.
+
+        This is a convenience wrapper around `irispy.utils.cosmic_rays.remove_cosmic_rays`.
+        """
+        return remove_cosmic_rays(
+            self,
+            method=method,
+            sigma=sigma,
+            max_iters=max_iters,
+            method_kwargs=method_kwargs,
+        )
 
 
 class RasterCollection(NDCollection):

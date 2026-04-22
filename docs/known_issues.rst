@@ -7,18 +7,6 @@ Known Issues
 This page documents commonly known issues.
 "Issues" here is defined broadly and refers to oddities or specifics of how ``irispy`` or the Python ecosystem works that can and will catch users off guard.
 
-Per-exposure WCS metadata
-=========================
-
-The IRIS FITS files contain the per-exposure WCS metadata (reference coordinate and PCij matrix) in an extension, while the primary header has only values averaged over the observation.
-For example, OBS 4204700138 SJI file, ``CRVAL`` in the primary header is (1.93840, 1.96290), but the reference coordinate
-is actually (-3.56638378, 1.69258388), which is retrieved from the appropriate index in the ``XCENIX``/``YCENIX`` arrays in the extension.
-
-This was (and partially still is) a problem for the ``irispy`` package, which assumed that the reference coordinate is the same for all exposures.
-This has been addressed by the SJI reader but not fully by the spectrograph reader.
-
-In the future, the goal is to create a gWCS to account for this.
-
 Spectrogram WCS
 ===============
 
