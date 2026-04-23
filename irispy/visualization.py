@@ -4,9 +4,8 @@ import astropy.units as u
 
 import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
-from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
 
-__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter", "finalize_iris_plot"]
+__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "finalize_iris_plot"]
 
 
 LAT_LABELS = [
@@ -182,12 +181,6 @@ class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
     pass
 
 
-class IRISSequenceAnimator(Plot2DMixin, SequenceAnimator):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("slider_labels", ["Raster Step", "Scan Number"])
-        super().__init__(*args, **kwargs)
-
-
 class IRISPlotter(MatplotlibPlotter):
     def _animate_cube(
         self,
@@ -206,29 +199,3 @@ class IRISPlotter(MatplotlibPlotter):
             param["ticks"] = False
             ax.coord_params[hidden] = param
         return ax
-
-
-class IRISSequencePlotter(MatplotlibSequencePlotter):
-    def animate(self, sequence_axis_coords=None, sequence_axis_unit=None, **kwargs):
-        """
-        Animate the `~ndcube.NDCubeSequence` with the sequence axis as a slider.
-
-        Keyword arguments are passed to
-        `ndcube.visualization.mpl_plotter.MatplotlibPlotter.plot` and therefore only
-        apply to cube axes, not the sequence axis.
-        See that method's docstring for definition of keyword arguments.
-
-        Parameters
-        ----------
-        sequence_axis_coords: `str` optional
-            The name of the coordinate in `~ndcube.NDCubeSequence.sequence_axis_coords`
-            to be used as the slider pixel values.
-            If None, array indices will be used.
-
-        sequence_axis_unit: `astropy.units.Unit` or `str`, optional
-            The unit in which the sequence_axis_coordinates should be displayed.
-            If None, the default unit will be used.
-        """
-        return IRISSequenceAnimator(
-            self._ndcube, sequence_axis_coords=sequence_axis_coords, sequence_axis_unit=sequence_axis_unit, **kwargs
-        )

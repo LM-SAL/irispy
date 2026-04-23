@@ -1,5 +1,6 @@
 Reading multi-file raster spectrograph observations now returns a single
 `~irispy.spectrograph.SpectrogramCube` per spectral window, including in
 ``memmap=True`` mode. The combined cube exposes raster-grouping helpers through
-``raster_boundaries``, ``raster_slice()``, and ``split_rasters()`` instead of
-defaulting to `~irispy.spectrograph.SpectrogramCubeSequence`.
+``raster_boundaries``, ``raster_slice()``, and ``split_rasters()``. The public
+`~irispy.spectrograph.SpectrogramCubeSequence` compatibility type has been
+removed.

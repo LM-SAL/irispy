@@ -2,7 +2,6 @@
 Utilities for removing cosmic rays from IRIS data.
 """
 
-from copy import deepcopy
 from typing import Any
 from importlib import import_module
 from collections.abc import Mapping
@@ -93,9 +92,8 @@ def remove_cosmic_rays(
 
     Parameters
     ----------
-    cube : irispy.sji.SJICube, irispy.spectrograph.SpectrogramCube, \
-           or irispy.spectrograph.SpectrogramCubeSequence
-        Cube or sequence object to clean.
+    cube : irispy.sji.SJICube or irispy.spectrograph.SpectrogramCube
+        Cube object to clean.
     method : ``{"rsliding", "astroscrappy"}``, optional
         Cosmic ray removal backend. ``"rsliding"`` is the default and operates on
         the full array. ``"astroscrappy"`` is applied frame-by-frame over the last
@@ -111,28 +109,9 @@ def remove_cosmic_rays(
 
     Returns
     -------
-    irispy.sji.SJICube, irispy.spectrograph.SpectrogramCube, or
-    irispy.spectrograph.SpectrogramCubeSequence
-        A new cube or sequence with cleaned data and copied metadata/coordinates.
+    irispy.sji.SJICube or irispy.spectrograph.SpectrogramCube
+        A new cube with cleaned data and copied metadata/coordinates.
     """
-    from irispy.spectrograph import SpectrogramCubeSequence  # NOQA: PLC0415
-
-    if isinstance(cube, SpectrogramCubeSequence):
-        return type(cube)(
-            [
-                remove_cosmic_rays(
-                    subcube,
-                    method=method,
-                    sigma=sigma,
-                    max_iters=max_iters,
-                    method_kwargs=method_kwargs,
-                )
-                for subcube in cube
-            ],
-            meta=deepcopy(cube.meta),
-            common_axis=getattr(cube, "_common_axis", None),
-        )
-
     method = method.lower()
     working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
     if np.issubdtype(cube.data.dtype, np.floating):

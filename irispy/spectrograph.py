@@ -9,12 +9,11 @@ import astropy.units as u
 from ndcube import NDCollection
 from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
-from sunraster import SpectrogramSequence as SpecSeq
 
 from irispy.utils.cosmic_rays import remove_cosmic_rays
-from irispy.visualization import IRISPlotter, IRISSequencePlotter, finalize_iris_plot
+from irispy.visualization import IRISPlotter, finalize_iris_plot
 
-__all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
+__all__ = ["RasterCollection", "SpectrogramCube"]
 
 
 def _normalize_tuple_index(item, ndim):
@@ -87,8 +86,6 @@ class SpectrogramCube(SpecCube):
         self._basic_wcs_segments = kwargs.pop("_basic_wcs_segments", None)
         self._raster_boundaries = kwargs.pop("_raster_boundaries", None)
         self._memmap = kwargs.pop("_memmap", False)
-        self._memmap_slice = kwargs.pop("_memmap_slice", None)
-        self._raster_memmap_segments = kwargs.pop("_raster_memmap_segments", None)
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     @property
@@ -204,30 +201,11 @@ class SpectrogramCube(SpecCube):
                 boundaries.append((overlap_start - scan_start, overlap_stop - scan_start))
         return boundaries or None
 
-    def _slice_raster_memmap_segments_for_slice(self, scan_item):
-        if not self._raster_memmap_segments:
-            return None
-        scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
-        if scan_step != 1 or scan_start >= scan_stop:
-            return None
-        segments = []
-        for segment_start, segment_stop, path, ext, flip, memmap_slice in self._raster_memmap_segments:
-            overlap_start = max(segment_start, scan_start)
-            overlap_stop = min(segment_stop, scan_stop)
-            if overlap_start >= overlap_stop:
-                continue
-            base_start = 0 if memmap_slice is None or memmap_slice.start is None else memmap_slice.start
-            local_start = base_start + (overlap_start - segment_start)
-            local_stop = base_start + (overlap_stop - segment_start)
-            segments.append((overlap_start - scan_start, overlap_stop - scan_start, path, ext, flip, slice(local_start, local_stop)))
-        return segments or None
-
     def _slice_raster_metadata(self, item, sliced_self):
         normalized_item = self._normalize_basic_wcs_item(item)
         if normalized_item is None:
             sliced_self._basic_wcs_segments = None
             sliced_self._raster_boundaries = None
-            sliced_self._raster_memmap_segments = None
             return
 
         scan_item = normalized_item[0]
@@ -239,7 +217,6 @@ class SpectrogramCube(SpecCube):
         if isinstance(scan_item, Integral):
             sliced_self._basic_wcs_segments = None
             sliced_self._raster_boundaries = None
-            sliced_self._raster_memmap_segments = None
             return
 
         for attr in ("_raster_pc_table", "_raster_crval_table"):
@@ -248,17 +225,6 @@ class SpectrogramCube(SpecCube):
                 setattr(sliced_self, attr, value[scan_item])
         sliced_self._basic_wcs_segments = self._slice_basic_wcs_segments_for_slice(scan_item)
         sliced_self._raster_boundaries = self._slice_raster_boundaries_for_slice(scan_item)
-        sliced_self._raster_memmap_segments = self._slice_raster_memmap_segments_for_slice(scan_item)
-        if sliced_self._raster_memmap_segments and len(sliced_self._raster_memmap_segments) == 1:
-            _, _, path, ext, flip, memmap_slice = sliced_self._raster_memmap_segments[0]
-            sliced_self._memmap_path = path
-            sliced_self._memmap_ext = ext
-            sliced_self._flip = flip
-            sliced_self._memmap_slice = memmap_slice
-        else:
-            for attr in ("_memmap_path", "_memmap_ext", "_flip", "_memmap_slice"):
-                if hasattr(sliced_self, attr):
-                    delattr(sliced_self, attr)
 
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
@@ -342,7 +308,7 @@ class SpectrogramCube(SpecCube):
 
     def split_rasters(self):
         """
-        Split the cube back into per-raster subcubes.
+        Split the cube into per-raster subcubes.
         """
         boundaries = self.raster_boundaries
         if not boundaries:
@@ -439,90 +405,11 @@ class SpectrogramCube(SpecCube):
         )
 
 
-class SpectrogramCubeSequence(SpecSeq):
-    """
-    Temporary helper for per-raster views of one spectral window.
-
-    Each element is one complete raster scan. New raster reads should prefer the
-    combined `SpectrogramCube` model and use `split_rasters()` only when explicit
-    per-raster access is needed.
-
-    Parameters
-    ----------
-    data_list: `list`
-        List of `SpectrogramCube` objects from the same spectral window and OBS ID.
-    meta: `dict` or header object, optional
-        Metadata associated with the sequence.
-    common_axis: `int`, optional
-        The axis of the NDCubes corresponding to time.
-    """
-
-    def __init__(self, data_list, meta=None, common_axis=0, **kwargs) -> None:
-        if data_list and len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
-            msg = "Constituent SpectrogramCube objects must have same value of 'OBSID' in its meta."
-            raise ValueError(msg)
-        super().__init__(data_list, meta=meta, common_axis=common_axis, **kwargs)
-
-    def __str__(self) -> str:
-        return super().__str__()
-
-    def as_cube(self):
-        """
-        Combine a raster sequence into one cube along the scan axis.
-
-        This supports both eager and memmapped raster sequences.
-        """
-        if any(getattr(cube, "_memmap", False) for cube in self):
-            from irispy.io.spectrograph import _combine_raster_sequence_lazy  # NOQA: PLC0415
-
-            return _combine_raster_sequence_lazy(self)
-        from irispy.io.spectrograph import _combine_raster_sequence  # NOQA: PLC0415
-
-        return _combine_raster_sequence(self)
-
-    def plot(self, *args, **kwargs):
-        axes_coordinates = kwargs.get("axes_coordinates")
-        cmap = kwargs.get("cmap")
-        if not cmap:
-            try:
-                cmap = plt.get_cmap(name=f"irissji{int(self.meta.detector[:3])}")
-            except Exception as e:  # NOQA: BLE001
-                logger.debug(e)
-                cmap = "viridis"
-        kwargs["cmap"] = cmap
-        if len(self.shape) == 1:
-            kwargs.pop("cmap")
-        kwargs.pop("axes_coordinates", None)
-        return finalize_iris_plot(IRISSequencePlotter(ndcube=self).plot(*args, **kwargs), axes_coordinates)
-
-    def remove_cosmic_rays(
-        self,
-        *,
-        method="rsliding",
-        sigma: float | None = None,
-        max_iters: int | None = None,
-        method_kwargs=None,
-    ):
-        """
-        Return a cleaned copy of each cube in the sequence.
-
-        This is a convenience wrapper around `irispy.utils.cosmic_rays.remove_cosmic_rays`.
-        """
-        return remove_cosmic_rays(
-            self,
-            method=method,
-            sigma=sigma,
-            max_iters=max_iters,
-            method_kwargs=method_kwargs,
-        )
-
-
 class RasterCollection(NDCollection):
     """
     Subclass of NDCollection for raster spectral windows keyed by window name.
 
-    Each value is normally a `SpectrogramCube`. `SpectrogramCubeSequence` remains
-    possible for transitional or opt-in per-raster workflows.
+    Each value is a `SpectrogramCube`.
     """
 
     def __str__(self) -> str:

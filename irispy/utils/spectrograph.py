@@ -2,8 +2,6 @@
 This module provides general utility functions called by code in spectrograph.
 """
 
-from copy import deepcopy
-
 import numpy as np
 
 import astropy.units as u
@@ -11,7 +9,7 @@ from astropy import constants
 
 from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 
-from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
@@ -41,11 +39,9 @@ def _get_calibration_fits_wcs(cube):
     return unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs
 
 
-def radiometric_calibration(
-    cube: SpectrogramCube | SpectrogramCubeSequence,
-) -> SpectrogramCube | SpectrogramCubeSequence:
+def radiometric_calibration(cube: SpectrogramCube) -> SpectrogramCube:
     """
-    Performs radiometric calibration on the input cube or cube sequence.
+    Performs radiometric calibration on the input cube.
 
     This takes into consideration also the observation time and uses the latest response.
 
@@ -62,12 +58,12 @@ def radiometric_calibration(
 
     Parameters
     ----------
-    cube : `irispy.spectrograph.SpectrogramCube` | `irispy.spectrograph.SpectrogramCubeSequence`
+    cube : `irispy.spectrograph.SpectrogramCube`
         The input cube to be calibrated.
 
     Returns
     -------
-    `irispy.spectrograph.SpectrogramCube` or `irispy.spectrograph.SpectrogramCubeSequence`
+    `irispy.spectrograph.SpectrogramCube`
         New cube in radiance units.
 
     Raises
@@ -86,12 +82,6 @@ def radiometric_calibration(
     here are :math:`erg s^{-1} sr^{-1} cm^{-2} Å^{-1}` and not :math:`erg s^{-1} sr^{-1} cm^{-2}`.
     Notice the extra :math:`Å^{-1}` in the units.
     """
-    if isinstance(cube, SpectrogramCubeSequence):
-        return SpectrogramCubeSequence(
-            [radiometric_calibration(c) for c in cube],
-            meta=deepcopy(cube.meta),
-            common_axis=getattr(cube, "_common_axis", None),
-        )
     detector_type = cube.meta.detector
     underlying_wcs = _get_calibration_fits_wcs(cube)
     # Get spectral dispersion per pixel.

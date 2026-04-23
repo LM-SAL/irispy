@@ -23,7 +23,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from sunpy.time import parse_time
 
 from irispy.meta import SGMeta
-from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils import calculate_uncertainty
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
 
@@ -268,21 +268,18 @@ def _combine_raster_meta(cubes, combined_shape):
     return meta
 
 
-def _validate_combinable_raster_sequence(sequence):
-    cubes = list(sequence)
+def _validate_combinable_raster_cubes(cubes):
+    cubes = tuple(cubes)
     if not cubes:
-        msg = "Cannot combine an empty raster sequence."
+        msg = "Cannot combine an empty raster cube list."
         raise ValueError(msg)
     if len(cubes) == 1:
         return cubes
-    if getattr(sequence, "_common_axis", None) != 0:
-        msg = "Only raster sequences with common_axis=0 can be combined into one cube."
-        raise NotImplementedError(msg)
     if any(cube.shape[1:] != cubes[0].shape[1:] for cube in cubes[1:]):
-        msg = "All rasters in the sequence must have the same slit and wavelength dimensions."
+        msg = "All raster cubes must have the same slit and wavelength dimensions."
         raise ValueError(msg)
     if any(cube.unit != cubes[0].unit for cube in cubes[1:]):
-        msg = "All rasters in the sequence must have the same data unit."
+        msg = "All raster cubes must have the same data unit."
         raise ValueError(msg)
     required_attrs = (
         "_raster_wcs_header",
@@ -291,7 +288,7 @@ def _validate_combinable_raster_sequence(sequence):
         "_raster_observer",
     )
     if any(not all(hasattr(cube, attr) for attr in required_attrs) for cube in cubes):
-        msg = "Sequence cubes do not expose the raster WCS metadata needed to build a combined cube."
+        msg = "Raster cubes do not expose the WCS metadata needed to build a combined cube."
         raise ValueError(msg)
     return cubes
 
@@ -301,19 +298,6 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap):
     pc_all = np.concatenate([cube._raster_pc_table for cube in cubes], axis=0)
     crval_all = np.concatenate([cube._raster_crval_table for cube in cubes], axis=0)
     starts = np.cumsum([0, *[c.shape[0] for c in cubes[:-1]]])
-    raster_memmap_segments = None
-    if memmap:
-        raster_memmap_segments = [
-            (
-                start,
-                start + cube.shape[0],
-                cube._memmap_path,
-                cube._memmap_ext,
-                cube._flip,
-                getattr(cube, "_memmap_slice", slice(0, cube.shape[0])),
-            )
-            for start, cube in zip(starts, cubes, strict=True)
-        ]
     combined_cube = SpectrogramCube(
         data,
         wcs=_create_raster_gwcs(
@@ -333,7 +317,6 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap):
         ],
         _raster_boundaries=[(start, start + cube.shape[0]) for start, cube in zip(starts, cubes, strict=True)],
         _memmap=memmap,
-        _raster_memmap_segments=raster_memmap_segments,
     )
     combined_cube.extra_coords.add("time", 0, times, physical_types="time")
     combined_cube._raster_wcs_header = cubes[0]._raster_wcs_header
@@ -359,19 +342,14 @@ def _load_memmap_raster_chunk(filename, ext, *, scan_slice, flip):
 def _build_lazy_raster_data(cubes):
     chunks = []
     for cube in cubes:
-        memmap_slice = getattr(cube, "_memmap_slice", slice(0, cube.shape[0]))
-        if memmap_slice.step not in (None, 1):
-            msg = "Lazy raster memmap chunks only support contiguous scan-axis slices."
-            raise NotImplementedError(msg)
         chunk_rows = _lazy_raster_scan_chunk_rows(cube)
-        base_start = 0 if memmap_slice.start is None else memmap_slice.start
         for local_start in range(0, cube.shape[0], chunk_rows):
             local_stop = min(local_start + chunk_rows, cube.shape[0])
             chunk = da.from_delayed(
                 delayed(_load_memmap_raster_chunk)(
                     cube._memmap_path,
                     cube._memmap_ext,
-                    scan_slice=slice(base_start + local_start, base_start + local_stop),
+                    scan_slice=slice(local_start, local_stop),
                     flip=cube._flip,
                 ),
                 shape=(local_stop - local_start, *cube.shape[1:]),
@@ -381,8 +359,8 @@ def _build_lazy_raster_data(cubes):
     return da.concatenate(chunks, axis=0)
 
 
-def _combine_raster_sequence_lazy(sequence):
-    cubes = _validate_combinable_raster_sequence(sequence)
+def _combine_raster_cubes_lazy(cubes):
+    cubes = _validate_combinable_raster_cubes(cubes)
     if len(cubes) == 1:
         return cubes[0]
     data = _build_lazy_raster_data(cubes)
@@ -390,25 +368,25 @@ def _combine_raster_sequence_lazy(sequence):
     return _build_combined_raster_cube(cubes, data, mask=mask, memmap=True)
 
 
-def _combine_raster_sequence(sequence):
-    cubes = _validate_combinable_raster_sequence(sequence)
+def _combine_raster_cubes(cubes):
+    cubes = _validate_combinable_raster_cubes(cubes)
     if len(cubes) == 1:
         return cubes[0]
     if any(getattr(cube, "_memmap", False) or isinstance(cube.data, np.memmap) for cube in cubes):
-        msg = "Use _combine_raster_sequence_lazy() for memmap-backed raster sequences."
+        msg = "Use _combine_raster_cubes_lazy() for memmap-backed raster cubes."
         raise NotImplementedError(msg)
     data = np.concatenate([cube.data for cube in cubes], axis=0)
     return _build_combined_raster_cube(cubes, data, mask=_concatenate_mask(cubes), memmap=False)
 
 
-def _finalize_window_object(cubes, primary_header, *, memmap):
+def _finalize_window_object(cubes, *, memmap):
     if len(cubes) == 1:
         cube = cubes[0]
         cube._raster_boundaries = [(0, cube.shape[0])]
         return cube
     if memmap:
-        return _combine_raster_sequence_lazy(SpectrogramCubeSequence(cubes, common_axis=0, meta=primary_header))
-    return _combine_raster_sequence(SpectrogramCubeSequence(cubes, common_axis=0, meta=primary_header))
+        return _combine_raster_cubes_lazy(cubes)
+    return _combine_raster_cubes(cubes)
 
 
 def read_spectrograph_lvl2(
@@ -604,10 +582,9 @@ def read_spectrograph_lvl2(
                 cube._memmap_path = filename
                 cube._memmap_ext = window_fits_indices[i]
                 cube._flip = flip
-                cube._memmap_slice = slice(0, cube.shape[0])
                 data_dict[window_name].append(cube)
     window_data_pairs = [
-        (_window_name, _finalize_window_object(cubes, primary_header, memmap=memmap))
+        (_window_name, _finalize_window_object(cubes, memmap=memmap))
         for _window_name, cubes in data_dict.items()
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1))

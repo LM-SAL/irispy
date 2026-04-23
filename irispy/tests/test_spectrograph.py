@@ -14,7 +14,6 @@ from astropy.tests.helper import assert_quantity_allclose
 from ndcube.utils.exceptions import NDCubeUserWarning
 
 from irispy.io.spectrograph import read_spectrograph_lvl2
-from irispy.spectrograph import SpectrogramCubeSequence
 
 
 def test_fits_data_comparison(sns_sg_file):
@@ -147,23 +146,7 @@ def test_spectrogram_cube_exposes_raster_grouping_helpers(raster_sg_files):
     assert len(cube.split_rasters()) == 13
 
 
-def test_spectrogram_cube_sequence_as_cube_combines_scan_axis(raster_sg_files):
-    raster = read_spectrograph_lvl2(raster_sg_files)
-    base_cube = raster["Si IV 1403"]
-    sequence = SpectrogramCubeSequence(list(base_cube.split_rasters()), meta=base_cube.meta, common_axis=0)
-
-    cube = sequence.as_cube()
-
-    assert cube.shape == tuple(sequence.cube_like_shape)
-    assert cube.time.shape == (sequence.cube_like_shape[0],)
-    assert cube.basic_wcs is None
-    assert tuple(cube.meta.data_shape) == tuple(sequence.cube_like_shape)
-    array_index = (10, 50, 10)
-    world = cube.wcs.array_index_to_world(*array_index)
-    assert cube.wcs.world_to_array_index(*world) == array_index
-
-
-def test_spectrogram_cube_sequence_as_cube_supports_crop_apis(raster_sg_files):
+def test_spectrogram_cube_supports_crop_apis(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
 
@@ -181,7 +164,7 @@ def test_spectrogram_cube_sequence_as_cube_supports_crop_apis(raster_sg_files):
     assert spectrum_by_values.data.ndim == 1
 
 
-def test_spectrogram_cube_sequence_as_cube_spectrum_at_works_without_basic_wcs(raster_sg_files):
+def test_spectrogram_cube_spectrum_at_works_without_basic_wcs(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
     _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
@@ -197,7 +180,7 @@ def test_spectrogram_cube_sequence_as_cube_spectrum_at_works_without_basic_wcs(r
     np.testing.assert_array_equal(spectrum.data, expected.data)
 
 
-def test_spectrogram_cube_sequence_as_cube_slice_recovers_segment_basic_wcs(raster_sg_files):
+def test_spectrogram_cube_scan_slice_recovers_segment_basic_wcs(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
 
@@ -214,18 +197,16 @@ def test_spectrogram_cube_sequence_as_cube_slice_recovers_segment_basic_wcs(rast
     assert_quantity_allclose(sub_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
 
 
-def test_spectrogram_cube_sequence_as_cube_supports_lazy_memmap_sequences(raster_sg_files):
+def test_memmap_split_rasters_returns_lazy_subcubes(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
-    base_cube = raster["Si IV 1403"]
-    sequence = SpectrogramCubeSequence(list(base_cube.split_rasters()), meta=base_cube.meta, common_axis=0)
-
-    cube = sequence.as_cube()
+    cube = raster["Si IV 1403"].split_rasters()[0]
 
     assert isinstance(cube.data, da.Array)
     assert isinstance(cube.mask, da.Array)
     assert cube.uncertainty is None
     assert cube._memmap is True
-    assert cube.raster_boundaries == base_cube.raster_boundaries
+    assert cube.basic_wcs is not None
+    assert cube.shape == (8, 109, 29)
 
 
 def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
@@ -335,38 +316,3 @@ def test_raster_animation_keeps_longitude_axis_after_slider_update(raster_sg_fil
     assert time.get_axislabel() == ""
     plt.close(fig)
 
-
-def test_raster_sequence_animation_keeps_requested_axis_after_slider_update(raster_sg_files):
-    raster = read_spectrograph_lvl2(raster_sg_files)
-    base_cube = raster["Si IV 1403"]
-    sequence = SpectrogramCubeSequence(list(base_cube.split_rasters()), meta=base_cube.meta, common_axis=0)
-    fig = plt.figure()
-    with pytest.warns(
-        NDCubeUserWarning,
-        match="Animating a NDCube does not support transposing the array",
-    ):
-        animator = sequence.plot(
-            fig=fig,
-            plot_axes=["x", "y", None],
-            axes_coordinates=["time", "custom:pos.helioprojective.lat", None],
-            vmin=0,
-            vmax=1000,
-        )
-
-    class _DummyText:
-        def set_text(self, _):
-            return None
-
-    slider = SimpleNamespace(cval=0, slider_ind=0, valtext=_DummyText())
-    animator.update_plot(1, animator.im, slider)
-    ax = animator.axes
-
-    longitude = _get_coord(ax, coord_type="longitude")
-    latitude = _get_coord(ax, coord_type="latitude")
-    time = _get_coord(ax, coord_type="scalar", coord_unit=u.s)
-
-    assert "b" in time.get_ticks_position()
-    assert "b" in time.get_axislabel_position()
-    assert "l" in latitude.get_ticks_position()
-    assert "b" not in longitude.get_ticks_position()
-    plt.close(fig)

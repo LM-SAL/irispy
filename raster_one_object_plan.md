@@ -41,27 +41,26 @@ per spectral window as the default public object.
   for multi-file rasters, backed by a dask array of scan-axis chunks sourced from
   file-backed FITS memmaps.
 - Combined cubes now expose `raster_boundaries`, `raster_slice(i)`, and `split_rasters()`.
-- `SpectrogramCubeSequence.as_cube()` exists as explicit transition helper.
-- `SpectrogramCubeSequence.as_cube()` now also supports memmapped raster sequences.
+- `SpectrogramCubeSequence` has been removed; per-raster access now goes through
+  `split_rasters()` and `raster_slice(i)`.
 - `SpectrogramCube.spectrum_at()` now works even when `basic_wcs is None` by
   falling back to gWCS sky matching.
 - `memmap=True` now consistently skips uncertainty computation, and lazy combined
-  cubes keep a lazy mask plus enough file-slice metadata to rebuild subcubes and
-  split rasters without losing the file-backed read path.
+  cubes keep a lazy mask while exposing per-raster subcubes through the combined
+  cube API.
 - Lazy memmap reads now split each raster file into smaller scan-axis dask
   chunks instead of reading one full-file chunk at a time, so interactive
   slices and spectra no longer pull an entire file by default.
-- Source docs/examples were swept to the one-cube default. The remaining
-  `SpectrogramCubeSequence` docs are the explicit API reference pages, pending a
-  deprecation/internal-only decision.
+- Source docs/examples were swept to the one-cube default, and the explicit
+  `SpectrogramCubeSequence` API pages were removed.
 - Validation so far:
   - focused raster/user tests updated and passing
   - `pytest --pyargs irispy -q` passed locally after the one-cube and lazy-policy work
 
 ## Still Missing
 
-- decision on whether public `SpectrogramCubeSequence` becomes deprecated or internal-only
-- cleanup of the explicit `SpectrogramCubeSequence` API docs once that decision is made
+- no major one-object UX items remain on this branch; remaining work is review and
+  any follow-on refinements discovered during PR feedback
 
 ## Validation Target
 
