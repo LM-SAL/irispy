@@ -29,6 +29,8 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOIS
 
 __all__ = ["read_spectrograph_lvl2"]
 
+LAZY_RASTER_TARGET_CHUNK_BYTES = 32 * 1024
+
 
 def _header_time(header, *keys):
     for key in keys:
@@ -341,27 +343,41 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap):
     return combined_cube
 
 
+def _lazy_raster_scan_chunk_rows(cube):
+    row_bytes = int(np.prod(cube.shape[1:]) * np.dtype(cube.data.dtype).itemsize)
+    return max(1, min(cube.shape[0], LAZY_RASTER_TARGET_CHUNK_BYTES // max(row_bytes, 1)))
+
+
 def _load_memmap_raster_chunk(filename, ext, *, scan_slice, flip):
     with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
-        data = np.array(hdulist[ext].data[scan_slice], copy=True)
-    return np.flip(data, axis=0) if flip else data
+        data = hdulist[ext].data
+        if flip:
+            data = np.flip(data, axis=0)
+        return np.array(data[scan_slice], copy=True)
 
 
 def _build_lazy_raster_data(cubes):
     chunks = []
     for cube in cubes:
         memmap_slice = getattr(cube, "_memmap_slice", slice(0, cube.shape[0]))
-        chunk = da.from_delayed(
-            delayed(_load_memmap_raster_chunk)(
-                cube._memmap_path,
-                cube._memmap_ext,
-                scan_slice=memmap_slice,
-                flip=cube._flip,
-            ),
-            shape=cube.shape,
-            dtype=cube.data.dtype,
-        )
-        chunks.append(chunk)
+        if memmap_slice.step not in (None, 1):
+            msg = "Lazy raster memmap chunks only support contiguous scan-axis slices."
+            raise NotImplementedError(msg)
+        chunk_rows = _lazy_raster_scan_chunk_rows(cube)
+        base_start = 0 if memmap_slice.start is None else memmap_slice.start
+        for local_start in range(0, cube.shape[0], chunk_rows):
+            local_stop = min(local_start + chunk_rows, cube.shape[0])
+            chunk = da.from_delayed(
+                delayed(_load_memmap_raster_chunk)(
+                    cube._memmap_path,
+                    cube._memmap_ext,
+                    scan_slice=slice(base_start + local_start, base_start + local_stop),
+                    flip=cube._flip,
+                ),
+                shape=(local_stop - local_start, *cube.shape[1:]),
+                dtype=cube.data.dtype,
+            )
+            chunks.append(chunk)
     return da.concatenate(chunks, axis=0)
 
 

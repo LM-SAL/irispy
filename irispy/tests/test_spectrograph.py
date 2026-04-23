@@ -248,6 +248,15 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
     assert image.data.ndim == 2
 
 
+def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
+    cube = raster["Si IV 1403"]
+
+    assert isinstance(cube.data, da.Array)
+    assert len(cube.data.chunks[0]) > len(cube.raster_boundaries)
+    assert max(cube.data.chunks[0]) < cube.raster_slice(0).shape[0]
+
+
 def _get_coord(ax, *, coord_type=None, coord_unit=None):
     for coord in ax.coords:
         if coord_type is not None and coord.coord_type != coord_type:
