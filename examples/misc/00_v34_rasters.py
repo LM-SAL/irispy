@@ -64,8 +64,8 @@ print(mg_ii_k)
 # ``(spectral, sky, time, scan_step)``. Here we only constrain wavelength.
 lower_corner = [SpectralCoord(280, unit=u.nm), None, None, None]
 
-mg_spec_crop = mg_ii_k[0].crop(lower_corner, lower_corner)
-mg_spec_unflipped_crop = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
+mg_spec_crop = mg_ii_k.crop(lower_corner, lower_corner)
+mg_spec_unflipped_crop = mg_ii_k_unflipped.crop(lower_corner, lower_corner)
 
 fig = plt.figure(figsize=(6, 12))
 ax = fig.add_subplot(121, projection=mg_spec_crop.wcs)
@@ -93,11 +93,11 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 # We choose a specific helioprojective location and crop the spectrogram down to the
 # spectrum at that point.
 
-iris_observer = wcs_to_celestial_frame(mg_ii_k[0].basic_wcs.celestial).observer
+iris_observer = wcs_to_celestial_frame(mg_ii_k.basic_wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
 target = SkyCoord(-908 * u.arcsec, 311 * u.arcsec, frame=iris_frame)
-mg_ii_k_unflipped_spectra = mg_ii_k_unflipped[0].spectrum_at(target)
-mg_ii_k_spectra = mg_ii_k[0].spectrum_at(target)
+mg_ii_k_unflipped_spectra = mg_ii_k_unflipped.spectrum_at(target)
+mg_ii_k_spectra = mg_ii_k.spectrum_at(target)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii_k_unflipped_spectra.wcs)

@@ -158,7 +158,8 @@ def test_remove_cosmic_rays_supports_spectrogram_cube_sequence(raster_sg_files, 
         types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping),
     )
 
-    sequence = read_files(raster_sg_files[:2])["Si IV 1403"]
+    cube = read_files(raster_sg_files[:2])["Si IV 1403"]
+    sequence = SpectrogramCubeSequence(list(cube.split_rasters()), meta=cube.meta, common_axis=0)
     cleaned_sequence = remove_cosmic_rays(sequence, method="rsliding")
 
     assert isinstance(cleaned_sequence, SpectrogramCubeSequence)

@@ -26,7 +26,7 @@ time_support()
 # but using your browser will also work.
 #
 # Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml
-# we are after the 1400 Slit-Jaw and the raster sequence (~900 MB).
+# we are after the 1400 Slit-Jaw and the raster observation (~900 MB).
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_raster.tar.gz",
@@ -51,8 +51,8 @@ sji_1400 = read_files(sji_filename, memmap=True, uncertainty=False)
 # We are after the Mg II k and C II lines, which we can select using keys.
 # Then we will produce a space-time image of the Mg II k3 line.
 
-mg_ii = raster["Mg II k 2796"][0]
-c_ii = raster["C II 1336"][0]
+mg_ii = raster["Mg II k 2796"]
+c_ii = raster["C II 1336"]
 
 # Instead of using a pixel index, we can crop the data in wavelength space.
 lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]

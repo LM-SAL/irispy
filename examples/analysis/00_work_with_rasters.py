@@ -53,14 +53,8 @@ mg_ii = raster["Mg II k 2796"]
 print(mg_ii)
 
 ###############################################################################
-# This is a `irispy.spectrograph.SpectrogramCubeSequence` which contains each
-# complete raster as one individual `irispy.spectrograph.SpectrogramCube` object.
-# In this case, it was only one complete raster, so the first axis is only length 1.
-#
-# So we will index to get the first raster and work with that.
-
-mg_ii = mg_ii[0]
-print(mg_ii)
+# For a non-memmapped raster, each spectral window is returned as one
+# `irispy.spectrograph.SpectrogramCube`.
 
 ###############################################################################
 # Now we have more information about the data, including the OBS ID and description.
