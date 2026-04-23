@@ -214,8 +214,22 @@ def test_spectrogram_cube_sequence_as_cube_slice_recovers_segment_basic_wcs(rast
     assert_quantity_allclose(sub_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
 
 
+def test_spectrogram_cube_sequence_as_cube_supports_lazy_memmap_sequences(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
+    base_cube = raster["Si IV 1403"]
+    sequence = SpectrogramCubeSequence(list(base_cube.split_rasters()), meta=base_cube.meta, common_axis=0)
+
+    cube = sequence.as_cube()
+
+    assert isinstance(cube.data, da.Array)
+    assert isinstance(cube.mask, da.Array)
+    assert cube.uncertainty is None
+    assert cube._memmap is True
+    assert cube.raster_boundaries == base_cube.raster_boundaries
+
+
 def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
-    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
     cube = raster["Si IV 1403"]
     _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
     spectrum = cube.spectrum_at(target)
@@ -225,9 +239,11 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
     )
 
     assert isinstance(cube.data, da.Array)
+    assert isinstance(cube.mask, da.Array)
     assert cube._memmap is True
     assert len(cube.raster_boundaries) == 13
     assert cube.basic_wcs is None
+    assert cube.uncertainty is None
     assert spectrum.data.ndim == 1
     assert image.data.ndim == 2
 

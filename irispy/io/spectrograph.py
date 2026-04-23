@@ -299,6 +299,19 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap):
     pc_all = np.concatenate([cube._raster_pc_table for cube in cubes], axis=0)
     crval_all = np.concatenate([cube._raster_crval_table for cube in cubes], axis=0)
     starts = np.cumsum([0, *[c.shape[0] for c in cubes[:-1]]])
+    raster_memmap_segments = None
+    if memmap:
+        raster_memmap_segments = [
+            (
+                start,
+                start + cube.shape[0],
+                cube._memmap_path,
+                cube._memmap_ext,
+                cube._flip,
+                getattr(cube, "_memmap_slice", slice(0, cube.shape[0])),
+            )
+            for start, cube in zip(starts, cubes, strict=True)
+        ]
     combined_cube = SpectrogramCube(
         data,
         wcs=_create_raster_gwcs(
@@ -318,6 +331,7 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap):
         ],
         _raster_boundaries=[(start, start + cube.shape[0]) for start, cube in zip(starts, cubes, strict=True)],
         _memmap=memmap,
+        _raster_memmap_segments=raster_memmap_segments,
     )
     combined_cube.extra_coords.add("time", 0, times, physical_types="time")
     combined_cube._raster_wcs_header = cubes[0]._raster_wcs_header
@@ -327,17 +341,23 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap):
     return combined_cube
 
 
-def _load_memmap_raster_chunk(filename, ext, *, flip):
+def _load_memmap_raster_chunk(filename, ext, *, scan_slice, flip):
     with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
-        data = np.array(hdulist[ext].data, copy=True)
+        data = np.array(hdulist[ext].data[scan_slice], copy=True)
     return np.flip(data, axis=0) if flip else data
 
 
 def _build_lazy_raster_data(cubes):
     chunks = []
     for cube in cubes:
+        memmap_slice = getattr(cube, "_memmap_slice", slice(0, cube.shape[0]))
         chunk = da.from_delayed(
-            delayed(_load_memmap_raster_chunk)(cube._memmap_path, cube._memmap_ext, flip=cube._flip),
+            delayed(_load_memmap_raster_chunk)(
+                cube._memmap_path,
+                cube._memmap_ext,
+                scan_slice=memmap_slice,
+                flip=cube._flip,
+            ),
             shape=cube.shape,
             dtype=cube.data.dtype,
         )
@@ -359,7 +379,7 @@ def _combine_raster_sequence(sequence):
     if len(cubes) == 1:
         return cubes[0]
     if any(getattr(cube, "_memmap", False) or isinstance(cube.data, np.memmap) for cube in cubes):
-        msg = "SpectrogramCubeSequence.as_cube() does not support memmap=True yet."
+        msg = "Use _combine_raster_sequence_lazy() for memmap-backed raster sequences."
         raise NotImplementedError(msg)
     data = np.concatenate([cube.data for cube in cubes], axis=0)
     return _build_combined_raster_cube(cubes, data, mask=_concatenate_mask(cubes), memmap=False)
@@ -415,6 +435,7 @@ def read_spectrograph_lvl2(
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
+    compute_uncertainty = uncertainty and not memmap
     with fits.open(filenames[0], memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
         v34 = hdulist[0].header["STEPS_AV"] < -0.01
         hdulist.verify("silentfix")
@@ -532,7 +553,7 @@ def read_spectrograph_lvl2(
                 data_mask = None
                 if not memmap:
                     data_mask = hdulist[window_fits_indices[i]].data == BAD_PIXEL_VALUE_SCALED
-                if uncertainty:
+                if compute_uncertainty:
                     out_uncertainty = calculate_uncertainty(
                         hdulist[window_fits_indices[i]].data,
                         readout_noise,
@@ -567,6 +588,7 @@ def read_spectrograph_lvl2(
                 cube._memmap_path = filename
                 cube._memmap_ext = window_fits_indices[i]
                 cube._flip = flip
+                cube._memmap_slice = slice(0, cube.shape[0])
                 data_dict[window_name].append(cube)
     window_data_pairs = [
         (_window_name, _finalize_window_object(cubes, primary_header, memmap=memmap))

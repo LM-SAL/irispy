@@ -5,6 +5,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs.utils import wcs_to_celestial_frame
+import dask.array as da
 
 from sunpy.coordinates import Helioprojective
 
@@ -160,6 +161,15 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(sns_sg_file)
     read_spectrograph_lvl2(raster_sg_file)
     read_spectrograph_lvl2(raster_sg_files)
+
+
+def test_memmap_mode_never_computes_uncertainty(sns_sg_file, raster_sg_files):
+    sit_and_stare = read_spectrograph_lvl2(sns_sg_file, memmap=True, uncertainty=True)["Si IV 1403"]
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)["Si IV 1403"]
+
+    assert sit_and_stare.uncertainty is None
+    assert raster.uncertainty is None
+    assert isinstance(raster.mask, da.Array)
 
 
 def test_read_spectrograph_lvl2_reports_all_missing_spectral_windows(raster_sg_file):

@@ -41,16 +41,24 @@ per spectral window as the default public object.
   for multi-file rasters, backed by a dask array with one file-sized chunk per raster file.
 - Combined cubes now expose `raster_boundaries`, `raster_slice(i)`, and `split_rasters()`.
 - `SpectrogramCubeSequence.as_cube()` exists as explicit transition helper.
+- `SpectrogramCubeSequence.as_cube()` now also supports memmapped raster sequences.
 - `SpectrogramCube.spectrum_at()` now works even when `basic_wcs is None` by
   falling back to gWCS sky matching.
-- Focused tests and key examples/docs were updated to the one-cube default.
+- `memmap=True` now consistently skips uncertainty computation, and lazy combined
+  cubes keep a lazy mask plus enough file-slice metadata to rebuild subcubes and
+  split rasters without losing the file-backed read path.
+- Source docs/examples were swept to the one-cube default. The remaining
+  `SpectrogramCubeSequence` docs are the explicit API reference pages, pending a
+  deprecation/internal-only decision.
+- Validation so far:
+  - focused raster/user tests updated and passing
+  - `pytest --pyargs irispy -q` passed locally after the one-cube and lazy-policy work
 
 ## Still Missing
 
-- broader doc/example cleanup after full transition
 - more granular lazy reads than one full file per dask chunk
-- policy for uncertainty/mask behavior on lazy cubes beyond the current first pass
 - decision on whether public `SpectrogramCubeSequence` becomes deprecated or internal-only
+- cleanup of the explicit `SpectrogramCubeSequence` API docs once that decision is made
 
 ## Validation Target
 

@@ -87,6 +87,8 @@ class SpectrogramCube(SpecCube):
         self._basic_wcs_segments = kwargs.pop("_basic_wcs_segments", None)
         self._raster_boundaries = kwargs.pop("_raster_boundaries", None)
         self._memmap = kwargs.pop("_memmap", False)
+        self._memmap_slice = kwargs.pop("_memmap_slice", None)
+        self._raster_memmap_segments = kwargs.pop("_raster_memmap_segments", None)
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     @property
@@ -202,11 +204,30 @@ class SpectrogramCube(SpecCube):
                 boundaries.append((overlap_start - scan_start, overlap_stop - scan_start))
         return boundaries or None
 
+    def _slice_raster_memmap_segments_for_slice(self, scan_item):
+        if not self._raster_memmap_segments:
+            return None
+        scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
+        if scan_step != 1 or scan_start >= scan_stop:
+            return None
+        segments = []
+        for segment_start, segment_stop, path, ext, flip, memmap_slice in self._raster_memmap_segments:
+            overlap_start = max(segment_start, scan_start)
+            overlap_stop = min(segment_stop, scan_stop)
+            if overlap_start >= overlap_stop:
+                continue
+            base_start = 0 if memmap_slice is None or memmap_slice.start is None else memmap_slice.start
+            local_start = base_start + (overlap_start - segment_start)
+            local_stop = base_start + (overlap_stop - segment_start)
+            segments.append((overlap_start - scan_start, overlap_stop - scan_start, path, ext, flip, slice(local_start, local_stop)))
+        return segments or None
+
     def _slice_raster_metadata(self, item, sliced_self):
         normalized_item = self._normalize_basic_wcs_item(item)
         if normalized_item is None:
             sliced_self._basic_wcs_segments = None
             sliced_self._raster_boundaries = None
+            sliced_self._raster_memmap_segments = None
             return
 
         scan_item = normalized_item[0]
@@ -218,6 +239,7 @@ class SpectrogramCube(SpecCube):
         if isinstance(scan_item, Integral):
             sliced_self._basic_wcs_segments = None
             sliced_self._raster_boundaries = None
+            sliced_self._raster_memmap_segments = None
             return
 
         for attr in ("_raster_pc_table", "_raster_crval_table"):
@@ -226,6 +248,17 @@ class SpectrogramCube(SpecCube):
                 setattr(sliced_self, attr, value[scan_item])
         sliced_self._basic_wcs_segments = self._slice_basic_wcs_segments_for_slice(scan_item)
         sliced_self._raster_boundaries = self._slice_raster_boundaries_for_slice(scan_item)
+        sliced_self._raster_memmap_segments = self._slice_raster_memmap_segments_for_slice(scan_item)
+        if sliced_self._raster_memmap_segments and len(sliced_self._raster_memmap_segments) == 1:
+            _, _, path, ext, flip, memmap_slice = sliced_self._raster_memmap_segments[0]
+            sliced_self._memmap_path = path
+            sliced_self._memmap_ext = ext
+            sliced_self._flip = flip
+            sliced_self._memmap_slice = memmap_slice
+        else:
+            for attr in ("_memmap_path", "_memmap_ext", "_flip", "_memmap_slice"):
+                if hasattr(sliced_self, attr):
+                    delattr(sliced_self, attr)
 
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
@@ -437,8 +470,12 @@ class SpectrogramCubeSequence(SpecSeq):
         """
         Combine a raster sequence into one cube along the scan axis.
 
-        The first implementation supports eager, non-memmapped raster sequences.
+        This supports both eager and memmapped raster sequences.
         """
+        if any(getattr(cube, "_memmap", False) for cube in self):
+            from irispy.io.spectrograph import _combine_raster_sequence_lazy  # NOQA: PLC0415
+
+            return _combine_raster_sequence_lazy(self)
         from irispy.io.spectrograph import _combine_raster_sequence  # NOQA: PLC0415
 
         return _combine_raster_sequence(self)
