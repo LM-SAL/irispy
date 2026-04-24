@@ -180,6 +180,21 @@ def test_spectrogram_cube_spectrum_at_works_without_basic_wcs(raster_sg_files):
     np.testing.assert_array_equal(spectrum.data, expected.data)
 
 
+def test_spectrogram_cube_spectrum_at_avoids_full_sky_grid_when_segment_wcs_exists(raster_sg_files, monkeypatch):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+
+    def fail_axis_world_coords(*_args, **_kwargs):
+        msg = "full sky grid lookup should not be used"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(cube, "axis_world_coords", fail_axis_world_coords)
+    spectrum = cube.spectrum_at(target)
+
+    assert spectrum.shape == (cube.shape[-1],)
+
+
 def test_spectrogram_cube_scan_slice_recovers_segment_basic_wcs(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]

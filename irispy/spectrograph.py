@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import astropy.units as u
+from astropy.coordinates import SkyCoord
+from astropy.wcs.utils import wcs_to_celestial_frame
 
 from ndcube import NDCollection
 from sunpy import log as logger
@@ -315,6 +317,57 @@ class SpectrogramCube(SpecCube):
             return (self,)
         return tuple(self[raster_slice] for raster_slice in boundaries)
 
+    def _nearest_raster_segment(self, target, *, clip):
+        if not self._raster_boundaries:
+            return None
+
+        best_match = None
+        for segment_index, raster_slice in enumerate(self.raster_boundaries):
+            segment_cube = self[raster_slice]
+            step_indices = np.arange(segment_cube.shape[0], dtype=int)
+            if segment_cube.basic_wcs is not None:
+                guess_target = SkyCoord(
+                    target.Tx,
+                    target.Ty,
+                    frame=wcs_to_celestial_frame(segment_cube.basic_wcs.celestial),
+                )
+                _, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
+                slit_guess = int(np.clip(slit_guess, 0, segment_cube.shape[1] - 1))
+                slit_indices = np.arange(
+                    max(0, slit_guess - 64),
+                    min(segment_cube.shape[1], slit_guess + 65),
+                    dtype=int,
+                )
+            else:
+                slit_indices = np.arange(segment_cube.shape[1], dtype=int)
+            step_index_grid, slit_index_grid = np.meshgrid(step_indices, slit_indices, indexing="ij")
+            wavelength_index_grid = np.zeros_like(step_index_grid)
+            sky = segment_cube.wcs.array_index_to_world(
+                step_index_grid,
+                slit_index_grid,
+                wavelength_index_grid,
+            )[1]
+            separation = np.hypot(
+                (sky.Tx - target.Tx).to_value(u.arcsec),
+                (sky.Ty - target.Ty).to_value(u.arcsec),
+            )
+            local_index = np.unravel_index(np.nanargmin(separation), separation.shape)
+            score = float(separation[local_index])
+            if best_match is None or score < best_match[0]:
+                best_match = (
+                    score,
+                    segment_index,
+                    int(step_index_grid[local_index]),
+                    int(slit_index_grid[local_index]),
+                )
+
+        if best_match is None:
+            if clip:
+                return None
+            msg = "Target is outside the raster bounds."
+            raise ValueError(msg)
+        return best_match
+
     def spectrum_at(self, target, *, clip=True):
         """
         Return the spectrum at the raster pixel nearest a sky coordinate.
@@ -347,21 +400,29 @@ class SpectrogramCube(SpecCube):
                     msg = "Target is outside the raster bounds."
                     raise ValueError(msg)
         else:
-            sky_grid = self.axis_world_coords("custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat")[0]
-            target_in_frame = target.transform_to(sky_grid)
-            if not clip:
-                lon = target_in_frame.Tx.to(u.arcsec)
-                lat = target_in_frame.Ty.to(u.arcsec)
-                if (
-                    lon < np.nanmin(sky_grid.Tx)
-                    or lon > np.nanmax(sky_grid.Tx)
-                    or lat < np.nanmin(sky_grid.Ty)
-                    or lat > np.nanmax(sky_grid.Ty)
-                ):
-                    msg = "Target is outside the raster bounds."
-                    raise ValueError(msg)
-            separation = sky_grid.separation(target_in_frame)
-            step_index, slit_index = np.unravel_index(np.nanargmin(separation.to_value(u.arcsec)), separation.shape)
+            nearest_segment = self._nearest_raster_segment(target, clip=clip)
+            if nearest_segment is None:
+                sky_grid = self.axis_world_coords("custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat")[0]
+                target_in_frame = target.transform_to(sky_grid)
+                if not clip:
+                    lon = target_in_frame.Tx.to(u.arcsec)
+                    lat = target_in_frame.Ty.to(u.arcsec)
+                    if (
+                        lon < np.nanmin(sky_grid.Tx)
+                        or lon > np.nanmax(sky_grid.Tx)
+                        or lat < np.nanmin(sky_grid.Ty)
+                        or lat > np.nanmax(sky_grid.Ty)
+                    ):
+                        msg = "Target is outside the raster bounds."
+                        raise ValueError(msg)
+                separation = sky_grid.separation(target_in_frame)
+                step_index, slit_index = np.unravel_index(np.nanargmin(separation.to_value(u.arcsec)), separation.shape)
+            else:
+                _, nearest_segment_index, step_index, slit_index = nearest_segment
+                segment_cube = self.raster_slice(nearest_segment_index)
+                start = segment_cube.wcs.array_index_to_world(step_index, slit_index, 0)
+                stop = segment_cube.wcs.array_index_to_world(step_index, slit_index, segment_cube.shape[-1] - 1)
+                return segment_cube.crop(start, stop)
 
         start = self.wcs.array_index_to_world(step_index, slit_index, 0)
         stop = self.wcs.array_index_to_world(step_index, slit_index, self.shape[-1] - 1)
