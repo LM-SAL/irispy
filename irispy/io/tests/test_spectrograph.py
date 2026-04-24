@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 
 import dask.array as da
@@ -12,7 +13,7 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import _create_raster_gwcs, read_spectrograph_lvl2
+from irispy.io.spectrograph import _create_raster_gwcs, _sanitize_raster_wcs_tables, read_spectrograph_lvl2
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -327,3 +328,34 @@ def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files
         assert_quantity_allclose(spectral.to(u.nm), basic_spectral.to(u.nm))
         assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=10 * u.arcsec)
         assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=1 * u.arcsec)
+
+
+def test_sanitize_raster_wcs_tables_all_bad_rows_uses_fallback():
+    """When every row is all-zero, fallback values must be applied."""
+    pc = np.zeros((3, 2, 2)) * u.pix
+    crval = np.zeros((3, 2)) * u.arcsec
+    fallback_pc = np.array([[1.0, 0.1], [0.2, 0.9]]) * u.pix
+    fallback_crval = np.array([150.0, 250.0]) * u.arcsec
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        pc_out, crval_out = _sanitize_raster_wcs_tables(pc.copy(), crval, fallback_pc, fallback_crval)
+        assert len(w) == 2
+        assert "all-zero" in str(w[0].message)
+        assert "fallback" in str(w[1].message).lower()
+
+    expected_pc = np.repeat(fallback_pc.to_value(u.pix)[None, ...], 3, axis=0)
+    expected_crval = np.repeat(fallback_crval.to_value(u.arcsec)[None, ...], 3, axis=0)
+    np.testing.assert_allclose(pc_out.to_value(u.pix), expected_pc)
+    np.testing.assert_allclose(crval_out.to_value(u.arcsec), expected_crval)
+
+
+def test_sanitize_raster_wcs_tables_all_bad_rows_without_fallback_raises():
+    """When every row is all-zero and no fallback is given, a clear error is raised."""
+    pc = np.zeros((2, 2, 2)) * u.pix
+    crval = np.zeros((2, 2)) * u.arcsec
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        with pytest.raises(ValueError, match="All WCS table rows are bad"):
+            _sanitize_raster_wcs_tables(pc.copy(), crval)

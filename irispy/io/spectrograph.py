@@ -1,10 +1,8 @@
 import warnings
-from copy import copy, deepcopy
+from copy import copy
 from pathlib import Path
 
-import dask.array as da
 import numpy as np
-from dask import delayed
 
 import astropy.modeling.models as m
 import astropy.units as u
@@ -22,14 +20,13 @@ from sunpy.coordinates.screens import SphericalScreen
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from sunpy.time import parse_time
 
+from irispy.io._raster_combine import _finalize_window_object
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUE_UNSCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
 
 __all__ = ["read_spectrograph_lvl2"]
-
-LAZY_RASTER_TARGET_CHUNK_BYTES = 4 * 1024 * 1024
 
 
 def _header_time(header, *keys):
@@ -220,6 +217,15 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     helioprojective sky coordinates, elapsed time from ``t_ref``, and an
     explicit scan-step coordinate so the inverse stays stable for crops and
     other round-trips where sky or time alone are not unique.
+
+    Notes
+    -----
+    The gWCS inverse deliberately ignores the time component (axis 3) and
+    uses sky position plus the explicit scan-step coordinate to determine the
+    pixel index. This is required because time may not be monotonic across
+    flipped or repeated rasters. Consequently, ``world_to_array_index`` will
+    return the same pixel regardless of the time value passed in the world
+    tuple.
     """
     if window_header.get("CUNIT1", "").lower() == "angstrom":
         cdelt1 = window_header["CDELT1"] * 0.1
@@ -307,188 +313,6 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         input_frame=pixel_frame,
         output_frame=output_frame,
     )
-
-
-def _concatenate_scan_aligned_values(values):
-    first = values[0]
-    if isinstance(first, SkyCoord):
-        return SkyCoord(np.concatenate(values))
-    return np.concatenate(values)
-
-
-def _concatenate_uncertainty(cubes):
-    if all(cube.uncertainty is None for cube in cubes):
-        return None
-    if any(cube.uncertainty is None for cube in cubes):
-        msg = "Cannot combine a raster sequence when only some cubes contain uncertainty."
-        raise ValueError(msg)
-    uncertainty_type = type(cubes[0].uncertainty)
-    return uncertainty_type(np.concatenate([cube.uncertainty.array for cube in cubes], axis=0))
-
-
-def _concatenate_mask(cubes):
-    if all(cube.mask is None for cube in cubes):
-        return None
-    return np.concatenate(
-        [
-            np.zeros(cube.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
-            for cube in cubes
-        ],
-        axis=0,
-    )
-
-
-def _combine_raster_meta(cubes, combined_shape):
-    meta = deepcopy(cubes[0].meta)
-    meta._data_shape = np.asarray(combined_shape, dtype=int)
-    meta["NAXIS3"] = combined_shape[0]
-    if "NAXIS3" in meta.fits_header:
-        meta.fits_header["NAXIS3"] = combined_shape[0]
-    for key in ("DATE_END", "ENDOBS"):
-        if cubes[-1].meta.get(key) is not None:
-            meta[key] = cubes[-1].meta[key]
-            if key in meta.fits_header:
-                meta.fits_header[key] = cubes[-1].meta[key]
-    for key in ("exposure time", "exposure FOV center", "observer radial velocity", "orbital phase"):
-        meta.add(
-            key,
-            _concatenate_scan_aligned_values([cube.meta[key] for cube in cubes]),
-            axes=0,
-            overwrite=True,
-        )
-    return meta
-
-
-def _validate_combinable_raster_cubes(cubes):
-    cubes = tuple(cubes)
-    if not cubes:
-        msg = "Cannot combine an empty raster cube list."
-        raise ValueError(msg)
-    if len(cubes) == 1:
-        return cubes
-    if any(cube.shape[1:] != cubes[0].shape[1:] for cube in cubes[1:]):
-        msg = "All raster cubes must have the same slit and wavelength dimensions."
-        raise ValueError(msg)
-    if any(cube.unit != cubes[0].unit for cube in cubes[1:]):
-        msg = "All raster cubes must have the same data unit."
-        raise ValueError(msg)
-    required_attrs = (
-        "_raster_wcs_header",
-        "_raster_pc_table",
-        "_raster_crval_table",
-        "_raster_observer",
-    )
-    if any(not all(hasattr(cube, attr) for attr in required_attrs) for cube in cubes):
-        msg = "Raster cubes do not expose the WCS metadata needed to build a combined cube."
-        raise ValueError(msg)
-    return cubes
-
-
-def _build_combined_raster_cube(cubes, data, *, mask, memmap):
-    times = Time(np.concatenate([cube.time for cube in cubes]))
-    pc_all = np.concatenate([cube._raster_pc_table for cube in cubes], axis=0)
-    crval_all = np.concatenate([cube._raster_crval_table for cube in cubes], axis=0)
-    starts = np.cumsum([0, *[c.shape[0] for c in cubes[:-1]]])
-    combined_cube = SpectrogramCube(
-        data,
-        wcs=_create_raster_gwcs(
-            cubes[0]._raster_wcs_header,
-            pc_all,
-            crval_all,
-            (times - times[0]).to_value(u.s) * u.s,
-            times[0],
-            cubes[0]._raster_observer,
-        ),
-        uncertainty=_concatenate_uncertainty(cubes),
-        unit=cubes[0].unit,
-        meta=_combine_raster_meta(cubes, data.shape),
-        mask=mask,
-        _basic_wcs_segments=[
-            (start, start + cube.shape[0], cube.basic_wcs) for start, cube in zip(starts, cubes, strict=True)
-        ],
-        _raster_boundaries=[(start, start + cube.shape[0]) for start, cube in zip(starts, cubes, strict=True)],
-        _memmap=memmap,
-    )
-    combined_cube.extra_coords.add("time", 0, times, physical_types="time")
-    combined_cube._raster_wcs_header = cubes[0]._raster_wcs_header
-    combined_cube._raster_pc_table = pc_all
-    combined_cube._raster_crval_table = crval_all
-    combined_cube._raster_observer = cubes[0]._raster_observer
-    return combined_cube
-
-
-def _lazy_raster_scan_chunk_rows(cube):
-    row_bytes = int(np.prod(cube.shape[1:]) * np.dtype(cube.data.dtype).itemsize)
-    return max(1, min(cube.shape[0], LAZY_RASTER_TARGET_CHUNK_BYTES // max(row_bytes, 1)))
-
-
-def _read_memmap_window_chunk(filename, ext, flip, start, stop):
-    """Read one scan-axis chunk from disk after the public reader has returned."""
-    with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
-        data = hdulist[ext].data
-        if flip:
-            original_start = data.shape[0] - stop
-            original_stop = data.shape[0] - start
-            data = data[original_start:original_stop][::-1]
-        else:
-            data = data[start:stop]
-        return np.array(data, copy=True)
-
-
-def _build_lazy_raster_data(cubes):
-    chunks = []
-    for cube in cubes:
-        chunk_rows = _lazy_raster_scan_chunk_rows(cube)
-        filename = getattr(cube, "_memmap_path", None)
-        ext = getattr(cube, "_memmap_ext", None)
-        if filename is None or ext is None:
-            chunks.append(
-                da.from_array(
-                    cube.data,
-                    chunks=(chunk_rows, *cube.shape[1:]),
-                    fancy=False,
-                    asarray=False,
-                )
-            )
-            continue
-
-        raster_chunks = []
-        for start in range(0, cube.shape[0], chunk_rows):
-            stop = min(start + chunk_rows, cube.shape[0])
-            chunk = delayed(_read_memmap_window_chunk)(filename, ext, getattr(cube, "_flip", False), start, stop)
-            raster_chunks.append(da.from_delayed(chunk, shape=(stop - start, *cube.shape[1:]), dtype=cube.data.dtype))
-        chunks.append(da.concatenate(raster_chunks, axis=0))
-    return da.concatenate(chunks, axis=0)
-
-
-def _combine_raster_cubes_lazy(cubes):
-    cubes = _validate_combinable_raster_cubes(cubes)
-    if len(cubes) == 1:
-        return cubes[0]
-    data = _build_lazy_raster_data(cubes)
-    mask = data == BAD_PIXEL_VALUE_UNSCALED
-    return _build_combined_raster_cube(cubes, data, mask=mask, memmap=True)
-
-
-def _combine_raster_cubes(cubes):
-    cubes = _validate_combinable_raster_cubes(cubes)
-    if len(cubes) == 1:
-        return cubes[0]
-    if any(getattr(cube, "_memmap", False) or isinstance(cube.data, np.memmap) for cube in cubes):
-        msg = "Use _combine_raster_cubes_lazy() for memmap-backed raster cubes."
-        raise NotImplementedError(msg)
-    data = np.concatenate([cube.data for cube in cubes], axis=0)
-    return _build_combined_raster_cube(cubes, data, mask=_concatenate_mask(cubes), memmap=False)
-
-
-def _finalize_window_object(cubes, *, memmap):
-    if len(cubes) == 1:
-        cube = cubes[0]
-        cube._raster_boundaries = [(0, cube.shape[0])]
-        return cube
-    if memmap:
-        return _combine_raster_cubes_lazy(cubes)
-    return _combine_raster_cubes(cubes)
 
 
 def read_spectrograph_lvl2(
@@ -700,6 +524,7 @@ def read_spectrograph_lvl2(
                 cube._flip = flip
                 data_dict[window_name].append(cube)
     window_data_pairs = [
-        (_window_name, _finalize_window_object(cubes, memmap=memmap)) for _window_name, cubes in data_dict.items()
+        (_window_name, _finalize_window_object(cubes, memmap=memmap, create_raster_gwcs=_create_raster_gwcs))
+        for _window_name, cubes in data_dict.items()
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1))

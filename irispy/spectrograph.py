@@ -1,5 +1,4 @@
 import textwrap
-from numbers import Integral
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +10,7 @@ from ndcube import NDCollection
 from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
 
+from irispy._spectrograph_wcs import _SpectrogramCubeWCSMixin
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.visualization import IRISPlotter, finalize_iris_plot
 
@@ -20,33 +20,7 @@ RASTER_SEGMENT_STEP_SEARCH_RADIUS = 2
 RASTER_SEGMENT_SLIT_SEARCH_RADIUS = 16
 
 
-def _normalize_tuple_index(item, ndim):
-    """
-    Normalize a tuple index to explicit per-axis entries.
-
-    Returns
-    -------
-    list or None
-        A normalized list of length ``ndim`` when normalization is valid.
-        Returns ``None`` when the tuple contains more than one ellipsis.
-    """
-    normalized_item = []
-    ellipsis_seen = False
-    for subitem in item:
-        if subitem is Ellipsis:
-            if ellipsis_seen:
-                return None
-            ellipsis_seen = True
-            missing_dims = ndim - (len(item) - 1)
-            normalized_item.extend([slice(None)] * missing_dims)
-        else:
-            normalized_item.append(subitem)
-    if len(normalized_item) < ndim:
-        normalized_item.extend([slice(None)] * (ndim - len(normalized_item)))
-    return normalized_item
-
-
-class SpectrogramCube(SpecCube):
+class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
@@ -99,131 +73,6 @@ class SpectrogramCube(SpecCube):
             time = time.copy()
             time.format = "isot"
         return time
-
-    def _normalize_basic_wcs_item(self, item):
-        if isinstance(item, tuple):
-            item = _normalize_tuple_index(item, self.data.ndim)
-            if item is None or not all(isinstance(subitem, (Integral, slice)) for subitem in item):
-                return None
-            return tuple(item)
-        if isinstance(item, (Integral, slice)):
-            return (item, *([slice(None)] * (self.data.ndim - 1)))
-        if item is Ellipsis:
-            return tuple([slice(None)] * self.data.ndim)
-        return None
-
-    def _slice_single_basic_wcs(self, normalized_item):
-        if self._basic_wcs is None:
-            return None
-        try:
-            return self._basic_wcs.slice(normalized_item, numpy_order=True)
-        except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-            logger.debug(f"Unable to slice SpectrogramCube basic_wcs with item {normalized_item!r}: {e}")
-            return None
-
-    def _slice_segment_basic_wcs_index(self, scan_index, normalized_item):
-        for segment_start, segment_stop, segment_wcs in self._basic_wcs_segments:
-            if segment_start <= scan_index < segment_stop:
-                relative_item = (scan_index - segment_start, *normalized_item[1:])
-                try:
-                    return segment_wcs.slice(relative_item, numpy_order=True)
-                except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-                    logger.debug(f"Unable to slice SpectrogramCube segment basic_wcs with item {relative_item!r}: {e}")
-                    return None
-        return None
-
-    def _slice_segment_basic_wcs_slice(self, scan_item, normalized_item):
-        scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
-        if scan_step != 1 or scan_start >= scan_stop:
-            return None
-        for segment_start, segment_stop, segment_wcs in self._basic_wcs_segments:
-            if segment_start <= scan_start and scan_stop <= segment_stop:
-                relative_item = (slice(scan_start - segment_start, scan_stop - segment_start), *normalized_item[1:])
-                try:
-                    return segment_wcs.slice(relative_item, numpy_order=True)
-                except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-                    logger.debug(f"Unable to slice SpectrogramCube segment basic_wcs with item {relative_item!r}: {e}")
-                    return None
-        return None
-
-    def _slice_segment_basic_wcs(self, normalized_item):
-        if not self._basic_wcs_segments:
-            return None
-        scan_item = normalized_item[0]
-        if isinstance(scan_item, Integral):
-            scan_index = scan_item if scan_item >= 0 else self.shape[0] + scan_item
-            return self._slice_segment_basic_wcs_index(scan_index, normalized_item)
-        return self._slice_segment_basic_wcs_slice(scan_item, normalized_item)
-
-    def _slice_basic_wcs(self, item):
-        normalized_item = self._normalize_basic_wcs_item(item)
-        if normalized_item is None:
-            return None
-        return self._slice_single_basic_wcs(normalized_item) or self._slice_segment_basic_wcs(normalized_item)
-
-    def _slice_basic_wcs_segments_for_slice(self, scan_item):
-        if not self._basic_wcs_segments:
-            return None
-        scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
-        if scan_step != 1 or scan_start >= scan_stop:
-            return None
-        sliced_segments = []
-        for segment_start, segment_stop, segment_wcs in self._basic_wcs_segments:
-            overlap_start = max(segment_start, scan_start)
-            overlap_stop = min(segment_stop, scan_stop)
-            if overlap_start >= overlap_stop:
-                continue
-            relative_item = (
-                slice(overlap_start - segment_start, overlap_stop - segment_start),
-                slice(None),
-                slice(None),
-            )
-            try:
-                overlap_wcs = segment_wcs.slice(relative_item, numpy_order=True)
-            except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-                logger.debug(f"Unable to slice SpectrogramCube segment basic_wcs with item {relative_item!r}: {e}")
-                return None
-            sliced_segments.append((overlap_start - scan_start, overlap_stop - scan_start, overlap_wcs))
-        return sliced_segments or None
-
-    def _slice_raster_boundaries_for_slice(self, scan_item):
-        if not self._raster_boundaries:
-            return None
-        scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
-        if scan_step != 1 or scan_start >= scan_stop:
-            return None
-        boundaries = []
-        for boundary_start, boundary_stop in self._raster_boundaries:
-            overlap_start = max(boundary_start, scan_start)
-            overlap_stop = min(boundary_stop, scan_stop)
-            if overlap_start < overlap_stop:
-                boundaries.append((overlap_start - scan_start, overlap_stop - scan_start))
-        return boundaries or None
-
-    def _slice_raster_metadata(self, item, sliced_self):
-        normalized_item = self._normalize_basic_wcs_item(item)
-        if normalized_item is None:
-            sliced_self._basic_wcs_segments = None
-            sliced_self._raster_boundaries = None
-            return
-
-        scan_item = normalized_item[0]
-        for attr in ("_raster_wcs_header", "_raster_observer"):
-            if hasattr(self, attr):
-                setattr(sliced_self, attr, getattr(self, attr))
-        sliced_self._memmap = self._memmap
-
-        if isinstance(scan_item, Integral):
-            sliced_self._basic_wcs_segments = None
-            sliced_self._raster_boundaries = None
-            return
-
-        for attr in ("_raster_pc_table", "_raster_crval_table"):
-            value = getattr(self, attr, None)
-            if value is not None:
-                setattr(sliced_self, attr, value[scan_item])
-        sliced_self._basic_wcs_segments = self._slice_basic_wcs_segments_for_slice(scan_item)
-        sliced_self._raster_boundaries = self._slice_raster_boundaries_for_slice(scan_item)
 
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
@@ -314,6 +163,14 @@ class SpectrogramCube(SpecCube):
             return (self,)
         return tuple(self[raster_slice] for raster_slice in boundaries)
 
+    def _search_segment_grid(self, segment_cube, target, step_indices, slit_indices):
+        """Evaluate the gWCS over a grid and return the pixel nearest to *target*."""
+        step_grid, slit_grid = np.meshgrid(step_indices, slit_indices, indexing="ij")
+        sky = segment_cube.wcs.array_index_to_world(step_grid, slit_grid, np.zeros_like(step_grid))[1]
+        separation = sky.separation(target.transform_to(sky.frame)).to_value(u.arcsec)
+        local = np.unravel_index(np.nanargmin(separation), separation.shape)
+        return float(separation[local]), int(step_grid[local]), int(slit_grid[local])
+
     def _nearest_raster_segment(self, target, *, clip):
         if not self._raster_boundaries:
             return None
@@ -324,45 +181,37 @@ class SpectrogramCube(SpecCube):
             if segment_cube.basic_wcs is not None:
                 guess_target = target.transform_to(wcs_to_celestial_frame(segment_cube.basic_wcs.celestial))
                 step_guess, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
-                if not np.isfinite(step_guess) or not np.isfinite(slit_guess):
-                    continue
-                if not clip and not (
-                    0 <= step_guess < segment_cube.shape[0] and 0 <= slit_guess < segment_cube.shape[1]
-                ):
-                    continue
-                step_guess = int(np.clip(step_guess, 0, segment_cube.shape[0] - 1))
-                slit_guess = int(np.clip(slit_guess, 0, segment_cube.shape[1] - 1))
-                step_indices = np.arange(
-                    max(0, step_guess - RASTER_SEGMENT_STEP_SEARCH_RADIUS),
-                    min(segment_cube.shape[0], step_guess + RASTER_SEGMENT_STEP_SEARCH_RADIUS + 1),
-                    dtype=int,
+                guess_valid = (
+                    np.isfinite(step_guess)
+                    and np.isfinite(slit_guess)
+                    and 0 <= step_guess < segment_cube.shape[0]
+                    and 0 <= slit_guess < segment_cube.shape[1]
                 )
-                slit_indices = np.arange(
-                    max(0, slit_guess - RASTER_SEGMENT_SLIT_SEARCH_RADIUS),
-                    min(segment_cube.shape[1], slit_guess + RASTER_SEGMENT_SLIT_SEARCH_RADIUS + 1),
-                    dtype=int,
-                )
-            else:
-                step_indices = np.arange(segment_cube.shape[0], dtype=int)
-                slit_indices = np.arange(segment_cube.shape[1], dtype=int)
-            step_index_grid, slit_index_grid = np.meshgrid(step_indices, slit_indices, indexing="ij")
-            wavelength_index_grid = np.zeros_like(step_index_grid)
-            sky = segment_cube.wcs.array_index_to_world(
-                step_index_grid,
-                slit_index_grid,
-                wavelength_index_grid,
-            )[1]
-            target_in_sky_frame = target.transform_to(sky.frame)
-            separation = sky.separation(target_in_sky_frame).to_value(u.arcsec)
-            local_index = np.unravel_index(np.nanargmin(separation), separation.shape)
-            score = float(separation[local_index])
+                if guess_valid:
+                    step_guess = int(np.rint(np.clip(step_guess, 0, segment_cube.shape[0] - 1)))
+                    slit_guess = int(np.rint(np.clip(slit_guess, 0, segment_cube.shape[1] - 1)))
+                    step_indices = np.arange(
+                        max(0, step_guess - RASTER_SEGMENT_STEP_SEARCH_RADIUS),
+                        min(segment_cube.shape[0], step_guess + RASTER_SEGMENT_STEP_SEARCH_RADIUS + 1),
+                        dtype=int,
+                    )
+                    slit_indices = np.arange(
+                        max(0, slit_guess - RASTER_SEGMENT_SLIT_SEARCH_RADIUS),
+                        min(segment_cube.shape[1], slit_guess + RASTER_SEGMENT_SLIT_SEARCH_RADIUS + 1),
+                        dtype=int,
+                    )
+                    score, step, slit = self._search_segment_grid(segment_cube, target, step_indices, slit_indices)
+                    if best_match is None or score < best_match[0]:
+                        best_match = (score, segment_index, step, slit)
+                    continue
+                if not clip:
+                    continue
+
+            step_indices = np.arange(segment_cube.shape[0], dtype=int)
+            slit_indices = np.arange(segment_cube.shape[1], dtype=int)
+            score, step, slit = self._search_segment_grid(segment_cube, target, step_indices, slit_indices)
             if best_match is None or score < best_match[0]:
-                best_match = (
-                    score,
-                    segment_index,
-                    int(step_index_grid[local_index]),
-                    int(slit_index_grid[local_index]),
-                )
+                best_match = (score, segment_index, step, slit)
 
         if best_match is None:
             if clip:
@@ -395,12 +244,19 @@ class SpectrogramCube(SpecCube):
             target_in_frame = target.transform_to(wcs_to_celestial_frame(self.basic_wcs.celestial))
             step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target_in_frame)
             if clip:
-                step_index = int(np.clip(step_index, 0, self.shape[0] - 1))
-                slit_index = int(np.clip(slit_index, 0, self.shape[1] - 1))
+                step_index = int(np.rint(np.clip(step_index, 0, self.shape[0] - 1)))
+                slit_index = int(np.rint(np.clip(slit_index, 0, self.shape[1] - 1)))
             else:
-                step_index = int(step_index)
-                slit_index = int(slit_index)
+                step_index = int(np.rint(step_index))
+                slit_index = int(np.rint(slit_index))
                 if not (0 <= step_index < self.shape[0] and 0 <= slit_index < self.shape[1]):
+                    nearest_segment = self._nearest_raster_segment(target, clip=clip)
+                    if nearest_segment is not None:
+                        _, nearest_segment_index, step_index, slit_index = nearest_segment
+                        segment_cube = self.raster_slice(nearest_segment_index)
+                        start = segment_cube.wcs.array_index_to_world(step_index, slit_index, 0)
+                        stop = segment_cube.wcs.array_index_to_world(step_index, slit_index, segment_cube.shape[-1] - 1)
+                        return segment_cube.crop(start, stop)
                     msg = "Target is outside the raster bounds."
                     raise ValueError(msg)
         else:

@@ -15,7 +15,8 @@ from ndcube.utils.exceptions import NDCubeUserWarning
 from sunpy.coordinates import HeliographicStonyhurst
 from sunpy.coordinates.screens import SphericalScreen
 
-from irispy.io.spectrograph import _lazy_raster_scan_chunk_rows, read_spectrograph_lvl2
+from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
+from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 
 
@@ -382,3 +383,19 @@ def test_raster_animation_keeps_longitude_axis_after_slider_update(raster_sg_fil
     assert "b" not in time.get_ticks_position()
     assert time.get_axislabel() == ""
     plt.close(fig)
+
+
+def test_spectrogram_cube_fancy_indexing_strips_raster_metadata(raster_sg_files):
+    """Non-standard indices (arrays, booleans) cannot preserve per-raster WCS bridges."""
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+
+    # _normalize_basic_wcs_item returns None for non-standard indices
+    fancy_item = (np.array([0, 2, 4]), slice(None), slice(None))
+    assert cube._normalize_basic_wcs_item(fancy_item) is None
+
+    # Verify _slice_raster_metadata strips metadata when normalization fails
+    sliced = cube[0:1]
+    cube._slice_raster_metadata(fancy_item, sliced)
+    assert sliced._basic_wcs_segments is None
+    assert sliced._raster_boundaries is None
