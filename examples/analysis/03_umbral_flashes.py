@@ -43,8 +43,16 @@ sji_filename = pooch.retrieve(
 # Note that when ``memmap=True``, the data values are read from the FITS file
 # directly without the scaling to Float32 (via "b_zero" and "b_scale"),
 # the data values are no longer in DN, but in scaled integer units that start at -2$^{16}$/2.
+#
+# Restrict the raster read to the two spectral windows used below to keep
+# gallery execution memory use lower.
 
-raster = read_files(raster_filename, memmap=True, uncertainty=False)
+raster = read_files(
+    raster_filename,
+    spectral_windows=["Mg II k 2796", "C II 1336"],
+    memmap=True,
+    uncertainty=False,
+)
 sji_1400 = read_files(sji_filename, memmap=True, uncertainty=False)
 
 ###############################################################################
@@ -53,11 +61,15 @@ sji_1400 = read_files(sji_filename, memmap=True, uncertainty=False)
 
 mg_ii = raster["Mg II k 2796"]
 c_ii = raster["C II 1336"]
+del raster
 
 # Instead of using a pixel index, we can crop the data in wavelength space.
 lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
-mg_crop = mg_ii.crop(lower_corner, upper_corner)
+# Use only the first 200 scan steps for the gallery visualization to keep the
+# plotted raster slice modest in size while preserving the time-series example
+# below.
+mg_crop = mg_ii[:200].crop(lower_corner, upper_corner)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_crop.wcs)
