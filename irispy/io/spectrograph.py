@@ -131,8 +131,10 @@ def _validate_spectrograph_file_compatible(
 
 def _raster_wcs_bad_row_mask(pc, crval):
     """Return AUX rows whose PC or CRVAL table entries are unusable."""
-    pc_bad = np.array([np.allclose(pc[i], 0) for i in range(pc.shape[0])])
-    crval_bad = np.array([np.allclose(crval[i], 0) for i in range(crval.shape[0])])
+    pc_values = pc.to_value(u.pix) if hasattr(pc, "to_value") else np.asarray(pc)
+    crval_values = crval.to_value(u.arcsec) if hasattr(crval, "to_value") else np.asarray(crval)
+    pc_bad = np.isclose(pc_values, 0).all(axis=(1, 2))
+    crval_bad = np.isclose(crval_values, 0).all(axis=1)
     return pc_bad | crval_bad
 
 
@@ -551,10 +553,11 @@ def read_spectrograph_lvl2(
         reference_window_headers = [hdulist[index].header.copy() for index in window_fits_indices]
         observer = _make_observer(primary_header)
 
-    # Running mean of good WCS table rows across files (used as fallback).
-    running_pc_sum = np.zeros((2, 2))
-    running_crval_sum = np.zeros(2)
-    running_count = 0
+    # Per-window running means of good WCS table rows across files, used as
+    # fallback only when a later file has no good rows for that window.
+    running_wcs_fallbacks = {
+        window_name: [np.zeros((2, 2)), np.zeros(2), 0] for window_name in spectral_windows_req
+    }
 
     for filename in filenames:
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
@@ -636,17 +639,16 @@ def read_spectrograph_lvl2(
                     if flip:
                         crval = crval[::-1]
 
-                # Update running mean from good rows in the first window of each file.
-                if i == 0:
-                    good_mask = ~_raster_wcs_bad_row_mask(pc, crval)
-                    if good_mask.any():
-                        running_pc_sum += pc[good_mask].sum(axis=0).to_value(u.pix)
-                        running_crval_sum += crval[good_mask].sum(axis=0).to_value(u.arcsec)
-                        running_count += good_mask.sum()
-
+                running_pc_sum, running_crval_sum, running_count = running_wcs_fallbacks[window_name]
                 fallback_pc = (running_pc_sum / running_count * u.pix) if running_count > 0 else None
                 fallback_crval = (running_crval_sum / running_count * u.arcsec) if running_count > 0 else None
+                good_mask = ~_raster_wcs_bad_row_mask(pc, crval)
                 pc_sanitized, crval = _sanitize_raster_wcs_tables(pc.copy(), crval, fallback_pc, fallback_crval)
+                if good_mask.any():
+                    running_wcs_fallbacks[window_name][0] += pc[good_mask].sum(axis=0).to_value(u.pix)
+                    running_wcs_fallbacks[window_name][1] += crval[good_mask].sum(axis=0).to_value(u.arcsec)
+                    running_wcs_fallbacks[window_name][2] += int(good_mask.sum())
+
                 basic_wcs = WCS(prepared_wcs_header)
                 _set_wcs_aux_obs_coord(basic_wcs, observer)
 

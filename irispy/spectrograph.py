@@ -316,19 +316,27 @@ class SpectrogramCube(SpecCube):
             return None
 
         best_match = None
+        step_search_radius = 2
+        slit_search_radius = 16
         for segment_index, raster_slice in enumerate(self.raster_boundaries):
             segment_cube = self[raster_slice]
-            step_indices = np.arange(segment_cube.shape[0], dtype=int)
             if segment_cube.basic_wcs is not None:
                 guess_target = target.transform_to(wcs_to_celestial_frame(segment_cube.basic_wcs.celestial))
-                _, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
+                step_guess, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
+                step_guess = int(np.clip(step_guess, 0, segment_cube.shape[0] - 1))
                 slit_guess = int(np.clip(slit_guess, 0, segment_cube.shape[1] - 1))
+                step_indices = np.arange(
+                    max(0, step_guess - step_search_radius),
+                    min(segment_cube.shape[0], step_guess + step_search_radius + 1),
+                    dtype=int,
+                )
                 slit_indices = np.arange(
-                    max(0, slit_guess - 64),
-                    min(segment_cube.shape[1], slit_guess + 65),
+                    max(0, slit_guess - slit_search_radius),
+                    min(segment_cube.shape[1], slit_guess + slit_search_radius + 1),
                     dtype=int,
                 )
             else:
+                step_indices = np.arange(segment_cube.shape[0], dtype=int)
                 slit_indices = np.arange(segment_cube.shape[1], dtype=int)
             step_index_grid, slit_index_grid = np.meshgrid(step_indices, slit_indices, indexing="ij")
             wavelength_index_grid = np.zeros_like(step_index_grid)

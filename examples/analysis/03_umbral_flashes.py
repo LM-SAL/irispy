@@ -26,7 +26,8 @@ time_support()
 # but using your browser will also work.
 #
 # Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml
-# we are after the 1400 Slit-Jaw and the raster observation (~900 MB).
+# we are after the 1400 Slit-Jaw and two spectral windows from the full
+# raster observation archive.
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_raster.tar.gz",
