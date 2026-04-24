@@ -2,6 +2,9 @@ from numbers import Integral
 
 import numpy as np
 
+from astropy.wcs.wcsapi import HighLevelWCSWrapper, SlicedLowLevelWCS
+from astropy.wcs.wcsapi.wrappers.sliced_wcs import sanitize_slices
+
 from sunpy import log as logger
 
 
@@ -34,7 +37,13 @@ def _normalize_tuple_index(item, ndim):
 def _safe_slice_wcs(wcs, item, context):
     """Slice a WCS, logging debug on failure instead of raising."""
     try:
-        return wcs.slice(item, numpy_order=True)
+        if hasattr(wcs, "slice"):
+            return wcs.slice(item, numpy_order=True)
+        # Fallback for wcsapi wrappers (e.g. SlicedFITSWCS from astropy ≥7)
+        # that lack .slice() but can be sliced via SlicedLowLevelWCS.
+        llwcs = wcs.low_level_wcs if hasattr(wcs, "low_level_wcs") else wcs
+        item = sanitize_slices(item, len(llwcs.pixel_shape))
+        return HighLevelWCSWrapper(SlicedLowLevelWCS(llwcs, item))
     except (IndexError, NotImplementedError, TypeError, ValueError) as e:
         logger.debug(f"Unable to slice {context} with item {item!r}: {e}")
         return None

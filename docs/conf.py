@@ -57,6 +57,15 @@ warnings.filterwarnings("error", category=SunpyPendingDeprecationWarning)
 warnings.filterwarnings("error", category=MatplotlibDeprecationWarning)
 warnings.filterwarnings("error", category=AstropyDeprecationWarning)
 
+# Suppress spurious RuntimeWarning from astropy's Angle.to_string() vectorized
+# formatter (astropy/astropy#18989). It fires benignly when WCSAxes formats tick
+# labels and can appear during gallery builds for examples with grid/contour plots.
+warnings.filterwarnings(
+    "ignore",
+    message="invalid value encountered in do_format",
+    category=RuntimeWarning,
+)
+
 # Wrap large function/method signatures
 maximum_signature_line_length = 80
 
