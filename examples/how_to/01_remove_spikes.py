@@ -34,18 +34,17 @@ sji_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/02/06/20260206_210853_3460104433/iris_l2_20260206_210853_3460104433_SJI_2832_t000.fits.gz",
     known_hash="d5088c6a0753ea9ce7b525865ba2edf13a637097ee995985b511833897c88ca6",
 )
-raster_filename = pooch.retrieve(
-    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/02/09/20260209_215233_3602506433/iris_l2_20260209_215233_3602506433_raster.tar.gz",
-    known_hash="bad4a3617d0fd04679203951d7db595df196f79b41a3f6f1f71ce0e301486434",
-)
 
 ###############################################################################
-# We will now open files we just downloaded.
+# We will now open the file we just downloaded and select one frame.
+#
+# ``astroscrappy`` works on one 2D frame at a time. Selecting a single frame
+# keeps this example lightweight enough for documentation builds while still
+# demonstrating the same API.
 
 sji_2832 = read_files(sji_filename, memmap=False)
-raster = read_files(raster_filename, memmap=False)
-raster_2796 = raster["Mg II k 2796"][10][4]
-del raster
+sji_frame = sji_2832[5]
+del sji_2832
 
 ###############################################################################
 # Now we use ``SJICube.remove_cosmic_rays`` with the ``astroscrappy`` backend.
@@ -58,7 +57,7 @@ del raster
 # to clean the high intensity bright cosmic ray hits.
 # We also modify the ``readnoise`` parameter to obtain better results.
 
-sji_cleaned = sji_2832.remove_cosmic_rays(
+sji_cleaned = sji_frame.remove_cosmic_rays(
     method="astroscrappy",
     sigma=2,
     method_kwargs={"objlim": 2, "readnoise": 4},
@@ -66,50 +65,22 @@ sji_cleaned = sji_2832.remove_cosmic_rays(
 
 ###############################################################################
 # ``remove_cosmic_rays`` returns a cleaned cube with the same metadata and coordinates.
-# We now convert a noisy frame to a map for plotting.
-
-sji_map = sji_2832.to_maps(5)
-clean_sji_map = sji_cleaned.to_maps(5)
+# We now plot the noisy frame and the cleaned frame side-by-side.
 
 fig = plt.figure(figsize=(12, 5), constrained_layout=True)
 
-ax = fig.add_subplot(121, projection=sji_map)
-sji_map.plot(axes=ax, vmin=0, vmax=500)
+ax = fig.add_subplot(121, projection=sji_frame.wcs)
+sji_frame.plot(axes=ax, vmin=0, vmax=500)
 ax.set_title("Original")
 
-ax1 = fig.add_subplot(122, projection=clean_sji_map)
-clean_sji_map.plot(axes=ax1, vmin=0, vmax=500)
+ax1 = fig.add_subplot(122, projection=sji_cleaned.wcs)
+sji_cleaned.plot(axes=ax1, vmin=0, vmax=500)
 ax1.set_title("Cleaned")
 
 ax1.coords[1].set_ticks_visible(False)
 ax1.coords[1].set_ticklabel_visible(False)
 
 ###############################################################################
-# For comparison, we will now try to remove the cosmic ray hits from the
-# spectrograph data.
-
-raster_2796_cleaned = raster_2796.remove_cosmic_rays(method="astroscrappy")
-
-fig = plt.figure(figsize=(12, 5), constrained_layout=True)
-axes = [
-    fig.add_subplot(1, 2, 1, projection=raster_2796.wcs),
-    fig.add_subplot(1, 2, 2, projection=raster_2796_cleaned.wcs),
-]
-
-raster_2796.plot(axes=axes[0], vmin=0, vmax=500)
-axes[0].set_title("Original Mg II k 2796")
-
-raster_2796_cleaned.plot(axes=axes[1], vmin=0, vmax=500)
-axes[1].set_title("Cleaned Mg II k 2796")
-
-for ax in axes:
-    ax.set_xlabel("")
-    ax.set_ylabel("")
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-###############################################################################
-# For any cosmic ray removal, it is important to check the results, especially
-# if you are interested in the spectral data.
+# For any cosmic ray removal, it is important to check the results.
 
 plt.show()
