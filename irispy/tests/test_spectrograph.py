@@ -16,6 +16,7 @@ from sunpy.coordinates import HeliographicStonyhurst
 from sunpy.coordinates.screens import SphericalScreen
 
 from irispy.io.spectrograph import _lazy_raster_scan_chunk_rows, read_spectrograph_lvl2
+from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 
 
 def test_fits_data_comparison(sns_sg_file):
@@ -264,37 +265,22 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
     assert image.data.ndim == 2
 
 
-def test_memmap_raster_computes_after_reader_returns(raster_sg_files):
+def test_memmap_raster_values_match_raw_fits_after_reader_returns(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
     cube = raster["Si IV 1403"]
-    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+    raster0 = cube.raster_slice(0)
+
+    with fits.open(raster_sg_files[0], memmap=True, do_not_scale_image_data=True) as hdulist:
+        windows = np.array([hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)])
+        window_ext = int(np.where(windows == "Si IV 1403")[0][0]) + 1
+        expected_data = np.array(hdulist[window_ext].data, copy=True)
+
+    np.testing.assert_array_equal(raster0.data.compute(), expected_data)
+    np.testing.assert_array_equal(raster0.mask.compute(), expected_data == BAD_PIXEL_VALUE_UNSCALED)
+
+    _, target, _, _ = raster0.wcs.array_index_to_world(3, 50, 0)
     spectrum = cube.spectrum_at(target)
-
-    subcube_data = cube.raster_slice(0).data.compute()
-    subcube_mask = cube.raster_slice(0).mask.compute()
-    spectrum_data = spectrum.data.compute()
-
-    assert subcube_data.shape == cube.raster_slice(0).shape
-    assert subcube_mask.shape == cube.raster_slice(0).shape
-    assert spectrum_data.shape == spectrum.shape
-
-
-def test_memmap_raster_values_match_eager_read_after_reader_returns(raster_sg_files):
-    lazy_raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
-    eager_raster = read_spectrograph_lvl2(raster_sg_files)
-
-    lazy_cube = lazy_raster["Si IV 1403"]
-    eager_cube = eager_raster["Si IV 1403"]
-    _, target, _, _ = lazy_cube.wcs.array_index_to_world(10, 50, 0)
-
-    np.testing.assert_array_equal(
-        lazy_cube.raster_slice(0).data.compute(),
-        eager_cube.raster_slice(0).data,
-    )
-    np.testing.assert_array_equal(
-        lazy_cube.spectrum_at(target).data.compute(),
-        eager_cube.spectrum_at(target).data,
-    )
+    np.testing.assert_array_equal(spectrum.data.compute(), expected_data[3, 50])
 
 
 def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):

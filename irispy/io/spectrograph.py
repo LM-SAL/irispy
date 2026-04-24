@@ -25,7 +25,7 @@ from sunpy.time import parse_time
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUE_UNSCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
 
 __all__ = ["read_spectrograph_lvl2"]
 
@@ -418,7 +418,7 @@ def _lazy_raster_scan_chunk_rows(cube):
     return max(1, min(cube.shape[0], LAZY_RASTER_TARGET_CHUNK_BYTES // max(row_bytes, 1)))
 
 
-def _read_memmap_raster_chunk(filename, ext, flip, start, stop):
+def _read_memmap_window_chunk(filename, ext, flip, start, stop):
     """Read one scan-axis chunk from disk after the public reader has returned."""
     with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
         data = hdulist[ext].data
@@ -451,7 +451,7 @@ def _build_lazy_raster_data(cubes):
         raster_chunks = []
         for start in range(0, cube.shape[0], chunk_rows):
             stop = min(start + chunk_rows, cube.shape[0])
-            chunk = delayed(_read_memmap_raster_chunk)(filename, ext, getattr(cube, "_flip", False), start, stop)
+            chunk = delayed(_read_memmap_window_chunk)(filename, ext, getattr(cube, "_flip", False), start, stop)
             raster_chunks.append(da.from_delayed(chunk, shape=(stop - start, *cube.shape[1:]), dtype=cube.data.dtype))
         chunks.append(da.concatenate(raster_chunks, axis=0))
     return da.concatenate(chunks, axis=0)
@@ -462,7 +462,7 @@ def _combine_raster_cubes_lazy(cubes):
     if len(cubes) == 1:
         return cubes[0]
     data = _build_lazy_raster_data(cubes)
-    mask = data == BAD_PIXEL_VALUE_SCALED
+    mask = data == BAD_PIXEL_VALUE_UNSCALED
     return _build_combined_raster_cube(cubes, data, mask=mask, memmap=True)
 
 
@@ -546,7 +546,7 @@ def read_spectrograph_lvl2(
                 missing_windows = spectral_windows_req[~window_is_in_obs]
                 msg = f"Spectral windows {missing_windows.tolist()} not in file {filenames[0]}"
                 raise ValueError(msg)
-            window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
+            window_fits_indices = [int(np.where(windows_in_obs == window)[0][0]) + 1 for window in spectral_windows_req]
         data_dict = {window_name: [] for window_name in spectral_windows_req}
         reference_window_headers = [hdulist[index].header.copy() for index in window_fits_indices]
         observer = _make_observer(primary_header)

@@ -183,6 +183,16 @@ def test_read_spectrograph_lvl2_reports_all_missing_spectral_windows(raster_sg_f
     assert "NOPE2" in message
 
 
+def test_read_spectrograph_lvl2_preserves_requested_spectral_window_order(raster_sg_file):
+    requested_windows = ["Mg II k 2796", "C II 1336"]
+
+    raster_collection = read_spectrograph_lvl2(raster_sg_file, spectral_windows=requested_windows)
+
+    assert list(raster_collection.keys()) == requested_windows
+    for window in requested_windows:
+        assert raster_collection[window].meta.spectral_window == window
+
+
 def test_read_spectrograph_lvl2_rejects_mismatched_observation(tmp_path, raster_sg_files):
     copied_files = []
     for path in raster_sg_files[:2]:
