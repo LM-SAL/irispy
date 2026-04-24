@@ -12,6 +12,8 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 
 from ndcube.utils.exceptions import NDCubeUserWarning
+from sunpy.coordinates import HeliographicStonyhurst
+from sunpy.coordinates.screens import SphericalScreen
 
 from irispy.io.spectrograph import _lazy_raster_scan_chunk_rows, read_spectrograph_lvl2
 
@@ -84,7 +86,9 @@ def test_spectrogram_cube_slice_slices_basic_wcs(raster_sg_files):
     cube = raster["Si IV 1403"]
     slice_index = cube.shape[0] // 2
     segment_index, segment_slice = next(
-        (i, boundary) for i, boundary in enumerate(cube.raster_boundaries) if boundary.start <= slice_index < boundary.stop
+        (i, boundary)
+        for i, boundary in enumerate(cube.raster_boundaries)
+        if boundary.start <= slice_index < boundary.stop
     )
     segment_cube = cube.raster_slice(segment_index)
     local_index = slice_index - segment_slice.start
@@ -180,6 +184,22 @@ def test_spectrogram_cube_spectrum_at_works_without_basic_wcs(raster_sg_files):
     np.testing.assert_array_equal(spectrum.data, expected.data)
 
 
+def test_spectrogram_cube_spectrum_at_transforms_target_frame(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+    expected = cube.spectrum_at(target)
+
+    with SphericalScreen(target.observer):
+        transformed_target = target.transform_to(HeliographicStonyhurst(obstime=target.obstime))
+
+    spectrum = cube.spectrum_at(transformed_target)
+
+    assert cube.basic_wcs is None
+    assert spectrum.shape == expected.shape
+    np.testing.assert_array_equal(spectrum.data, expected.data)
+
+
 def test_spectrogram_cube_spectrum_at_avoids_full_sky_grid_when_segment_wcs_exists(raster_sg_files, monkeypatch):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
@@ -242,6 +262,21 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
     assert cube.uncertainty is None
     assert spectrum.data.ndim == 1
     assert image.data.ndim == 2
+
+
+def test_memmap_raster_computes_after_reader_returns(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+    spectrum = cube.spectrum_at(target)
+
+    subcube_data = cube.raster_slice(0).data.compute()
+    subcube_mask = cube.raster_slice(0).mask.compute()
+    spectrum_data = spectrum.data.compute()
+
+    assert subcube_data.shape == cube.raster_slice(0).shape
+    assert subcube_mask.shape == cube.raster_slice(0).shape
+    assert spectrum_data.shape == spectrum.shape
 
 
 def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):

@@ -93,6 +93,7 @@ def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
     np.testing.assert_allclose(calibrated_slice.data, expected_slice.data)
     assert np.array_equal(calibrated_slice.mask, expected_slice.mask)
 
+
 def test_radiometric_calibration_rejects_fixed_wavelength_raster_images(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"]

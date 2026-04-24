@@ -1,11 +1,14 @@
+from pathlib import Path
+
+import dask.array as da
 import numpy as np
 import pytest
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
+from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs.utils import wcs_to_celestial_frame
-import dask.array as da
 
 from sunpy.coordinates import Helioprojective
 
@@ -180,6 +183,33 @@ def test_read_spectrograph_lvl2_reports_all_missing_spectral_windows(raster_sg_f
     assert "NOPE2" in message
 
 
+def test_read_spectrograph_lvl2_rejects_mismatched_observation(tmp_path, raster_sg_files):
+    copied_files = []
+    for path in raster_sg_files[:2]:
+        destination = tmp_path / Path(path).name
+        with fits.open(path) as hdulist:
+            hdulist.writeto(destination)
+        copied_files.append(destination)
+
+    with fits.open(copied_files[1], mode="update") as hdulist:
+        hdulist[0].header["OBSID"] = 9999999999
+
+    with pytest.raises(ValueError, match="OBSID"):
+        read_spectrograph_lvl2(copied_files)
+
+
+def test_combined_raster_metadata_shape_and_end_time_are_consistent(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"]
+
+    assert np.all(scan.shape == scan.meta.data_shape)
+    assert scan.meta["NAXIS3"] == scan.shape[0]
+    assert scan.meta["DATE_END"] == scan.split_rasters()[-1].meta["DATE_END"]
+    assert scan.meta["ENDOBS"] == scan.split_rasters()[-1].meta["ENDOBS"]
+    if "NAXIS3" in scan.meta.fits_header:
+        assert scan.meta.fits_header["NAXIS3"] == scan.shape[0]
+
+
 def test_gwcs_crop_supports_full_world_component_api(raster_sg_files):
     raster_collection = read_spectrograph_lvl2(raster_sg_files)
     scan = raster_collection["Si IV 1403"]
@@ -252,12 +282,15 @@ def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic(raster_sg_fi
 
     pc_all = np.concatenate([scan._raster_pc_table, scan._raster_pc_table], axis=0)
     crval_all = np.concatenate([scan._raster_crval_table, scan._raster_crval_table], axis=0)
-    dt_all = np.concatenate(
-        [
-            np.arange(scan.shape[0], dtype=float),
-            np.arange(scan.shape[0] - 1, -1, -1, dtype=float),
-        ]
-    ) * u.s
+    dt_all = (
+        np.concatenate(
+            [
+                np.arange(scan.shape[0], dtype=float),
+                np.arange(scan.shape[0] - 1, -1, -1, dtype=float),
+            ]
+        )
+        * u.s
+    )
 
     wcs = _create_raster_gwcs(
         scan._raster_wcs_header,

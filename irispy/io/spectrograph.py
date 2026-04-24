@@ -4,6 +4,7 @@ from pathlib import Path
 
 import dask.array as da
 import numpy as np
+from dask import delayed
 
 import astropy.modeling.models as m
 import astropy.units as u
@@ -51,6 +52,72 @@ def _make_observer(primary_header):
     )
     with SphericalScreen(observer.observer):
         return observer.transform_to(HeliographicStonyhurst(obstime=base_time))
+
+
+OBSERVATION_COMPATIBILITY_KEYS = (
+    "TELESCOP",
+    "INSTRUME",
+    "OBSID",
+    "STARTOBS",
+    "OBS_DESC",
+    "NWIN",
+)
+
+WINDOW_COMPATIBILITY_KEYS = (
+    "NAXIS1",
+    "NAXIS2",
+    "CTYPE1",
+    "CUNIT1",
+    "CDELT1",
+    "CRPIX1",
+    "CUNIT2",
+    "CUNIT3",
+    "CDELT2",
+    "CDELT3",
+    "CRPIX2",
+    "CRPIX3",
+)
+
+
+def _spectral_windows_from_header(header):
+    return np.array([header[f"TDESC{i}"] for i in range(1, header["NWIN"] + 1)], dtype=str)
+
+
+def _validate_header_value(reference_header, header, key, filename):
+    expected = reference_header.get(key)
+    actual = header.get(key)
+    if actual != expected:
+        msg = (
+            "Spectrograph files must belong to one compatible observation; "
+            f"{filename} has {key}={actual!r}, expected {expected!r}."
+        )
+        raise ValueError(msg)
+
+
+def _validate_spectrograph_file_compatible(reference_header, header, filename):
+    for key in OBSERVATION_COMPATIBILITY_KEYS:
+        _validate_header_value(reference_header, header, key, filename)
+
+    reference_windows = _spectral_windows_from_header(reference_header)
+    windows = _spectral_windows_from_header(header)
+    if not np.array_equal(windows, reference_windows):
+        msg = (
+            "Spectrograph files must have the same spectral-window order; "
+            f"{filename} has {windows.tolist()}, expected {reference_windows.tolist()}."
+        )
+        raise ValueError(msg)
+
+
+def _validate_window_header_compatible(reference_window_header, window_header, filename, window_name):
+    for key in WINDOW_COMPATIBILITY_KEYS:
+        expected = reference_window_header.get(key)
+        actual = window_header.get(key)
+        if actual != expected:
+            msg = (
+                f"Spectral window {window_name!r} in {filename} is not compatible with the first file: "
+                f"{key}={actual!r}, expected {expected!r}."
+            )
+            raise ValueError(msg)
 
 
 def _raster_wcs_bad_row_mask(pc, crval):
@@ -185,11 +252,14 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     non_spectral = slit_step_mapping | non_spectral_rhs
     # Time is redundant with the explicit scan-step output and may not be monotonic
     # across flipped or repeated rasters, so the inverse keys off sky + step only.
-    non_spectral.inverse = m.Mapping(
-        (0, 1, 3),
-        n_inputs=4,
-        name="SelectSkyAndExplicitStep",
-    ) | celestial.inverse
+    non_spectral.inverse = (
+        m.Mapping(
+            (0, 1, 3),
+            n_inputs=4,
+            name="SelectSkyAndExplicitStep",
+        )
+        | celestial.inverse
+    )
     forward_transform = spectral & non_spectral
     forward_transform.inverse = spectral.inverse & non_spectral.inverse
 
@@ -247,7 +317,10 @@ def _concatenate_mask(cubes):
     if all(cube.mask is None for cube in cubes):
         return None
     return np.concatenate(
-        [np.zeros(cube.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool) for cube in cubes],
+        [
+            np.zeros(cube.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
+            for cube in cubes
+        ],
         axis=0,
     )
 
@@ -256,9 +329,13 @@ def _combine_raster_meta(cubes, combined_shape):
     meta = deepcopy(cubes[0].meta)
     meta._data_shape = np.asarray(combined_shape, dtype=int)
     meta["NAXIS3"] = combined_shape[0]
+    if "NAXIS3" in meta.fits_header:
+        meta.fits_header["NAXIS3"] = combined_shape[0]
     for key in ("DATE_END", "ENDOBS"):
         if cubes[-1].meta.get(key) is not None:
             meta[key] = cubes[-1].meta[key]
+            if key in meta.fits_header:
+                meta.fits_header[key] = cubes[-1].meta[key]
     for key in ("exposure time", "exposure FOV center", "observer radial velocity", "orbital phase"):
         meta.add(
             key,
@@ -332,18 +409,42 @@ def _lazy_raster_scan_chunk_rows(cube):
     return max(1, min(cube.shape[0], LAZY_RASTER_TARGET_CHUNK_BYTES // max(row_bytes, 1)))
 
 
+def _read_memmap_raster_chunk(filename, ext, flip, start, stop):
+    """Read one scan-axis chunk from disk after the public reader has returned."""
+    with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
+        data = hdulist[ext].data
+        if flip:
+            original_start = data.shape[0] - stop
+            original_stop = data.shape[0] - start
+            data = data[original_start:original_stop][::-1]
+        else:
+            data = data[start:stop]
+        return np.array(data, copy=True)
+
+
 def _build_lazy_raster_data(cubes):
     chunks = []
     for cube in cubes:
         chunk_rows = _lazy_raster_scan_chunk_rows(cube)
-        chunks.append(
-            da.from_array(
-                cube.data,
-                chunks=(chunk_rows, *cube.shape[1:]),
-                fancy=False,
-                asarray=False,
+        filename = getattr(cube, "_memmap_path", None)
+        ext = getattr(cube, "_memmap_ext", None)
+        if filename is None or ext is None:
+            chunks.append(
+                da.from_array(
+                    cube.data,
+                    chunks=(chunk_rows, *cube.shape[1:]),
+                    fancy=False,
+                    asarray=False,
+                )
             )
-        )
+            continue
+
+        raster_chunks = []
+        for start in range(0, cube.shape[0], chunk_rows):
+            stop = min(start + chunk_rows, cube.shape[0])
+            chunk = delayed(_read_memmap_raster_chunk)(filename, ext, getattr(cube, "_flip", False), start, stop)
+            raster_chunks.append(da.from_delayed(chunk, shape=(stop - start, *cube.shape[1:]), dtype=cube.data.dtype))
+        chunks.append(da.concatenate(raster_chunks, axis=0))
     return da.concatenate(chunks, axis=0)
 
 
@@ -438,6 +539,7 @@ def read_spectrograph_lvl2(
                 raise ValueError(msg)
             window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
         data_dict = {window_name: [] for window_name in spectral_windows_req}
+        reference_window_headers = [hdulist[index].header.copy() for index in window_fits_indices]
         observer = _make_observer(primary_header)
 
     # Running mean of good WCS table rows across files (used as fallback).
@@ -448,6 +550,7 @@ def read_spectrograph_lvl2(
     for filename in filenames:
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
             hdulist.verify("silentfix")
+            _validate_spectrograph_file_compatible(primary_header, hdulist[0].header, filename)
             aux = hdulist[-2]
             file_startobs = _header_time(hdulist[0].header, "STARTOBS", "DATE_OBS")
             times = file_startobs + TimeDelta(aux.data[:, aux.header["TIME"]] * u.s)
@@ -477,6 +580,12 @@ def read_spectrograph_lvl2(
 
             for i, window_name in enumerate(spectral_windows_req):
                 window_header = hdulist[window_fits_indices[i]].header.copy()
+                _validate_window_header_compatible(
+                    reference_window_headers[i],
+                    window_header,
+                    filename,
+                    window_name,
+                )
                 meta = SGMeta(
                     hdulist[0].header,
                     window_name,
@@ -572,7 +681,6 @@ def read_spectrograph_lvl2(
                 cube._flip = flip
                 data_dict[window_name].append(cube)
     window_data_pairs = [
-        (_window_name, _finalize_window_object(cubes, memmap=memmap))
-        for _window_name, cubes in data_dict.items()
+        (_window_name, _finalize_window_object(cubes, memmap=memmap)) for _window_name, cubes in data_dict.items()
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1))

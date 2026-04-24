@@ -1,3 +1,6 @@
+import warnings
+from contextlib import contextmanager
+
 from mpl_animators import ArrayAnimatorWCS
 
 import astropy.units as u
@@ -27,6 +30,18 @@ LON_LABELS = [
 TIME_LABEL_PRIORITY = ["seconds from start (s)", "time (utc)", "time"]
 SCAN_STEP_LABELS = ["custom:step", "scan_step"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
+
+
+@contextmanager
+def _suppress_wcs_nan_tick_formatting_warning():
+    """Ignore upstream formatter warnings from hidden/NaN WCS animation axes."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="invalid value encountered in do_format",
+            category=RuntimeWarning,
+        )
+        yield
 
 
 def set_axis_properties(ax, axes_coordinates=None, *, animate=False):
@@ -167,7 +182,8 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
 
 class Plot2DMixin:
     def update_plot(self, val, artist, slider):
-        result = super().update_plot(val, artist, slider)
+        with _suppress_wcs_nan_tick_formatting_warning():
+            result = super().update_plot(val, artist, slider)
         if self.plot_dimensionality == 2:
             set_axis_properties(
                 self.axes,
@@ -192,10 +208,11 @@ class IRISPlotter(MatplotlibPlotter):
         **kwargs,
     ):
         data, wcs, plot_axes, coord_params = self._prep_animate_args(wcs, plot_axes, axes_units, data_unit)
-        ax = IRISArrayAnimatorWCS(data, wcs, plot_axes, coord_params=coord_params, **kwargs)
-        self._apply_axes_coordinates(ax.axes, axes_coordinates)
-        for hidden in self._not_visible_coords(ax.axes, axes_coordinates):
-            param = ax.coord_params.get(hidden, {})
-            param["ticks"] = False
-            ax.coord_params[hidden] = param
+        with _suppress_wcs_nan_tick_formatting_warning():
+            ax = IRISArrayAnimatorWCS(data, wcs, plot_axes, coord_params=coord_params, **kwargs)
+            self._apply_axes_coordinates(ax.axes, axes_coordinates)
+            for hidden in self._not_visible_coords(ax.axes, axes_coordinates):
+                param = ax.coord_params.get(hidden, {})
+                param["ticks"] = False
+                ax.coord_params[hidden] = param
         return ax

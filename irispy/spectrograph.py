@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import astropy.units as u
-from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import wcs_to_celestial_frame
 
 from ndcube import NDCollection
@@ -126,10 +125,7 @@ class SpectrogramCube(SpecCube):
                 try:
                     return segment_wcs.slice(relative_item, numpy_order=True)
                 except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-                    logger.debug(
-                        "Unable to slice SpectrogramCube segment basic_wcs with "
-                        f"item {relative_item!r}: {e}"
-                    )
+                    logger.debug(f"Unable to slice SpectrogramCube segment basic_wcs with item {relative_item!r}: {e}")
                     return None
         return None
 
@@ -143,10 +139,7 @@ class SpectrogramCube(SpecCube):
                 try:
                     return segment_wcs.slice(relative_item, numpy_order=True)
                 except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-                    logger.debug(
-                        "Unable to slice SpectrogramCube segment basic_wcs with "
-                        f"item {relative_item!r}: {e}"
-                    )
+                    logger.debug(f"Unable to slice SpectrogramCube segment basic_wcs with item {relative_item!r}: {e}")
                     return None
         return None
 
@@ -177,14 +170,15 @@ class SpectrogramCube(SpecCube):
             overlap_stop = min(segment_stop, scan_stop)
             if overlap_start >= overlap_stop:
                 continue
-            relative_item = (slice(overlap_start - segment_start, overlap_stop - segment_start), slice(None), slice(None))
+            relative_item = (
+                slice(overlap_start - segment_start, overlap_stop - segment_start),
+                slice(None),
+                slice(None),
+            )
             try:
                 overlap_wcs = segment_wcs.slice(relative_item, numpy_order=True)
             except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-                logger.debug(
-                    "Unable to slice SpectrogramCube segment basic_wcs with "
-                    f"item {relative_item!r}: {e}"
-                )
+                logger.debug(f"Unable to slice SpectrogramCube segment basic_wcs with item {relative_item!r}: {e}")
                 return None
             sliced_segments.append((overlap_start - scan_start, overlap_stop - scan_start, overlap_wcs))
         return sliced_segments or None
@@ -317,6 +311,10 @@ class SpectrogramCube(SpecCube):
             return (self,)
         return tuple(self[raster_slice] for raster_slice in boundaries)
 
+    @staticmethod
+    def _target_in_basic_wcs_celestial_frame(target, basic_wcs):
+        return target.transform_to(wcs_to_celestial_frame(basic_wcs.celestial))
+
     def _nearest_raster_segment(self, target, *, clip):
         if not self._raster_boundaries:
             return None
@@ -326,11 +324,7 @@ class SpectrogramCube(SpecCube):
             segment_cube = self[raster_slice]
             step_indices = np.arange(segment_cube.shape[0], dtype=int)
             if segment_cube.basic_wcs is not None:
-                guess_target = SkyCoord(
-                    target.Tx,
-                    target.Ty,
-                    frame=wcs_to_celestial_frame(segment_cube.basic_wcs.celestial),
-                )
+                guess_target = self._target_in_basic_wcs_celestial_frame(target, segment_cube.basic_wcs)
                 _, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
                 slit_guess = int(np.clip(slit_guess, 0, segment_cube.shape[1] - 1))
                 slit_indices = np.arange(
@@ -347,10 +341,8 @@ class SpectrogramCube(SpecCube):
                 slit_index_grid,
                 wavelength_index_grid,
             )[1]
-            separation = np.hypot(
-                (sky.Tx - target.Tx).to_value(u.arcsec),
-                (sky.Ty - target.Ty).to_value(u.arcsec),
-            )
+            target_in_sky_frame = target.transform_to(sky.frame)
+            separation = sky.separation(target_in_sky_frame).to_value(u.arcsec)
             local_index = np.unravel_index(np.nanargmin(separation), separation.shape)
             score = float(separation[local_index])
             if best_match is None or score < best_match[0]:
@@ -389,7 +381,8 @@ class SpectrogramCube(SpecCube):
             msg = "spectrum_at requires a 3D raster cube."
             raise ValueError(msg)
         if self.basic_wcs is not None:
-            step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target)
+            target_in_frame = self._target_in_basic_wcs_celestial_frame(target, self.basic_wcs)
+            step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target_in_frame)
             if clip:
                 step_index = int(np.clip(step_index, 0, self.shape[0] - 1))
                 slit_index = int(np.clip(slit_index, 0, self.shape[1] - 1))
@@ -403,7 +396,7 @@ class SpectrogramCube(SpecCube):
             nearest_segment = self._nearest_raster_segment(target, clip=clip)
             if nearest_segment is None:
                 sky_grid = self.axis_world_coords("custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat")[0]
-                target_in_frame = target.transform_to(sky_grid)
+                target_in_frame = target.transform_to(sky_grid.frame)
                 if not clip:
                     lon = target_in_frame.Tx.to(u.arcsec)
                     lat = target_in_frame.Ty.to(u.arcsec)

@@ -154,8 +154,8 @@ Let us check the metadata of this collection, this is stored as a ``meta`` attri
     OBS Description: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
     <BLANKLINE>
 
-The collection itself groups spectral windows, so the metadata lives on each
-spectral-window cube rather than on the `RasterCollection`.
+The `~irispy.spectrograph.RasterCollection` itself groups spectral windows, so the metadata lives on each
+spectral-window cube rather than on the collection.
 While SJI files contain just one spectral window per file, raster files have several spectral windows per file.
 
 If we want to check the primary header of the raster, we can do the following:
