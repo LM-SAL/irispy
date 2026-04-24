@@ -55,6 +55,7 @@ sji_2796 = read_files(sji_filename)
 # Now we will find the closest SJI time to the 56th raster step.
 
 c_ii = raster["C II 1336"]
+del raster
 
 times_SG = c_ii.axis_world_coords("time", wcs=c_ii.extra_coords)
 (time_2796,) = sji_2796.axis_world_coords("time")

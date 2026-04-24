@@ -9,5 +9,5 @@ Each entry is written to be self-contained and attempts to explain each concept 
 
 **We are always looking for more entries, so if you have ideas or code, please do get in touch and we can work on adding it!**
 
-Please be aware that there maybe lines of code which are required to ensure that the plots or animations work within the online documentation.
+Please be aware that there are lines of code which are required to ensure that on ReadTheDocs, RAM use is kept low and that plots or animations will correctly output.
 These are not needed for use in notebooks or local scripts.

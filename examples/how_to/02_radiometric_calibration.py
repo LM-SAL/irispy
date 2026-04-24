@@ -62,6 +62,7 @@ raster = read_files(raster_filename, memmap=False)
 # This observation contains one complete raster, so the window value is already a
 # single `SpectrogramCube`.
 mg_ii_k_2796 = raster["Mg II k 2796"]
+del raster
 
 ###############################################################################
 # To convert the spectral units from DN to flux one must do the following calculation:

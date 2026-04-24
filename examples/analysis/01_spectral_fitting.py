@@ -59,6 +59,7 @@ raster = read_files(raster_filename, memmap=False)
 # This observation contains one complete raster, so the window value is already a
 # single `SpectrogramCube`.
 si_iv_1403 = raster["Si IV 1403"]
+del raster
 
 # However, before we get to that, we will shrink the data cube to make it easier to work with.
 # This is just a smaller subarray for speed, so direct slicing is simpler than
@@ -176,6 +177,7 @@ iris_model_fit = parallel_fit_dask(
     diagnostics="error",
     diagnostics_path=diag_path,
 )
+del filtered_data
 
 ################################################################################
 # Note that this example is done in a single thread. If you want to use multiple cores.

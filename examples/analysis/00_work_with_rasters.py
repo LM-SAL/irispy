@@ -50,6 +50,7 @@ print(raster.keys())
 
 # We can get the Mg II k window
 mg_ii = raster["Mg II k 2796"]
+del raster
 print(mg_ii)
 
 ###############################################################################

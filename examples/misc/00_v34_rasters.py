@@ -51,6 +51,7 @@ print(raster)
 
 mg_ii_k = raster["Mg II k 2796"]
 mg_ii_k_unflipped = raster_unflipped["Mg II k 2796"]
+del raster, raster_unflipped
 print(mg_ii_k)
 
 ###############################################################################
