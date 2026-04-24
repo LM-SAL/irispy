@@ -39,9 +39,10 @@ raster_filename = pooch.retrieve(
 # By default, irispy will read the v34 data, flipping the data so that it
 # is in the same orientation as normal IRIS data and adjust the WCS accordingly.
 
-raster = read_files(raster_filename, memmap=False)
+# Load only the Mg II k window and use memmap to keep peak memory low.
+raster = read_files(raster_filename, memmap=True, spectral_windows=["Mg II k 2796"])
 # We will also undo the v34 handling and read the data as is.
-raster_unflipped = read_files(raster_filename, memmap=False, revert_v34=True)
+raster_unflipped = read_files(raster_filename, memmap=True, revert_v34=True, spectral_windows=["Mg II k 2796"])
 
 # Printing will give us an overview of the file.
 print(raster)

@@ -42,7 +42,7 @@ def _remove_cosmic_rays_rsliding(
     kwargs["sigma"] = sigma if sigma is not None else kwargs.get("sigma", 3.0)
     kwargs["max_iters"] = max_iters if max_iters is not None else kwargs.get("max_iters", 5)
     kwargs["masked_array"] = True
-    working_data = data.copy()
+    working_data = data.astype(np.float64, copy=True)
     working_data[mask] = np.nan
     clipped = slidingsigmaclipping(data=working_data, **kwargs).clipped
     cleaned_data = np.ma.getdata(clipped)

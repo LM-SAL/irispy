@@ -33,8 +33,10 @@ raster_filename = pooch.retrieve(
 ###############################################################################
 # Open the data and select one Si IV 1403 slice for the comparison.
 
-raster = read_files(raster_filename, memmap=False)
-raster_1403 = raster["Si IV 1403"][10][4]
+# Load only the Si IV 1403 window to keep I/O modest.
+raster = read_files(raster_filename, memmap=False, spectral_windows=["Si IV 1403"])
+# Select a single 2D (slit vs wavelength) scan step for the comparison.
+raster_1403 = raster["Si IV 1403"][10]
 del raster
 
 ###############################################################################
