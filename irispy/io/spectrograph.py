@@ -138,9 +138,11 @@ def _raster_wcs_bad_row_mask(pc, crval):
     return pc_bad | crval_bad
 
 
-def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None):
+def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None, *, bad_rows=None):
     """Replace all-zero PC/crval rows via neighbour interpolation or fallback."""
-    bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+    if bad_rows is None:
+        bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+
     if not bad_rows.any():
         return pc, crval
 
@@ -555,9 +557,7 @@ def read_spectrograph_lvl2(
 
     # Per-window running means of good WCS table rows across files, used as
     # fallback only when a later file has no good rows for that window.
-    running_wcs_fallbacks = {
-        window_name: [np.zeros((2, 2)), np.zeros(2), 0] for window_name in spectral_windows_req
-    }
+    running_wcs_fallbacks = {window_name: [np.zeros((2, 2)), np.zeros(2), 0] for window_name in spectral_windows_req}
 
     for filename in filenames:
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
@@ -642,8 +642,15 @@ def read_spectrograph_lvl2(
                 running_pc_sum, running_crval_sum, running_count = running_wcs_fallbacks[window_name]
                 fallback_pc = (running_pc_sum / running_count * u.pix) if running_count > 0 else None
                 fallback_crval = (running_crval_sum / running_count * u.arcsec) if running_count > 0 else None
-                good_mask = ~_raster_wcs_bad_row_mask(pc, crval)
-                pc_sanitized, crval = _sanitize_raster_wcs_tables(pc.copy(), crval, fallback_pc, fallback_crval)
+                bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+                good_mask = ~bad_rows
+                pc_sanitized, crval = _sanitize_raster_wcs_tables(
+                    pc.copy(),
+                    crval,
+                    fallback_pc,
+                    fallback_crval,
+                    bad_rows=bad_rows,
+                )
                 if good_mask.any():
                     running_wcs_fallbacks[window_name][0] += pc[good_mask].sum(axis=0).to_value(u.pix)
                     running_wcs_fallbacks[window_name][1] += crval[good_mask].sum(axis=0).to_value(u.arcsec)

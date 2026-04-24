@@ -16,6 +16,9 @@ from irispy.visualization import IRISPlotter, finalize_iris_plot
 
 __all__ = ["RasterCollection", "SpectrogramCube"]
 
+RASTER_SEGMENT_STEP_SEARCH_RADIUS = 2
+RASTER_SEGMENT_SLIT_SEARCH_RADIUS = 16
+
 
 def _normalize_tuple_index(item, ndim):
     """
@@ -316,23 +319,27 @@ class SpectrogramCube(SpecCube):
             return None
 
         best_match = None
-        step_search_radius = 2
-        slit_search_radius = 16
         for segment_index, raster_slice in enumerate(self.raster_boundaries):
             segment_cube = self[raster_slice]
             if segment_cube.basic_wcs is not None:
                 guess_target = target.transform_to(wcs_to_celestial_frame(segment_cube.basic_wcs.celestial))
                 step_guess, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
+                if not np.isfinite(step_guess) or not np.isfinite(slit_guess):
+                    continue
+                if not clip and not (
+                    0 <= step_guess < segment_cube.shape[0] and 0 <= slit_guess < segment_cube.shape[1]
+                ):
+                    continue
                 step_guess = int(np.clip(step_guess, 0, segment_cube.shape[0] - 1))
                 slit_guess = int(np.clip(slit_guess, 0, segment_cube.shape[1] - 1))
                 step_indices = np.arange(
-                    max(0, step_guess - step_search_radius),
-                    min(segment_cube.shape[0], step_guess + step_search_radius + 1),
+                    max(0, step_guess - RASTER_SEGMENT_STEP_SEARCH_RADIUS),
+                    min(segment_cube.shape[0], step_guess + RASTER_SEGMENT_STEP_SEARCH_RADIUS + 1),
                     dtype=int,
                 )
                 slit_indices = np.arange(
-                    max(0, slit_guess - slit_search_radius),
-                    min(segment_cube.shape[1], slit_guess + slit_search_radius + 1),
+                    max(0, slit_guess - RASTER_SEGMENT_SLIT_SEARCH_RADIUS),
+                    min(segment_cube.shape[1], slit_guess + RASTER_SEGMENT_SLIT_SEARCH_RADIUS + 1),
                     dtype=int,
                 )
             else:
