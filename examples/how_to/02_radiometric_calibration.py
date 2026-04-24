@@ -91,9 +91,11 @@ fig, ax = plt.subplots()
 color = "tab:red"
 ax.set_xlabel("Wavelength (Å)")
 ax.set_ylabel("Counts (DN)", color=color)
+scan_index = mg_ii_k_2796.shape[0] // 2
+slit_index = mg_ii_k_2796.shape[1] // 2
 ax.plot(
     mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
-    mg_ii_k_2796.data[100, 10:-20],
+    mg_ii_k_2796.data[scan_index, slit_index, 10:-20],
     color=color,
     linestyle="dashed",
 )
@@ -104,7 +106,7 @@ ax2 = ax.twinx()
 color = "tab:blue"
 ax2.plot(
     calibrated_mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
-    calibrated_mg_ii_k_2796.data[100, 10:-20],
+    calibrated_mg_ii_k_2796.data[scan_index, slit_index, 10:-20],
     color=color,
 )
 ax2.set_ylabel("Calibrated Intensity (erg s$^{-1}$ cm$^{-2}$ sr$^{-1}$ Å$^{-1}$)", color=color)

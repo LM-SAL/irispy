@@ -9,7 +9,7 @@ import dask.array as da
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.io.spectrograph import _create_raster_gwcs, read_spectrograph_lvl2
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -244,6 +244,33 @@ def test_gwcs_inverse_roundtrips_sit_and_stare_exposures(sns_sg_file):
 
     cropped = scan.crop(start, stop)
     assert cropped.data.shape == (2,)
+
+
+def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic(raster_sg_file):
+    raster_collection = read_spectrograph_lvl2(raster_sg_file)
+    scan = raster_collection["Si IV 1403"]
+
+    pc_all = np.concatenate([scan._raster_pc_table, scan._raster_pc_table], axis=0)
+    crval_all = np.concatenate([scan._raster_crval_table, scan._raster_crval_table], axis=0)
+    dt_all = np.concatenate(
+        [
+            np.arange(scan.shape[0], dtype=float),
+            np.arange(scan.shape[0] - 1, -1, -1, dtype=float),
+        ]
+    ) * u.s
+
+    wcs = _create_raster_gwcs(
+        scan._raster_wcs_header,
+        pc_all,
+        crval_all,
+        dt_all,
+        scan.time[0],
+        scan._raster_observer,
+    )
+
+    for scan_index in (1, scan.shape[0] + 1):
+        point = wcs.array_index_to_world(scan_index, 20, 10)
+        assert wcs.world_to_array_index(*point) == (scan_index, 20, 10)
 
 
 def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files):

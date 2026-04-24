@@ -13,7 +13,7 @@ from astropy.tests.helper import assert_quantity_allclose
 
 from ndcube.utils.exceptions import NDCubeUserWarning
 
-from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.io.spectrograph import _lazy_raster_scan_chunk_rows, read_spectrograph_lvl2
 
 
 def test_fits_data_comparison(sns_sg_file):
@@ -232,10 +232,13 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
 def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
     cube = raster["Si IV 1403"]
+    expected_rows = _lazy_raster_scan_chunk_rows(cube.raster_slice(0))
 
     assert isinstance(cube.data, da.Array)
-    assert len(cube.data.chunks[0]) > len(cube.raster_boundaries)
-    assert max(cube.data.chunks[0]) < cube.raster_slice(0).shape[0]
+    assert max(cube.data.chunks[0]) == expected_rows
+    assert len(cube.data.chunks[0]) == sum(
+        int(np.ceil((boundary.stop - boundary.start) / expected_rows)) for boundary in cube.raster_boundaries
+    )
 
 
 def _get_coord(ax, *, coord_type=None, coord_unit=None):
@@ -315,4 +318,3 @@ def test_raster_animation_keeps_longitude_axis_after_slider_update(raster_sg_fil
     assert "b" not in time.get_ticks_position()
     assert time.get_axislabel() == ""
     plt.close(fig)
-

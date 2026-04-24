@@ -93,7 +93,7 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 # We choose a specific helioprojective location and crop the spectrogram down to the
 # spectrum at that point.
 
-iris_observer = wcs_to_celestial_frame(mg_ii_k.basic_wcs.celestial).observer
+iris_observer = wcs_to_celestial_frame(mg_ii_k.raster_slice(0).basic_wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
 target = SkyCoord(-908 * u.arcsec, 311 * u.arcsec, frame=iris_frame)
 mg_ii_k_unflipped_spectra = mg_ii_k_unflipped.spectrum_at(target)

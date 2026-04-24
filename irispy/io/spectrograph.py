@@ -9,7 +9,6 @@ import astropy.modeling.models as m
 import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
-from dask import delayed
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.time import Time, TimeDelta
@@ -29,7 +28,7 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOIS
 
 __all__ = ["read_spectrograph_lvl2"]
 
-LAZY_RASTER_TARGET_CHUNK_BYTES = 32 * 1024
+LAZY_RASTER_TARGET_CHUNK_BYTES = 4 * 1024 * 1024
 
 
 def _header_time(header, *keys):
@@ -184,11 +183,13 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         1, name="step"
     )
     non_spectral = slit_step_mapping | non_spectral_rhs
-    non_spectral.inverse = non_spectral_rhs.inverse | m.Mapping(
-        (0, 3),
+    # Time is redundant with the explicit scan-step output and may not be monotonic
+    # across flipped or repeated rasters, so the inverse keys off sky + step only.
+    non_spectral.inverse = m.Mapping(
+        (0, 1, 3),
         n_inputs=4,
-        name="SelectSlitAndExplicitStep",
-    )
+        name="SelectSkyAndExplicitStep",
+    ) | celestial.inverse
     forward_transform = spectral & non_spectral
     forward_transform.inverse = spectral.inverse & non_spectral.inverse
 
@@ -331,31 +332,18 @@ def _lazy_raster_scan_chunk_rows(cube):
     return max(1, min(cube.shape[0], LAZY_RASTER_TARGET_CHUNK_BYTES // max(row_bytes, 1)))
 
 
-def _load_memmap_raster_chunk(filename, ext, *, scan_slice, flip):
-    with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
-        data = hdulist[ext].data
-        if flip:
-            data = np.flip(data, axis=0)
-        return np.array(data[scan_slice], copy=True)
-
-
 def _build_lazy_raster_data(cubes):
     chunks = []
     for cube in cubes:
         chunk_rows = _lazy_raster_scan_chunk_rows(cube)
-        for local_start in range(0, cube.shape[0], chunk_rows):
-            local_stop = min(local_start + chunk_rows, cube.shape[0])
-            chunk = da.from_delayed(
-                delayed(_load_memmap_raster_chunk)(
-                    cube._memmap_path,
-                    cube._memmap_ext,
-                    scan_slice=slice(local_start, local_stop),
-                    flip=cube._flip,
-                ),
-                shape=(local_stop - local_start, *cube.shape[1:]),
-                dtype=cube.data.dtype,
+        chunks.append(
+            da.from_array(
+                cube.data,
+                chunks=(chunk_rows, *cube.shape[1:]),
+                fancy=False,
+                asarray=False,
             )
-            chunks.append(chunk)
+        )
     return da.concatenate(chunks, axis=0)
 
 
