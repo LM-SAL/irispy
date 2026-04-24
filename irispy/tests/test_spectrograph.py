@@ -201,6 +201,16 @@ def test_spectrogram_cube_spectrum_at_transforms_target_frame(raster_sg_files):
     np.testing.assert_array_equal(spectrum.data, expected.data)
 
 
+def test_spectrogram_cube_spectrum_at_combined_raster_clip_false_raises(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+    outside_target = target.spherical_offsets_by(1000 * u.arcsec, 1000 * u.arcsec)
+
+    with pytest.raises(ValueError, match="Target is outside the raster bounds"):
+        cube.spectrum_at(outside_target, clip=False)
+
+
 def test_spectrogram_cube_spectrum_at_avoids_full_sky_grid_when_segment_wcs_exists(raster_sg_files, monkeypatch):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
