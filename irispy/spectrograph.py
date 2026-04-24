@@ -311,10 +311,6 @@ class SpectrogramCube(SpecCube):
             return (self,)
         return tuple(self[raster_slice] for raster_slice in boundaries)
 
-    @staticmethod
-    def _target_in_basic_wcs_celestial_frame(target, basic_wcs):
-        return target.transform_to(wcs_to_celestial_frame(basic_wcs.celestial))
-
     def _nearest_raster_segment(self, target, *, clip):
         if not self._raster_boundaries:
             return None
@@ -324,7 +320,7 @@ class SpectrogramCube(SpecCube):
             segment_cube = self[raster_slice]
             step_indices = np.arange(segment_cube.shape[0], dtype=int)
             if segment_cube.basic_wcs is not None:
-                guess_target = self._target_in_basic_wcs_celestial_frame(target, segment_cube.basic_wcs)
+                guess_target = target.transform_to(wcs_to_celestial_frame(segment_cube.basic_wcs.celestial))
                 _, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
                 slit_guess = int(np.clip(slit_guess, 0, segment_cube.shape[1] - 1))
                 slit_indices = np.arange(
@@ -381,7 +377,7 @@ class SpectrogramCube(SpecCube):
             msg = "spectrum_at requires a 3D raster cube."
             raise ValueError(msg)
         if self.basic_wcs is not None:
-            target_in_frame = self._target_in_basic_wcs_celestial_frame(target, self.basic_wcs)
+            target_in_frame = target.transform_to(wcs_to_celestial_frame(self.basic_wcs.celestial))
             step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target_in_frame)
             if clip:
                 step_index = int(np.clip(step_index, 0, self.shape[0] - 1))

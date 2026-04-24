@@ -83,20 +83,24 @@ def _spectral_windows_from_header(header):
     return np.array([header[f"TDESC{i}"] for i in range(1, header["NWIN"] + 1)], dtype=str)
 
 
-def _validate_header_value(reference_header, header, key, filename):
-    expected = reference_header.get(key)
-    actual = header.get(key)
-    if actual != expected:
-        msg = (
-            "Spectrograph files must belong to one compatible observation; "
-            f"{filename} has {key}={actual!r}, expected {expected!r}."
-        )
-        raise ValueError(msg)
-
-
-def _validate_spectrograph_file_compatible(reference_header, header, filename):
+def _validate_spectrograph_file_compatible(
+    reference_header,
+    reference_window_headers,
+    hdulist,
+    filename,
+    window_fits_indices,
+    window_names,
+):
+    header = hdulist[0].header
     for key in OBSERVATION_COMPATIBILITY_KEYS:
-        _validate_header_value(reference_header, header, key, filename)
+        expected = reference_header.get(key)
+        actual = header.get(key)
+        if actual != expected:
+            msg = (
+                "Spectrograph files must belong to one compatible observation; "
+                f"{filename} has {key}={actual!r}, expected {expected!r}."
+            )
+            raise ValueError(msg)
 
     reference_windows = _spectral_windows_from_header(reference_header)
     windows = _spectral_windows_from_header(header)
@@ -107,17 +111,22 @@ def _validate_spectrograph_file_compatible(reference_header, header, filename):
         )
         raise ValueError(msg)
 
-
-def _validate_window_header_compatible(reference_window_header, window_header, filename, window_name):
-    for key in WINDOW_COMPATIBILITY_KEYS:
-        expected = reference_window_header.get(key)
-        actual = window_header.get(key)
-        if actual != expected:
-            msg = (
-                f"Spectral window {window_name!r} in {filename} is not compatible with the first file: "
-                f"{key}={actual!r}, expected {expected!r}."
-            )
-            raise ValueError(msg)
+    for reference_window_header, window_index, window_name in zip(
+        reference_window_headers,
+        window_fits_indices,
+        window_names,
+        strict=True,
+    ):
+        window_header = hdulist[window_index].header
+        for key in WINDOW_COMPATIBILITY_KEYS:
+            expected = reference_window_header.get(key)
+            actual = window_header.get(key)
+            if actual != expected:
+                msg = (
+                    f"Spectral window {window_name!r} in {filename} is not compatible with the first file: "
+                    f"{key}={actual!r}, expected {expected!r}."
+                )
+                raise ValueError(msg)
 
 
 def _raster_wcs_bad_row_mask(pc, crval):
@@ -550,7 +559,14 @@ def read_spectrograph_lvl2(
     for filename in filenames:
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
             hdulist.verify("silentfix")
-            _validate_spectrograph_file_compatible(primary_header, hdulist[0].header, filename)
+            _validate_spectrograph_file_compatible(
+                primary_header,
+                reference_window_headers,
+                hdulist,
+                filename,
+                window_fits_indices,
+                spectral_windows_req,
+            )
             aux = hdulist[-2]
             file_startobs = _header_time(hdulist[0].header, "STARTOBS", "DATE_OBS")
             times = file_startobs + TimeDelta(aux.data[:, aux.header["TIME"]] * u.s)
@@ -580,12 +596,6 @@ def read_spectrograph_lvl2(
 
             for i, window_name in enumerate(spectral_windows_req):
                 window_header = hdulist[window_fits_indices[i]].header.copy()
-                _validate_window_header_compatible(
-                    reference_window_headers[i],
-                    window_header,
-                    filename,
-                    window_name,
-                )
                 meta = SGMeta(
                     hdulist[0].header,
                     window_name,

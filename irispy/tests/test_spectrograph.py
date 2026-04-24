@@ -279,6 +279,24 @@ def test_memmap_raster_computes_after_reader_returns(raster_sg_files):
     assert spectrum_data.shape == spectrum.shape
 
 
+def test_memmap_raster_values_match_eager_read_after_reader_returns(raster_sg_files):
+    lazy_raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
+    eager_raster = read_spectrograph_lvl2(raster_sg_files)
+
+    lazy_cube = lazy_raster["Si IV 1403"]
+    eager_cube = eager_raster["Si IV 1403"]
+    _, target, _, _ = lazy_cube.wcs.array_index_to_world(10, 50, 0)
+
+    np.testing.assert_array_equal(
+        lazy_cube.raster_slice(0).data.compute(),
+        eager_cube.raster_slice(0).data,
+    )
+    np.testing.assert_array_equal(
+        lazy_cube.spectrum_at(target).data.compute(),
+        eager_cube.spectrum_at(target).data,
+    )
+
+
 def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
     cube = raster["Si IV 1403"]
