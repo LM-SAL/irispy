@@ -85,6 +85,12 @@ def _validate_combinable_raster_cubes(cubes):
     if any(not all(hasattr(cube, attr) for attr in required_attrs) for cube in cubes):
         msg = "Raster cubes do not expose the WCS metadata needed to build a combined cube."
         raise ValueError(msg)
+    # Ensure all cubes share the same observer; combined gWCS uses cubes[0].
+    first_observer = cubes[0]._raster_observer
+    for cube in cubes[1:]:
+        if not np.array_equal(cube._raster_observer.cartesian.xyz.value, first_observer.cartesian.xyz.value):
+            msg = "All raster cubes must have the same observer coordinate."
+            raise ValueError(msg)
     return cubes
 
 
@@ -179,7 +185,7 @@ def _combine_raster_cubes(cubes, create_raster_gwcs):
     if len(cubes) == 1:
         return cubes[0]
     if any(getattr(cube, "_memmap", False) or isinstance(cube.data, np.memmap) for cube in cubes):
-        msg = "Use _combine_raster_cubes_lazy() for memmap-backed raster cubes."
+        msg = "Memmap-backed raster cubes must be combined via the lazy reader (memmap=True)."
         raise NotImplementedError(msg)
     data = np.concatenate([cube.data for cube in cubes], axis=0)
     return _build_combined_raster_cube(

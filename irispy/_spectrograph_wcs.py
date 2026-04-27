@@ -31,6 +31,8 @@ def _normalize_tuple_index(item, ndim):
             normalized_item.append(subitem)
     if len(normalized_item) < ndim:
         normalized_item.extend([slice(None)] * (ndim - len(normalized_item)))
+    if len(normalized_item) != ndim:
+        return None
     return normalized_item
 
 
@@ -116,8 +118,6 @@ class _SpectrogramCubeWCSMixin:
             if scan_step != 1:
                 retained = np.arange(overlap_start, overlap_stop, scan_step)
                 if retained.size == 0:
-                    continue
-                if retained[0] < segment_start or retained[-1] >= segment_stop:
                     continue
                 relative_item = (
                     slice(retained[0] - segment_start, retained[-1] - segment_start + 1, scan_step),

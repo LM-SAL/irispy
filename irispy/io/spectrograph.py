@@ -264,7 +264,17 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         method="linear",
         name="Time",
     )
+    # The pixel frame has 3 axes: (dispersion, spatial_along_slit, scan_step).
+    # The spectral axis is handled separately, so the non-spectral transform
+    # starts from the remaining 2 pixel axes: spatial_along_slit and scan_step.
+    # AsymmetricMapping expands these 2 inputs into 4 outputs:
+    #   (spatial_along_slit, scan_step, scan_step, scan_step)
+    # so that scan_step can be fed into both the celestial and temporal models
+    # while spatial_along_slit goes only to celestial.
     slit_step_mapping = AsymmetricMapping([0, 1, 1, 1], [0, 1], name="SlitStepMapping")
+    # CoupledCompoundModel shares the first input (scan_step) between celestial
+    # and temporal. The Identity(1) passes through an extra copy of scan_step
+    # to produce the explicit scan-step world coordinate.
     non_spectral_rhs = CoupledCompoundModel("&", left=celestial, right=temporal, shared_inputs=1) & m.Identity(
         1, name="step"
     )
