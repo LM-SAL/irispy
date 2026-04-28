@@ -85,6 +85,17 @@ def test_calculate_moments_asymmetric_wings(sns_sg_file):
     )
 
 
+def test_calculate_moments_asymmetric_wings_tuple_quantity():
+    """
+    Test that asymmetric wings can be given as a tuple of Quantity objects.
+    """
+    wvls = np.linspace(1.0, 5.0, 5) * u.nm
+    cube = make_test_spectrogram_cube(np.ones((1, 1, len(wvls))), wvls)
+    moments = calculate_moments(cube, rest_wavelength=3 * u.nm, wings=(1.1 * u.nm, 0.1 * u.nm))
+    assert_quantity_allclose(moments["intensity"].data[0, 0] * moments["intensity"].unit, 2 * u.DN)
+    assert_quantity_allclose(moments["centroid"].data[0, 0] * moments["centroid"].unit, 2.5 * u.nm)
+
+
 def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
     """
     Test that calculate_moments raises an error when wings is given without
@@ -236,6 +247,20 @@ def test_calculate_moments_nan_values_zeroed():
     assert np.isfinite(width.data[0, 0])
 
 
+def test_calculate_moments_masked_values_zeroed():
+    """
+    Test that masked spectral bins do not contribute to moments.
+    """
+    wvls = np.array([1.0, 2.0, 3.0]) * u.nm
+    data = np.array([[[1.0, 1.0, 1000.0]]])
+    cube = make_test_spectrogram_cube(data, wvls)
+    cube.mask = np.array([[[False, False, True]]])
+    moments = calculate_moments(cube)
+    assert_quantity_allclose(moments["intensity"].data[0, 0] * moments["intensity"].unit, 2 * u.DN)
+    assert_quantity_allclose(moments["centroid"].data[0, 0] * moments["centroid"].unit, 1.5 * u.nm)
+    assert_quantity_allclose(moments["width"].data[0, 0] * moments["width"].unit, 0.5 * u.nm)
+
+
 def test_calculate_moments_zero_intensity():
     """
     Test that a completely zero spectrum returns NaN centroid and width.
@@ -296,22 +321,6 @@ def test_calculate_moments_wings_excludes_outside():
     # If the outside peak were included, centroid would be pulled to ~1403.0
     # With wings excluding it, centroid should stay near 1402.77
     assert_quantity_allclose(centroid.data[0, 0] * centroid.unit, 140.277 * u.nm, atol=0.001 * u.nm)
-
-
-def test_calculate_moments_min_intensity():
-    """
-    Test that min_intensity masks low-signal pixels.
-    """
-    wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
-    gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
-    spectrum = gauss(wvls.value)
-    data = spectrum.reshape(1, 1, -1)
-    cube = make_test_spectrogram_cube(data, wvls)
-    # Threshold well above the intensity → all moments should be NaN
-    moments = calculate_moments(cube, min_intensity=1e6)
-    assert np.isnan(moments["intensity"].data[0, 0])
-    assert np.isnan(moments["centroid"].data[0, 0])
-    assert np.isnan(moments["width"].data[0, 0])
 
 
 def test_calculate_moments_wings_empty_window():
@@ -411,3 +420,19 @@ def test_calculate_moments_min_intensity_at_threshold():
     assert np.isfinite(moments["intensity"].data[0, 0])
     assert np.isfinite(moments["centroid"].data[0, 0])
     assert np.isfinite(moments["width"].data[0, 0])
+
+
+def test_calculate_moments_preserves_time_without_spectral_global_coord(sns_sg_file):
+    """
+    Test that moment maps keep scan times without adding a fixed wavelength coordinate.
+    """
+    raster_collection = read_files(sns_sg_file)
+    cube = raster_collection["C II 1336"][0]
+    moments = calculate_moments(cube)
+    intensity = moments["intensity"]
+    assert "time" in tuple(intensity.extra_coords.keys())
+    assert "em.wl" not in tuple(intensity.global_coords.keys())
+    np.testing.assert_array_equal(
+        intensity.axis_world_coords("time", wcs=intensity.extra_coords)[0].isot,
+        cube.axis_world_coords("time", wcs=cube.extra_coords)[0].isot,
+    )
