@@ -1,4 +1,5 @@
 exclude: "(.*/)?CITATION.rst$|.*(.fits|.fts|.fit|.header|.txt|tca.*|extern.*|irispy/extern)$"
+
 repos:
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
     rev: v1.23.1
@@ -16,6 +17,13 @@ repos:
       - id: ruff-format
         types: [python]
         exclude: *exclude_dirs
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.8
+    hooks:
+      - id: docformatter
+        args: ["--black", "--pre-summary-newline", "--pre-summary-space", "--make-summary-multi-line", "--close-quotes-on-newline", "--in-place"]
+        types: [python]
+        exclude: examples/
   - repo: https://github.com/PyCQA/isort
     rev: 8.0.1
     hooks:

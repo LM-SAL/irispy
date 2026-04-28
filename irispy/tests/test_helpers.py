@@ -1,4 +1,6 @@
-"""Tests for irispy.tests.helpers utilities."""
+"""
+Tests for irispy.tests.helpers utilities.
+"""
 
 import numpy as np
 
@@ -11,7 +13,9 @@ from irispy.tests.helpers import make_test_spectrogram_cube
 
 
 def test_make_test_spectrogram_cube_wcs_and_units():
-    """Lock in axis ordering assumptions: wavelength is the last axis."""
+    """
+    Lock in axis ordering assumptions: wavelength is the last axis.
+    """
     wavelengths = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     data = np.ones((5, 7, len(wavelengths)))
     cube = make_test_spectrogram_cube(data, wavelengths)

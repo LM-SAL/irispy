@@ -216,8 +216,8 @@ def jinja_to_rst(app, docname, source):
 
     Depending on the building format, we render the page as a jinja template.
 
-    For the linkchecker, we bypass templating as it doesn't support jinja, but we
-    remove the jinja blocks so the page is still valid for checking.
+    For the linkchecker, we bypass templating as it doesn't support jinja, but we remove
+    the jinja blocks so the page is still valid for checking.
     """
     jinja_pages = ["index"]
     if app.builder.format == "html":

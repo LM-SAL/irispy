@@ -10,6 +10,8 @@ using the built-in ``remove_cosmic_rays()`` API in ``irispy``.
 
 The ``astroscrappy`` backend works on one 2D frame at a time and does not use
 temporal context from a time series.
+
+``irispy`` supports two backends for cosmic ray removal, they are compared in this example: :ref:`sphx_glr_generated_gallery_misc_03_compare_cosmic_ray_backends.py`.
 """
 
 import matplotlib.pyplot as plt

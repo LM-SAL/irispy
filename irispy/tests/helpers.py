@@ -72,7 +72,8 @@ def figure_test(test_function):
 
 
 def make_test_spectrogram_cube(data, wavelengths):
-    """Build a minimal 3-D SpectrogramCube for unit tests.
+    """
+    Build a minimal 3-D SpectrogramCube for unit tests.
 
     N.B. FITS stores axes in reverse order relative to numpy arrays:
     NAXIS1 corresponds to the last numpy axis, NAXIS2 to the penultimate,

@@ -14,7 +14,9 @@ from irispy.utils.moments import calculate_moments
 
 
 def test_calculate_moments_basic(sns_sg_file):
-    """Test that calculate_moments runs on real data and returns correct shapes and units."""
+    """
+    Test that calculate_moments runs on real data and returns correct shapes and units.
+    """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     rest_wvl = 1332.9 * u.Angstrom
@@ -52,7 +54,9 @@ def test_calculate_moments_basic(sns_sg_file):
 
 
 def test_calculate_moments_sliced_cube(sns_sg_file):
-    """Test that calculate_moments works on a sliced cube and with default arguments."""
+    """
+    Test that calculate_moments works on a sliced cube and with default arguments.
+    """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     cube_slice = cube[10, :, :]
@@ -64,7 +68,9 @@ def test_calculate_moments_sliced_cube(sns_sg_file):
 
 
 def test_calculate_moments_asymmetric_wings(sns_sg_file):
-    """Test that calculate_moments works with asymmetric wings."""
+    """
+    Test that calculate_moments works with asymmetric wings.
+    """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     rest_wvl = 1332.9 * u.Angstrom
@@ -80,7 +86,10 @@ def test_calculate_moments_asymmetric_wings(sns_sg_file):
 
 
 def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
-    """Test that calculate_moments raises an error when wings is given without rest_wavelength."""
+    """
+    Test that calculate_moments raises an error when wings is given without
+    rest_wavelength.
+    """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     with pytest.raises(ValueError, match="rest_wavelength must be provided"):
@@ -88,7 +97,9 @@ def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
 
 
 def test_calculate_moments_known_gaussian():
-    """Test calculate_moments against a known Gaussian profile."""
+    """
+    Test calculate_moments against a known Gaussian profile.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
     spectrum = gauss(wvls.value)
@@ -116,7 +127,9 @@ def test_calculate_moments_known_gaussian():
 
 @figure_test
 def test_calculate_moments_known_gaussian_figure():
-    """Visual regression test for moment extraction on known Gaussian profiles."""
+    """
+    Visual regression test for moment extraction on known Gaussian profiles.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     rest_wvl = 1402.77 * u.Angstrom
     # Per-row properties: (amplitude, stddev in Å, Doppler shift in km/s)
@@ -181,7 +194,9 @@ def test_calculate_moments_known_gaussian_figure():
 
 
 def test_calculate_moments_negative_values_zeroed():
-    """Test that negative data values are treated as zero during moment calculation."""
+    """
+    Test that negative data values are treated as zero during moment calculation.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     spectrum = np.ones_like(wvls.value) * 10.0
     spectrum[10:20] = -5.0
@@ -202,7 +217,9 @@ def test_calculate_moments_negative_values_zeroed():
 
 
 def test_calculate_moments_nan_values_zeroed():
-    """Test that NaN data values are treated as zero during moment calculation."""
+    """
+    Test that NaN data values are treated as zero during moment calculation.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     spectrum = np.ones_like(wvls.value) * 10.0
     spectrum[10:20] = np.nan
@@ -220,7 +237,9 @@ def test_calculate_moments_nan_values_zeroed():
 
 
 def test_calculate_moments_zero_intensity():
-    """Test that a completely zero spectrum returns NaN centroid and width."""
+    """
+    Test that a completely zero spectrum returns NaN centroid and width.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     spectrum = np.zeros_like(wvls.value)
     data = spectrum.reshape(1, 1, -1)
@@ -235,7 +254,9 @@ def test_calculate_moments_zero_intensity():
 
 
 def test_calculate_moments_vectorized_spatial():
-    """Test that calculate_moments correctly handles different spectra per spatial pixel."""
+    """
+    Test that calculate_moments correctly handles different spectra per spatial pixel.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     # Pixel (0, 0): Gaussian centered at 1402.77
     gauss_0 = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
@@ -259,7 +280,9 @@ def test_calculate_moments_vectorized_spatial():
 
 
 def test_calculate_moments_wings_excludes_outside():
-    """Test that pixels outside the wings window are excluded from the calculation."""
+    """
+    Test that pixels outside the wings window are excluded from the calculation.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     # Create a spectrum with two peaks: one at 1402.77 (the target) and one at 1403.3 (outside wings)
     gauss_target = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
@@ -276,7 +299,9 @@ def test_calculate_moments_wings_excludes_outside():
 
 
 def test_calculate_moments_min_intensity():
-    """Test that min_intensity masks low-signal pixels."""
+    """
+    Test that min_intensity masks low-signal pixels.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
     spectrum = gauss(wvls.value)
@@ -290,7 +315,9 @@ def test_calculate_moments_min_intensity():
 
 
 def test_calculate_moments_wings_empty_window():
-    """Test that an empty wings window raises ValueError."""
+    """
+    Test that an empty wings window raises ValueError.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     spectrum = np.ones_like(wvls.value)
     data = spectrum.reshape(1, 1, -1)
@@ -301,7 +328,9 @@ def test_calculate_moments_wings_empty_window():
 
 
 def test_calculate_moments_saturation_limit():
-    """Test that saturation_limit masks saturated pixels."""
+    """
+    Test that saturation_limit masks saturated pixels.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
     spectrum = gauss(wvls.value)
@@ -316,7 +345,9 @@ def test_calculate_moments_saturation_limit():
 
 
 def test_calculate_moments_integrated():
-    """Test that integrated=True returns intensity in DN·nm."""
+    """
+    Test that integrated=True returns intensity in DN·nm.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
     spectrum = gauss(wvls.value)
@@ -336,7 +367,9 @@ def test_calculate_moments_integrated():
 
 
 def test_calculate_moments_min_intensity_mixed_pixels():
-    """Test that min_intensity only masks pixels below the threshold."""
+    """
+    Test that min_intensity only masks pixels below the threshold.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     # Create a 2x2 spatial grid with different amplitudes
     gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
@@ -364,7 +397,9 @@ def test_calculate_moments_min_intensity_mixed_pixels():
 
 
 def test_calculate_moments_min_intensity_at_threshold():
-    """Test that pixels exactly at min_intensity are NOT masked."""
+    """
+    Test that pixels exactly at min_intensity are NOT masked.
+    """
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
     gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
     spectrum = gauss(wvls.value)
