@@ -4,11 +4,17 @@ from functools import wraps
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
 import astropy
+import astropy.units as u
+from astropy.io import fits
+from astropy.wcs import WCS
 
-__all__ = ["warnings_as_errors"]
+from irispy.spectrograph import SpectrogramCube
+
+__all__ = ["make_test_spectrogram_cube", "warnings_as_errors"]
 
 
 @pytest.fixture
@@ -63,3 +69,49 @@ def figure_test(test_function):
         return ret
 
     return test_wrapper
+
+
+def make_test_spectrogram_cube(data, wavelengths):
+    """
+    Build a minimal 3-D SpectrogramCube for unit tests.
+
+    N.B. FITS stores axes in reverse order relative to numpy arrays:
+    NAXIS1 corresponds to the last numpy axis, NAXIS2 to the penultimate,
+    and NAXIS3 to the first.  This helper assumes the wavelength axis is
+    the **last** numpy axis.
+
+    Parameters
+    ----------
+    data : `numpy.ndarray`
+        3-D array with shape ``(ny, nx, n_wavelengths)``.
+    wavelengths : `astropy.units.Quantity`
+        1-D wavelength grid.
+
+    Returns
+    -------
+    `irispy.spectrograph.SpectrogramCube`
+    """
+    header = fits.Header()
+    header["NAXIS"] = 3
+    header["NAXIS1"] = data.shape[2]
+    header["NAXIS2"] = data.shape[1]
+    header["NAXIS3"] = data.shape[0]
+    header["CRPIX1"] = 1
+    header["CRPIX2"] = 1
+    header["CRPIX3"] = 1
+    # CTYPE1 / NAXIS1 corresponds to the LAST numpy array axis (wavelength)
+    header["CTYPE1"] = "WAVE"
+    header["CUNIT1"] = str(wavelengths.unit)
+    header["CDELT1"] = float(np.mean(np.diff(wavelengths.value)))
+    header["CRVAL1"] = float(wavelengths.value[0])
+    header["CTYPE2"] = "HPLT-TAN"
+    header["CUNIT2"] = "arcsec"
+    header["CDELT2"] = 1.0
+    header["CRVAL2"] = 0.0
+    header["CTYPE3"] = "HPLN-TAN"
+    header["CUNIT3"] = "arcsec"
+    header["CDELT3"] = 1.0
+    header["CRVAL3"] = 0.0
+    wcs = WCS(header)
+    meta = {"OBSID": 1, "detector type": "FUV", "spectral window": "test"}
+    return SpectrogramCube(data, wcs=wcs, uncertainty=None, unit=u.DN, meta=meta, mask=None)

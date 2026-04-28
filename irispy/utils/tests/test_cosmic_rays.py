@@ -115,7 +115,10 @@ def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch):
 
 
 def test_remove_cosmic_rays_astroscrappy_inmask_combined(sns_sjicube_1330, monkeypatch):
-    """Inmask from method_kwargs must be OR-merged with mask before each detect_cosmics call."""
+    """
+    Inmask from method_kwargs must be OR-merged with mask before each detect_cosmics
+    call.
+    """
     calls = []
 
     def fake_detect_cosmics(frame, *, inmask=None, **kwargs):  # NOQA: ARG001

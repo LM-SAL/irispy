@@ -11,6 +11,9 @@ This example compares the two optional cosmic-ray-removal backends supported by
 
 You can install both optional dependencies with
 ``pip install 'irispy-lmsal[cosmic-rays]'``.
+
+This example is meant to showcase the difference in one specific case, for a general overview see
+:ref:`sphx_glr_generated_gallery_how_to_01_remove_spikes.py`.
 """
 
 import matplotlib.pyplot as plt

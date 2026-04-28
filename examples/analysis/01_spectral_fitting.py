@@ -5,6 +5,10 @@ Fit Spectral Models to Spectra
 
 In this example, we are going to fit spectral lines from IRIS, using the raster data
 with a single Gaussian. Then use the fitted values to calculate the Gaussian moments.
+
+This is direct contrast to taking the spectral moments of the data cube, which is done in
+the following example, :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
+where we calculate the spectral moments of the data cube directly.
 """
 
 import shutil
@@ -39,6 +43,7 @@ time_support()
 #
 # The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml
 #
+
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz",
     known_hash="8949562149cfa5fba067b5b102e8434b14cea3c3416dd79c06b7f6e211c61a39",
@@ -76,12 +81,6 @@ si_iv_core = 140.277 * u.nm
 lower_corner = [SpectralCoord(si_iv_core), None]
 upper_corner = [SpectralCoord(si_iv_core), None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection=si_iv_spec_crop.wcs)
-si_iv_spec_crop.plot(axes=ax, plot_axes=["x", "y"], vmin=0, vmax=200)
-plt.title("Si IV 1402.77 A")
-plt.colorbar(label="Intensity [DN]", shrink=0.8)
 
 ###############################################################################
 # We will want to make two rebinned cubes from the full raster,
@@ -207,7 +206,16 @@ if errors:
 # Let us see the output!
 
 # Note that we are transposing the data arrays so they match up with the projection which is in X,Y.
-fig, axs = plt.subplots(nrows=3, ncols=1, subplot_kw={"projection": si_iv_spec_crop}, figsize=(6, 16))
+fig, ax_dict = plt.subplot_mosaic(
+    [["fov", "net_flux"], ["velocity", "sigma"]],
+    subplot_kw={"projection": si_iv_spec_crop.wcs},
+    figsize=(12, 10),
+)
+
+si_iv_spec_crop.plot(axes=ax_dict["fov"], plot_axes=["x", "y"], vmin=0, vmax=200)
+ax_dict["fov"].set_title("Si IV 1402.77 A")
+fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]", shrink=0.8)
+
 net_flux = (
     np.sqrt(2 * np.pi)
     * (iris_model_fit.amplitude_1)
@@ -215,31 +223,31 @@ net_flux = (
     / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1]).to(u.nm)
 )
 amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
-amp = axs[0].imshow(net_flux.value.T, vmin=0, vmax=amp_max, origin="lower")
-cbar = fig.colorbar(amp, ax=axs[0])
+amp = ax_dict["net_flux"].imshow(net_flux.value.T, vmin=0, vmax=amp_max, origin="lower")
+cbar = fig.colorbar(amp, ax=ax_dict["net_flux"])
 cbar.set_label(label=f"Intensity [{net_flux.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
-axs[0].set_title("Gaussian Net Flux")
+ax_dict["net_flux"].set_title("Gaussian Net Flux")
 
 core_shift = ((iris_model_fit.mean_1.quantity.to(u.nm)) - si_iv_core) / si_iv_core * (constants.c.to(u.km / u.s))
 shift_max = np.nanpercentile(np.abs(core_shift.value), 95)
-shift = axs[1].imshow(core_shift.value.T, cmap="coolwarm", vmin=-shift_max, vmax=shift_max)
-cbar = fig.colorbar(shift, ax=axs[1], extend="both")
+shift = ax_dict["velocity"].imshow(core_shift.value.T, cmap="coolwarm", vmin=-shift_max, vmax=shift_max)
+cbar = fig.colorbar(shift, ax=ax_dict["velocity"], extend="both")
 cbar.set_label(label=f"Doppler shift [{core_shift.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
-axs[1].set_title("Velocity from Gaussian shift")
+ax_dict["velocity"].set_title("Velocity from Gaussian shift")
 
 sigma = (iris_model_fit.stddev_1.quantity.to(u.nm)) / si_iv_core * (constants.c.to(u.km / u.s))
 # We make any negative values nan for the purpose of the color scale.
 sigma = np.where(sigma < 0, np.nan, sigma)
 line_max = np.nanpercentile(np.abs(sigma.value), 95)
-line = axs[2].imshow(sigma.value.T, vmax=line_max)
-cbar = fig.colorbar(line, ax=axs[2])
+line = ax_dict["sigma"].imshow(sigma.value.T, vmax=line_max)
+cbar = fig.colorbar(line, ax=ax_dict["sigma"])
 cbar.set_label(label=f"Line Width [{sigma.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
-axs[2].set_title("Gaussian Sigma")
+ax_dict["sigma"].set_title("Gaussian Sigma")
 
-for ax in axs:
+for ax in ax_dict.values():
     ax.coords[0].set_ticklabel(exclude_overlapping=True, fontsize=8)
     ax.coords[0].set_axislabel("Helioprojective Longitude", fontsize=8)
     ax.coords[1].set_ticklabel(exclude_overlapping=True, fontsize=8)
@@ -248,4 +256,4 @@ fig.tight_layout()
 
 plt.show()
 
-# sphinx_gallery_thumbnail_number = 3
+# sphinx_gallery_thumbnail_number = 2

@@ -75,7 +75,7 @@ def remove_dust(
     spatial_box=5,
 ):
     """
-    "Repair" dust-darkened pixels in an IRIS image cube.
+    Replace dust-darkened pixels in an IRIS image cube.
 
     This routine is inspired by SolarSoft's ``IRIS_DUSTBUSTER``. It uses
     neighboring frames at the same pixel location first, and falls back to a local

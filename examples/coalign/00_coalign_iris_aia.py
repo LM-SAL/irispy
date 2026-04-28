@@ -5,8 +5,8 @@ Co-align IRIS SJI to SDO/AIA
 
 In this example we will show how to co-align a rolled IRIS dataset to SDO/AIA.
 
-The IRIS team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV
-for each observation from https://iris.lmsal.com/search/
+The IRIS team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV for
+each observation the `IRIS data search page <https://iris.lmsal.com/search/>`__.
 
 Therefore this example is more a showcase of functionally.
 """
