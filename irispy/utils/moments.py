@@ -27,7 +27,8 @@ def _make_moment_cube(template, values, unit):
     return new_cube
 
 
-@u.quantity_input(rest_wavelength=u.nm, wings=u.nm)
+# NOTE: We do not use @u.quantity_input because it cannot validate tuple
+# Quantities like ``(0.05, 0.15) * u.Angstrom`` for the ``wings`` argument.
 def calculate_moments(
     cube, *, rest_wavelength=None, wings=None, integrated=False, min_intensity=None, saturation_limit=None
 ):
@@ -57,12 +58,15 @@ def calculate_moments(
         with units of ``DN·nm``. If `False` (default), it is computed as :math:`\sum I(\lambda)`
         with units of ``DN`` (i.e., per-pixel sum, matching the convention used in
         Gaussian fitting).
-    intensity_threshold : `float`, optional
-        If given, pixels where the 0th moment is below this threshold are masked and are set to
-        NaN for those pixels.
+    min_intensity : `float`, optional
+        Minimum integrated (or per-pixel) intensity required for a pixel to be
+        considered valid. Pixels with intensity **below** this value have all
+        their moments (including intensity) set to NaN. Useful for excluding
+        noisy low-signal pixels.
     saturation_limit : `float`, optional
-        If given, pixels where any spectral bin in the (cropped) profile exceeds
-        this value are treated as saturated and are set to NaN for those pixels.
+        Maximum allowed peak intensity in any spectral bin. Pixels where any
+        bin in the (cropped) profile exceeds this value are treated as
+        saturated and have all their moments set to NaN.
 
     Returns
     -------
@@ -107,15 +111,13 @@ def calculate_moments(
     data = cube.data.copy()
     data = np.where(data < 0, 0, data)
     data = np.where(np.isfinite(data), data, 0)
-    if cube.uncertainty is not None:
-        uncertainty = cube.uncertainty.array.copy()
-        uncertainty = np.where(np.isfinite(uncertainty), uncertainty, 0)
-    else:
-        uncertainty = np.abs(data * 0.1)
     if wings is not None:
         if rest_wavelength is None:
             msg = "rest_wavelength must be provided when wings is given"
             raise ValueError(msg)
+        if not isinstance(wings, u.Quantity):
+            msg = "wings must be an astropy.units.Quantity"
+            raise TypeError(msg)
         rest_wavelength = u.Quantity(rest_wavelength)
         wavelengths_in_rest_unit = wavelengths.to(rest_wavelength.unit)
         if wings.isscalar:
@@ -134,7 +136,6 @@ def calculate_moments(
         slicer = [slice(None)] * data.ndim
         slicer[wavelength_axis] = crop_indices
         data = data[tuple(slicer)]
-        uncertainty = uncertainty[tuple(slicer)]
         wavelengths = wavelengths[crop_mask]
     # Calculate wavelength step (assumed uniform)
     dwvl = np.mean(np.diff(wavelengths))
@@ -169,14 +170,22 @@ def calculate_moments(
     stddev_value = np.sqrt(variance_value)
 
     if min_intensity is not None:
-        low_intensity = intensity_value < min_intensity
+        if isinstance(min_intensity, u.Quantity):
+            min_intensity_value = min_intensity.to_value(intensity_unit)
+        else:
+            min_intensity_value = min_intensity
+        low_intensity = intensity_value < min_intensity_value
         intensity_value = np.where(low_intensity, np.nan, intensity_value)
         centroid_value = np.where(low_intensity, np.nan, centroid_value)
         stddev_value = np.where(low_intensity, np.nan, stddev_value)
 
     if saturation_limit is not None:
         peak_value = np.max(data_moved, axis=-1)
-        saturated = peak_value > saturation_limit
+        if isinstance(saturation_limit, u.Quantity):
+            saturation_limit_value = saturation_limit.to_value(cube.unit)
+        else:
+            saturation_limit_value = saturation_limit
+        saturated = peak_value > saturation_limit_value
         intensity_value = np.where(saturated, np.nan, intensity_value)
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)

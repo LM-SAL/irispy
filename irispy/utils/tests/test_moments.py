@@ -289,6 +289,17 @@ def test_calculate_moments_min_intensity():
     assert np.isnan(moments["width"].data[0, 0])
 
 
+def test_calculate_moments_wings_empty_window():
+    """Test that an empty wings window raises ValueError."""
+    wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
+    spectrum = np.ones_like(wvls.value)
+    data = spectrum.reshape(1, 1, -1)
+    cube = make_test_spectrogram_cube(data, wvls)
+    # wings range is completely outside the spectral coverage
+    with pytest.raises(ValueError, match="No wavelength points found within the specified wings"):
+        calculate_moments(cube, rest_wavelength=1500.0 * u.Angstrom, wings=1.0 * u.Angstrom)
+
+
 def test_calculate_moments_saturation_limit():
     """Test that saturation_limit masks saturated pixels."""
     wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
@@ -322,3 +333,46 @@ def test_calculate_moments_integrated():
     # Centroid and width should be unchanged from the non-integrated case
     assert_quantity_allclose(centroid.data[0, 0] * centroid.unit, 140.277 * u.nm, atol=0.001 * u.nm)
     assert_quantity_allclose(width.data[0, 0] * width.unit, 0.005 * u.nm, rtol=0.05)
+
+
+def test_calculate_moments_min_intensity_mixed_pixels():
+    """Test that min_intensity only masks pixels below the threshold."""
+    wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
+    # Create a 2x2 spatial grid with different amplitudes
+    gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
+    spectrum_high = gauss(wvls.value)  # amplitude 10
+    gauss_low = Gaussian1D(amplitude=1.0, mean=1402.77, stddev=0.05)
+    spectrum_low = gauss_low(wvls.value)  # amplitude 1
+    data = np.zeros((2, 2, len(wvls)))
+    data[0, 0] = spectrum_high
+    data[0, 1] = spectrum_low
+    data[1, 0] = spectrum_low
+    data[1, 1] = spectrum_high
+    cube = make_test_spectrogram_cube(data, wvls)
+    # Threshold between the two amplitudes: low pixels masked, high pixels kept
+    moments = calculate_moments(cube, rest_wavelength=1402.77 * u.Angstrom, min_intensity=50 * u.DN)
+    # High pixels should be valid
+    assert np.isfinite(moments["intensity"].data[0, 0])
+    assert np.isfinite(moments["intensity"].data[1, 1])
+    # Low pixels should be NaN
+    assert np.isnan(moments["intensity"].data[0, 1])
+    assert np.isnan(moments["intensity"].data[1, 0])
+    assert np.isnan(moments["centroid"].data[0, 1])
+    assert np.isnan(moments["centroid"].data[1, 0])
+    assert np.isnan(moments["width"].data[0, 1])
+    assert np.isnan(moments["width"].data[1, 0])
+
+
+def test_calculate_moments_min_intensity_at_threshold():
+    """Test that pixels exactly at min_intensity are NOT masked."""
+    wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
+    gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
+    spectrum = gauss(wvls.value)
+    data = spectrum.reshape(1, 1, -1)
+    cube = make_test_spectrogram_cube(data, wvls)
+    intensity_value = calculate_moments(cube, rest_wavelength=1402.77 * u.Angstrom)["intensity"].data[0, 0]
+    # Set threshold exactly equal to the intensity — should be kept
+    moments = calculate_moments(cube, rest_wavelength=1402.77 * u.Angstrom, min_intensity=intensity_value)
+    assert np.isfinite(moments["intensity"].data[0, 0])
+    assert np.isfinite(moments["centroid"].data[0, 0])
+    assert np.isfinite(moments["width"].data[0, 0])
