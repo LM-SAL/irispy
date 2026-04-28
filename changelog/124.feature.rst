@@ -1,0 +1,1 @@
+Added a way to calculate the moments for a SpectrumCube with an example: :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`.
