@@ -4,8 +4,6 @@ import types
 import numpy as np
 import pytest
 
-from irispy.io.utils import read_files
-from irispy.spectrograph import SpectrogramCubeSequence
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 
 
@@ -145,32 +143,6 @@ def test_remove_cosmic_rays_astroscrappy_inmask_combined(sns_sjicube_1330, monke
     assert len(calls) == 2
     np.testing.assert_array_equal(calls[0], mask[0] | inmask[0])
     np.testing.assert_array_equal(calls[1], mask[1] | inmask[1])
-
-
-def test_remove_cosmic_rays_supports_spectrogram_cube_sequence(raster_sg_files, monkeypatch):
-    class FakeSlidingSigmaClipping:
-        def __init__(self, data, **kwargs):  # NOQA: ARG002
-            self.clipped = np.ma.masked_array(data.copy(), mask=np.zeros_like(data, dtype=bool))
-
-    monkeypatch.setitem(
-        sys.modules,
-        "rsliding",
-        types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping),
-    )
-
-    sequence = read_files(raster_sg_files[:2])["Si IV 1403"]
-    cleaned_sequence = remove_cosmic_rays(sequence, method="rsliding")
-
-    assert isinstance(cleaned_sequence, SpectrogramCubeSequence)
-    assert len(cleaned_sequence) == len(sequence)
-    assert getattr(cleaned_sequence, "_common_axis", None) == getattr(sequence, "_common_axis", None)
-    assert set(cleaned_sequence.meta.keys()) == set(sequence.meta.keys())
-    assert cleaned_sequence[0].basic_wcs is not None
-    np.testing.assert_array_equal(cleaned_sequence[0].mask, sequence[0].mask)
-    np.testing.assert_allclose(
-        cleaned_sequence[0].data[~sequence[0].mask],
-        sequence[0].data[~sequence[0].mask],
-    )
 
 
 @pytest.mark.parametrize("method", ["rsliding", "astroscrappy"])

@@ -34,7 +34,7 @@ time_support()
 # but using your browser will also work.
 #
 # Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_182935_4000005156_2013-09-02T18%3A29%3A352013-09-02T18%3A29%3A35.xml
-# we are after the 2796 Slit-Jaw and the raster sequence.
+# we are after the 2796 Slit-Jaw and the raster observation.
 
 raster_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz",
@@ -54,7 +54,8 @@ sji_2796 = read_files(sji_filename)
 ###############################################################################
 # Now we will find the closest SJI time to the 56th raster step.
 
-c_ii = raster["C II 1336"][0]
+c_ii = raster["C II 1336"]
+del raster
 
 times_SG = c_ii.axis_world_coords("time", wcs=c_ii.extra_coords)
 (time_2796,) = sji_2796.axis_world_coords("time")

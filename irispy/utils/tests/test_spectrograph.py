@@ -10,7 +10,7 @@ from sunpy.time import parse_time
 
 from irispy.data.test import get_test_filepath
 from irispy.io.utils import read_files
-from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.response import get_latest_response
 from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiometric_calibration
@@ -30,7 +30,7 @@ def idl_output_rad_cal():
 
 def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_output_rad_cal):
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     idl_wavelength = idl_input_rad_cal["wavelength"] * u.Angstrom
     idl_factor_cgs = idl_output_rad_cal["factor"]
     basic_wcs = cube.basic_wcs.wcs
@@ -66,7 +66,7 @@ def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_out
 
 def test_radiometric_calibration(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     new_cube = radiometric_calibration(cube)
     assert isinstance(new_cube, SpectrogramCube)
 
@@ -74,17 +74,10 @@ def test_radiometric_calibration(sns_sg_file):
     assert new_cube.unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
     assert new_cube.data.shape == cube.data.shape
 
-    sequence = raster_collection["C II 1336"]
-    new_sequence = radiometric_calibration(sequence)
-    assert isinstance(new_sequence, SpectrogramCubeSequence)
-    assert new_sequence[0].unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
-    assert new_sequence[0].data.shape == sequence[0].data.shape
-    assert np.any(new_sequence[0].data != sequence[0].data)
-
 
 def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     # The slicing operation, returns a slicedWCS which breaks the code
     cube_slice = cube[10, :, :]
     # It also returns a wcs object which does not have the normal lower level wcs attributes
@@ -101,24 +94,9 @@ def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
     assert np.array_equal(calibrated_slice.mask, expected_slice.mask)
 
 
-def test_radiometric_calibration_raster_sequence_preserves_metadata(raster_sg_files):
-    raster_collection = read_files(raster_sg_files[:2])
-    sequence = raster_collection["Si IV 1403"]
-
-    new_sequence = radiometric_calibration(sequence)
-
-    assert isinstance(new_sequence, SpectrogramCubeSequence)
-    assert len(new_sequence) == len(sequence)
-    assert getattr(new_sequence, "_common_axis", None) == getattr(sequence, "_common_axis", None)
-    assert set(new_sequence.meta.keys()) == set(sequence.meta.keys())
-    assert new_sequence[0].basic_wcs is not None
-    assert new_sequence[0].unit == u.erg / (u.cm**2 * u.s * u.sr * u.AA)
-    assert np.any(new_sequence[0].data != sequence[0].data)
-
-
 def test_radiometric_calibration_rejects_fixed_wavelength_raster_images(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     wavelength = cube.spectral_axis[5]
     image = cube.crop(
         [SpectralCoord(wavelength), None, None, None],
@@ -131,7 +109,7 @@ def test_radiometric_calibration_rejects_fixed_wavelength_raster_images(sns_sg_f
 
 def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     basic_wcs = cube.basic_wcs.wcs
 
     solid_angle = basic_wcs.cdelt[1] * basic_wcs.cunit[1] * (SLIT_WIDTH)

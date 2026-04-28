@@ -1,12 +1,14 @@
+import warnings
+from contextlib import contextmanager
+
 from mpl_animators import ArrayAnimatorWCS
 
 import astropy.units as u
 
 import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
-from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
 
-__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter", "finalize_iris_plot"]
+__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "finalize_iris_plot"]
 
 
 LAT_LABELS = [
@@ -28,6 +30,18 @@ LON_LABELS = [
 TIME_LABEL_PRIORITY = ["seconds from start (s)", "time (utc)", "time"]
 SCAN_STEP_LABELS = ["custom:step", "scan_step"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
+
+
+@contextmanager
+def _suppress_wcs_nan_tick_formatting_warning():
+    """Ignore upstream formatter warnings from hidden/NaN WCS animation axes."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="invalid value encountered in do_format",
+            category=RuntimeWarning,
+        )
+        yield
 
 
 def set_axis_properties(ax, axes_coordinates=None, *, animate=False):
@@ -168,7 +182,8 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
 
 class Plot2DMixin:
     def update_plot(self, val, artist, slider):
-        result = super().update_plot(val, artist, slider)
+        with _suppress_wcs_nan_tick_formatting_warning():
+            result = super().update_plot(val, artist, slider)
         if self.plot_dimensionality == 2:
             set_axis_properties(
                 self.axes,
@@ -182,12 +197,6 @@ class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
     pass
 
 
-class IRISSequenceAnimator(Plot2DMixin, SequenceAnimator):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("slider_labels", ["Raster Step", "Scan Number"])
-        super().__init__(*args, **kwargs)
-
-
 class IRISPlotter(MatplotlibPlotter):
     def _animate_cube(
         self,
@@ -199,36 +208,11 @@ class IRISPlotter(MatplotlibPlotter):
         **kwargs,
     ):
         data, wcs, plot_axes, coord_params = self._prep_animate_args(wcs, plot_axes, axes_units, data_unit)
-        ax = IRISArrayAnimatorWCS(data, wcs, plot_axes, coord_params=coord_params, **kwargs)
-        self._apply_axes_coordinates(ax.axes, axes_coordinates)
-        for hidden in self._not_visible_coords(ax.axes, axes_coordinates):
-            param = ax.coord_params.get(hidden, {})
-            param["ticks"] = False
-            ax.coord_params[hidden] = param
+        with _suppress_wcs_nan_tick_formatting_warning():
+            ax = IRISArrayAnimatorWCS(data, wcs, plot_axes, coord_params=coord_params, **kwargs)
+            self._apply_axes_coordinates(ax.axes, axes_coordinates)
+            for hidden in self._not_visible_coords(ax.axes, axes_coordinates):
+                param = ax.coord_params.get(hidden, {})
+                param["ticks"] = False
+                ax.coord_params[hidden] = param
         return ax
-
-
-class IRISSequencePlotter(MatplotlibSequencePlotter):
-    def animate(self, sequence_axis_coords=None, sequence_axis_unit=None, **kwargs):
-        """
-        Animate the `~ndcube.NDCubeSequence` with the sequence axis as a slider.
-
-        Keyword arguments are passed to
-        `ndcube.visualization.mpl_plotter.MatplotlibPlotter.plot` and therefore only
-        apply to cube axes, not the sequence axis.
-        See that method's docstring for definition of keyword arguments.
-
-        Parameters
-        ----------
-        sequence_axis_coords: `str` optional
-            The name of the coordinate in `~ndcube.NDCubeSequence.sequence_axis_coords`
-            to be used as the slider pixel values.
-            If None, array indices will be used.
-
-        sequence_axis_unit: `astropy.units.Unit` or `str`, optional
-            The unit in which the sequence_axis_coordinates should be displayed.
-            If None, the default unit will be used.
-        """
-        return IRISSequenceAnimator(
-            self._ndcube, sequence_axis_coords=sequence_axis_coords, sequence_axis_unit=sequence_axis_unit, **kwargs
-        )

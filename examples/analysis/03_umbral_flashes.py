@@ -26,7 +26,8 @@ time_support()
 # but using your browser will also work.
 #
 # Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml
-# we are after the 1400 Slit-Jaw and the raster sequence (~900 MB).
+# we are after the 1400 Slit-Jaw and two spectral windows from the full
+# raster observation archive.
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_raster.tar.gz",
@@ -43,21 +44,33 @@ sji_filename = pooch.retrieve(
 # Note that when ``memmap=True``, the data values are read from the FITS file
 # directly without the scaling to Float32 (via "b_zero" and "b_scale"),
 # the data values are no longer in DN, but in scaled integer units that start at -2$^{16}$/2.
+#
+# Restrict the raster read to the two spectral windows used below to keep
+# gallery execution memory use lower.
 
-raster = read_files(raster_filename, memmap=True, uncertainty=False)
+raster = read_files(
+    raster_filename,
+    spectral_windows=["Mg II k 2796", "C II 1336"],
+    memmap=True,
+    uncertainty=False,
+)
 sji_1400 = read_files(sji_filename, memmap=True, uncertainty=False)
 
 ###############################################################################
 # We are after the Mg II k and C II lines, which we can select using keys.
 # Then we will produce a space-time image of the Mg II k3 line.
 
-mg_ii = raster["Mg II k 2796"][0]
-c_ii = raster["C II 1336"][0]
+mg_ii = raster["Mg II k 2796"]
+c_ii = raster["C II 1336"]
+del raster
 
 # Instead of using a pixel index, we can crop the data in wavelength space.
 lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
-mg_crop = mg_ii.crop(lower_corner, upper_corner)
+# Use only the first 200 scan steps for the gallery visualization to keep the
+# plotted raster slice modest in size while preserving the time-series example
+# below.
+mg_crop = mg_ii[:200].crop(lower_corner, upper_corner)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_crop.wcs)

@@ -1,51 +1,31 @@
 import textwrap
-from numbers import Integral
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+import astropy.units as u
+from astropy.wcs.utils import wcs_to_celestial_frame
+
 from ndcube import NDCollection
 from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
-from sunraster import SpectrogramSequence as SpecSeq
 
+from irispy._spectrograph_wcs import _SpectrogramCubeWCSMixin
 from irispy.utils.cosmic_rays import remove_cosmic_rays
-from irispy.visualization import IRISPlotter, IRISSequencePlotter, finalize_iris_plot
+from irispy.visualization import IRISPlotter, finalize_iris_plot
 
-__all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
+__all__ = ["RasterCollection", "SpectrogramCube"]
 
-
-def _normalize_tuple_index(item, ndim):
-    """
-    Normalize a tuple index to explicit per-axis entries.
-
-    Returns
-    -------
-    list or None
-        A normalized list of length ``ndim`` when normalization is valid.
-        Returns ``None`` when the tuple contains more than one ellipsis.
-    """
-    normalized_item = []
-    ellipsis_seen = False
-    for subitem in item:
-        if subitem is Ellipsis:
-            if ellipsis_seen:
-                return None
-            ellipsis_seen = True
-            missing_dims = ndim - (len(item) - 1)
-            normalized_item.extend([slice(None)] * missing_dims)
-        else:
-            normalized_item.append(subitem)
-    if len(normalized_item) < ndim:
-        normalized_item.extend([slice(None)] * (ndim - len(normalized_item)))
-    return normalized_item
+RASTER_SEGMENT_STEP_SEARCH_RADIUS = 2
+RASTER_SEGMENT_SLIT_SEARCH_RADIUS = 16
 
 
-class SpectrogramCube(SpecCube):
+class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
-    Idea is that this class holds one complete raster scan or a sit and stare.
+    A raster window is exposed as one cube, whether it comes from a single file,
+    a combined multi-file raster, or a sit-and-stare observation.
 
     Parameters
     ----------
@@ -81,35 +61,25 @@ class SpectrogramCube(SpecCube):
 
     def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
         self._basic_wcs = kwargs.pop("_basic_wcs", None)
+        self._basic_wcs_segments = kwargs.pop("_basic_wcs_segments", None)
+        self._raster_boundaries = kwargs.pop("_raster_boundaries", None)
+        self._memmap = kwargs.pop("_memmap", False)
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     @property
     def time(self):
         time = super().time
+        # The gWCS TemporalFrame may return a Time object in JD format.
+        # Switch to ISOT for a more readable representation.
         if time.format == "jd":
             time = time.copy()
             time.format = "isot"
         return time
 
-    def _slice_basic_wcs(self, item):
-        if self._basic_wcs is None:
-            return None
-        if isinstance(item, tuple):
-            item = _normalize_tuple_index(item, self.data.ndim)
-            if item is None or not all(isinstance(subitem, (Integral, slice)) for subitem in item):
-                return None
-            item = tuple(item)
-        elif not isinstance(item, (Integral, slice)) and item is not Ellipsis:
-            return None
-        try:
-            return self._basic_wcs.slice(item, numpy_order=True)
-        except (IndexError, NotImplementedError, TypeError, ValueError) as e:
-            logger.debug(f"Unable to slice SpectrogramCube basic_wcs with item {item!r}: {e}")
-            return None
-
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
         sliced_self._basic_wcs = self._slice_basic_wcs(item)
+        self._slice_raster_metadata(item, sliced_self)
         return sliced_self
 
     def __repr__(self) -> str:
@@ -168,6 +138,96 @@ class SpectrogramCube(SpecCube):
     def basic_wcs(self):
         return self._basic_wcs
 
+    @property
+    def raster_boundaries(self):
+        if self._raster_boundaries is None:
+            return ()
+        return tuple(slice(start, stop) for start, stop in self._raster_boundaries)
+
+    def raster_slice(self, index):
+        """
+        Return the subcube corresponding to one original raster.
+        """
+        boundaries = self.raster_boundaries
+        if not boundaries:
+            if index == 0:
+                return self
+            msg = "Raster index out of range."
+            raise IndexError(msg)
+        return self[boundaries[index]]
+
+    def split_rasters(self):
+        """
+        Split the cube into per-raster subcubes.
+        """
+        boundaries = self.raster_boundaries
+        if not boundaries:
+            return (self,)
+        return tuple(self[raster_slice] for raster_slice in boundaries)
+
+    def _search_segment_grid(self, segment_cube, target, step_indices, slit_indices):
+        """Evaluate the gWCS over a grid and return the pixel nearest to *target*."""
+        step_grid, slit_grid = np.meshgrid(step_indices, slit_indices, indexing="ij")
+        sky = segment_cube.wcs.array_index_to_world(step_grid, slit_grid, np.zeros_like(step_grid))[1]
+        separation = sky.separation(target.transform_to(sky.frame)).to_value(u.arcsec)
+        local = np.unravel_index(np.nanargmin(separation), separation.shape)
+        return float(separation[local]), int(step_grid[local]), int(slit_grid[local])
+
+    def _nearest_raster_segment(self, target, *, clip):
+        if not self._raster_boundaries:
+            return None
+
+        best_match = None
+        for segment_index, raster_slice in enumerate(self.raster_boundaries):
+            segment_cube = self[raster_slice]
+            if segment_cube.basic_wcs is not None:
+                guess_target = target.transform_to(wcs_to_celestial_frame(segment_cube.basic_wcs.celestial))
+                step_guess, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
+                guess_valid = (
+                    np.isfinite(step_guess)
+                    and np.isfinite(slit_guess)
+                    and 0 <= step_guess < segment_cube.shape[0]
+                    and 0 <= slit_guess < segment_cube.shape[1]
+                )
+                if guess_valid:
+                    step_guess = int(np.rint(np.clip(step_guess, 0, segment_cube.shape[0] - 1)))
+                    slit_guess = int(np.rint(np.clip(slit_guess, 0, segment_cube.shape[1] - 1)))
+                    step_indices = np.arange(
+                        max(0, step_guess - RASTER_SEGMENT_STEP_SEARCH_RADIUS),
+                        min(segment_cube.shape[0], step_guess + RASTER_SEGMENT_STEP_SEARCH_RADIUS + 1),
+                        dtype=int,
+                    )
+                    slit_indices = np.arange(
+                        max(0, slit_guess - RASTER_SEGMENT_SLIT_SEARCH_RADIUS),
+                        min(segment_cube.shape[1], slit_guess + RASTER_SEGMENT_SLIT_SEARCH_RADIUS + 1),
+                        dtype=int,
+                    )
+                    score, step, slit = self._search_segment_grid(segment_cube, target, step_indices, slit_indices)
+                    if best_match is None or score < best_match[0]:
+                        best_match = (score, segment_index, step, slit)
+                    continue
+                if not clip:
+                    continue
+
+            step_indices = np.arange(segment_cube.shape[0], dtype=int)
+            slit_indices = np.arange(segment_cube.shape[1], dtype=int)
+            score, step, slit = self._search_segment_grid(segment_cube, target, step_indices, slit_indices)
+            if best_match is None or score < best_match[0]:
+                best_match = (score, segment_index, step, slit)
+
+        if best_match is None:
+            if clip:
+                return None
+            msg = "Target is outside the raster bounds."
+            raise ValueError(msg)
+        return best_match
+
+    def _crop_spectrum_at_pixel(self, cube, step_index, slit_index):
+        """Extract a 1D spectrum from *cube* at the given pixel."""
+        start = cube.wcs.array_index_to_world(step_index, slit_index, 0)
+        stop = cube.wcs.array_index_to_world(step_index, slit_index, cube.shape[-1] - 1)
+        return cube.crop(start, stop)
+
     def spectrum_at(self, target, *, clip=True):
         """
         Return the spectrum at the raster pixel nearest a sky coordinate.
@@ -185,24 +245,49 @@ class SpectrogramCube(SpecCube):
         `irispy.spectrograph.SpectrogramCube`
             One-dimensional spectrum extracted from the nearest raster pixel.
         """
-        if self.data.ndim != 3 or self.basic_wcs is None:
-            msg = "spectrum_at requires a 3D raster cube with a basic_wcs bridge."
+        if self.data.ndim != 3:
+            msg = "spectrum_at requires a 3D raster cube."
             raise ValueError(msg)
 
-        step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target)
-        if clip:
-            step_index = int(np.clip(step_index, 0, self.shape[0] - 1))
-            slit_index = int(np.clip(slit_index, 0, self.shape[1] - 1))
-        else:
-            step_index = int(step_index)
-            slit_index = int(slit_index)
-            if not (0 <= step_index < self.shape[0] and 0 <= slit_index < self.shape[1]):
+        if self.basic_wcs is not None:
+            target_in_frame = target.transform_to(wcs_to_celestial_frame(self.basic_wcs.celestial))
+            step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target_in_frame)
+            if clip:
+                step_index = int(np.rint(np.clip(step_index, 0, self.shape[0] - 1)))
+                slit_index = int(np.rint(np.clip(slit_index, 0, self.shape[1] - 1)))
+            else:
+                step_index = int(np.rint(step_index))
+                slit_index = int(np.rint(slit_index))
+                if not (0 <= step_index < self.shape[0] and 0 <= slit_index < self.shape[1]):
+                    nearest_segment = self._nearest_raster_segment(target, clip=clip)
+                    if nearest_segment is not None:
+                        _, nearest_segment_index, step_index, slit_index = nearest_segment
+                        return self._crop_spectrum_at_pixel(self.raster_slice(nearest_segment_index), step_index, slit_index)
+                    msg = "Target is outside the raster bounds."
+                    raise ValueError(msg)
+            return self._crop_spectrum_at_pixel(self, step_index, slit_index)
+
+        nearest_segment = self._nearest_raster_segment(target, clip=clip)
+        if nearest_segment is not None:
+            _, nearest_segment_index, step_index, slit_index = nearest_segment
+            return self._crop_spectrum_at_pixel(self.raster_slice(nearest_segment_index), step_index, slit_index)
+
+        sky_grid = self.axis_world_coords("custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat")[0]
+        target_in_frame = target.transform_to(sky_grid.frame)
+        if not clip:
+            lon = target_in_frame.Tx.to(u.arcsec)
+            lat = target_in_frame.Ty.to(u.arcsec)
+            if (
+                lon < np.nanmin(sky_grid.Tx)
+                or lon > np.nanmax(sky_grid.Tx)
+                or lat < np.nanmin(sky_grid.Ty)
+                or lat > np.nanmax(sky_grid.Ty)
+            ):
                 msg = "Target is outside the raster bounds."
                 raise ValueError(msg)
-
-        start = self.wcs.array_index_to_world(step_index, slit_index, 0)
-        stop = self.wcs.array_index_to_world(step_index, slit_index, self.shape[-1] - 1)
-        return self.crop(start, stop)
+        separation = sky_grid.separation(target_in_frame)
+        step_index, slit_index = np.unravel_index(np.nanargmin(separation.to_value(u.arcsec)), separation.shape)
+        return self._crop_spectrum_at_pixel(self, step_index, slit_index)
 
     def remove_cosmic_rays(
         self,
@@ -242,74 +327,11 @@ class SpectrogramCube(SpecCube):
         )
 
 
-class SpectrogramCubeSequence(SpecSeq):
-    """
-    Class representing spectrogram data described by a collection of separate WCSes.
-
-    So each individual `SpectrogramCube` within represents a single complete raster scan.
-    The sequence contains multiple such cubes till the end of the observation.
-
-    Parameters
-    ----------
-    data_list: `list`
-        List of `SpectrogramCube` objects from the same spectral window and OBS ID.
-    meta: `dict` or header object, optional
-        Metadata associated with the sequence.
-    common_axis: `int`, optional
-        The axis of the NDCubes corresponding to time.
-    """
-
-    def __init__(self, data_list, meta=None, common_axis=0, **kwargs) -> None:
-        if data_list and len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
-            msg = "Constituent SpectrogramCube objects must have same value of 'OBSID' in its meta."
-            raise ValueError(msg)
-        super().__init__(data_list, meta=meta, common_axis=common_axis, **kwargs)
-
-    def __str__(self) -> str:
-        return super().__str__()
-
-    def plot(self, *args, **kwargs):
-        cmap = kwargs.get("cmap")
-        if not cmap:
-            try:
-                cmap = plt.get_cmap(name=f"irissji{int(self.meta.detector[:3])}")
-            except Exception as e:  # NOQA: BLE001
-                logger.debug(e)
-                cmap = "viridis"
-        kwargs["cmap"] = cmap
-        if len(self.shape) == 1:
-            kwargs.pop("cmap")
-        return finalize_iris_plot(
-            IRISSequencePlotter(ndcube=self).plot(*args, **kwargs),
-            kwargs.get("axes_coordinates"),
-        )
-
-    def remove_cosmic_rays(
-        self,
-        *,
-        method="rsliding",
-        sigma: float | None = None,
-        max_iters: int | None = None,
-        method_kwargs=None,
-    ):
-        """
-        Return a cleaned copy of each cube in the sequence.
-
-        This is a convenience wrapper around `irispy.utils.cosmic_rays.remove_cosmic_rays`.
-        """
-        return remove_cosmic_rays(
-            self,
-            method=method,
-            sigma=sigma,
-            max_iters=max_iters,
-            method_kwargs=method_kwargs,
-        )
-
-
 class RasterCollection(NDCollection):
     """
-    Subclass of NDCollection for holding a collection of `.SpectrogramCube` or
-    `.SpectrogramCubeSequence` with keys being the spectral windows.
+    Subclass of NDCollection for raster spectral windows keyed by window name.
+
+    Each value is a `SpectrogramCube`.
     """
 
     def __str__(self) -> str:

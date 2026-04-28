@@ -115,6 +115,7 @@ pointing_table = get_pointing_table(
     time_range=(Time(time_stamp) - TimeDelta(5 * 60 * u.minute), Time(time_stamp) + TimeDelta(1 * u.minute)),
 )
 aia_map = update_pointing(aia_map, pointing_table=pointing_table)
+del pointing_table
 # You don't need to register AIA images unless you need them aligned to other AIA images.
 # otherwise you are degrading the data as the affine transform is not perfect.
 # But it is the last step to get a level 1.5 image.
@@ -131,6 +132,7 @@ aia_map = update_pointing(aia_map, pointing_table=pointing_table)
 aia_bottom_left = SkyCoord(-850 * u.arcsec, -50 * u.arcsec, frame=aia_map.coordinate_frame)
 aia_top_right = SkyCoord(-650 * u.arcsec, 150 * u.arcsec, frame=aia_map.coordinate_frame)
 aia_sub = aia_map.submap(aia_bottom_left, top_right=aia_top_right)
+del aia_map
 
 fig = plt.figure()
 ax = plt.subplot(projection=aia_sub)

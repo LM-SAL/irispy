@@ -20,8 +20,9 @@ from sunpy.coordinates.screens import SphericalScreen
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from sunpy.time import parse_time
 
+from irispy.io._raster_combine import _finalize_window_object
 from irispy.meta import SGMeta
-from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils import calculate_uncertainty
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
 
@@ -50,16 +51,95 @@ def _make_observer(primary_header):
         return observer.transform_to(HeliographicStonyhurst(obstime=base_time))
 
 
+OBSERVATION_COMPATIBILITY_KEYS = (
+    "TELESCOP",
+    "INSTRUME",
+    "OBSID",
+    "STARTOBS",
+    "OBS_DESC",
+    "NWIN",
+)
+
+WINDOW_COMPATIBILITY_KEYS = (
+    "NAXIS1",
+    "NAXIS2",
+    "CTYPE1",
+    "CUNIT1",
+    "CDELT1",
+    "CRPIX1",
+    "CUNIT2",
+    "CUNIT3",
+    "CDELT2",
+    "CDELT3",
+    "CRPIX2",
+    "CRPIX3",
+)
+
+
+def _spectral_windows_from_header(header):
+    return np.array([header[f"TDESC{i}"] for i in range(1, header["NWIN"] + 1)], dtype=str)
+
+
+def _validate_spectrograph_file_compatible(
+    reference_header,
+    reference_window_headers,
+    hdulist,
+    filename,
+    window_fits_indices,
+    window_names,
+):
+    header = hdulist[0].header
+    for key in OBSERVATION_COMPATIBILITY_KEYS:
+        expected = reference_header.get(key)
+        actual = header.get(key)
+        if actual != expected:
+            msg = (
+                "Spectrograph files must belong to one compatible observation; "
+                f"{filename} has {key}={actual!r}, expected {expected!r}."
+            )
+            raise ValueError(msg)
+
+    reference_windows = _spectral_windows_from_header(reference_header)
+    windows = _spectral_windows_from_header(header)
+    if not np.array_equal(windows, reference_windows):
+        msg = (
+            "Spectrograph files must have the same spectral-window order; "
+            f"{filename} has {windows.tolist()}, expected {reference_windows.tolist()}."
+        )
+        raise ValueError(msg)
+
+    for reference_window_header, window_index, window_name in zip(
+        reference_window_headers,
+        window_fits_indices,
+        window_names,
+        strict=True,
+    ):
+        window_header = hdulist[window_index].header
+        for key in WINDOW_COMPATIBILITY_KEYS:
+            expected = reference_window_header.get(key)
+            actual = window_header.get(key)
+            if actual != expected:
+                msg = (
+                    f"Spectral window {window_name!r} in {filename} is not compatible with the first file: "
+                    f"{key}={actual!r}, expected {expected!r}."
+                )
+                raise ValueError(msg)
+
+
 def _raster_wcs_bad_row_mask(pc, crval):
     """Return AUX rows whose PC or CRVAL table entries are unusable."""
-    pc_bad = np.array([np.allclose(pc[i], 0) for i in range(pc.shape[0])])
-    crval_bad = np.array([np.allclose(crval[i], 0) for i in range(crval.shape[0])])
+    pc_values = pc.to_value(u.pix) if hasattr(pc, "to_value") else np.asarray(pc)
+    crval_values = crval.to_value(u.arcsec) if hasattr(crval, "to_value") else np.asarray(crval)
+    pc_bad = np.isclose(pc_values, 0).all(axis=(1, 2))
+    crval_bad = np.isclose(crval_values, 0).all(axis=1)
     return pc_bad | crval_bad
 
 
-def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None):
+def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None, *, bad_rows=None):
     """Replace all-zero PC/crval rows via neighbour interpolation or fallback."""
-    bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+    if bad_rows is None:
+        bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+
     if not bad_rows.any():
         return pc, crval
 
@@ -137,6 +217,15 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     helioprojective sky coordinates, elapsed time from ``t_ref``, and an
     explicit scan-step coordinate so the inverse stays stable for crops and
     other round-trips where sky or time alone are not unique.
+
+    Notes
+    -----
+    The gWCS inverse deliberately ignores the time component (axis 3) and
+    uses sky position plus the explicit scan-step coordinate to determine the
+    pixel index. This is required because time may not be monotonic across
+    flipped or repeated rasters. Consequently, ``world_to_array_index`` will
+    return the same pixel regardless of the time value passed in the world
+    tuple.
     """
     if window_header.get("CUNIT1", "").lower() == "angstrom":
         cdelt1 = window_header["CDELT1"] * 0.1
@@ -175,15 +264,30 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         method="linear",
         name="Time",
     )
+    # The pixel frame has 3 axes: (dispersion, spatial_along_slit, scan_step).
+    # The spectral axis is handled separately, so the non-spectral transform
+    # starts from the remaining 2 pixel axes: spatial_along_slit and scan_step.
+    # AsymmetricMapping expands these 2 inputs into 4 outputs:
+    #   (spatial_along_slit, scan_step, scan_step, scan_step)
+    # so that scan_step can be fed into both the celestial and temporal models
+    # while spatial_along_slit goes only to celestial.
     slit_step_mapping = AsymmetricMapping([0, 1, 1, 1], [0, 1], name="SlitStepMapping")
+    # CoupledCompoundModel shares the first input (scan_step) between celestial
+    # and temporal. The Identity(1) passes through an extra copy of scan_step
+    # to produce the explicit scan-step world coordinate.
     non_spectral_rhs = CoupledCompoundModel("&", left=celestial, right=temporal, shared_inputs=1) & m.Identity(
         1, name="step"
     )
     non_spectral = slit_step_mapping | non_spectral_rhs
-    non_spectral.inverse = non_spectral_rhs.inverse | m.Mapping(
-        (0, 3),
-        n_inputs=4,
-        name="SelectSlitAndExplicitStep",
+    # Time is redundant with the explicit scan-step output and may not be monotonic
+    # across flipped or repeated rasters, so the inverse keys off sky + step only.
+    non_spectral.inverse = (
+        m.Mapping(
+            (0, 1, 3),
+            n_inputs=4,
+            name="SelectSkyAndExplicitStep",
+        )
+        | celestial.inverse
     )
     forward_transform = spectral & non_spectral
     forward_transform.inverse = spectral.inverse & non_spectral.inverse
@@ -261,6 +365,7 @@ def read_spectrograph_lvl2(
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
+    compute_uncertainty = uncertainty and not memmap
     with fits.open(filenames[0], memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
         v34 = hdulist[0].header["STEPS_AV"] < -0.01
         hdulist.verify("silentfix")
@@ -279,18 +384,26 @@ def read_spectrograph_lvl2(
                 missing_windows = spectral_windows_req[~window_is_in_obs]
                 msg = f"Spectral windows {missing_windows.tolist()} not in file {filenames[0]}"
                 raise ValueError(msg)
-            window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
+            window_fits_indices = [int(np.where(windows_in_obs == window)[0][0]) + 1 for window in spectral_windows_req]
         data_dict = {window_name: [] for window_name in spectral_windows_req}
+        reference_window_headers = [hdulist[index].header.copy() for index in window_fits_indices]
         observer = _make_observer(primary_header)
 
-    # Running mean of good WCS table rows across files (used as fallback).
-    running_pc_sum = np.zeros((2, 2))
-    running_crval_sum = np.zeros(2)
-    running_count = 0
+    # Per-window running means of good WCS table rows across files, used as
+    # fallback only when a later file has no good rows for that window.
+    running_wcs_fallbacks = {window_name: [np.zeros((2, 2)), np.zeros(2), 0] for window_name in spectral_windows_req}
 
     for filename in filenames:
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
             hdulist.verify("silentfix")
+            _validate_spectrograph_file_compatible(
+                primary_header,
+                reference_window_headers,
+                hdulist,
+                filename,
+                window_fits_indices,
+                spectral_windows_req,
+            )
             aux = hdulist[-2]
             file_startobs = _header_time(hdulist[0].header, "STARTOBS", "DATE_OBS")
             times = file_startobs + TimeDelta(aux.data[:, aux.header["TIME"]] * u.s)
@@ -360,17 +473,23 @@ def read_spectrograph_lvl2(
                     if flip:
                         crval = crval[::-1]
 
-                # Update running mean from good rows in the first window of each file.
-                if i == 0:
-                    good_mask = ~_raster_wcs_bad_row_mask(pc, crval)
-                    if good_mask.any():
-                        running_pc_sum += pc[good_mask].sum(axis=0).to_value(u.pix)
-                        running_crval_sum += crval[good_mask].sum(axis=0).to_value(u.arcsec)
-                        running_count += good_mask.sum()
-
+                running_pc_sum, running_crval_sum, running_count = running_wcs_fallbacks[window_name]
                 fallback_pc = (running_pc_sum / running_count * u.pix) if running_count > 0 else None
                 fallback_crval = (running_crval_sum / running_count * u.arcsec) if running_count > 0 else None
-                pc_sanitized, crval = _sanitize_raster_wcs_tables(pc.copy(), crval, fallback_pc, fallback_crval)
+                bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+                good_mask = ~bad_rows
+                pc_sanitized, crval = _sanitize_raster_wcs_tables(
+                    pc.copy(),
+                    crval,
+                    fallback_pc,
+                    fallback_crval,
+                    bad_rows=bad_rows,
+                )
+                if good_mask.any():
+                    running_wcs_fallbacks[window_name][0] += pc[good_mask].sum(axis=0).to_value(u.pix)
+                    running_wcs_fallbacks[window_name][1] += crval[good_mask].sum(axis=0).to_value(u.arcsec)
+                    running_wcs_fallbacks[window_name][2] += int(good_mask.sum())
+
                 basic_wcs = WCS(prepared_wcs_header)
                 _set_wcs_aux_obs_coord(basic_wcs, observer)
 
@@ -378,7 +497,7 @@ def read_spectrograph_lvl2(
                 data_mask = None
                 if not memmap:
                     data_mask = hdulist[window_fits_indices[i]].data == BAD_PIXEL_VALUE_SCALED
-                if uncertainty:
+                if compute_uncertainty:
                     out_uncertainty = calculate_uncertainty(
                         hdulist[window_fits_indices[i]].data,
                         readout_noise,
@@ -403,11 +522,19 @@ def read_spectrograph_lvl2(
                     meta=meta,
                     mask=data_mask,
                     _basic_wcs=basic_wcs,
+                    _memmap=memmap,
                 )
                 cube.extra_coords.add("time", 0, times, physical_types="time")
+                cube._raster_wcs_header = prepared_wcs_header
+                cube._raster_pc_table = pc_sanitized
+                cube._raster_crval_table = crval
+                cube._raster_observer = observer
+                cube._memmap_path = filename
+                cube._memmap_ext = window_fits_indices[i]
+                cube._flip = flip
                 data_dict[window_name].append(cube)
     window_data_pairs = [
-        (window_name, SpectrogramCubeSequence(data_dict[window_name], common_axis=0, meta=primary_header))
-        for window_name in spectral_windows_req
+        (_window_name, _finalize_window_object(cubes, memmap=memmap, create_raster_gwcs=_create_raster_gwcs))
+        for _window_name, cubes in data_dict.items()
     ]
-    return RasterCollection(window_data_pairs, aligned_axes=(0, 1, 2))
+    return RasterCollection(window_data_pairs, aligned_axes=(0, 1))

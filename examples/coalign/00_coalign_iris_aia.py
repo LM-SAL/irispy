@@ -69,6 +69,7 @@ pointing_table = get_pointing_table(
     time_range=(Time(time_sji[0]) - TimeDelta(5 * 60 * u.minute), Time(time_sji[0]) + TimeDelta(1 * u.minute)),
 )
 aia_map = update_pointing(aia_map, pointing_table=pointing_table)
+del pointing_table
 
 # Crop the AIA FOV to be similar to IRIS but larger to ensure full coverage.
 # It needs to be at least as large as an expected shift, otherwise you will contend with edge effects
@@ -86,6 +87,7 @@ aia_crop = aia_map.submap(
         observer=sji_map.top_right_coord.observer,
     ),
 )
+del aia_map
 
 # ###############################################################################
 # One way to visualize the alignment is to plot the AIA contours on the IRIS SJI image.

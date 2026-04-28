@@ -34,3 +34,5 @@ If you start from a ``SkyCoord`` and want the spectrum nearest that sky position
 
    target = SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=target_frame)
    spectrum = cube.spectrum_at(target)
+
+This will return the spectrum at the pixel nearest the target sky position.

@@ -48,7 +48,8 @@ raster = read_files(downloaded_tar_iris_file, memmap=True)
 ###############################################################################
 # We are after the Mg II k window, which we can select using a key.
 
-mg_ii = raster["Mg II k 2796"][0]
+mg_ii = raster["Mg II k 2796"]
+del raster
 (mg_wave,) = mg_ii.axis_world_coords("wl")
 
 # We will plot the spatially averaged spectrum

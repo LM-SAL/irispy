@@ -35,7 +35,7 @@ from irispy.utils.spectrograph import radiometric_calibration
 # but using your browser will also work.
 #
 # Using the url: https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/03/08/20260308_051050_3893012099/iris_l2_20260308_051050_3893012099_raster.tar.gz
-# we are after the raster sequence (~300 MB).
+# we are after the raster observation (~300 MB).
 #
 # The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260308_051050_3893012099_2026-03-08T05%3A10%3A502026-03-08T05%3A10%3A50.xml
 #
@@ -59,9 +59,10 @@ raster = read_files(raster_filename, memmap=False)
 # We will just focus on the Mg II k 2796 line which we can select using a key.
 # Then we will just plot a spectral line selected at random in space.
 
-# There is only one complete scan, so we index that away.
-# We also only take the first scan of the sequence to avoid memory issues on readthedocs.
-mg_ii_k_2796 = raster["Mg II k 2796"][0][0]
+# This observation contains one complete raster, so the window value is already a
+# single `SpectrogramCube`.
+mg_ii_k_2796 = raster["Mg II k 2796"]
+del raster
 
 ###############################################################################
 # To convert the spectral units from DN to flux one must do the following calculation:
@@ -91,9 +92,11 @@ fig, ax = plt.subplots()
 color = "tab:red"
 ax.set_xlabel("Wavelength (Å)")
 ax.set_ylabel("Counts (DN)", color=color)
+scan_index = mg_ii_k_2796.shape[0] // 2
+slit_index = mg_ii_k_2796.shape[1] // 2
 ax.plot(
     mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
-    mg_ii_k_2796.data[100, 10:-20],
+    mg_ii_k_2796.data[scan_index, slit_index, 10:-20],
     color=color,
     linestyle="dashed",
 )
@@ -104,7 +107,7 @@ ax2 = ax.twinx()
 color = "tab:blue"
 ax2.plot(
     calibrated_mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
-    calibrated_mg_ii_k_2796.data[100, 10:-20],
+    calibrated_mg_ii_k_2796.data[scan_index, slit_index, 10:-20],
     color=color,
 )
 ax2.set_ylabel("Calibrated Intensity (erg s$^{-1}$ cm$^{-2}$ sr$^{-1}$ Å$^{-1}$)", color=color)

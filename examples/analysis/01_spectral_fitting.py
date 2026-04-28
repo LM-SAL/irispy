@@ -32,7 +32,7 @@ time_support()
 # but using your browser will also work.
 #
 # Using the url: http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz
-# we are after the raster sequence (~300 MB).
+# we are after the raster observation (~300 MB).
 #
 # The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml
 #
@@ -56,8 +56,10 @@ raster = read_files(raster_filename, memmap=False)
 # We will just focus on the Si IV 1403 line which we can select using a key.
 # Then we will just plot a spectral line selected at random in space.
 
-# There is only one complete scan, so we index that away.
-si_iv_1403 = raster["Si IV 1403"][0]
+# This observation contains one complete raster, so the window value is already a
+# single `SpectrogramCube`.
+si_iv_1403 = raster["Si IV 1403"]
+del raster
 
 # However, before we get to that, we will shrink the data cube to make it easier to work with.
 # This is just a smaller subarray for speed, so direct slicing is simpler than
@@ -175,6 +177,7 @@ iris_model_fit = parallel_fit_dask(
     diagnostics="error",
     diagnostics_path=diag_path,
 )
+del filtered_data
 
 ################################################################################
 # Note that this example is done in a single thread. If you want to use multiple cores.
