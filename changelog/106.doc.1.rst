@@ -1,1 +1,1 @@
-Added an example of using `astroscrappy` to remove cosmic rays from IRIS data: :ref:`sphx_glr_generated_gallery_how_to_01_remove_spikes.py`.
+Added an example of using `astroscrappy` to remove cosmic rays from IRIS data: :ref:`sphx_glr_generated_gallery_calibration_01_remove_spikes.py`.

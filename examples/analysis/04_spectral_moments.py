@@ -32,16 +32,12 @@ from irispy.utils.moments import calculate_moments
 time_support()
 
 ###############################################################################
-# We will start by getting some data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
 #
-# In this case, we will use ``pooch`` so to keep this example self-contained
-# but using your browser will also work.
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
 #
-# Using the url: http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz
-# we are after the raster sequence (~300 MB).
-#
-# The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml
-#
+# You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz",
@@ -49,15 +45,10 @@ raster_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# Now to open the files using ``irispy``.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
-# Note that when ``memmap=True``, the data values are read from the FITS file
-# directly without the scaling to Float32 (via "b_zero" and "b_scale"),
-# the data values are no longer in DN, but in scaled integer units that start at -2$^{16}$/2.
-#
-# We will use ``memmap=False`` because we want the actual the data values.
-
-raster = read_files(raster_filename, memmap=False)
+raster = read_files(raster_filename)
 
 ###############################################################################
 # We will just focus on the Si IV 1403 line which we can select using a key.
@@ -84,16 +75,23 @@ si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 ################################################################################
 # Now we can calculate the spectral moments using the `~irispy.utils.moments.calculate_moments` function.
 #
-# This helper automatically extracts the wavelength coordinates from the cube's
+# This helper function automatically extracts the wavelength coordinates from the cube's
 # WCS and computes the moments along the spectral axis for every spatial pixel.
 #
 # We will restrict the calculation to a narrow window around the rest wavelength
-# (0.05 nm = 0.5 Å on each side) to isolate the Si IV line from neighbors.
+# (0.05 nm = 0.5 Å on each side) to isolate the Si IV line from its neighbors.
 #
-# While ``wings`` is not required, it is often a good idea to restrict the calculation to a window around the line of interest to avoid contamination from other lines or noise in the continuum.
-# The same goes for ``rest_wavelength``, which is used to calculate the velocity from the wavelength shift in the 1st moment, otherwise you get the ``centroid`` in wavelength units instead of velocity units and the same goes for the line width from the 2nd moment.
+# While ``wings`` is not required, it is often a good idea to restrict the
+# calculation to a window around the line of interest to avoid contamination
+# from other lines or noise in the continuum.
+#
+# The same goes for ``rest_wavelength``, which is used to calculate the velocity
+# from the wavelength shift in the 1st moment, otherwise you get the ``centroid``
+# in wavelength units instead of velocity units and the same goes for the line
+# width from the 2nd moment.
 
 moments = calculate_moments(si_iv_1403, rest_wavelength=si_iv_core, wings=0.05 * u.nm, integrated=False)
+# The return is a RasterCollection with the same form as the input cube.
 intensity = moments["intensity"]
 centroid = moments["centroid"]
 width = moments["width"]
@@ -103,7 +101,8 @@ velocity_width = moments["velocity_width"]
 ################################################################################
 # We will now visualize the moments. Note that the output is a
 # `~irispy.spectrograph.RasterCollection` which contains 2D
-# `~irispy.spectrograph.SpectrogramCube` objects with the spatial WCS preserved from the input cube.
+# `~irispy.spectrograph.SpectrogramCube` objects with the spatial WCS preserved
+# from the input cube.
 #
 # Note that we are transposing the data arrays so they match up with the projection which is in X,Y.
 

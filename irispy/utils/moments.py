@@ -7,24 +7,27 @@ import numpy as np
 import astropy.units as u
 from astropy import constants
 
-from irispy.spectrograph import RasterCollection, SpectrogramCube
+from irispy.spectrograph import RasterCollection
+from irispy.utils._spectral import make_map_cube, make_spatial_template
 
 __all__ = ["calculate_moments"]
 
 
-def _make_moment_cube(template, values, unit):
-    new_cube = SpectrogramCube(
-        values,
-        template.wcs,
-        None,
-        unit,
-        template.meta,
-        mask=template.mask,
-    )
-    # Preserve extra coordinates if they exist on the template
-    if hasattr(template, "_extra_coords"):
-        new_cube._extra_coords = template._extra_coords
-    return new_cube
+def _parse_wings(wings):
+    if isinstance(wings, u.Quantity):
+        if wings.isscalar:
+            return wings, wings
+        if len(wings) != 2:
+            msg = "wings must be a scalar Quantity or a two-element Quantity"
+            raise ValueError(msg)
+        return wings[0], wings[1]
+    if isinstance(wings, (tuple, list)) and len(wings) == 2:
+        if not all(isinstance(wing, u.Quantity) for wing in wings):
+            msg = "wings tuple elements must be astropy.units.Quantity"
+            raise TypeError(msg)
+        return wings[0], wings[1]
+    msg = "wings must be an astropy.units.Quantity or a tuple of two Quantities"
+    raise TypeError(msg)
 
 
 # NOTE: We do not use @u.quantity_input because it cannot validate tuple
@@ -109,25 +112,19 @@ def calculate_moments(
         wavelengths = wavelengths * u.one
     wavelengths = wavelengths.to(u.nm)
     data = cube.data.copy()
+    if cube.mask is not None:
+        data = np.where(cube.mask, 0, data)
     data = np.where(data < 0, 0, data)
     data = np.where(np.isfinite(data), data, 0)
     if wings is not None:
         if rest_wavelength is None:
             msg = "rest_wavelength must be provided when wings is given"
             raise ValueError(msg)
-        if not isinstance(wings, u.Quantity):
-            msg = "wings must be an astropy.units.Quantity"
-            raise TypeError(msg)
         rest_wavelength = u.Quantity(rest_wavelength)
+        wing_low, wing_high = _parse_wings(wings)
         wavelengths_in_rest_unit = wavelengths.to(rest_wavelength.unit)
-        if wings.isscalar:
-            wing_low = wings
-            wing_high = wings
-        else:
-            wing_low = wings[0]
-            wing_high = wings[1]
-        wvl_min = rest_wavelength - wing_low
-        wvl_max = rest_wavelength + wing_high
+        wvl_min = rest_wavelength - wing_low.to(rest_wavelength.unit)
+        wvl_max = rest_wavelength + wing_high.to(rest_wavelength.unit)
         crop_mask = (wavelengths_in_rest_unit >= wvl_min) & (wavelengths_in_rest_unit <= wvl_max)
         crop_indices = np.where(crop_mask)[0]
         if len(crop_indices) == 0:
@@ -190,15 +187,11 @@ def calculate_moments(
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)
 
-    # Build a 2D spatial template by slicing out the wavelength axis.
-    # This preserves the celestial WCS, mask, and meta for the new cubes.
-    template_slicer = [slice(None)] * cube.data.ndim
-    template_slicer[wavelength_axis] = 0
-    template = cube[tuple(template_slicer)]
+    template = make_spatial_template(cube, wavelength_axis)
 
-    intensity_cube = _make_moment_cube(template, intensity_value, intensity_unit)
-    centroid_cube = _make_moment_cube(template, centroid_value, wavelengths.unit)
-    width_cube = _make_moment_cube(template, stddev_value, wavelengths.unit)
+    intensity_cube = make_map_cube(template, intensity_value, intensity_unit, mask_invalid=True)
+    centroid_cube = make_map_cube(template, centroid_value, wavelengths.unit, mask_invalid=True)
+    width_cube = make_map_cube(template, stddev_value, wavelengths.unit, mask_invalid=True)
     cubes = [
         ("intensity", intensity_cube),
         ("centroid", centroid_cube),
@@ -218,7 +211,9 @@ def calculate_moments(
                 / rest_wavelength
                 * constants.c.to(u.km / u.s)
             )
-        velocity_cube = _make_moment_cube(template, velocity_value.value, velocity_value.unit)
-        velocity_width_cube = _make_moment_cube(template, velocity_width_value.value, velocity_width_value.unit)
+        velocity_cube = make_map_cube(template, velocity_value.value, velocity_value.unit, mask_invalid=True)
+        velocity_width_cube = make_map_cube(
+            template, velocity_width_value.value, velocity_width_value.unit, mask_invalid=True
+        )
         cubes.extend([("velocity", velocity_cube), ("velocity_width", velocity_width_cube)])
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))

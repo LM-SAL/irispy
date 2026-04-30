@@ -21,13 +21,15 @@ from sunpy.coordinates.frames import Helioprojective
 from irispy.io import read_files
 
 ###############################################################################
-# We start by downloading a raster v34 dataset from the IRIS archive.
-#
-# In this case, we will use ``pooch`` to keep this example self-contained
-# but using your browser will also work.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20250328_225628_3400109360_2025-03-28T22%3A56%3A282025-03-28T22%3A56%3A28.xml>`__.
 #
 # This is a very large sparse 64-step raster with a FOV of 63"x175" for
 # a total of 8 complete raster scans.
+#
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
+#
+# You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2025/03/28/20250328_225628_3400109360/iris_l2_20250328_225628_3400109360_raster.tar.gz",
@@ -35,13 +37,15 @@ raster_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# We will now open the raster file we just downloaded.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
+#
 # By default, irispy will read the v34 data, flipping the data so that it
 # is in the same orientation as normal IRIS data and adjust the WCS accordingly.
 
-raster = read_files(raster_filename, memmap=False)
+raster = read_files(raster_filename)
 # We will also undo the v34 handling and read the data as is.
-raster_unflipped = read_files(raster_filename, memmap=False, revert_v34=True)
+raster_unflipped = read_files(raster_filename, revert_v34=True)
 
 # Printing will give us an overview of the file.
 print(raster)
@@ -106,7 +110,5 @@ ax = fig.add_subplot(111, projection=mg_ii_k_unflipped_spectra.wcs)
 mg_ii_k_unflipped_spectra.plot(axes=ax, color="red", label="v34 unflipped")
 mg_ii_k_spectra.plot(axes=ax, color="black", label="v34 default", linestyle="--")
 plt.legend()
-
-###############################################################################
 
 plt.show()

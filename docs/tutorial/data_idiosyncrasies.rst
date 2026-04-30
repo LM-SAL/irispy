@@ -52,7 +52,7 @@ The impact of energetic particles on the CCD camera causes bright hits/pixels.
 These can be removed with any of the multitude of cosmic ray removal procedures available in Python.
 ``irispy`` includes ``remove_cosmic_rays`` methods on SJI and raster cubes.
 These methods support sliding sigma clipping via `rsliding <https://git.ias.u-psud.fr/avoyeux/rsliding>`__ and `astroscrappy <https://astroscrappy.readthedocs.io/>`__.
-The example in :ref:`sphx_glr_generated_gallery_how_to_01_remove_spikes.py` focuses on the
+The example in :ref:`sphx_glr_generated_gallery_calibration_01_remove_spikes.py` focuses on the
 ``astroscrappy`` workflow and the tradeoffs you might encounter when applying it to IRIS data.
 Cosmic rays are **not removed** from the IRIS data during normal calibration/pipeline processing to avoid introducing artifacts.
 

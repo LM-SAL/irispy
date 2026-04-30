@@ -22,10 +22,12 @@ from irispy.io import read_files
 quantity_support()
 
 ###############################################################################
-# We start with getting data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
-# but using your browser will also work.
+# but you can download the data manually using your browser as well.
+#
+# You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz",
@@ -33,22 +35,26 @@ raster_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# Note that when ``memmap=True``, the data values are read from the FITS file
-# directly without the scaling to Float32, the data values are no longer in DN,
-# but in scaled integer units that start at -2$^{16}$/2.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
-raster = read_files(raster_filename, memmap=False)
+raster = read_files(raster_filename)
 
 ###############################################################################
 # Let us now explore what was returned.
-
+#
 # Provides an overview of the Spectrograph object
+
 print(raster)
 
+###############################################################################
 # Will give us all the keys that corresponds to all the wavelength windows.
+
 print(raster.keys())
 
-# We can get the Mg II k window
+###############################################################################
+# We can get the Mg II k window:
+
 mg_ii = raster["Mg II k 2796"]
 print(mg_ii)
 
@@ -65,24 +71,29 @@ print(mg_ii)
 ###############################################################################
 # Now we have more information about the data, including the OBS ID and description.
 #
-# Let's plot it
+# Let's plot it:
 
 fig = plt.figure()
 mg_ii.plot(fig=fig)
 
 ###############################################################################
 # If we want to "raster" over wavelength, we can do the following
-
-fig = plt.figure()
+#
 # This will also "transpose" the data but this is only for visualization purposes
 # We have to set the vmin and vmax, as by default "plot" works out the
 # vmin,vmax from the first slice which in this case is 0.
+
+fig = plt.figure()
 mg_ii.plot(fig=fig, plot_axes=["x", "y", None], vmin=0, vmax=1000)
 
 ###############################################################################
 # This object is sliceable, so we can do things like this:
 
 print(mg_ii[120, 200])
+
+###############################################################################
+# We can also plot this as well, using the WCS information to get the
+# correct axes labels and units.
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii[120, 200].wcs)
@@ -91,7 +102,8 @@ mg_ii[120, 200].plot(axes=ax)
 
 ###############################################################################
 # We can also plot using the data directly. We can read the wavelengths of the
-# Mg window by calling `ndcube.NDCube.axis_world_coords` for "wl" (wavelength), and redo the plot.
+# Mg window by calling `ndcube.NDCube.axis_world_coords` for "wl" (wavelength),
+# and redo the plot.
 
 (mg_wave,) = mg_ii.axis_world_coords("wl")
 
@@ -100,6 +112,8 @@ ax.plot(mg_wave.to("AA"), mg_ii.data[120, 200])
 
 ###############################################################################
 # When we use the underlying data directly, we lose all the metadata and WCS information.
+# So the main workflow for most code in ``irispy`` is to use provided WCS wherever possible
+# , and only use the underlying data when you need to do some custom processing.
 #
 # If you are unfamiliar with WCS, the following links are quite useful:
 #
@@ -125,8 +139,7 @@ print(mg_index)
 # We can use the ``crop`` method to get this information, this will
 # require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
 
-# None, means that the axis is not cropped
-# Note that this has to be in axis order
+# Note that this has to be in axis order and that None, means that the axis is not cropped
 lower_corner = [SpectralCoord(280, unit=u.nm), None]
 upper_corner = [SpectralCoord(280, unit=u.nm), None]
 mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)

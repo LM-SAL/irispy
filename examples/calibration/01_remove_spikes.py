@@ -3,15 +3,11 @@
 Remove Cosmic Ray Hits from IRIS data
 =====================================
 
-This example illustrates how to remove cosmic ray hits from a IRIS SJI FITS file
-using the built-in ``remove_cosmic_rays()`` API in ``irispy``.
+This example illustrates how to remove cosmic ray hits from IRIS data.
 
-``astroscrappy`` is a separate Python package and can be installed separately using ``pip`` or ``conda``.
+We will use the ``astroscrappy`` backend and has to be installed separately using ``pip`` or ``conda``.
 
-The ``astroscrappy`` backend works on one 2D frame at a time and does not use
-temporal context from a time series.
-
-``irispy`` supports two backends for cosmic ray removal, they are compared in this example: :ref:`sphx_glr_generated_gallery_misc_03_compare_cosmic_ray_backends.py`.
+``irispy`` supports two backends for cosmic ray removal, they are compared in this example: :ref:`sphx_glr_generated_gallery_calibration_04_compare_cosmic_ray_backends.py`.
 """
 
 import matplotlib.pyplot as plt
@@ -24,13 +20,12 @@ from irispy.io import read_files
 quantity_support()
 
 ###############################################################################
-# We start with getting the data.
-# This is done by downloading the data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260209_215233_3602506433_2026-02-09T21%3A52%3A332026-02-09T21%3A52%3A33.xml>`__.
 #
-# In this case, we will use ``pooch`` as to keep this example self-contained
-# but using your browser will also work.
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
 #
-# The data is from a `BBSO coordination on the 6th February 2026 <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260209_215233_3602506433_2026-02-09T21%3A52%3A332026-02-09T21%3A52%3A33.xml>`__, and is a SJI image in 2832 Å.
+# You will need to update the path to the data in the next section if you do that.
 
 sji_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/02/06/20260206_210853_3460104433/iris_l2_20260206_210853_3460104433_SJI_2832_t000.fits.gz",
@@ -42,15 +37,17 @@ raster_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# We will now open files we just downloaded.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
-sji_2832 = read_files(sji_filename, memmap=False)
-raster = read_files(raster_filename, memmap=False)
+sji_2832 = read_files(sji_filename)
+raster = read_files(raster_filename)
 raster_2796 = raster["Mg II k 2796"][10][4]
+# Used to reduce memory usage for the online documentation build.
 del raster
 
 ###############################################################################
-# Now we use ``SJICube.remove_cosmic_rays`` with the ``astroscrappy`` backend.
+# Now we use ``remove_cosmic_rays`` with the ``astroscrappy`` backend.
 #
 # This algorithm can perform well with both high and low noise levels in the original data.
 # This particular image has lots of high intensity cosmic ray hits which
@@ -59,6 +56,8 @@ del raster
 # We also reduce ``objlim``, the contrast between the Laplacian image and the fine structured image
 # to clean the high intensity bright cosmic ray hits.
 # We also modify the ``readnoise`` parameter to obtain better results.
+#
+# For more details on the parameters, see the `astroscrappy documentation <https://astroscrappy.readthedocs.io/en/latest/api/astroscrappy.detect_cosmics.html#astroscrappy.detect_cosmics>`__.
 
 sji_cleaned = sji_2832.remove_cosmic_rays(
     method="astroscrappy",
@@ -112,6 +111,9 @@ for ax in axes:
 
 ###############################################################################
 # For any cosmic ray removal, it is important to check the results, especially
-# if you are interested in the spectral data.
+# if you are interested in the spectral data. These methods are not perfect and
+# can sometimes mark real features as cosmic ray hits, especially if the
+# parameters are not tuned for the specific data. Always check the results
+# to ensure that important features are not being removed.
 
 plt.show()

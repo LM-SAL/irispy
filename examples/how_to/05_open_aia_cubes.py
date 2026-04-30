@@ -3,9 +3,9 @@
 Open the IRIS Aligned AIA Cubes
 ===============================
 
-In this example we will show how ``irispy`` handles the AIA cubes provided by the IRIS
-team. These cubes are aligned to the IRIS observation and are 50" larger than the IRIS
-FOV.
+In this example we will show how ``irispy`` handles the AIA cubes provided by
+the IRIS instrument team. These cubes are aligned to the IRIS observation and
+are 50" larger than the IRIS FOV.
 
 They have the same format as IRIS SJI files, so you can read them via ``irispy``.
 """
@@ -16,10 +16,12 @@ import pooch
 from irispy.io import read_files
 
 ###############################################################################
-# We start by downloading an AIA cube from the IRIS data archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20250519_165924_3640107442_2025-05-19T16%3A59%3A242025-05-19T16%3A59%3A24.xml>`__.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
-# but using your browser will also work.
+# but you can download the data manually using your browser as well.
+#
+# You will need to update the path to the data in the next section if you do that.
 
 sdo_aia_file = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2025/05/19/20250519_165924_3640107442/iris_l2_20250519_165924_3640107442_SDO.tar.gz",
@@ -28,6 +30,7 @@ sdo_aia_file = pooch.retrieve(
 
 ###############################################################################
 # We will now open the AIA dataset.
+#
 # It is provided as a compressed archive, with each AIA wavelength as a separate
 # file.
 #
@@ -44,7 +47,7 @@ sdo_aia_file = pooch.retrieve(
 # - aia_l2_20250519_165924_3640107442_1600.fits
 
 # This will return a list of the AIA cubes.
-aia_collection = read_files(sdo_aia_file, memmap=False)
+aia_collection = read_files(sdo_aia_file)
 
 ###############################################################################
 # Let us look at the first collection returned of the AIA cube.

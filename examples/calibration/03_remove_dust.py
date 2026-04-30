@@ -1,9 +1,9 @@
 """
 =====================================
-Remove Dust from IRIS Slit-Jaw Images
+Remove Dust from IRIS Slit-Jaw Imager
 =====================================
 
-This example shows how to remove dust from IRIS slit-jaw images.
+This example shows how to remove dust from IRIS slit-jaw imager (SJI).
 """
 
 import matplotlib.pyplot as plt
@@ -12,9 +12,14 @@ import pooch
 from irispy.io import read_files
 
 ###############################################################################
-# Download the same sample SJI 2832 observation used in the crop example.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20140919_051712_3860608353_2014-09-19T05%3A17%3A122014-09-19T05%3A17%3A12.xml>`__.
+#
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
+#
+# You will need to update the path to the data in the next section if you do that.
 
-filename = pooch.retrieve(
+sji_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/09/19/20140919_051712_3860608353/iris_l2_20140919_051712_3860608353_SJI_2832_t000.fits.gz",
     known_hash="7ec0f3d63d97bc7620675c78fb6c670ef5b4249d31ef7818435b629c04b72f60",
 )
@@ -23,13 +28,13 @@ filename = pooch.retrieve(
 # Now we just read it and apply the `irispy.utils.dust.remove_dust` method to
 # the cube.
 
-sji_2832 = read_files(filename, memmap=False)
-# We crop the cube to make the example run faster, but the method works on the full cube as well.
+sji_2832 = read_files(sji_filename)
+# We crop the cube to reduce memory usage for the online documentation build.
 sji_subset = sji_2832[44:46]
 clean_subset = sji_subset.remove_dust()
 
 ###############################################################################
-# Finally, we can compare one frame before and after dust treatment.
+# Finally, we can compare one frame before and after the dust treatment.
 
 frame_index = 1
 original_frame = sji_subset[frame_index]

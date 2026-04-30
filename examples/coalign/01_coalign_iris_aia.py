@@ -5,10 +5,10 @@ Co-align IRIS SJI to SDO/AIA
 
 In this example we will show how to co-align a rolled IRIS dataset to SDO/AIA.
 
-The IRIS team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV for
+The IRIS instrument team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV for
 each observation the `IRIS data search page <https://iris.lmsal.com/search/>`__.
 
-Therefore this example is more a showcase of functionally.
+Therefore this example is more a showcase of functionality.
 """
 
 import matplotlib.pyplot as plt
@@ -29,11 +29,12 @@ from sunpy.net import attrs as a
 from irispy.io import read_files
 
 ###############################################################################
-# We start with getting the data.
-# This is done by downloading the data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20250710_121126_3893010094_2025-07-10T12%3A11%3A262025-07-10T12%3A11%3A26.xml>`__.
 #
-# In this case, we will use ``pooch`` as to keep this example self-contained
-# but using your browser will also work.
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
+#
+# You will need to update the path to the data in the next section if you do that.
 
 sji_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2025/07/10/20250710_121126_3893010094/iris_l2_20250710_121126_3893010094_SJI_2832_t000_deconvolved.fits.gz",
@@ -41,7 +42,8 @@ sji_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# We will now open the slit-jaw imager (SJI) file we just downloaded.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
 sji_2832 = read_files(sji_filename)
 
@@ -50,12 +52,12 @@ sji_2832 = read_files(sji_filename)
 # First we will want to pick a timestamp during the observation.
 
 (time_sji,) = sji_2832.axis_world_coords("time")
-# We get a sunpy map as the coalignment works on sunpy maps only for now.
+# We need to get a sunpy map as the coalignment works on sunpy maps only for now.
 sji_map = sji_2832.to_maps(8)
 
 ###############################################################################
-# We will download the closest AIA 170 nm image from the VSO.
-# Once we have acquired it, we will need to use **aiapy** to prep this image.
+# We will download the closest AIA 170 nm image from the Virtual Solar Observatory (VSO).
+# Once we have acquired it, we will need to use `aiapy` to "prep" this image.
 
 search_results = Fido.search(
     a.Time(time_sji[0], Time(time_sji[0]) + TimeDelta(1 * u.minute), near=time_sji[0]),

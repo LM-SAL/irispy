@@ -1,9 +1,9 @@
 """
-==================
-Mg II Dopplergrams
-==================
+==========================
+Produce Mg II Dopplergrams
+==========================
 
-In this example we are going to produce a Dopplergram for the Mg II k line from a
+In this example, we are going to produce a Dopplergram for the Mg II k line from a
 400-step raster. The Dopplergram is obtained by subtracting the intensities at
 symmetrical velocity shifts from the line core (e.g., ±50 km/s).
 """
@@ -24,26 +24,26 @@ from irispy.io import read_files
 from irispy.utils import image_clipping
 
 ###############################################################################
-# We start by getting the data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20140708_114109_3824262996_2014-07-08T11%3A41%3A092014-07-08T11%3A41%3A09.xml>`__.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
-# but using your browser will also work.
+# but you can download the data manually using your browser as well.
 #
-# Using the url: http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/07/08/
-# we are after ``iris_l2_20140708_114109_3824262996_raster.tar.gz`` which is ~730 MB in size.
+# You will need to update the path to the data in the next section if you do that.
 
-downloaded_tar_iris_file = pooch.retrieve(
+iris_raster_tar = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/07/08/20140708_114109_3824262996/iris_l2_20140708_114109_3824262996_raster.tar.gz",
     known_hash="21cff86fd0064936ce6807b1334ea1d3d50f3d358e5888810fba8e9bc1118567",
 )
 
 ###############################################################################
-# Now to open the file using ``irispy``.
-# Note that when ``memmap=True``, the data values are read from the FITS file
-# directly without the scaling to Float 32, the data values are no longer in DN,
-# but in scaled integer units that start at -2$^{16}$/2.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
+#
+# Since this is a large dataset, we will use memory mapping to read the data values
+# directly from the FITS files without loading them into memory.
 
-raster = read_files(downloaded_tar_iris_file, memmap=True)
+raster = read_files(iris_raster_tar, memmap=True)
 
 ###############################################################################
 # We are after the Mg II k window, which we can select using a key.
@@ -51,7 +51,9 @@ raster = read_files(downloaded_tar_iris_file, memmap=True)
 mg_ii = raster["Mg II k 2796"][0]
 (mg_wave,) = mg_ii.axis_world_coords("wl")
 
-# We will plot the spatially averaged spectrum
+###############################################################################
+# We will plot the spatially averaged spectrum:
+
 plt.figure()
 plt.plot(mg_wave.to("nm"), mg_ii.data.mean((0, 1)))
 plt.ylabel("DN (Memory Mapped Value)")
@@ -73,7 +75,7 @@ plt.xlabel("Wavelength (nm)")
 lower_corner = [SpectralCoord(280.2, unit=u.nm), None]
 upper_corner = [SpectralCoord(280.2, unit=u.nm), None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
-# We will "crunch" the image a bit
+# We will "crunch" the image a bit using the aspect ratio.
 mg_crop.plot(aspect="auto")
 
 ###############################################################################
@@ -85,15 +87,16 @@ mg_crop.plot(aspect="auto")
 # in the FITS file.
 
 # astropy.io.fits does not support opening tar files, so we need to extract.
-with tarfile.open(downloaded_tar_iris_file, "r:gz") as tar_iris_file:
+with tarfile.open(iris_raster_tar, "r:gz") as tar_iris_file:
     tar_iris_file.extractall("./", filter="data")
 
-# I know ahead of time what the filename is.
+# We know ahead of time what the filename is.
 raster_filename = "iris_l2_20140708_114109_3824262996_raster_t000_r00000.fits"
 
-# In this case, it is the 9th HDU, which we access directly
-aux_data = fits.getdata(raster_filename, 9)
-aux_header = fits.getheader(raster_filename, 9)
+# The information we need is in the auxiliary data, which is stored in an
+# extension past the last  window. It is always the second to last extension.
+aux_data = fits.getdata(raster_filename, -2)
+aux_header = fits.getheader(raster_filename, -2)
 v_obs = aux_data[:, aux_header["OBS_VRIX"]] * u.m / u.s
 # Convert to km/s as the data is in m/s
 v_obs = v_obs.to("km/s")
@@ -123,7 +126,7 @@ for i in range(mg_ii.data.shape[0]):
 plt.figure()
 # Since we changed the underlying data, we need to re-crop
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
-# We will "crunch" the image a bit
+# We will "crunch" the image a bit using the aspect ratio.
 mg_crop.plot(aspect="auto")
 
 ###############################################################################
@@ -143,7 +146,7 @@ mg_crop.plot(aspect="auto")
 # convention of negative velocities for up flows):
 
 mg_k_centre = 279.6351 * u.nm
-pos = 50 * u.km / u.s  # around line centre
+pos = 50 * u.km / u.s  # Around the line centre
 velocity = (mg_wave - mg_k_centre) * c / mg_k_centre
 index_p = np.argmin(np.abs(velocity - pos))
 index_m = np.argmin(np.abs(velocity + pos))

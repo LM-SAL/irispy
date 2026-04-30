@@ -137,7 +137,7 @@ Documentation
 -------------
 
 - Rewrote existing examples to be more consistent.
-- Added an example for single Gaussian fitting using new functionally from astropy 7.0
+- Added an example for single Gaussian fitting using new functionality from astropy 7.0
 
 Internal Changes
 ----------------

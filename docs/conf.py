@@ -192,10 +192,9 @@ sphinx_gallery_conf = {
     "subsection_order": ExplicitOrder(
         [
             "../examples/how_to",
-            "../examples/plotting",
+            "../examples/calibration",
             "../examples/coalign",
             "../examples/analysis",
-            "../examples/misc",
         ]
     ),
     "within_subsection_order": "FileNameSortKey",
