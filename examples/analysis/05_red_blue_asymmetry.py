@@ -41,12 +41,23 @@ raster_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-raster = read_files(raster_filename, uncertainty=True)
+raster = read_files(raster_filename, spectral_windows="Si IV 1403", uncertainty=True)
 # We are after the Si IV 1403 line, which we can select using a key.
 si_iv = raster["Si IV 1403"][0]
 
 ###############################################################################
-# Now we will calculate the red-blue asymmetry on the full raster.
+# Now we will calculate the red-blue asymmetry on a small cutout around the
+# selected feature. This keeps the example light enough for documentation builds
+# while still showing the full workflow.
+
+full_raster_pixel_index = (499, 148)
+raster_cutout = slice(450, 550)
+slit_cutout = slice(100, 200)
+si_iv = si_iv[raster_cutout, slit_cutout, :]
+selected_pixel_index = (
+    full_raster_pixel_index[0] - raster_cutout.start,
+    full_raster_pixel_index[1] - slit_cutout.start,
+)
 
 si_iv_rest = 140.277 * u.nm
 velocity_range = (25, 75) * u.km / u.s
@@ -75,7 +86,6 @@ print(asymmetry.meta)
 ###############################################################################
 # Now we will select a pixel with a significant red excess (positive RBA).
 
-selected_pixel_index = (499, 148)
 observed_profile = observed_profiles[selected_pixel_index]
 velocities = observed_profile.axis_world_coords(0)[0].to(u.km / u.s)
 profile = observed_profile.data
