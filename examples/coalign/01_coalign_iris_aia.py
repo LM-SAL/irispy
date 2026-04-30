@@ -57,7 +57,7 @@ sji_map = sji_2832.to_maps(8)
 
 ###############################################################################
 # We will download the closest AIA 170 nm image from the Virtual Solar Observatory (VSO).
-# Once we have acquired it, we will need to use `aiapy`` to "prep" this image.
+# Once we have acquired it, we will need to use `aiapy` to "prep" this image.
 
 search_results = Fido.search(
     a.Time(time_sji[0], Time(time_sji[0]) + TimeDelta(1 * u.minute), near=time_sji[0]),

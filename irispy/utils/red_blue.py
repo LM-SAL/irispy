@@ -215,8 +215,7 @@ def calculate_red_blue_asymmetry(
     Returns
     -------
     `irispy.spectrograph.RasterCollection`
-        Collection with 2D maps. If ``return_profiles=True``, the collection
-        also contains plot-ready 3D ``"observed_profile"`` and
+        Collection with 2D maps and plot-ready 3D ``"observed_profile"`` and
         ``"interpolated_profile"`` `~irispy.spectrograph.SpectrogramCube`
         instances. Index either profile cube by spatial pixel to plot a 1D
         line profile against its velocity WCS.
@@ -433,9 +432,12 @@ def calculate_red_blue_asymmetry(
             blue_err = np.sqrt(np.nansum(interp_error[blue_mask] ** 2)) / n_blue if n_blue > 0 else np.nan
             peak_err = interp_error[np.nanargmax(interp_profile)]
             numerator = red_intensity - blue_intensity
-            if numerator != 0 and np.isfinite(peak_err):
-                num_err = np.sqrt(red_err**2 + blue_err**2)
-                red_blue_error[index] = abs(rba) * np.sqrt((num_err / numerator) ** 2 + (peak_err / peak) ** 2)
+            num_err = np.sqrt(red_err**2 + blue_err**2)
+            if np.isfinite(num_err) and (numerator == 0 or np.isfinite(peak_err)):
+                variance = (num_err / peak) ** 2
+                if numerator != 0:
+                    variance += (numerator * peak_err / peak**2) ** 2
+                red_blue_error[index] = np.sqrt(variance)
             red_wing_error[index] = red_err
             blue_wing_error[index] = blue_err
 

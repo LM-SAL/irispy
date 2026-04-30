@@ -193,10 +193,8 @@ sphinx_gallery_conf = {
         [
             "../examples/how_to",
             "../examples/calibration",
-            "../examples/plotting",
             "../examples/coalign",
             "../examples/analysis",
-            "../examples/misc",
         ]
     ),
     "within_subsection_order": "FileNameSortKey",

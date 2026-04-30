@@ -183,4 +183,4 @@ plt.show()
 # Since the WCS information was not 100% accurate to begin with, this means that
 # reprojecting alone is not sufficient to get a perfect alignment.
 #
-# If you want to align, you can check out the following :ref:`sphx_glr_generated_gallery_coalign_00_coalign_iris_aia.py`
+# If you want to align, you can check out the following :ref:`sphx_glr_generated_gallery_coalign_01_coalign_iris_aia.py`

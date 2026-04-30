@@ -50,6 +50,8 @@ def test_calculate_red_blue_asymmetry_red_and_blue_signs():
         "peak_intensity",
         "peak_velocity",
         "quality",
+        "observed_profile",
+        "interpolated_profile",
     }
     assert_quantity_allclose(result["red_blue_asymmetry"].data[0, 0] * u.one, 0.2 * u.one)
     assert_quantity_allclose(result["red_blue_asymmetry"].data[0, 1] * u.one, -0.3 * u.one)
@@ -120,8 +122,32 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
 
     assert "red_blue_asymmetry_error" in result
     assert result["red_blue_asymmetry_error"].unit == u.one
-    expected_error = 0.2 * np.sqrt((0.1 * np.sqrt(2 / 11) / 2) ** 2 + (0.1 / 10) ** 2)
-    assert_quantity_allclose(result["red_blue_asymmetry_error"].data[0, 0] * u.one, expected_error * u.one)
+    red_wing = float(result["red_wing"].data[0, 0])
+    blue_wing = float(result["blue_wing"].data[0, 0])
+    peak = float(result["peak_intensity"].data[0, 0])
+    numerator = red_wing - blue_wing
+    wing_error = np.sqrt(np.sum(np.full(11, 0.1) ** 2)) / 11
+    expected_propagated_error = np.sqrt((np.sqrt(2) * wing_error / peak) ** 2 + (numerator * 0.1 / peak**2) ** 2)
+    assert_quantity_allclose(
+        result["red_blue_asymmetry_error"].data[0, 0] * u.one,
+        expected_propagated_error * u.one,
+    )
+
+    symmetric_cube = make_test_spectrogram_cube(_flat_wing_profile(velocity).reshape(1, 1, -1), wavelengths)
+    symmetric_result = calculate_red_blue_asymmetry(
+        symmetric_cube,
+        rest_wavelength=REST_WAVELENGTH,
+        uncertainty=uncertainty,
+        interpolation_kind="linear",
+        center_on_peak=False,
+    )
+    expected_zero_error = np.sqrt(2) * wing_error / 10
+    assert_quantity_allclose(symmetric_result["red_blue_asymmetry"].data[0, 0] * u.one, 0 * u.one)
+    assert_quantity_allclose(
+        symmetric_result["red_blue_asymmetry_error"].data[0, 0] * u.one,
+        expected_zero_error * u.one,
+    )
+
     assert result["red_wing_error"].unit == u.DN
     assert result["blue_wing_error"].unit == u.DN
     # Meta should record the parameters used
@@ -176,7 +202,6 @@ def test_calculate_red_blue_asymmetry_return_profiles():
         rest_wavelength=REST_WAVELENGTH,
         interpolation_kind="linear",
         center_on_peak=False,
-        return_profiles=True,
     )
 
     assert isinstance(result, RasterCollection)
@@ -213,7 +238,6 @@ def test_calculate_red_blue_asymmetry_return_profiles_on_sliced_cube():
         rest_wavelength=REST_WAVELENGTH,
         interpolation_kind="linear",
         center_on_peak=False,
-        return_profiles=True,
     )
 
     assert result["observed_profile"].shape == cube.shape
@@ -297,33 +321,3 @@ def test_calculate_red_blue_asymmetry_real_cube_shape_and_coords(sns_sg_file):
 
     assert result["red_blue_asymmetry"].shape == cube.shape[:-1]
     assert "time" in tuple(result["red_blue_asymmetry"].extra_coords.keys())
-
-
-def test_calculate_red_blue_asymmetry_uncertainty_matches_wing_error_propagation():
-    velocity = np.arange(-200, 201, 10) * u.km / u.s
-    wavelengths = _wavelengths_from_velocity(velocity)
-    profile = _flat_wing_profile(velocity, red_excess=2)
-    uncertainty = np.full(profile.shape, 0.1)
-    cube = make_test_spectrogram_cube(profile.reshape(1, 1, -1), wavelengths)
-    cube.uncertainty = StdDevUncertainty(uncertainty.reshape(cube.shape))
-
-    result = calculate_red_blue_asymmetry(
-        cube,
-        rest_wavelength=REST_WAVELENGTH,
-        velocity_range=(50, 150) * u.km / u.s,
-        dv=10 * u.km / u.s,
-        interpolation_kind="linear",
-        center_on_peak=False,
-    )
-
-    rba = float(result["red_blue_asymmetry"].data[0, 0])
-    red_wing = float(result["red_wing"].data[0, 0])
-    blue_wing = float(result["blue_wing"].data[0, 0])
-    peak = float(result["peak_intensity"].data[0, 0])
-    numerator = red_wing - blue_wing
-    n_wing = 11
-    wing_error = np.sqrt(np.sum(np.full(n_wing, 0.1) ** 2)) / n_wing
-    expected_error = abs(rba) * np.sqrt(((np.sqrt(2) * wing_error) / numerator) ** 2 + (0.1 / peak) ** 2)
-
-    assert int(result["quality"].data[0, 0]) == 0
-    assert_quantity_allclose(result["red_blue_asymmetry_error"].data[0, 0] * u.one, expected_error * u.one)
