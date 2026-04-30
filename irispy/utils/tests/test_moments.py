@@ -96,6 +96,14 @@ def test_calculate_moments_asymmetric_wings_tuple_quantity():
     assert_quantity_allclose(moments["centroid"].data[0, 0] * moments["centroid"].unit, 2.5 * u.nm)
 
 
+def test_calculate_moments_asymmetric_wings_rejects_bare_tuple():
+    wvls = np.linspace(1.0, 5.0, 5) * u.nm
+    cube = make_test_spectrogram_cube(np.ones((1, 1, len(wvls))), wvls)
+
+    with pytest.raises(TypeError, match=r"wings tuple elements must be astropy\.units\.Quantity"):
+        calculate_moments(cube, rest_wavelength=3 * u.nm, wings=(1.1, 0.1))
+
+
 def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
     """
     Test that calculate_moments raises an error when wings is given without
@@ -277,6 +285,19 @@ def test_calculate_moments_zero_intensity():
     assert intensity.data[0, 0] == 0
     assert np.isnan(centroid.data[0, 0])
     assert np.isnan(width.data[0, 0])
+
+
+def test_calculate_moments_below_min_intensity_masks_all_products():
+    wvls = np.linspace(1402.0, 1403.5, 100) * u.Angstrom
+    gauss = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)
+    data = gauss(wvls.value).reshape(1, 1, -1)
+    cube = make_test_spectrogram_cube(data, wvls)
+
+    moments = calculate_moments(cube, rest_wavelength=1402.77 * u.Angstrom, min_intensity=1e6 * u.DN)
+
+    for key in ("intensity", "centroid", "width", "velocity", "velocity_width"):
+        assert np.isnan(moments[key].data[0, 0])
+        assert moments[key].mask[0, 0]
 
 
 def test_calculate_moments_vectorized_spatial():

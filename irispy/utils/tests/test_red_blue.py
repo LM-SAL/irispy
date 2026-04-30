@@ -89,10 +89,11 @@ def test_calculate_red_blue_asymmetry_output_does_not_inherit_first_wavelength_m
     velocity = np.arange(-200, 201, 10) * u.km / u.s
     wavelengths = _wavelengths_from_velocity(velocity)
     profile = _flat_wing_profile(velocity, red_excess=2)
-    data = profile.reshape(1, 1, -1)
+    data = np.stack([profile, profile]).reshape(1, 2, -1)
     cube = make_test_spectrogram_cube(data, wavelengths)
     cube.mask = np.zeros(cube.shape, dtype=bool)
-    cube.mask[..., 0] = True
+    cube.mask[0, 0, 0] = True
+    cube.mask[0, 1, :] = True
 
     result = calculate_red_blue_asymmetry(
         cube,
@@ -103,8 +104,19 @@ def test_calculate_red_blue_asymmetry_output_does_not_inherit_first_wavelength_m
 
     assert np.isfinite(result["red_blue_asymmetry"].data[0, 0])
     assert not result["red_blue_asymmetry"].mask[0, 0]
-    assert result["quality"].mask is None
     assert result["quality"].data[0, 0] == 0
+    assert result["quality"].mask[0, 1]
+    assert RBAQualityFlag(result["quality"].data[0, 1]) is RBAQualityFlag.NO_FINITE_DATA
+
+
+def test_calculate_red_blue_asymmetry_requires_wavelength_axis():
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), np.arange(5) * u.nm)
+    cube.wcs.wcs.ctype[0] = "TIME"
+    cube.wcs.wcs.cunit[0] = "s"
+    cube.wcs.wcs.set()
+
+    with pytest.raises(ValueError, match="Could not identify a spectral wavelength axis"):
+        calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)
 
 
 def test_calculate_red_blue_asymmetry_with_uncertainty():

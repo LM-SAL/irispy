@@ -22,7 +22,10 @@ def _parse_wings(wings):
             raise ValueError(msg)
         return wings[0], wings[1]
     if isinstance(wings, (tuple, list)) and len(wings) == 2:
-        return u.Quantity(wings[0]), u.Quantity(wings[1])
+        if not all(isinstance(wing, u.Quantity) for wing in wings):
+            msg = "wings tuple elements must be astropy.units.Quantity"
+            raise TypeError(msg)
+        return wings[0], wings[1]
     msg = "wings must be an astropy.units.Quantity or a tuple of two Quantities"
     raise TypeError(msg)
 

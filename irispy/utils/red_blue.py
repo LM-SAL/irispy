@@ -199,11 +199,15 @@ def calculate_red_blue_asymmetry(
         raise ValueError(msg)
 
     # -- Locate spectral axis and compute velocities ----------------------------
-    wavelength_axis = next(
-        axis
-        for axis, physical_types in enumerate(cube.array_axis_physical_types)
-        if physical_types and "em.wl" in physical_types
-    )
+    try:
+        wavelength_axis = next(
+            axis
+            for axis, physical_types in enumerate(cube.array_axis_physical_types)
+            if physical_types and "em.wl" in physical_types
+        )
+    except StopIteration as exc:
+        msg = "Could not identify a spectral wavelength axis on the input cube"
+        raise ValueError(msg) from exc
     wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
     rest_wavelength = u.Quantity(rest_wavelength).to(wavelengths.unit)
     velocity = ((wavelengths - rest_wavelength) / rest_wavelength * constants.c).to_value(u.km / u.s)

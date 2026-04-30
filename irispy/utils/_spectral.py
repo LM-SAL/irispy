@@ -13,15 +13,19 @@ from irispy.spectrograph import SpectrogramCube
 
 
 def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False):
-    if mask is None and mask_invalid:
-        mask = ~np.isfinite(values)
+    combined_mask = None
+    for next_mask in (template.mask, mask, ~np.isfinite(values) if mask_invalid else None):
+        if next_mask is None:
+            continue
+        mask_array = np.asarray(next_mask, dtype=bool)
+        combined_mask = mask_array.copy() if combined_mask is None else np.logical_or(combined_mask, mask_array)
     return SpectrogramCube(
         values,
         template.wcs,
         None,
         unit,
         template.meta,
-        mask=mask,
+        mask=combined_mask,
         extra_coords=template.extra_coords,
     )
 
@@ -46,6 +50,14 @@ def make_spatial_template(cube, wavelength_axis):
     template_slicer = [slice(None)] * cube.data.ndim
     template_slicer[wavelength_axis] = 0
     sliced_template = super(SpectrogramCube, cube).__getitem__(tuple(template_slicer))
+    template_mask = None
+    if cube.mask is not None:
+        cube_mask = np.asarray(cube.mask, dtype=bool)
+        if cube_mask.shape == cube.data.shape:
+            spatial_mask = np.all(cube_mask, axis=wavelength_axis)
+            template_mask = spatial_mask if np.any(spatial_mask) else None
+        elif sliced_template.mask is not None and np.any(sliced_template.mask):
+            template_mask = sliced_template.mask
     if hasattr(cube.wcs, "dropaxis"):
         template_wcs = cube.wcs.dropaxis(cube.data.ndim - 1 - wavelength_axis)
     else:
@@ -56,6 +68,6 @@ def make_spatial_template(cube, wavelength_axis):
         sliced_template.uncertainty,
         sliced_template.unit,
         sliced_template.meta,
-        mask=sliced_template.mask,
+        mask=template_mask,
         extra_coords=drop_extra_coords_dependent_on_axis(cube.extra_coords, wavelength_axis, reindex=True),
     )
