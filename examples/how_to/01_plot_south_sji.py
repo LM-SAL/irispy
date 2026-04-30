@@ -12,11 +12,12 @@ import pooch
 from irispy.io import read_files
 
 ###############################################################################
-# We start with getting the data.
-# This is done by downloading the data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20230211_083601_3880012095_2023-02-11T08%3A36%3A012023-02-11T08%3A36%3A01.xml>`__.
 #
-# In this case, we will use ``pooch`` so to keep this example self-contained
-# but using your browser will also work.
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
+#
+# You will need to update the path to the data in the next section if you do that.
 
 sji_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2023/02/11/20230211_083601_3880012095/iris_l2_20230211_083601_3880012095_SJI_2832_t000.fits.gz",
@@ -24,10 +25,14 @@ sji_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# We will now open the slit-jaw imager (SJI) file we just downloaded.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
-sji_2832 = read_files(sji_filename, memmap=False)
+sji_2832 = read_files(sji_filename)
+
+###############################################################################
 # Printing will give us an overview of the SJI dataset.
+
 print(sji_2832)
 
 ###############################################################################

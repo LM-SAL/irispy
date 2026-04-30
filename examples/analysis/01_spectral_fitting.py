@@ -33,16 +33,12 @@ from irispy.io import read_files
 time_support()
 
 ###############################################################################
-# We will start by getting some data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
 #
-# In this case, we will use ``pooch`` so to keep this example self-contained
-# but using your browser will also work.
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
 #
-# Using the url: http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz
-# we are after the raster sequence (~300 MB).
-#
-# The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml
-#
+# You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz",
@@ -50,15 +46,10 @@ raster_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# Now to open the files using ``irispy``.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
-# Note that when ``memmap=True``, the data values are read from the FITS file
-# directly without the scaling to Float32 (via "b_zero" and "b_scale"),
-# the data values are no longer in DN, but in scaled integer units that start at -2$^{16}$/2.
-#
-# We will use ``memmap=False`` because we want to fit the actual the data values.
-
-raster = read_files(raster_filename, memmap=False)
+raster = read_files(raster_filename)
 
 ###############################################################################
 # We will just focus on the Si IV 1403 line which we can select using a key.
@@ -68,6 +59,7 @@ raster = read_files(raster_filename, memmap=False)
 si_iv_1403 = raster["Si IV 1403"][0]
 
 # However, before we get to that, we will shrink the data cube to make it easier to work with.
+# This is done primarily to speed up the fitting process on the online documentation build.
 iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
 top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
@@ -122,9 +114,9 @@ plt.legend()
 
 ################################################################################
 # The function `~astropy.modeling.fitting.parallel_fit_dask` will map a model
-# to each element of a cube along
-# one (or more) "fitting axes", in this case our fitting axis is our wavelength
-# axis (array axis -1). So we want to fit each slice of the data array along the 3rd axis.
+# to each element of a cube along one (or more) "fitting axes", in this case our
+# fitting axis is our wavelength axis (array axis -1). So we want to fit each
+# slice of the data array along the 3rd axis.
 #
 # The key arguments to the parallel_fit_dask function are:
 #
@@ -136,8 +128,8 @@ plt.legend()
 # * A fitter instance.
 # * The fitting axis (or axes).
 #
-# What is returned from `~astropy.modeling.fitting.parallel_fit_dask` is a model with array parameters with
-# the shape of the non-fitting axes of the data.
+# What is returned from `~astropy.modeling.fitting.parallel_fit_dask` is a model with array
+# parameters with the shape of the non-fitting axes of the data.
 
 # We want to do some basic data sanitization.
 # Remove negative values and set them to zero and remove non-finite values.
@@ -203,7 +195,12 @@ if errors:
     print(errors[0])
 
 ################################################################################
-# Let us see the output!
+# Let us see the fitted output. The model parameters are now 2D arrays with
+# the same shape as the spatial dimensions of the data cube.
+#
+# Below is a lot of custom code to make a decent looking plot.
+#
+# We also need to convert the fitted parameters into physical quantities.
 
 # Note that we are transposing the data arrays so they match up with the projection which is in X,Y.
 fig, ax_dict = plt.subplot_mosaic(

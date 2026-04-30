@@ -9,6 +9,7 @@ import numpy as np
 
 import astropy.units as u
 from astropy import constants
+
 from ndcube.extra_coords.extra_coords import ExtraCoords
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
@@ -16,14 +17,14 @@ from irispy.spectrograph import RasterCollection, SpectrogramCube
 __all__ = ["calculate_moments"]
 
 
-def _make_moment_cube(template, values, unit):
+def _make_moment_cube(template, values, unit, *, mask=None):
     return SpectrogramCube(
         values,
         template.wcs,
         None,
         unit,
         template.meta,
-        mask=template.mask,
+        mask=~np.isfinite(values) if mask is None else mask,
         extra_coords=template.extra_coords,
     )
 

@@ -1,7 +1,7 @@
 """
-=======================
-Umbral flashes analysis
-=======================
+====================
+Study umbral flashes
+====================
 
 In this tutorial, we are going to work with IRIS data to study an example of a dynamical
 phenomena called `umbral flashes <https://ui.adsabs.harvard.edu/abs/1973SoPh...30..403M>`__.
@@ -20,13 +20,12 @@ from irispy.io import read_files
 time_support()
 
 ###############################################################################
-# We will start by getting some data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml>`__.
 #
-# In this case, we will use ``pooch`` so to keep this example self-contained
-# but using your browser will also work.
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
 #
-# Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml
-# we are after the 1400 Slit-Jaw and the raster sequence (~900 MB).
+# You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_raster.tar.gz",
@@ -38,14 +37,14 @@ sji_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# Now to open the files using ``irispy``.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
-# Note that when ``memmap=True``, the data values are read from the FITS file
-# directly without the scaling to Float32 (via "b_zero" and "b_scale"),
-# the data values are no longer in DN, but in scaled integer units that start at -2$^{16}$/2.
+# Since this is a large dataset, we will use memory mapping to read the data values
+# directly from the FITS files without loading them into memory.
 
-raster = read_files(raster_filename, memmap=True, uncertainty=False)
-sji_1400 = read_files(sji_filename, memmap=True, uncertainty=False)
+raster = read_files(raster_filename, memmap=True)
+sji_1400 = read_files(sji_filename, memmap=True)
 
 ###############################################################################
 # We are after the Mg II k and C II lines, which we can select using keys.
@@ -101,8 +100,9 @@ plt.tight_layout()
 # the intensity from the SJI. The SJI images are typically
 # taken at a different cadence, so you need get the corresponding
 # times for the 1400 SJI.
-
+#
 # We will take the first 50 to cut down on the size of the data for this example.
+
 times_sji = sji_1400.time[:50]
 
 ###############################################################################

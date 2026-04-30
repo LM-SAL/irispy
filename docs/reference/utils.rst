@@ -14,6 +14,8 @@ The `irispy.utils` module provides functions useful for ``irispy`` users or deve
 
 .. automodapi:: irispy.utils.moments
 
+.. automodapi:: irispy.utils.red_blue
+
 .. automodapi:: irispy.utils.response
 
 .. automodapi:: irispy.utils.spectrograph

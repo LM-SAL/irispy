@@ -29,39 +29,33 @@ from irispy.io import read_files
 from irispy.utils.spectrograph import radiometric_calibration
 
 ###############################################################################
-# We will start by getting some data from the IRIS archive.
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260308_051050_3893012099_2026-03-08T05%3A10%3A502026-03-08T05%3A10%3A50.xml>`__.
 #
-# In this case, we will use ``pooch`` so to keep this example self-contained
-# but using your browser will also work.
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
 #
-# Using the url: https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/03/08/20260308_051050_3893012099/iris_l2_20260308_051050_3893012099_raster.tar.gz
-# we are after the raster sequence (~300 MB).
-#
-# The full observation is at https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260308_051050_3893012099_2026-03-08T05%3A10%3A502026-03-08T05%3A10%3A50.xml
-#
+# You will need to update the path to the data in the next section if you do that.
+
 raster_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/03/08/20260308_051050_3893012099/iris_l2_20260308_051050_3893012099_raster.tar.gz",
     known_hash="b76277ae89e79f50e7ddc603a86b9bbf70e23b2e64fc5343dbe99af19a05f854",
 )
 
 ###############################################################################
-# Now to open the files using ``irispy``.
+# We will now open the data using a helper function which is designed to read
+# all files from a single observation.
 
-# Note that when ``memmap=True``, the data values are read from the FITS file
-# directly without the scaling to Float32 (via "b_zero" and "b_scale"),
-# the data values are no longer in DN, but in scaled integer units that start at -2$^{16}$/2.
-#
-# We will use ``memmap=False`` because we want to fit the actual the data values.
-
-raster = read_files(raster_filename, memmap=False)
+raster = read_files(raster_filename)
 
 ###############################################################################
 # We will just focus on the Mg II k 2796 line which we can select using a key.
 # Then we will just plot a spectral line selected at random in space.
 
 # There is only one complete scan, so we index that away.
-# We also only take the first scan of the sequence to avoid memory issues on readthedocs.
+# We also only take the first scan of the sequence to reduce memory usage for
+# the online documentation build.
 mg_ii_k_2796 = raster["Mg II k 2796"][0][0]
+del raster
 
 ###############################################################################
 # To convert the spectral units from DN to flux one must do the following calculation:
@@ -84,8 +78,8 @@ mg_ii_k_2796 = raster["Mg II k 2796"][0][0]
 calibrated_mg_ii_k_2796 = radiometric_calibration(mg_ii_k_2796)
 
 ###############################################################################
-# We will now plot both the before and after spectrums to see the difference.
-# We will plot the spectrum at a single spatial pixel.
+# We will now plot both the before and after spectrums at a single spatial
+# pixel to see the difference.
 
 fig, ax = plt.subplots()
 color = "tab:red"

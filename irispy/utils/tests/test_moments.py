@@ -257,6 +257,7 @@ def test_calculate_moments_masked_values_zeroed():
     cube.mask = np.array([[[False, False, True]]])
     moments = calculate_moments(cube)
     assert_quantity_allclose(moments["intensity"].data[0, 0] * moments["intensity"].unit, 2 * u.DN)
+    assert not moments["intensity"].mask[0, 0]
     assert_quantity_allclose(moments["centroid"].data[0, 0] * moments["centroid"].unit, 1.5 * u.nm)
     assert_quantity_allclose(moments["width"].data[0, 0] * moments["width"].unit, 0.5 * u.nm)
 
