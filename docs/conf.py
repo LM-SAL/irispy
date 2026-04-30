@@ -120,6 +120,7 @@ intersphinx_mapping = {
     "aiapy": ("https://aiapy.readthedocs.io/en/latest/", None),
     "astropy": ("https://docs.astropy.org/en/latest/", None),
     "astroscrappy": ("https://astroscrappy.readthedocs.io/en/latest/", None),
+    "fiasco": ("https://fiasco.readthedocs.io/en/latest/", None),
     "matplotlib": ("https://matplotlib.org/stable", None),
     "mpl_animators": ("https://docs.sunpy.org/projects/mpl-animators/en/latest/", None),
     "ndcube": ("https://docs.sunpy.org/projects/ndcube/en/latest/", None),
