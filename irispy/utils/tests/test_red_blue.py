@@ -9,7 +9,7 @@ from astropy.tests.helper import assert_quantity_allclose
 from irispy.io.utils import read_files
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils.red_blue import RBA_INCOMPLETE_WINGS, RBA_QUALITY_FLAGS, calculate_red_blue_asymmetry
+from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
 
 REST_WAVELENGTH = 140.277 * u.nm
 
@@ -61,7 +61,8 @@ def test_calculate_red_blue_asymmetry_red_and_blue_signs():
     assert_quantity_allclose(result["peak_intensity"].data[0, 0] * result["peak_intensity"].unit, 10 * u.DN)
     assert result["peak_velocity"].unit == u.km / u.s
     assert result["quality"].unit == u.dimensionless_unscaled
-    assert RBA_QUALITY_FLAGS[int(result["quality"].data[0, 0])] == "ok"
+    assert RBAQualityFlag(result["quality"].data[0, 0]) is RBAQualityFlag.OK
+    assert RBAQualityFlag(result["quality"].data[0, 0]).description == "ok"
 
 
 def test_calculate_red_blue_asymmetry_uses_masked_bins():
@@ -268,7 +269,7 @@ def test_calculate_red_blue_asymmetry_flags_incomplete_wings():
         center_on_peak=True,
     )
 
-    assert int(result["quality"].data[0, 0]) == RBA_INCOMPLETE_WINGS
+    assert RBAQualityFlag(result["quality"].data[0, 0]) is RBAQualityFlag.INCOMPLETE_WINGS
     assert np.isnan(result["red_blue_asymmetry"].data[0, 0])
 
 
@@ -294,7 +295,7 @@ def test_calculate_red_blue_asymmetry_quality_thresholds(option, value, expected
         **{option: value},
     )
 
-    assert RBA_QUALITY_FLAGS[int(result["quality"].data[0, 0])] == expected_reason
+    assert RBAQualityFlag(result["quality"].data[0, 0]).description == expected_reason
     assert np.isnan(result["red_blue_asymmetry"].data[0, 0])
 
 

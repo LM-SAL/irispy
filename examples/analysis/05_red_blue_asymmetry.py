@@ -41,7 +41,7 @@ raster_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-raster = read_files(raster_filename, spectral_windows="Si IV 1403", uncertainty=True)
+raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 # We are after the Si IV 1403 line, which we can select using a key.
 si_iv = raster["Si IV 1403"][0]
 
@@ -72,7 +72,6 @@ red_blue = calculate_red_blue_asymmetry(
 )
 
 asymmetry = red_blue["red_blue_asymmetry"]
-asymmetry_error = red_blue["red_blue_asymmetry_error"]
 peak_velocity = red_blue["peak_velocity"]
 quality = red_blue["quality"]
 observed_profiles = red_blue["observed_profile"]
@@ -89,7 +88,6 @@ print(asymmetry.meta)
 observed_profile = observed_profiles[selected_pixel_index]
 velocities = observed_profile.axis_world_coords(0)[0].to(u.km / u.s)
 profile = observed_profile.data
-profile_error = observed_profile.uncertainty.array
 
 ###############################################################################
 # Now we will plot the RBA map for the raster and the raw profile in
@@ -115,15 +113,6 @@ fig.colorbar(im, ax=ax, shrink=0.8, label="Red-Blue Asymmetry")
 ax = axes[1]
 finite = np.isfinite(velocities.value) & np.isfinite(profile)
 ax.plot(velocities.value[finite], profile[finite], color="black", marker="o", markersize=3)
-error_finite = finite & np.isfinite(profile_error)
-ax.errorbar(
-    velocities.value[error_finite],
-    profile[error_finite],
-    yerr=profile_error[error_finite],
-    color="black",
-    linestyle="none",
-    alpha=0.5,
-)
 ax.axvline(0, color="grey", linestyle="dashed")
 
 v_low = velocity_range[0].to_value(u.km / u.s)
@@ -132,8 +121,7 @@ ax.axvspan(-v_high, -v_low, color="C0", alpha=0.1)
 ax.axvspan(v_low, v_high, color="C3", alpha=0.1)
 
 ax.set_title(
-    f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f} ± "
-    f"{abs(float(asymmetry_error.data[selected_pixel_index])):.3f}   "
+    f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f}   "
     f"Peak vel = {float(peak_velocity.data[selected_pixel_index]):.1f} km/s   "
     f"Quality = {int(quality.data[selected_pixel_index]):d}"
 )

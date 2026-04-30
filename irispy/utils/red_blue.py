@@ -3,6 +3,7 @@ Red-blue asymmetry utilities for IRIS spectrogram cubes.
 """
 
 import warnings
+from enum import IntEnum
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -17,30 +18,29 @@ from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import drop_extra_coords_dependent_on_axis, make_map_cube, make_spatial_template
 
-__all__ = ["RBA_QUALITY_FLAGS", "calculate_red_blue_asymmetry"]
+__all__ = ["RBAQualityFlag", "calculate_red_blue_asymmetry"]
 
-# Quality flags for the per-pixel RBA computation
-RBA_OK = 0
-RBA_NO_FINITE_DATA = 1
-RBA_PEAK_AT_EDGE = 2
-RBA_TOO_FEW_POINTS = 3
-RBA_INTERP_FAILED = 4
-RBA_PEAK_IS_ZERO = 5
-RBA_INCOMPLETE_WINGS = 6
-RBA_LOW_SIGNAL = 7
-RBA_SATURATED = 8
 
-RBA_QUALITY_FLAGS = {
-    RBA_OK: "ok",
-    RBA_NO_FINITE_DATA: "no finite data",
-    RBA_PEAK_AT_EDGE: "peak at spectral edge",
-    RBA_TOO_FEW_POINTS: "too few finite points",
-    RBA_INTERP_FAILED: "interpolation failed",
-    RBA_PEAK_IS_ZERO: "peak is zero or non-finite",
-    RBA_INCOMPLETE_WINGS: "incomplete red or blue wing coverage",
-    RBA_LOW_SIGNAL: "below min_intensity",
-    RBA_SATURATED: "above saturation_limit",
-}
+class RBAQualityFlag(IntEnum):
+    """
+    Quality flags for the per-pixel RBA computation.
+    """
+
+    OK = (0, "ok")
+    NO_FINITE_DATA = (1, "no finite data")
+    PEAK_AT_EDGE = (2, "peak at spectral edge")
+    TOO_FEW_POINTS = (3, "too few finite points")
+    INTERP_FAILED = (4, "interpolation failed")
+    PEAK_IS_ZERO = (5, "peak is zero or non-finite")
+    INCOMPLETE_WINGS = (6, "incomplete red or blue wing coverage")
+    LOW_SIGNAL = (7, "below min_intensity")
+    SATURATED = (8, "above saturation_limit")
+
+    def __new__(cls, value, description):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        obj.description = description
+        return obj
 
 
 def _make_velocity_wcs(base_wcs, array_shape, velocity_axis, velocity_grid):
@@ -157,11 +157,11 @@ def calculate_red_blue_asymmetry(
     min_intensity : `float` or `astropy.units.Quantity`, optional
         Minimum peak intensity required for a pixel to be processed.
         Pixels with a peak below this threshold are skipped and assigned
-        quality flag ``RBA_LOW_SIGNAL``.
+        quality flag `~irispy.utils.red_blue.RBAQualityFlag.LOW_SIGNAL`.
     saturation_limit : `float` or `astropy.units.Quantity`, optional
         Maximum allowed peak intensity. Pixels where the peak exceeds this
         value are treated as saturated, skipped, and assigned quality flag
-        ``RBA_SATURATED``.
+        `~irispy.utils.red_blue.RBAQualityFlag.SATURATED`.
 
     Returns
     -------
@@ -171,7 +171,7 @@ def calculate_red_blue_asymmetry(
         instances. Index either profile cube by spatial pixel to plot a 1D
         line profile against its velocity WCS. The ``"quality"`` cube stores
         per-pixel integer flags described by
-        `irispy.utils.red_blue.RBA_QUALITY_FLAGS`.
+        `irispy.utils.red_blue.RBAQualityFlag`.
     """
     # -- Validate velocity_range ------------------------------------------------
     velocity_range = u.Quantity(velocity_range).to(u.km / u.s)
@@ -265,7 +265,7 @@ def calculate_red_blue_asymmetry(
     blue_wing_error = np.full(output_shape, np.nan)
     peak_intensity = np.full(output_shape, np.nan)
     peak_velocity = np.full(output_shape, np.nan)
-    quality = np.full(output_shape, RBA_OK, dtype=np.uint8)
+    quality = np.full(output_shape, RBAQualityFlag.OK, dtype=np.uint8)
 
     # Apply min_intensity and saturation_limit masks before the loop
     with warnings.catch_warnings():
@@ -277,14 +277,14 @@ def calculate_red_blue_asymmetry(
         else:
             min_intensity_value = min_intensity
         low_signal = raw_peak < min_intensity_value
-        quality = np.where(low_signal, RBA_LOW_SIGNAL, quality)
+        quality = np.where(low_signal, RBAQualityFlag.LOW_SIGNAL, quality)
     if saturation_limit is not None:
         if isinstance(saturation_limit, u.Quantity):
             saturation_limit_value = saturation_limit.to_value(cube.unit)
         else:
             saturation_limit_value = saturation_limit
         saturated = raw_peak > saturation_limit_value
-        quality = np.where(saturated, RBA_SATURATED, quality)
+        quality = np.where(saturated, RBAQualityFlag.SATURATED, quality)
 
     interpolated_profiles = np.full((*output_shape, interp_velocity.size), np.nan, dtype=float)
     interpolated_errors = (
@@ -296,13 +296,13 @@ def calculate_red_blue_asymmetry(
     blue_mask = (interp_velocity >= -high) & (interp_velocity <= -low)
 
     for index in np.ndindex(output_shape):
-        if quality[index] in (RBA_LOW_SIGNAL, RBA_SATURATED):
+        if quality[index] in (RBAQualityFlag.LOW_SIGNAL, RBAQualityFlag.SATURATED):
             continue
         profile = data[index]
         profile_error = None if errors is None else errors[index]
         finite_profile = np.isfinite(profile)
         if not finite_profile.any():
-            quality[index] = RBA_NO_FINITE_DATA
+            quality[index] = RBAQualityFlag.NO_FINITE_DATA
             continue
         peak_index = np.nanargmax(np.where(finite_profile, profile, np.nan))
         peak_velocity[index] = velocity[peak_index]
@@ -310,7 +310,7 @@ def calculate_red_blue_asymmetry(
         if center_on_peak:
             # Reject only if the peak itself sits at the very edge of the array
             if peak_index == 0 or peak_index == profile.size - 1:
-                quality[index] = RBA_PEAK_AT_EDGE
+                quality[index] = RBAQualityFlag.PEAK_AT_EDGE
                 continue
             d_velocity = np.nanmean(np.diff(velocity))
             window_pixels = int(fit_window / abs(d_velocity))
@@ -333,7 +333,7 @@ def calculate_red_blue_asymmetry(
         finite = np.isfinite(shifted_velocity) & np.isfinite(profile)
         min_points = 4 if interpolation_kind == "cubic" else 2
         if finite.sum() < min_points:
-            quality[index] = RBA_TOO_FEW_POINTS
+            quality[index] = RBAQualityFlag.TOO_FEW_POINTS
             continue
         sv = shifted_velocity[finite]
         sp = profile[finite]
@@ -343,7 +343,7 @@ def calculate_red_blue_asymmetry(
                 sv[order], sp[order], kind=interpolation_kind, bounds_error=False, fill_value=np.nan
             )(interp_velocity)
         except ValueError:
-            quality[index] = RBA_INTERP_FAILED
+            quality[index] = RBAQualityFlag.INTERP_FAILED
             continue
         if profile_error is not None:
             se = profile_error[finite][order]
@@ -364,13 +364,13 @@ def calculate_red_blue_asymmetry(
         red_finite = red_mask & np.isfinite(interp_profile)
         blue_finite = blue_mask & np.isfinite(interp_profile)
         if red_finite.sum() < 0.8 * red_mask.sum() or blue_finite.sum() < 0.8 * blue_mask.sum():
-            quality[index] = RBA_INCOMPLETE_WINGS
+            quality[index] = RBAQualityFlag.INCOMPLETE_WINGS
             continue
         red_intensity = np.nanmean(interp_profile[red_finite]) if red_finite.any() else np.nan
         blue_intensity = np.nanmean(interp_profile[blue_finite]) if blue_finite.any() else np.nan
         peak = np.nanmax(interp_profile)
         if not np.isfinite(peak) or peak == 0:
-            quality[index] = RBA_PEAK_IS_ZERO
+            quality[index] = RBAQualityFlag.PEAK_IS_ZERO
             continue
         rba = (red_intensity - blue_intensity) / peak
         red_blue[index] = rba
