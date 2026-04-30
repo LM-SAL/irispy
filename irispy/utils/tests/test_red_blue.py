@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import astropy.units as u
 from astropy import constants
@@ -8,7 +9,7 @@ from astropy.tests.helper import assert_quantity_allclose
 from irispy.io.utils import read_files
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils.red_blue import RBA_INCOMPLETE_WINGS, calculate_red_blue_asymmetry
+from irispy.utils.red_blue import RBA_INCOMPLETE_WINGS, RBA_QUALITY_FLAGS, calculate_red_blue_asymmetry
 
 REST_WAVELENGTH = 140.277 * u.nm
 
@@ -60,6 +61,7 @@ def test_calculate_red_blue_asymmetry_red_and_blue_signs():
     assert_quantity_allclose(result["peak_intensity"].data[0, 0] * result["peak_intensity"].unit, 10 * u.DN)
     assert result["peak_velocity"].unit == u.km / u.s
     assert result["quality"].unit == u.dimensionless_unscaled
+    assert RBA_QUALITY_FLAGS[int(result["quality"].data[0, 0])] == "ok"
 
 
 def test_calculate_red_blue_asymmetry_uses_masked_bins():
@@ -270,7 +272,14 @@ def test_calculate_red_blue_asymmetry_flags_incomplete_wings():
     assert np.isnan(result["red_blue_asymmetry"].data[0, 0])
 
 
-def test_calculate_red_blue_asymmetry_min_intensity():
+@pytest.mark.parametrize(
+    ("option", "value", "expected_reason"),
+    [
+        ("min_intensity", 15, "below min_intensity"),
+        ("saturation_limit", 5, "above saturation_limit"),
+    ],
+)
+def test_calculate_red_blue_asymmetry_quality_thresholds(option, value, expected_reason):
     velocity = np.arange(-200, 201, 10) * u.km / u.s
     wavelengths = _wavelengths_from_velocity(velocity)
     profile = _flat_wing_profile(velocity, red_excess=2)
@@ -282,29 +291,10 @@ def test_calculate_red_blue_asymmetry_min_intensity():
         rest_wavelength=REST_WAVELENGTH,
         interpolation_kind="linear",
         center_on_peak=False,
-        min_intensity=15,
+        **{option: value},
     )
 
-    assert result["quality"].data[0, 0] == 7  # RBA_LOW_SIGNAL
-    assert np.isnan(result["red_blue_asymmetry"].data[0, 0])
-
-
-def test_calculate_red_blue_asymmetry_saturation_limit():
-    velocity = np.arange(-200, 201, 10) * u.km / u.s
-    wavelengths = _wavelengths_from_velocity(velocity)
-    profile = _flat_wing_profile(velocity, red_excess=2)
-    data = profile.reshape(1, 1, -1)
-    cube = make_test_spectrogram_cube(data, wavelengths)
-
-    result = calculate_red_blue_asymmetry(
-        cube,
-        rest_wavelength=REST_WAVELENGTH,
-        interpolation_kind="linear",
-        center_on_peak=False,
-        saturation_limit=5,
-    )
-
-    assert result["quality"].data[0, 0] == 8  # RBA_SATURATED
+    assert RBA_QUALITY_FLAGS[int(result["quality"].data[0, 0])] == expected_reason
     assert np.isnan(result["red_blue_asymmetry"].data[0, 0])
 
 

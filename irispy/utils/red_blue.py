@@ -3,8 +3,6 @@ Red-blue asymmetry utilities for IRIS spectrogram cubes.
 """
 
 import warnings
-from copy import deepcopy
-from numbers import Integral
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -14,12 +12,12 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 
-from ndcube import ExtraCoords
 from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
+from irispy.utils._spectral import drop_extra_coords_dependent_on_axis, make_map_cube, make_spatial_template
 
-__all__ = ["calculate_red_blue_asymmetry"]
+__all__ = ["RBA_QUALITY_FLAGS", "calculate_red_blue_asymmetry"]
 
 # Quality flags for the per-pixel RBA computation
 RBA_OK = 0
@@ -32,64 +30,17 @@ RBA_INCOMPLETE_WINGS = 6
 RBA_LOW_SIGNAL = 7
 RBA_SATURATED = 8
 
-
-def _make_moment_cube(template, values, unit, *, mask=None):
-    return SpectrogramCube(
-        values,
-        template.wcs,
-        None,
-        unit,
-        template.meta,
-        mask=mask,
-        extra_coords=template.extra_coords,
-    )
-
-
-def _drop_axis_from_extra_coords(extra_coords, axis):
-    if not extra_coords or extra_coords.is_empty:
-        return None
-    new_extra_coords = ExtraCoords()
-    for array_dimension, coord in extra_coords._lookup_tables:
-        dimensions = (array_dimension,) if isinstance(array_dimension, Integral) else tuple(array_dimension)
-        if axis in dimensions:
-            continue
-        dimensions = tuple(dimension - 1 if dimension > axis else dimension for dimension in dimensions)
-        new_array_dimension = dimensions[0] if len(dimensions) == 1 else dimensions
-        new_extra_coords._lookup_tables.append((new_array_dimension, deepcopy(coord)))
-    return new_extra_coords
-
-
-def _drop_extra_coords_dependent_on_axis(extra_coords, axis):
-    if not extra_coords or extra_coords.is_empty:
-        return None
-    new_extra_coords = ExtraCoords()
-    for array_dimension, coord in extra_coords._lookup_tables:
-        dimensions = (array_dimension,) if isinstance(array_dimension, Integral) else tuple(array_dimension)
-        if axis in dimensions:
-            continue
-        new_extra_coords._lookup_tables.append((array_dimension, deepcopy(coord)))
-    return new_extra_coords
-
-
-def _make_spatial_template(cube, wavelength_axis):
-    template_slicer = [slice(None)] * cube.data.ndim
-    template_slicer[wavelength_axis] = 0
-    template_slicer = tuple(template_slicer)
-    sliced_template = super(SpectrogramCube, cube).__getitem__(template_slicer)
-    if hasattr(cube.wcs, "dropaxis"):
-        wcs_axis = cube.data.ndim - 1 - wavelength_axis
-        template_wcs = cube.wcs.dropaxis(wcs_axis)
-    else:
-        template_wcs = sliced_template.wcs
-    return SpectrogramCube(
-        sliced_template.data,
-        template_wcs,
-        sliced_template.uncertainty,
-        sliced_template.unit,
-        sliced_template.meta,
-        mask=sliced_template.mask,
-        extra_coords=_drop_axis_from_extra_coords(cube.extra_coords, wavelength_axis),
-    )
+RBA_QUALITY_FLAGS = {
+    RBA_OK: "ok",
+    RBA_NO_FINITE_DATA: "no finite data",
+    RBA_PEAK_AT_EDGE: "peak at spectral edge",
+    RBA_TOO_FEW_POINTS: "too few finite points",
+    RBA_INTERP_FAILED: "interpolation failed",
+    RBA_PEAK_IS_ZERO: "peak is zero or non-finite",
+    RBA_INCOMPLETE_WINGS: "incomplete red or blue wing coverage",
+    RBA_LOW_SIGNAL: "below min_intensity",
+    RBA_SATURATED: "above saturation_limit",
+}
 
 
 def _make_velocity_wcs(base_wcs, array_shape, velocity_axis, velocity_grid):
@@ -144,7 +95,7 @@ def _make_profile_cube(
         unit=cube.unit,
         meta=meta,
         mask=mask,
-        extra_coords=_drop_extra_coords_dependent_on_axis(cube.extra_coords, wavelength_axis),
+        extra_coords=drop_extra_coords_dependent_on_axis(cube.extra_coords, wavelength_axis, reindex=False),
     )
 
 
@@ -218,7 +169,9 @@ def calculate_red_blue_asymmetry(
         Collection with 2D maps and plot-ready 3D ``"observed_profile"`` and
         ``"interpolated_profile"`` `~irispy.spectrograph.SpectrogramCube`
         instances. Index either profile cube by spatial pixel to plot a 1D
-        line profile against its velocity WCS.
+        line profile against its velocity WCS. The ``"quality"`` cube stores
+        per-pixel integer flags described by
+        `irispy.utils.red_blue.RBA_QUALITY_FLAGS`.
     """
     # -- Validate velocity_range ------------------------------------------------
     velocity_range = u.Quantity(velocity_range).to(u.km / u.s)
@@ -457,12 +410,12 @@ def calculate_red_blue_asymmetry(
         meta["rba_continuum_windows"] = str(continuum_windows)
 
     def _make_cube(values, unit, *, mask=None):
-        c = _make_moment_cube(template, values, unit, mask=mask)
+        c = make_map_cube(template, values, unit, mask=mask)
         c.meta.update(meta)
         return c
 
     # -- Build output RasterCollection ------------------------------------------
-    template = _make_spatial_template(cube, wavelength_axis)
+    template = make_spatial_template(cube, wavelength_axis)
     cubes = [
         ("red_blue_asymmetry", _make_cube(red_blue, u.dimensionless_unscaled, mask=~np.isfinite(red_blue))),
         ("red_wing", _make_cube(red_wing, cube.unit, mask=~np.isfinite(red_wing))),

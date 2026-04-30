@@ -2,31 +2,15 @@
 This module provides spectral moment calculation utilities for IRIS spectrogram cubes.
 """
 
-from copy import deepcopy
-from numbers import Integral
-
 import numpy as np
 
 import astropy.units as u
 from astropy import constants
 
-from ndcube.extra_coords.extra_coords import ExtraCoords
-
-from irispy.spectrograph import RasterCollection, SpectrogramCube
+from irispy.spectrograph import RasterCollection
+from irispy.utils._spectral import make_map_cube, make_spatial_template
 
 __all__ = ["calculate_moments"]
-
-
-def _make_moment_cube(template, values, unit, *, mask=None):
-    return SpectrogramCube(
-        values,
-        template.wcs,
-        None,
-        unit,
-        template.meta,
-        mask=~np.isfinite(values) if mask is None else mask,
-        extra_coords=template.extra_coords,
-    )
 
 
 def _parse_wings(wings):
@@ -41,41 +25,6 @@ def _parse_wings(wings):
         return u.Quantity(wings[0]), u.Quantity(wings[1])
     msg = "wings must be an astropy.units.Quantity or a tuple of two Quantities"
     raise TypeError(msg)
-
-
-def _drop_axis_from_extra_coords(extra_coords, axis):
-    if not extra_coords or extra_coords.is_empty:
-        return None
-    new_extra_coords = ExtraCoords()
-    for array_dimension, coord in extra_coords._lookup_tables:
-        dimensions = (array_dimension,) if isinstance(array_dimension, Integral) else tuple(array_dimension)
-        if axis in dimensions:
-            continue
-        dimensions = tuple(dimension - 1 if dimension > axis else dimension for dimension in dimensions)
-        new_array_dimension = dimensions[0] if len(dimensions) == 1 else dimensions
-        new_extra_coords._lookup_tables.append((new_array_dimension, deepcopy(coord)))
-    return new_extra_coords
-
-
-def _make_spatial_template(cube, wavelength_axis):
-    template_slicer = [slice(None)] * cube.data.ndim
-    template_slicer[wavelength_axis] = 0
-    template_slicer = tuple(template_slicer)
-    sliced_template = super(SpectrogramCube, cube).__getitem__(template_slicer)
-    if hasattr(cube.wcs, "dropaxis"):
-        wcs_axis = cube.data.ndim - 1 - wavelength_axis
-        template_wcs = cube.wcs.dropaxis(wcs_axis)
-    else:
-        template_wcs = sliced_template.wcs
-    return SpectrogramCube(
-        sliced_template.data,
-        template_wcs,
-        sliced_template.uncertainty,
-        sliced_template.unit,
-        sliced_template.meta,
-        mask=sliced_template.mask,
-        extra_coords=_drop_axis_from_extra_coords(cube.extra_coords, wavelength_axis),
-    )
 
 
 # NOTE: We do not use @u.quantity_input because it cannot validate tuple
@@ -235,11 +184,11 @@ def calculate_moments(
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)
 
-    template = _make_spatial_template(cube, wavelength_axis)
+    template = make_spatial_template(cube, wavelength_axis)
 
-    intensity_cube = _make_moment_cube(template, intensity_value, intensity_unit)
-    centroid_cube = _make_moment_cube(template, centroid_value, wavelengths.unit)
-    width_cube = _make_moment_cube(template, stddev_value, wavelengths.unit)
+    intensity_cube = make_map_cube(template, intensity_value, intensity_unit, mask_invalid=True)
+    centroid_cube = make_map_cube(template, centroid_value, wavelengths.unit, mask_invalid=True)
+    width_cube = make_map_cube(template, stddev_value, wavelengths.unit, mask_invalid=True)
     cubes = [
         ("intensity", intensity_cube),
         ("centroid", centroid_cube),
@@ -259,7 +208,9 @@ def calculate_moments(
                 / rest_wavelength
                 * constants.c.to(u.km / u.s)
             )
-        velocity_cube = _make_moment_cube(template, velocity_value.value, velocity_value.unit)
-        velocity_width_cube = _make_moment_cube(template, velocity_width_value.value, velocity_width_value.unit)
+        velocity_cube = make_map_cube(template, velocity_value.value, velocity_value.unit, mask_invalid=True)
+        velocity_width_cube = make_map_cube(
+            template, velocity_width_value.value, velocity_width_value.unit, mask_invalid=True
+        )
         cubes.extend([("velocity", velocity_cube), ("velocity_width", velocity_width_cube)])
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
