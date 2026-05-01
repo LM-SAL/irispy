@@ -42,23 +42,31 @@ dependencies = [
   "sunraster>=0.7.0",
 ]
 
-optional-dependencies.all = [ "irispy-lmsal" ]
+optional-dependencies.all = [
+  "irispy-lmsal[cosmic-rays,density]",
+]
 optional-dependencies.cosmic-rays = [
   "astroscrappy",
   "rsliding",
 ]
-optional-dependencies.dev = [ "irispy-lmsal[cosmic-rays,docs,tests]" ]
+optional-dependencies.density = [
+  # TODO: Switch to PyPI release once fiasco.line_ratio_density is released.
+  "fiasco @ git+https://github.com/nabobalis/fiasco.git@ratio-feature",
+]
+optional-dependencies.dev = [
+  "irispy-lmsal[all,docs,tests]",
+]
 optional-dependencies.docs = [
+  "irispy-lmsal[all]",
   "aiapy",
   "dask[distributed]",
-  "irispy-lmsal[cosmic-rays]",
   "pooch",
-  "sphinx",
   "sphinx-automodapi",
   "sphinx-changelog",
   "sphinx-copybutton",
   "sphinx-design",
   "sphinx-gallery",
+  "sphinx",
   "sunkit-image",
   "sunpy-sphinx-theme",
 ]

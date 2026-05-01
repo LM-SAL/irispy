@@ -104,7 +104,15 @@ ax = axes[0]
 rba_map = np.where(quality.data == 0, asymmetry.data, np.nan)
 vmax = max(np.nanpercentile(np.abs(rba_map), 98), 0.15)
 im = ax.imshow(rba_map, cmap="RdBu_r", origin="lower", aspect="auto", vmin=-vmax, vmax=vmax)
-ax.plot(selected_pixel_index[1], selected_pixel_index[0], "k+", markersize=16, transform=ax.get_transform("pixel"))
+ax.plot(
+    selected_pixel_index[1],
+    selected_pixel_index[0],
+    color="lime",
+    marker="+",
+    linestyle="none",
+    markersize=16,
+    transform=ax.get_transform("pixel"),
+)
 ax.coords[0].set_axislabel("Helioprojective Latitude [arcsec]")
 ax.coords[1].set_axislabel("Helioprojective Longitude [arcsec]")
 fig.colorbar(im, ax=ax, shrink=0.8, label="Red-Blue Asymmetry")
