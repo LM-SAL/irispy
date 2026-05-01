@@ -4,12 +4,17 @@
 # full list see the documentation:
 # http://www.sphinx-doc.org/en/master/config
 
-import os
+import configparser
 import datetime
+import os
 from pathlib import Path
+from shutil import copyfile
+
 from packaging.version import Version
 
-# -- Read the Docs Specific Configuration --------------------------------------
+DOCS_DIR = Path(__file__).resolve().parent
+
+# -- Read the Docs Specific Configuration -------------------------------------
 
 # This needs to be done before anything is imported
 on_rtd = os.environ.get("READTHEDOCS", None) == "True"
@@ -20,7 +25,7 @@ if on_rtd:
     os.environ["LC_ALL"] = "C"
     os.environ["PARFIVE_HIDE_PROGRESS"] = "True"
 
-# -- Project information -----------------------------------------------------
+# -- Project information ------------------------------------------------------
 
 # The full version, including alpha/beta/rc tags
 from irispy import __version__
@@ -40,7 +45,7 @@ project = "irispy"
 author = "IRIS Instrument Team @ LMSAL"
 copyright = f"{datetime.datetime.now(datetime.UTC).year}, {author}"  # NOQA: A001
 
-# -- General configuration ---------------------------------------------------
+# -- General configuration ----------------------------------------------------
 
 import warnings
 from astropy.utils.exceptions import AstropyDeprecationWarning
@@ -107,7 +112,7 @@ default_role = "py:obj"
 nitpicky = True
 # This is not used. See docs/nitpick-exceptions file for the actual listing.
 nitpick_ignore = []
-with Path("nitpick-exceptions").open() as nitpick_exceptions:
+with (DOCS_DIR / "nitpick-exceptions").open() as nitpick_exceptions:
     for line in nitpick_exceptions:
         if line.strip() == "" or line.startswith("#"):
             continue
@@ -115,7 +120,7 @@ with Path("nitpick-exceptions").open() as nitpick_exceptions:
         target = target.strip()
         nitpick_ignore.append((dtype, target))
 
-# -- Options for intersphinx extension ---------------------------------------
+# -- Options for intersphinx extension ----------------------------------------
 intersphinx_mapping = {
     "aiapy": ("https://aiapy.readthedocs.io/en/latest/", None),
     "astropy": ("https://docs.astropy.org/en/latest/", None),
@@ -146,7 +151,7 @@ ogp_custom_meta_tags = ('<meta property="og:ignore_canonical" content="true" />'
 copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
 copybutton_prompt_is_regexp = True
 
-# -- Options for HTML output -------------------------------------------------
+# -- Options for HTML output --------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
@@ -180,7 +185,7 @@ graphviz_dot_args = [
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html#confval-autoclass_content
 autoclass_content = "both"
 
-# -- Other options ----------------------------------------------------------
+# -- Other options ------------------------------------------------------------
 
 # Configuration for sphinx-gallery
 from sunpy_sphinx_theme import PNG_ICON
@@ -231,7 +236,34 @@ def jinja_to_rst(app, docname, source):
             source[0] = source[0].replace(to_replace, "")
 
 
-# -- Sphinx setup --------------------------------------------------------------
+# -- Database on RTD or CI ----------------------------------------------------
+on_gha = os.environ.get("CI") == "true"
+
+if on_rtd or on_gha:
+    from astropy.utils.data import download_file
+
+    fiasco_home = Path.home() / ".fiasco"
+    ascii_dbase_root = fiasco_home / "chianti_dbase"
+    hdf5_dbase_root = fiasco_home / "chianti_dbase.h5"
+    fiasco_rc = fiasco_home / "fiascorc"
+
+    fiasco_home.mkdir(exist_ok=True, parents=True)
+    ascii_dbase_root.mkdir(exist_ok=True, parents=True)
+
+    config = configparser.ConfigParser()
+    config.add_section("database")
+    config.set("database", "ascii_dbase_root", str(ascii_dbase_root))
+    config.set("database", "hdf5_dbase_root", str(hdf5_dbase_root))
+    with fiasco_rc.open(mode="w") as fd:
+        config.write(fd)
+
+    if not hdf5_dbase_root.is_file():
+        database_url = "https://github.com/LM-SAL/data/raw/refs/heads/main/chianti_dbase.h5"
+        downloaded_database = download_file(database_url, cache=True, show_progress=True)
+        copyfile(downloaded_database, hdf5_dbase_root)
+
+
+# -- Sphinx setup -------------------------------------------------------------
 
 
 def setup(app):
