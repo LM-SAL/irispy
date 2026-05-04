@@ -104,6 +104,21 @@ def test_read_sji_lvl2_masks_scaled_float_bad_pixels(sns_sji_1330_file):
     assert cube.mask.sum() == expected_bad_pixels
 
 
+def test_read_sji_lvl2_masks_explicit_float_bad_pixels(tmp_path, sns_sji_1330_file):
+    with fits.open(sns_sji_1330_file) as hdul:
+        data = hdul[0].data.astype("float32")
+        data.flat[:2] = BAD_PIXEL_VALUE_SCALED
+        expected_bad_pixels = np.count_nonzero(data == BAD_PIXEL_VALUE_SCALED)
+        hdul[0].data = data
+        float_file = tmp_path / "sji_float_bad_pixels.fits"
+        hdul.writeto(float_file)
+
+    cube = read_sji_lvl2(float_file)
+
+    assert expected_bad_pixels > 0
+    assert cube.mask.sum() == expected_bad_pixels
+
+
 def test_smoke_read_sji_lvl2(
     sns_sji_1330_file,
     sns_sji_1400_file,

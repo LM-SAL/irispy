@@ -6,6 +6,7 @@
 
 import configparser
 import datetime
+import logging
 import os
 from pathlib import Path
 from shutil import copyfile
@@ -240,13 +241,14 @@ def jinja_to_rst(app, docname, source):
 on_gha = os.environ.get("CI") == "true"
 
 
-def _is_not_fiasco_database_version_warning(record):
-    message = record.getMessage()
-    return not (
-        record.name.startswith("fiasco")
-        and "was produced with an earlier version of fiasco" in message
-        and "You may need to rebuild the HDF5 database" in message
-    )
+class _FiascoDatabaseVersionFilter(logging.Filter):
+    def filter(self, record):
+        message = record.getMessage()
+        return not (
+            record.name.startswith("fiasco")
+            and "was produced with an earlier version of fiasco" in message
+            and "You may need to rebuild the HDF5 database" in message
+        )
 
 
 def _ensure_hdf5_database(database_url, destination):
@@ -299,7 +301,7 @@ try:
 except ImportError:
     pass
 else:
-    fiasco.log.addFilter(_is_not_fiasco_database_version_warning)
+    fiasco.log.addFilter(_FiascoDatabaseVersionFilter())
 
 
 # -- Sphinx setup -------------------------------------------------------------

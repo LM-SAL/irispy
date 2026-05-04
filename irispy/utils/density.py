@@ -65,6 +65,9 @@ def map_ratio_to_quantity(observed_ratio, quantity, theoretical_ratio, *, bounds
         )
         raise ValueError(msg)
 
+    order = np.argsort(theoretical_ratio)
+    theoretical_ratio = theoretical_ratio[order]
+    quantity = quantity[order]
     theoretical_ratio, unique_index = np.unique(theoretical_ratio, return_index=True)
     quantity = quantity[unique_index]
     if quantity.size < 2:
@@ -106,7 +109,7 @@ def density_diagnostic(
     temperature=None,
     bounds_error=False,
     fill_value=np.nan,
-    line_ratio_density_kwargs=None,
+    line_ratio_kwargs=None,
 ):
     """
     Map an observed IRIS line ratio onto a theoretical density curve.
@@ -132,8 +135,8 @@ def density_diagnostic(
         Passed through to `map_ratio_to_quantity`.
     fill_value : scalar or `~astropy.units.Quantity`, optional
         Passed through to `map_ratio_to_quantity`.
-    line_ratio_density_kwargs : `dict`, optional
-        Extra keyword arguments forwarded to ``fiasco.line_ratio_density``.
+    line_ratio_kwargs : `dict`, optional
+        Extra keyword arguments forwarded to ``fiasco.line_ratio``.
     """
     if (intensity_numerator_uncertainty is None) != (intensity_denominator_uncertainty is None):
         msg = "Both numerator and denominator uncertainties must be provided together."
@@ -148,8 +151,8 @@ def density_diagnostic(
         msg = "IRIS density diagnostics require the optional dependency 'fiasco'."
         raise ImportError(msg) from exc
 
-    if line_ratio_density_kwargs is None:
-        line_ratio_density_kwargs = {}
+    if line_ratio_kwargs is None:
+        line_ratio_kwargs = {}
 
     intensity_numerator = u.Quantity(intensity_numerator)
     intensity_denominator = u.Quantity(intensity_denominator)
@@ -197,12 +200,12 @@ def density_diagnostic(
             raise ValueError(msg) from exc
         ratio_uncertainty = u.Quantity(ratio_uncertainty, ratio.unit)
 
-    theoretical_ratio = fiasco.line_ratio_density(
+    theoretical_ratio = fiasco.line_ratio(
         ion,
         numerator,
         denominator,
         density_grid,
-        **line_ratio_density_kwargs,
+        **line_ratio_kwargs,
     )
     theoretical_ratio = u.Quantity(theoretical_ratio, u.dimensionless_unscaled).squeeze()
     if theoretical_ratio.ndim > 1:

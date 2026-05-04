@@ -376,12 +376,16 @@ def calculate_red_blue_asymmetry(
             ordered_error = profile_error[finite][order]
             finite_error = np.isfinite(ordered_error)
             if finite_error.sum() >= min_points:
-                interp_error = make_interp_spline(
-                    ordered_velocity[finite_error],
-                    ordered_error[finite_error],
-                    k=interpolation_degree,
-                )(interp_velocity, extrapolate=False)
-                interp_error = np.where(interp_error >= 0, interp_error, np.nan)
+                try:
+                    interp_error = make_interp_spline(
+                        ordered_velocity[finite_error],
+                        ordered_error[finite_error],
+                        k=interpolation_degree,
+                    )(interp_velocity, extrapolate=False)
+                    interp_error = np.where(interp_error >= 0, interp_error, np.nan)
+                except ValueError:
+                    quality[index] = RBAQualityFlag.INTERP_FAILED
+                    continue
             else:
                 interp_error = None
         else:

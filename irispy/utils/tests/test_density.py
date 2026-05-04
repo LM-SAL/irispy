@@ -12,15 +12,15 @@ from irispy.utils.density import density_diagnostic, map_ratio_to_quantity
 def _install_fake_fiasco(monkeypatch, ratio):
     calls = {}
 
-    def line_ratio_density(ion, numerator, denominator, density_grid, **kwargs):
+    def line_ratio(ion, numerator, denominator, density_grid, **kwargs):
         calls["ion"] = ion
         calls["numerator"] = numerator
         calls["denominator"] = denominator
         calls["density_grid"] = density_grid
-        calls["line_ratio_density_kwargs"] = kwargs
+        calls["line_ratio_kwargs"] = kwargs
         return u.Quantity(ratio, u.dimensionless_unscaled)
 
-    fake_fiasco = types.SimpleNamespace(line_ratio_density=line_ratio_density)
+    fake_fiasco = types.SimpleNamespace(line_ratio=line_ratio)
     monkeypatch.setitem(sys.modules, "fiasco", fake_fiasco)
     return calls
 
@@ -99,12 +99,12 @@ def test_density_diagnostic_builds_theoretical_ratio_with_fiasco(monkeypatch):
         ion=fake_ion,
         numerator=1399.78 * u.angstrom,
         denominator=1401.16 * u.angstrom,
-        line_ratio_density_kwargs={"use_two_ion_model": False},
+        line_ratio_kwargs={"use_two_ion_model": False},
     )
 
     assert calls["ion"] is fake_ion
     assert u.allclose(calls["density_grid"], density_grid)
-    assert calls["line_ratio_density_kwargs"] == {"use_two_ion_model": False}
+    assert calls["line_ratio_kwargs"] == {"use_two_ion_model": False}
     np.testing.assert_allclose(result["theoretical_ratio"].value, [0.2, 0.4, 0.6])
     assert u.allclose(result["density"], [2] * u.cm**-3)
 

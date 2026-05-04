@@ -11,7 +11,7 @@ they are often used to diagnose conditions in the solar transition region.
 .. warning::
 
     This example requires the optional density dependencies, including a version
-    of `fiasco` that provides ``fiasco.line_ratio_density``.
+    of `fiasco` that provides ``fiasco.line_ratio``.
 """
 
 import fiasco
@@ -63,7 +63,7 @@ fig, axes = plt.subplots(
     sharex=True,
 )
 
-line_ratio_density_kwargs = {"use_two_ion_model": False}
+line_ratio_kwargs = {"use_two_ion_model": False}
 for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=True):
     for line_style, label, ion in o4_models:
         diagnostic = density_diagnostic(
@@ -74,7 +74,7 @@ for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=T
             numerator=numerator,
             denominator=denominator,
             temperature=ion.temperature,
-            line_ratio_density_kwargs=line_ratio_density_kwargs,
+            line_ratio_kwargs=line_ratio_kwargs,
         )
         ax.plot(
             np.log10(diagnostic["density_grid"].to_value("cm-3")),
@@ -95,7 +95,7 @@ for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=T
                 numerator=numerator,
                 denominator=denominator,
                 temperature=ion.temperature,
-                line_ratio_density_kwargs=line_ratio_density_kwargs,
+                line_ratio_kwargs=line_ratio_kwargs,
             )
             ax.plot(
                 np.log10(observed["density"].to_value("cm-3")),
