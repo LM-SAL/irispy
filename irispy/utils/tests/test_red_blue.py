@@ -82,7 +82,7 @@ def test_calculate_red_blue_asymmetry_uses_masked_bins():
         center_on_peak=False,
     )
 
-    assert_quantity_allclose(result["red_blue_asymmetry"].data[0, 0] * u.one, 0 * u.one)
+    assert_quantity_allclose(result["red_blue_asymmetry"].data[0, 0] * u.one, 0 * u.one, atol=1e-12 * u.one)
 
 
 def test_calculate_red_blue_asymmetry_output_does_not_inherit_first_wavelength_mask():
@@ -261,6 +261,25 @@ def test_calculate_red_blue_asymmetry_return_profiles_on_sliced_cube():
         result["interpolated_profile"][0, 0].axis_world_coords(0)[0],
         np.arange(-200, 201, 10) * u.km / u.s,
     )
+
+
+def test_calculate_red_blue_asymmetry_can_skip_profile_outputs():
+    velocity = np.arange(-200, 201, 10) * u.km / u.s
+    wavelengths = _wavelengths_from_velocity(velocity)
+    profile = _flat_wing_profile(velocity, red_excess=2)
+    cube = make_test_spectrogram_cube(profile.reshape(1, 1, -1), wavelengths)
+
+    result = calculate_red_blue_asymmetry(
+        cube,
+        rest_wavelength=REST_WAVELENGTH,
+        interpolation_kind="linear",
+        center_on_peak=False,
+        return_profiles=False,
+    )
+
+    assert "observed_profile" not in result
+    assert "interpolated_profile" not in result
+    assert np.isfinite(result["red_blue_asymmetry"].data[0, 0])
 
 
 def test_calculate_red_blue_asymmetry_flags_incomplete_wings():

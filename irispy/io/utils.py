@@ -226,4 +226,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                 log.warning(f"File group {file_group} failed to load with {e}")
                 continue
             raise
+    if not returns:
+        msg = f"No supported IRIS files were loaded from {filenames}."
+        raise ValueError(msg)
     return NDCollection(returns.items()) if len(returns) > 1 else next(iter(returns.values()))

@@ -138,7 +138,13 @@ def calculate_dust_mask(data_array):
     # Set the pixel value to True is the pixel is recognized as a dust pixel.
     mask[(data_array < 0.5) & (data_array > BAD_PIXEL_VALUE_SCALED)] = True
     # Extending the mask to avoid the neighbours pixel influenced by the dust pixels.
-    struct = np.array([np.zeros((3, 3)), np.ones((3, 3)), np.zeros((3, 3))], dtype=bool)
+    if mask.ndim == 2:
+        struct = np.ones((3, 3), dtype=bool)
+    elif mask.ndim == 3:
+        struct = np.array([np.zeros((3, 3)), np.ones((3, 3)), np.zeros((3, 3))], dtype=bool)
+    else:
+        msg = "data_array must be 2D or 3D."
+        raise ValueError(msg)
     return ndimage.binary_dilation(mask, structure=struct).astype(mask.dtype)
 
 

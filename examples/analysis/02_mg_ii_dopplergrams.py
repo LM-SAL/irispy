@@ -13,7 +13,7 @@ import tarfile
 import matplotlib.pyplot as plt
 import numpy as np
 import pooch
-from scipy.interpolate import interp1d
+from scipy.interpolate import make_interp_spline
 
 import astropy.units as u
 from astropy import constants
@@ -69,8 +69,8 @@ plt.xlabel("Wavelength (nm)")
 # line intensity varies for a strong Mn I line at around 280.2 nm, in
 # between the Mg II k and h lines.
 #
-# For this dataset, the line core of this line falls around index 350.
-# Here though, we will crop in wavelength space.
+# For this dataset, the line core of this line falls around 280.2 nm.
+# We crop in wavelength space.
 
 lower_corner = [SpectralCoord(280.2, unit=u.nm), None]
 upper_corner = [SpectralCoord(280.2, unit=u.nm), None]
@@ -114,10 +114,17 @@ plt.xlabel("Scan number")
 # apply to this specific example).
 
 c = constants.c.to("km/s")
-wave_shift = -v_obs * mg_wave[350] / c
+mn_i_wavelength = 280.2 * u.nm
+wave_shift = -v_obs * mn_i_wavelength / c
 # Linear interpolation in wavelength, for each scan
 for i in range(mg_ii.data.shape[0]):
-    mg_ii.data[:, i, :] = interp1d(mg_wave - wave_shift[i], mg_ii.data[:, i, :], bounds_error=False)(mg_wave)
+    shifted_data = make_interp_spline(
+        (mg_wave - wave_shift[i]).to_value(u.nm),
+        mg_ii.data[i, :, :],
+        k=1,
+        axis=-1,
+    )(mg_wave.to_value(u.nm), extrapolate=False)
+    mg_ii.data[i, :, :] = np.nan_to_num(shifted_data, nan=0.0)
 
 ###############################################################################
 # Now we can plot the shifted data to see that the large scale shifts

@@ -210,6 +210,32 @@ def test_density_diagnostic_explicit_temperature(monkeypatch):
     assert u.allclose(result["density"], [2] * u.cm**-3)
 
 
+def test_density_diagnostic_rejects_vector_temperature(monkeypatch):
+    _install_fake_fiasco(
+        monkeypatch,
+        [
+            [0.1, 0.2, 0.3],
+            [0.2, 0.4, 0.6],
+            [0.3, 0.6, 0.9],
+        ],
+    )
+    fake_ion = types.SimpleNamespace(
+        temperature=[1e5, 2e5, 3e5] * u.K,
+        formation_temperature=1e5 * u.K,
+    )
+
+    with pytest.raises(ValueError, match="temperature must be scalar"):
+        density_diagnostic(
+            [0.4],
+            [1.0],
+            [1, 2, 3] * u.cm**-3,
+            ion=fake_ion,
+            numerator=1399.78 * u.angstrom,
+            denominator=1401.16 * u.angstrom,
+            temperature=[1e5, 2e5] * u.K,
+        )
+
+
 def test_density_diagnostic_uncertainty_shape_mismatch(monkeypatch):
     _install_fake_fiasco(monkeypatch, [0.5, 1.0])
     fake_ion = types.SimpleNamespace(

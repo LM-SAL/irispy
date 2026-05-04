@@ -3,6 +3,7 @@ import warnings
 from numbers import Integral
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from astropy.wcs import WCS
 
@@ -190,6 +191,8 @@ class SJICube(SpectrogramCube):
             If True, dust particles positions mask will be removed.
             Default=False
         """
+        if self.mask is None:
+            self.mask = np.zeros(self.data.shape, dtype=bool)
         dust_mask = calculate_dust_mask(self.data)
         if undo:
             # If undo kwarg IS set, unmask dust pixels.

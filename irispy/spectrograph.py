@@ -64,6 +64,8 @@ class SpectrogramCube(SpecCube):
             result.unit,
             result.meta,
             mask=result.mask,
+            extra_coords=result.extra_coords,
+            global_coords=result.global_coords,
         )
 
     def __repr__(self) -> str:

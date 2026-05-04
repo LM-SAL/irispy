@@ -102,20 +102,21 @@ def calculate_moments(
     * `arXiv:2005.02029, Section 3.1 <https://arxiv.org/abs/2005.02029>`__
     * `Færder et al. (2024), ApJ, Appendix C <https://iopscience.iop.org/article/10.3847/1538-4357/ac4223>`__
     """
-    wavelength_axis = next(
-        axis
-        for axis, physical_types in enumerate(cube.array_axis_physical_types)
-        if physical_types and "em.wl" in physical_types
-    )
+    try:
+        wavelength_axis = next(
+            axis
+            for axis, physical_types in enumerate(cube.array_axis_physical_types)
+            if physical_types and "em.wl" in physical_types
+        )
+    except StopIteration as exc:
+        msg = "Could not identify a spectral wavelength axis on the input cube"
+        raise ValueError(msg) from exc
     wavelengths = cube.axis_world_coords(wavelength_axis)[0]
     if not isinstance(wavelengths, u.Quantity):
         wavelengths = wavelengths * u.one
     wavelengths = wavelengths.to(u.nm)
-    data = cube.data.copy()
-    if cube.mask is not None:
-        data = np.where(cube.mask, 0, data)
-    data = np.where(data < 0, 0, data)
-    data = np.where(np.isfinite(data), data, 0)
+    data = np.asarray(cube.data)
+    mask = None if cube.mask is None else np.asarray(cube.mask, dtype=bool)
     if wings is not None:
         if rest_wavelength is None:
             msg = "rest_wavelength must be provided when wings is given"
@@ -133,7 +134,13 @@ def calculate_moments(
         slicer = [slice(None)] * data.ndim
         slicer[wavelength_axis] = crop_indices
         data = data[tuple(slicer)]
+        if mask is not None:
+            mask = mask[tuple(slicer)]
         wavelengths = wavelengths[crop_mask]
+    data = np.array(data, dtype=float, copy=True)
+    if mask is not None:
+        data[mask] = 0
+    data[(data < 0) | ~np.isfinite(data)] = 0
     # Calculate wavelength step (assumed uniform)
     dwvl = np.mean(np.diff(wavelengths))
     # Move wavelength axis to the end for vectorised computation

@@ -239,9 +239,41 @@ def jinja_to_rst(app, docname, source):
 # -- Database on RTD or CI ----------------------------------------------------
 on_gha = os.environ.get("CI") == "true"
 
-if on_rtd or on_gha:
-    from astropy.utils.data import download_file
 
+def _is_not_fiasco_database_version_warning(record):
+    message = record.getMessage()
+    return not (
+        record.name.startswith("fiasco")
+        and "was produced with an earlier version of fiasco" in message
+        and "You may need to rebuild the HDF5 database" in message
+    )
+
+
+def _ensure_hdf5_database(database_url, destination):
+    from astropy.utils.data import download_file  # noqa: PLC0415
+
+    import h5py  # noqa: PLC0415
+
+    if destination.is_file():
+        try:
+            with h5py.File(destination, "r"):
+                return
+        except OSError:
+            pass
+
+    downloaded_database = download_file(database_url, cache=True, show_progress=True)
+    tmp_destination = destination.with_name(f"{destination.name}.tmp")
+    copyfile(downloaded_database, tmp_destination)
+    try:
+        with h5py.File(tmp_destination, "r"):
+            pass
+    except OSError:
+        tmp_destination.unlink(missing_ok=True)
+        raise
+    tmp_destination.replace(destination)
+
+
+if on_rtd or on_gha:
     fiasco_home = Path.home() / ".fiasco"
     ascii_dbase_root = fiasco_home / "chianti_dbase"
     hdf5_dbase_root = fiasco_home / "chianti_dbase.h5"
@@ -257,10 +289,17 @@ if on_rtd or on_gha:
     with fiasco_rc.open(mode="w") as fd:
         config.write(fd)
 
-    if not hdf5_dbase_root.is_file():
-        database_url = "https://github.com/LM-SAL/data/raw/refs/heads/main/chianti_dbase.h5"
-        downloaded_database = download_file(database_url, cache=True, show_progress=True)
-        copyfile(downloaded_database, hdf5_dbase_root)
+    _ensure_hdf5_database(
+        "https://github.com/LM-SAL/data/raw/refs/heads/main/chianti_dbase.h5",
+        hdf5_dbase_root,
+    )
+
+try:
+    import fiasco
+except ImportError:
+    pass
+else:
+    fiasco.log.addFilter(_is_not_fiasco_database_version_warning)
 
 
 # -- Sphinx setup -------------------------------------------------------------

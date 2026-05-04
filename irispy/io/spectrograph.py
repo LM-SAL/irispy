@@ -86,8 +86,8 @@ def read_spectrograph_lvl2(
             spectral_windows_req = np.asarray(spectral_windows_req, dtype="U")
             window_is_in_obs = np.asarray([window in windows_in_obs for window in spectral_windows_req])
             if not all(window_is_in_obs):
-                missing_windows = window_is_in_obs is False
-                msg = f"Spectral windows {spectral_windows[missing_windows]} not in file {filenames[0]}"
+                missing_windows = spectral_windows_req[~window_is_in_obs]
+                msg = f"Spectral windows {missing_windows.tolist()} not in file {filenames[0]}"
                 raise ValueError(msg)
             window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
         data_dict = {window_name: [] for window_name in spectral_windows_req}

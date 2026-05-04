@@ -217,9 +217,9 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             unit = DN_UNIT["SJI_UNSCALED"]
         else:
             # This is a workaround for the AIA cubes being in int and not float
+            mask = data == BAD_PIXEL_VALUE_SCALED
             mask_value = BAD_PIXEL_VALUE_SCALED if np.issubdtype(data.dtype, np.integer) else np.nan
             data_nan_masked[data == BAD_PIXEL_VALUE_SCALED] = mask_value
-            mask = data_nan_masked == BAD_PIXEL_VALUE_SCALED
             scaled = True
             unit = DN_UNIT["SJI"]
             if uncertainty and instrume in ["IRIS", "SJI"]:

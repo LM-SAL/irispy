@@ -121,6 +121,14 @@ def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
     assert len(returns) == 2
 
 
+def test_read_files_raises_when_no_files_are_supported(tmp_path):
+    filename = tmp_path / "not-a-fits.txt"
+    filename.write_text("not a supported IRIS file")
+
+    with pytest.raises(ValueError, match="No supported IRIS files were loaded"):
+        read_files(filename)
+
+
 @pytest.mark.remote_data
 def test_read_files_raster_scanning(remote_raster_scanning_tar):
     returns = read_files(remote_raster_scanning_tar)

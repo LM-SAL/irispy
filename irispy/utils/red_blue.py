@@ -6,7 +6,7 @@ import warnings
 from enum import IntEnum
 
 import numpy as np
-from scipy.interpolate import interp1d
+from scipy.interpolate import make_interp_spline
 
 import astropy.units as u
 from astropy import constants
@@ -19,6 +19,8 @@ from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import drop_extra_coords_dependent_on_axis, make_map_cube, make_spatial_template
 
 __all__ = ["RBAQualityFlag", "calculate_red_blue_asymmetry"]
+
+_INTERPOLATION_DEGREES = {"linear": 1, "quadratic": 2, "cubic": 3}
 
 
 class RBAQualityFlag(IntEnum):
@@ -114,6 +116,7 @@ def calculate_red_blue_asymmetry(
     mask_negative=True,
     min_intensity=None,
     saturation_limit=None,
+    return_profiles=True,
 ):
     """
     Calculate red-blue asymmetry maps from a spectrogram cube.
@@ -149,8 +152,8 @@ def calculate_red_blue_asymmetry(
     uncertainty : `astropy.units.Quantity`, optional
         Per-bin intensity uncertainty. If omitted, ``cube.uncertainty`` is
         used when available.
-    interpolation_kind : `str`, optional
-        Interpolation method passed to `scipy.interpolate.interp1d`.
+    interpolation_kind : {"linear", "quadratic", "cubic"} or `int`, optional
+        Spline degree used by `scipy.interpolate.make_interp_spline`.
     mask_negative : `bool`, optional
         If `True`, negative intensities are set to NaN before computing
         moments.
@@ -162,15 +165,19 @@ def calculate_red_blue_asymmetry(
         Maximum allowed peak intensity. Pixels where the peak exceeds this
         value are treated as saturated, skipped, and assigned quality flag
         `~irispy.utils.red_blue.RBAQualityFlag.SATURATED`.
+    return_profiles : `bool`, optional
+        If `True`, include plot-ready 3D ``"observed_profile"`` and
+        ``"interpolated_profile"`` cubes in the output. Set to `False` to
+        reduce peak memory use when only the 2D maps are needed.
 
     Returns
     -------
     `irispy.spectrograph.RasterCollection`
-        Collection with 2D maps and plot-ready 3D ``"observed_profile"`` and
+        Collection with 2D maps. When ``return_profiles=True``, the collection
+        also includes plot-ready 3D ``"observed_profile"`` and
         ``"interpolated_profile"`` `~irispy.spectrograph.SpectrogramCube`
-        instances. Index either profile cube by spatial pixel to plot a 1D
-        line profile against its velocity WCS. The ``"quality"`` cube stores
-        per-pixel integer flags described by
+        instances. The ``"quality"`` cube stores per-pixel integer flags
+        described by
         `irispy.utils.red_blue.RBAQualityFlag`.
     """
     # -- Validate velocity_range ------------------------------------------------
@@ -196,6 +203,15 @@ def calculate_red_blue_asymmetry(
         raise ValueError(msg)
     if dv <= 0:
         msg = "dv must be positive"
+        raise ValueError(msg)
+    interpolation_degree = _INTERPOLATION_DEGREES.get(interpolation_kind, interpolation_kind)
+    try:
+        interpolation_degree = int(interpolation_degree)
+    except (TypeError, ValueError) as exc:
+        msg = "interpolation_kind must be 'linear', 'quadratic', 'cubic', or an integer spline degree"
+        raise ValueError(msg) from exc
+    if interpolation_degree < 0:
+        msg = "interpolation_kind must be a non-negative spline degree"
         raise ValueError(msg)
 
     # -- Locate spectral axis and compute velocities ----------------------------
@@ -290,9 +306,13 @@ def calculate_red_blue_asymmetry(
         saturated = raw_peak > saturation_limit_value
         quality = np.where(saturated, RBAQualityFlag.SATURATED, quality)
 
-    interpolated_profiles = np.full((*output_shape, interp_velocity.size), np.nan, dtype=float)
+    interpolated_profiles = (
+        np.full((*output_shape, interp_velocity.size), np.nan, dtype=float) if return_profiles else None
+    )
     interpolated_errors = (
-        np.full((*output_shape, interp_velocity.size), np.nan, dtype=float) if errors is not None else None
+        np.full((*output_shape, interp_velocity.size), np.nan, dtype=float)
+        if errors is not None and return_profiles
+        else None
     )
 
     low, high = velocity_range_value
@@ -335,34 +355,41 @@ def calculate_red_blue_asymmetry(
 
         # Interpolate onto uniform velocity grid
         finite = np.isfinite(shifted_velocity) & np.isfinite(profile)
-        min_points = 4 if interpolation_kind == "cubic" else 2
+        min_points = interpolation_degree + 1
         if finite.sum() < min_points:
             quality[index] = RBAQualityFlag.TOO_FEW_POINTS
             continue
         sv = shifted_velocity[finite]
         sp = profile[finite]
         order = np.argsort(sv)
+        ordered_velocity = sv[order]
+        ordered_profile = sp[order]
         try:
-            interp_profile = interp1d(
-                sv[order], sp[order], kind=interpolation_kind, bounds_error=False, fill_value=np.nan
-            )(interp_velocity)
+            interp_profile = make_interp_spline(ordered_velocity, ordered_profile, k=interpolation_degree)(
+                interp_velocity,
+                extrapolate=False,
+            )
         except ValueError:
             quality[index] = RBAQualityFlag.INTERP_FAILED
             continue
         if profile_error is not None:
-            se = profile_error[finite][order]
-            if np.isfinite(se).sum() >= min_points:
-                interp_error = interp1d(sv[order], se, kind=interpolation_kind, bounds_error=False, fill_value=np.nan)(
-                    interp_velocity
-                )
+            ordered_error = profile_error[finite][order]
+            finite_error = np.isfinite(ordered_error)
+            if finite_error.sum() >= min_points:
+                interp_error = make_interp_spline(
+                    ordered_velocity[finite_error],
+                    ordered_error[finite_error],
+                    k=interpolation_degree,
+                )(interp_velocity, extrapolate=False)
                 interp_error = np.where(interp_error >= 0, interp_error, np.nan)
             else:
                 interp_error = None
         else:
             interp_error = None
 
-        interpolated_profiles[index] = interp_profile
-        if interp_error is not None:
+        if return_profiles:
+            interpolated_profiles[index] = interp_profile
+        if interp_error is not None and return_profiles:
             interpolated_errors[index] = interp_error
 
         red_finite = red_mask & np.isfinite(interp_profile)
@@ -440,44 +467,45 @@ def calculate_red_blue_asymmetry(
             ],
         )
 
-    observed_data = np.moveaxis(data, -1, wavelength_axis)
-    observed_mask = ~np.isfinite(observed_data)
-    observed_uncertainty = None
-    if errors is not None:
-        observed_uncertainty = StdDevUncertainty(np.moveaxis(errors, -1, wavelength_axis))
+    if return_profiles:
+        observed_data = np.moveaxis(data, -1, wavelength_axis)
+        observed_mask = ~np.isfinite(observed_data)
+        observed_uncertainty = None
+        if errors is not None:
+            observed_uncertainty = StdDevUncertainty(np.moveaxis(errors, -1, wavelength_axis))
 
-    interpolated_data = np.moveaxis(interpolated_profiles, -1, wavelength_axis)
-    interpolated_mask = ~np.isfinite(interpolated_data)
-    interpolated_uncertainty = None
-    if interpolated_errors is not None:
-        interpolated_uncertainty = StdDevUncertainty(np.moveaxis(interpolated_errors, -1, wavelength_axis))
+        interpolated_data = np.moveaxis(interpolated_profiles, -1, wavelength_axis)
+        interpolated_mask = ~np.isfinite(interpolated_data)
+        interpolated_uncertainty = None
+        if interpolated_errors is not None:
+            interpolated_uncertainty = StdDevUncertainty(np.moveaxis(interpolated_errors, -1, wavelength_axis))
 
-    cubes.extend(
-        [
-            (
-                "observed_profile",
-                _make_profile_cube(
-                    cube,
-                    data=observed_data,
-                    velocity_grid=velocity,
-                    wavelength_axis=wavelength_axis,
-                    meta={**cube.meta, **meta, "rba_profile": "observed"},
-                    uncertainty=observed_uncertainty,
-                    mask=observed_mask,
+        cubes.extend(
+            [
+                (
+                    "observed_profile",
+                    _make_profile_cube(
+                        cube,
+                        data=observed_data,
+                        velocity_grid=velocity,
+                        wavelength_axis=wavelength_axis,
+                        meta={**cube.meta, **meta, "rba_profile": "observed"},
+                        uncertainty=observed_uncertainty,
+                        mask=observed_mask,
+                    ),
                 ),
-            ),
-            (
-                "interpolated_profile",
-                _make_profile_cube(
-                    cube,
-                    data=interpolated_data,
-                    velocity_grid=interp_velocity,
-                    wavelength_axis=wavelength_axis,
-                    meta={**cube.meta, **meta, "rba_profile": "interpolated_peak_centered"},
-                    uncertainty=interpolated_uncertainty,
-                    mask=interpolated_mask,
+                (
+                    "interpolated_profile",
+                    _make_profile_cube(
+                        cube,
+                        data=interpolated_data,
+                        velocity_grid=interp_velocity,
+                        wavelength_axis=wavelength_axis,
+                        meta={**cube.meta, **meta, "rba_profile": "interpolated_peak_centered"},
+                        uncertainty=interpolated_uncertainty,
+                        mask=interpolated_mask,
+                    ),
                 ),
-            ),
-        ]
-    )
+            ]
+        )
     return RasterCollection(cubes)

@@ -5,7 +5,7 @@ Helpers for IRIS density diagnostics.
 from importlib import import_module
 
 import numpy as np
-from scipy.interpolate import interp1d
+from scipy.interpolate import make_interp_spline
 
 import astropy.units as u
 
@@ -78,13 +78,19 @@ def map_ratio_to_quantity(observed_ratio, quantity, theoretical_ratio, *, bounds
     elif isinstance(fill_value, u.Quantity):
         fill_value = fill_value.to_value(quantity.unit)
 
-    interp = interp1d(
-        theoretical_ratio,
-        quantity.value,
-        bounds_error=bounds_error,
-        fill_value=fill_value,
+    observed_values = observed_ratio.to_value(u.dimensionless_unscaled)
+    outside = (observed_values < theoretical_ratio[0]) | (observed_values > theoretical_ratio[-1])
+    if bounds_error and np.any(outside):
+        msg = "observed_ratio contains values outside the theoretical ratio range."
+        raise ValueError(msg)
+
+    if isinstance(fill_value, tuple):
+        left, right = fill_value
+    else:
+        left = right = fill_value
+    return u.Quantity(
+        np.interp(observed_values, theoretical_ratio, quantity.value, left=left, right=right), quantity.unit
     )
-    return u.Quantity(interp(observed_ratio.to_value(u.dimensionless_unscaled)), quantity.unit)
 
 
 def density_diagnostic(
@@ -211,14 +217,19 @@ def density_diagnostic(
                 ratio_temperature = u.Quantity(ion.formation_temperature)
         else:
             ratio_temperature = u.Quantity(temperature)
-        if ratio_temperature.size == 1:
-            ratio_temperature = ratio_temperature.flat[0]
+        if ratio_temperature.size != 1:
+            msg = "temperature must be scalar."
+            raise ValueError(msg)
+        ratio_temperature = ratio_temperature.flat[0]
 
         order = np.argsort(ion_temperature.to_value(u.K))
         temperature_grid = ion_temperature.to_value(u.K)[order]
         ratio_values = theoretical_ratio.value[order]
-        interp = interp1d(temperature_grid, ratio_values, axis=0, bounds_error=False, fill_value=np.nan)
-        theoretical_ratio = u.Quantity(interp(ratio_temperature.to_value(u.K)), theoretical_ratio.unit).squeeze()
+        interp = make_interp_spline(temperature_grid, ratio_values, k=1, axis=0)
+        theoretical_ratio = u.Quantity(
+            interp(ratio_temperature.to_value(u.K), extrapolate=False),
+            theoretical_ratio.unit,
+        ).squeeze()
 
     density_grid = u.Quantity(density_grid)
     theoretical_ratio = u.Quantity(theoretical_ratio, u.dimensionless_unscaled)

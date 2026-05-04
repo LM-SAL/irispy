@@ -2,11 +2,13 @@ import numpy as np
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 
 from sunpy.coordinates import Helioprojective
 
 from irispy.io.sji import read_sji_lvl2
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
 def test_sns_read_sji_lvl2(sns_sji_2832_file):
@@ -91,6 +93,15 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert meta.observatory_at_high_latitude is False
     assert meta.observing_campaign_start.isot == "2014-03-29T14:09:38.830"
     assert meta.observing_mode_description == "Very large coarse 8-step raster 14x175 8s  Si IV   Mg II h/k   Mg II"
+
+
+def test_read_sji_lvl2_masks_scaled_float_bad_pixels(sns_sji_1330_file):
+    expected_bad_pixels = np.count_nonzero(fits.getdata(sns_sji_1330_file, 0) == BAD_PIXEL_VALUE_SCALED)
+
+    cube = read_sji_lvl2(sns_sji_1330_file)
+
+    assert expected_bad_pixels > 0
+    assert cube.mask.sum() == expected_bad_pixels
 
 
 def test_smoke_read_sji_lvl2(
