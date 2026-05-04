@@ -24,6 +24,17 @@ def test_fits_data_comparison(sns_sg_file):
         np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window3].data[0].data, data3)
 
 
+def test_spectrogram_cube_slice_preserves_coordinates(sns_sg_file):
+    raster = read_spectrograph_lvl2(sns_sg_file)
+    cube = raster["C II 1336"][0]
+
+    sliced_cube = cube[0]
+    sliced_sequence = cube[:1]
+
+    assert "time" in tuple(sliced_cube.global_coords)
+    assert "time" in tuple(sliced_sequence.extra_coords.keys())
+
+
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     captured = {}
 

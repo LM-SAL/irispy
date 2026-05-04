@@ -115,6 +115,32 @@ def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
         calculate_moments(cube, wings=1.0 * u.Angstrom)
 
 
+def test_calculate_moments_requires_wavelength_axis():
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), np.arange(5) * u.nm)
+    cube.wcs.wcs.ctype[0] = "TIME"
+    cube.wcs.wcs.cunit[0] = "s"
+    cube.wcs.wcs.set()
+
+    with pytest.raises(ValueError, match="Could not identify a spectral wavelength axis"):
+        calculate_moments(cube)
+
+
+def test_calculate_moments_ignores_negative_nonfinite_and_masked_values():
+    wavelengths = np.arange(4) * u.nm
+    clean_cube = make_test_spectrogram_cube(np.array([[[1.0, 0.0, 0.0, 0.0]]]), wavelengths)
+
+    dirty_cube = make_test_spectrogram_cube(np.array([[[1.0, -5.0, np.nan, 10.0]]]), wavelengths)
+    dirty_cube.mask = np.array([[[False, False, False, True]]])
+
+    clean_moments = calculate_moments(clean_cube)
+    dirty_moments = calculate_moments(dirty_cube)
+
+    assert clean_moments.keys() == dirty_moments.keys()
+    for key in clean_moments:
+        assert clean_moments[key].unit == dirty_moments[key].unit
+        np.testing.assert_allclose(dirty_moments[key].data, clean_moments[key].data, equal_nan=True)
+
+
 def test_calculate_moments_known_gaussian():
     """
     Test calculate_moments against a known Gaussian profile.

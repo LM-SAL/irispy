@@ -192,6 +192,15 @@ def test_sjicube_apply_dust_mask(dust_cube):
     np.testing.assert_array_equal(dust_cube.mask, before_mask)
 
 
+def test_sjicube_apply_dust_mask_initializes_missing_mask(dust_cube):
+    dust_cube.mask = None
+
+    dust_cube.apply_dust_mask()
+
+    assert dust_cube.mask is not None
+    assert dust_cube.mask.any()
+
+
 @pytest.mark.parametrize(
     ("item", "expected_len"),
     [

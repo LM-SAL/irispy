@@ -1,0 +1,1 @@
+Fixed several edge cases in SJI and spectrograph coordinate preservation, bad-pixel masking, density diagnostics, spectral moments, dust masking, and red-blue asymmetry memory usage.

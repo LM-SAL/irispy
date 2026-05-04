@@ -69,6 +69,7 @@ red_blue = calculate_red_blue_asymmetry(
     rest_wavelength=si_iv_rest,
     velocity_range=velocity_range,
     min_intensity=min_intensity,
+    return_profiles=True,
 )
 
 asymmetry = red_blue["red_blue_asymmetry"]

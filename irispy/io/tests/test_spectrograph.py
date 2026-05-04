@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -160,3 +161,8 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(sns_sg_file)
     read_spectrograph_lvl2(raster_sg_file)
     read_spectrograph_lvl2(raster_sg_files)
+
+
+def test_read_spectrograph_lvl2_reports_missing_spectral_window(sns_sg_file):
+    with pytest.raises(ValueError, match=r"Spectral windows \['NOPE'\] not in file"):
+        read_spectrograph_lvl2(sns_sg_file, spectral_windows=["C II 1336", "NOPE"])
