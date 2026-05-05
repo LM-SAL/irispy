@@ -45,7 +45,8 @@ class RBAQualityFlag(IntEnum):
         return obj
 
 
-def _make_velocity_wcs(base_wcs, array_shape, velocity_axis, velocity_grid):
+def _make_velocity_wcs(cube, array_shape, velocity_axis, velocity_grid):
+    base_wcs = getattr(cube, "basic_wcs", None) or cube.wcs
     fits_wcs = base_wcs if hasattr(base_wcs, "to_header") else unwrap_wcs_to_fitswcs(base_wcs)[0]
     header = fits_wcs.to_header()
     naxis = len(array_shape)
@@ -92,7 +93,7 @@ def _make_profile_cube(
 ):
     return SpectrogramCube(
         data,
-        wcs=_make_velocity_wcs(cube.wcs, data.shape, wavelength_axis, velocity_grid),
+        wcs=_make_velocity_wcs(cube, data.shape, wavelength_axis, velocity_grid),
         uncertainty=uncertainty,
         unit=cube.unit,
         meta=meta,
