@@ -43,7 +43,7 @@ raster_filename = pooch.retrieve(
 
 raster = read_files(raster_filename)
 # Open the data and select one Si IV 1403 slice for the comparison.
-raster_1403 = raster["Si IV 1403"][10][4]
+raster_1403 = raster["Si IV 1403"].raster_slice(10)[4]
 del raster
 
 ###############################################################################

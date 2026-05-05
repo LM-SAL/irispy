@@ -111,23 +111,27 @@ Let us retrieve the header of the raster file and display the description of the
 
 .. note::
     By default, this will load the data into memory.
-    You can pass ``memmap=True`` to avoid this; the data array will be a `numpy.memmap` instead.
-    In this case, the data are not loaded into system memory, but written to a temporary file.
+    You can pass ``memmap=True`` to keep raster data lazy.
+    Single-file reads remain file-backed, while multi-file rasters are exposed as one
+    dask-backed cube that reads each file chunk on demand.
 
 We can print the ``raster`` object to get some basic information about the raster file: what spectral windows were observed, the size of the cube, and the wavelength keys.
 
 .. code-block:: python
 
-    >>> raster  # doctest: +REMOTE_DATA
+    >>> raster  # doctest: +REMOTE_DATA, +ELLIPSIS
     <irispy.spectrograph.RasterCollection object at ...>
     <BLANKLINE>
     Raster Collection
     -----------------
     Spectral Windows (cube keys): (np.str_('C II 1336'), np.str_('Si IV 1394'), np.str_('Mg II k 2796'))
     Number of Cubes: 3
-    Aligned dimensions: [5 16 548]
-    Aligned physical types: [('meta.obs.sequence',), ...]
+    Aligned dimensions: ...
+    Aligned physical types: ...
     <BLANKLINE>
+
+Each value in the ``RasterCollection`` is a spectral-window cube. For repeated rasters,
+that cube spans the full observation along the scan axis.
 
 Let us check the metadata of this collection, this is stored as a ``meta`` attribute:
 
@@ -150,7 +154,8 @@ Let us check the metadata of this collection, this is stored as a ``meta`` attri
     OBS Description: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
     <BLANKLINE>
 
-Note this is not on the main object but each individual element, in this case the spectral window.
+The `~irispy.spectrograph.RasterCollection` itself groups spectral windows, so the metadata lives on each
+spectral-window cube rather than on the collection.
 While SJI files contain just one spectral window per file, raster files have several spectral windows per file.
 
 If we want to check the primary header of the raster, we can do the following:
