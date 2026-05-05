@@ -3,12 +3,15 @@
 Fit Spectral Models to Spectra
 ==============================
 
-In this example, we are going to fit spectral lines from IRIS, using the raster data
-with a single Gaussian. Then use the fitted values to calculate the Gaussian moments.
+In this example, we are going to fit Si IV 1403 from IRIS with a single Gaussian.
+Then we will use the fitted values to calculate the Gaussian moments.
 
 This is direct contrast to taking the spectral moments of the data cube, which is done in
 the following example, :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
 where we calculate the spectral moments of the data cube directly.
+
+If you want to see a similar example but with a double Gaussian fit to the Mg II k line,
+see :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py`.
 """
 
 import shutil
@@ -48,18 +51,15 @@ raster_filename = pooch.retrieve(
 ###############################################################################
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
+# We read only the Si IV 1403 window and select the one complete scan.
 
-raster = read_files(raster_filename)
-
-###############################################################################
-# We will just focus on the Si IV 1403 line which we can select using a key.
-# Then we will just plot a spectral line selected at random in space.
-
-# There is only one complete scan, so we index that away.
+raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 si_iv_1403 = raster["Si IV 1403"][0]
 
-# However, before we get to that, we will shrink the data cube to make it easier to work with.
+###############################################################################
+# However, before we get to fitting, we will shrink the data cube to make it easier to work with.
 # This is done primarily to speed up the fitting process on the online documentation build.
+
 iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
 top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
@@ -67,7 +67,7 @@ bottom_right = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame
 si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
 
 ###############################################################################
-# Let us just check the full field of view at the line core.
+# Let us just get the full field of view at the line core.
 
 si_iv_core = 140.277 * u.nm
 lower_corner = [SpectralCoord(si_iv_core), None]

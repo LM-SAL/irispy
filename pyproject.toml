@@ -51,7 +51,7 @@ optional-dependencies.cosmic-rays = [
 ]
 optional-dependencies.density = [
   # TODO: Switch to PyPI release once fiasco.line_ratio is released.
-  "fiasco @ git+https://github.com/nabobalis/fiasco.git@ratio-feature",
+  "fiasco @ git+https://github.com/wtbarnes/fiasco.git",
 ]
 optional-dependencies.dev = [
   "irispy-lmsal[all,docs,tests]",
