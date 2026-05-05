@@ -362,7 +362,7 @@ def test_calculate_red_blue_asymmetry_quality_thresholds(option, value, expected
 
 def test_calculate_red_blue_asymmetry_real_cube_shape_and_coords(sns_sg_file):
     raster = read_files(sns_sg_file)
-    cube = raster["C II 1336"][0]
+    cube = raster["C II 1336"]
     result = calculate_red_blue_asymmetry(
         cube,
         rest_wavelength=133.29 * u.nm,
