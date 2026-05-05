@@ -1,13 +1,19 @@
+import warnings
+from pathlib import Path
+
+import dask.array as da
 import numpy as np
 import pytest
 
 import astropy.units as u
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, SpectralCoord
+from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.io.spectrograph import _create_raster_gwcs, _sanitize_raster_wcs_tables, read_spectrograph_lvl2
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -30,15 +36,9 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     si_iv = raster_collection["Si IV 1403"]
     # Simple repr check
     assert str(si_iv)
-    # Test data only has a sequence of 1 long
-    assert len(si_iv) == 1
-    # The primary fits header is attached to the sequence
-    assert si_iv.meta is not None
-    # Meta is attached one level down to the individual cube for now.
-    assert si_iv[0].meta is not None
-    meta = si_iv[0].meta
-    assert si_iv[0].data.shape == (187, 40, 29)  # (lambda, y, x)
-    assert np.all(si_iv[0].data.shape == meta.data_shape)
+    meta = si_iv.meta
+    assert si_iv.data.shape == (187, 40, 29)
+    assert np.all(si_iv.data.shape == meta.data_shape)
     # Meta is both a dict with the fits header keys but also provides
     # helper functions for specific values
     assert meta["TELESCOP"] == "IRIS" == meta.observatory
@@ -81,6 +81,10 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert meta.observer_location is None
     assert meta.rsun_angular is None
     assert meta.rsun_meters is None
+    assert si_iv.wcs.world_n_dim == 5
+    assert si_iv.wcs.pixel_n_dim == 3
+    assert si_iv.basic_wcs is not None
+    assert si_iv.raster_boundaries == (slice(0, 187),)
 
 
 def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
@@ -104,15 +108,9 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     si_iv = raster_collection["Si IV 1403"]
     # Simple repr check
     assert str(si_iv)
-    # Test data only has a sequence of 13 long
-    assert len(si_iv) == 13
-    # The primary fits header is attached to the sequence
-    assert si_iv.meta is not None
-    # Meta is attached one level down to the individual cube for now.
-    assert si_iv[0].meta is not None
-    meta = si_iv[0].meta
-    assert si_iv[0].data.shape == (8, 109, 29)  # (lambda, y, x)
-    assert np.all(si_iv[0].data.shape == meta.data_shape)
+    meta = si_iv.meta
+    assert si_iv.data.shape == (104, 109, 29)
+    assert np.all(si_iv.data.shape == meta.data_shape)
     # Meta is both a dict with the fits header keys but also provides
     # helper functions for specific values
     assert meta["TELESCOP"] == "IRIS" == meta.observatory
@@ -120,13 +118,13 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert meta.detector == "FUV2"
     assert meta.spectral_band == "FUV"
     assert meta.automatic_exposure_control_enabled is True
-    assert meta.date_end.isot == "2014-03-29T14:10:44.500"
+    assert meta.date_end.isot == "2014-03-29T14:25:43.280"
     assert meta.date_reference.isot == "2014-03-29T14:09:39.000"
     assert meta.date_start.isot == "2014-03-29T14:09:39.000"
     assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 526
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 13)  # History is missing
+    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 12)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -155,6 +153,12 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert meta.observer_location is None
     assert meta.rsun_angular is None
     assert meta.rsun_meters is None
+    assert si_iv.wcs.world_n_dim == 5
+    assert si_iv.wcs.pixel_n_dim == 3
+    assert si_iv.time.format == "isot"
+    assert si_iv.basic_wcs is None
+    assert len(si_iv.raster_boundaries) == 13
+    assert si_iv.raster_slice(0).shape == (8, 109, 29)
 
 
 def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_files):
@@ -163,6 +167,195 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(raster_sg_files)
 
 
-def test_read_spectrograph_lvl2_reports_missing_spectral_window(sns_sg_file):
-    with pytest.raises(ValueError, match=r"Spectral windows \['NOPE'\] not in file"):
-        read_spectrograph_lvl2(sns_sg_file, spectral_windows=["C II 1336", "NOPE"])
+def test_memmap_mode_never_computes_uncertainty(sns_sg_file, raster_sg_files):
+    sit_and_stare = read_spectrograph_lvl2(sns_sg_file, memmap=True, uncertainty=True)["Si IV 1403"]
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)["Si IV 1403"]
+
+    assert sit_and_stare.uncertainty is None
+    assert raster.uncertainty is None
+    assert isinstance(raster.mask, da.Array)
+
+
+def test_read_spectrograph_lvl2_reports_all_missing_spectral_windows(raster_sg_file):
+    with pytest.raises(ValueError, match=r"Spectral windows .* not in file") as excinfo:
+        read_spectrograph_lvl2(raster_sg_file, spectral_windows=["NOPE1", "NOPE2"])
+    message = str(excinfo.value)
+    assert "NOPE1" in message
+    assert "NOPE2" in message
+
+
+def test_read_spectrograph_lvl2_preserves_requested_spectral_window_order(raster_sg_file):
+    requested_windows = ["Mg II k 2796", "C II 1336"]
+
+    raster_collection = read_spectrograph_lvl2(raster_sg_file, spectral_windows=requested_windows)
+
+    assert list(raster_collection.keys()) == requested_windows
+    for window in requested_windows:
+        assert raster_collection[window].meta.spectral_window == window
+
+
+def test_read_spectrograph_lvl2_rejects_mismatched_observation(tmp_path, raster_sg_files):
+    copied_files = []
+    for path in raster_sg_files[:2]:
+        destination = tmp_path / Path(path).name
+        with fits.open(path) as hdulist:
+            hdulist.writeto(destination)
+        copied_files.append(destination)
+
+    with fits.open(copied_files[1], mode="update") as hdulist:
+        hdulist[0].header["OBSID"] = 9999999999
+
+    with pytest.raises(ValueError, match="OBSID"):
+        read_spectrograph_lvl2(copied_files)
+
+
+def test_combined_raster_metadata_shape_and_end_time_are_consistent(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"]
+
+    assert np.all(scan.shape == scan.meta.data_shape)
+    assert scan.meta["NAXIS3"] == scan.shape[0]
+    assert scan.meta["DATE_END"] == scan.split_rasters()[-1].meta["DATE_END"]
+    assert scan.meta["ENDOBS"] == scan.split_rasters()[-1].meta["ENDOBS"]
+    if "NAXIS3" in scan.meta.fits_header:
+        assert scan.meta.fits_header["NAXIS3"] == scan.shape[0]
+
+
+def test_gwcs_crop_supports_full_world_component_api(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"]
+
+    spectral_coord = scan.spectral_axis[len(scan.spectral_axis) // 2]
+    spectral_crop = scan.crop(
+        [SpectralCoord(spectral_coord), None, None, None],
+        [SpectralCoord(spectral_coord), None, None, None],
+    )
+    assert spectral_crop.data.ndim == 2
+    spectrum = scan.crop(
+        scan.wcs.array_index_to_world(3, 50, 0),
+        scan.wcs.array_index_to_world(3, 50, scan.data.shape[-1] - 1),
+    )
+    assert spectrum.data.ndim == 1
+
+    spectrum_by_values = scan.crop_by_values(
+        scan.wcs.array_index_to_world_values(3, 50, 0),
+        scan.wcs.array_index_to_world_values(3, 50, scan.data.shape[-1] - 1),
+        units=(u.nm, u.arcsec, u.arcsec, u.s, u.pix),
+    )
+    assert spectrum_by_values.data.ndim == 1
+
+
+def test_gwcs_crop_rejects_removed_two_component_shorthand(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"]
+    spectral_coord = scan.spectral_axis[len(scan.spectral_axis) // 2]
+    frame = wcs_to_celestial_frame(scan.raster_slice(0).basic_wcs.celestial)
+    target = SkyCoord(-8 * u.arcsec, 370 * u.arcsec, unit=u.arcsec, frame=frame)
+
+    with pytest.raises(ValueError, match="do not match WCS"):
+        scan.crop([SpectralCoord(spectral_coord), None], [SpectralCoord(spectral_coord), None])
+
+    with pytest.raises(ValueError, match="do not match WCS"):
+        scan.crop([None, target], [None, target])
+
+
+def test_gwcs_inverse_enables_official_crop_api(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"]
+
+    start = scan.wcs.array_index_to_world(3, 50, 10)
+    stop = scan.wcs.array_index_to_world(4, 50, 10)
+
+    assert scan.wcs.world_to_array_index(*start) == (3, 50, 10)
+    assert scan.wcs.world_to_array_index(*stop) == (4, 50, 10)
+
+    cropped = scan.crop(start, stop)
+    assert cropped.data.shape == (2,)
+
+
+def test_gwcs_inverse_roundtrips_sit_and_stare_exposures(sns_sg_file):
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
+    scan = raster_collection["Si IV 1403"]
+
+    start = scan.wcs.array_index_to_world(3, 20, 10)
+    stop = scan.wcs.array_index_to_world(4, 20, 10)
+
+    assert scan.wcs.world_to_array_index(*start) == (3, 20, 10)
+    assert scan.wcs.world_to_array_index(*stop) == (4, 20, 10)
+
+    cropped = scan.crop(start, stop)
+    assert cropped.data.shape == (2,)
+
+
+def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic(raster_sg_file):
+    raster_collection = read_spectrograph_lvl2(raster_sg_file)
+    scan = raster_collection["Si IV 1403"]
+
+    pc_all = np.concatenate([scan._raster_pc_table, scan._raster_pc_table], axis=0)
+    crval_all = np.concatenate([scan._raster_crval_table, scan._raster_crval_table], axis=0)
+    dt_all = (
+        np.concatenate(
+            [
+                np.arange(scan.shape[0], dtype=float),
+                np.arange(scan.shape[0] - 1, -1, -1, dtype=float),
+            ]
+        )
+        * u.s
+    )
+
+    wcs = _create_raster_gwcs(
+        scan._raster_wcs_header,
+        pc_all,
+        crval_all,
+        dt_all,
+        scan.time[0],
+        scan._raster_observer,
+    )
+
+    for scan_index in (1, scan.shape[0] + 1):
+        point = wcs.array_index_to_world(scan_index, 20, 10)
+        assert wcs.world_to_array_index(*point) == (scan_index, 20, 10)
+
+
+def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    scan = raster_collection["Si IV 1403"].raster_slice(0)
+
+    for array_index in ((0, 50, 3), (3, 50, 10), (7, 80, 20)):
+        spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
+        basic_spectral, basic_sky = scan.basic_wcs.array_index_to_world(*array_index)
+
+        assert_quantity_allclose(spectral.to(u.nm), basic_spectral.to(u.nm))
+        assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=10 * u.arcsec)
+        assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=1 * u.arcsec)
+
+
+def test_sanitize_raster_wcs_tables_all_bad_rows_uses_fallback():
+    """When every row is all-zero, fallback values must be applied."""
+    pc = np.zeros((3, 2, 2)) * u.pix
+    crval = np.zeros((3, 2)) * u.arcsec
+    fallback_pc = np.array([[1.0, 0.1], [0.2, 0.9]]) * u.pix
+    fallback_crval = np.array([150.0, 250.0]) * u.arcsec
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        pc_out, crval_out = _sanitize_raster_wcs_tables(pc.copy(), crval, fallback_pc, fallback_crval)
+        assert len(w) == 2
+        assert "all-zero" in str(w[0].message)
+        assert "fallback" in str(w[1].message).lower()
+
+    expected_pc = np.repeat(fallback_pc.to_value(u.pix)[None, ...], 3, axis=0)
+    expected_crval = np.repeat(fallback_crval.to_value(u.arcsec)[None, ...], 3, axis=0)
+    np.testing.assert_allclose(pc_out.to_value(u.pix), expected_pc)
+    np.testing.assert_allclose(crval_out.to_value(u.arcsec), expected_crval)
+
+
+def test_sanitize_raster_wcs_tables_all_bad_rows_without_fallback_raises():
+    """When every row is all-zero and no fallback is given, a clear error is raised."""
+    pc = np.zeros((2, 2, 2)) * u.pix
+    crval = np.zeros((2, 2)) * u.arcsec
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        with pytest.raises(ValueError, match="All WCS table rows are bad"):
+            _sanitize_raster_wcs_tables(pc.copy(), crval)

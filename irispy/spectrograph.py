@@ -1,24 +1,24 @@
 import textwrap
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from ndcube import NDCollection
 from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
-from sunraster import SpectrogramSequence as SpecSeq
 
+from irispy._spectrograph_wcs import _SpectrogramCubeWCSMixin
 from irispy.utils.cosmic_rays import remove_cosmic_rays
-from irispy.visualization import IRISPlotter, IRISSequencePlotter, set_axis_properties
+from irispy.visualization import IRISPlotter, finalize_iris_plot
 
-__all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
+__all__ = ["RasterCollection", "SpectrogramCube"]
 
 
-class SpectrogramCube(SpecCube):
+class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
-    Idea is that this class holds one complete raster scan or a sit and stare.
+    A raster window is exposed as one cube, whether it comes from a single file,
+    a combined multi-file raster, or a sit-and-stare observation.
 
     Parameters
     ----------
@@ -53,20 +53,27 @@ class SpectrogramCube(SpecCube):
     """
 
     def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
+        self._basic_wcs = kwargs.pop("_basic_wcs", None)
+        self._basic_wcs_segments = kwargs.pop("_basic_wcs_segments", None)
+        self._raster_boundaries = kwargs.pop("_raster_boundaries", None)
+        self._memmap = kwargs.pop("_memmap", False)
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
+    @property
+    def time(self):
+        time = super().time
+        # The gWCS TemporalFrame may return a Time object in JD format.
+        # Switch to ISOT for a more readable representation.
+        if time.format == "jd":
+            time = time.copy()
+            time.format = "isot"
+        return time
+
     def __getitem__(self, item):
-        result = super().__getitem__(item)
-        return SpectrogramCube(
-            result.data,
-            result.wcs,
-            result.uncertainty,
-            result.unit,
-            result.meta,
-            mask=result.mask,
-            extra_coords=result.extra_coords,
-            global_coords=result.global_coords,
-        )
+        sliced_self = super().__getitem__(item)
+        sliced_self._basic_wcs = self._slice_basic_wcs(item)
+        self._slice_raster_metadata(item, sliced_self)
+        return sliced_self
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -77,9 +84,23 @@ class SpectrogramCube(SpecCube):
         if self.global_coords and "time" in self.global_coords:
             instance_start = self.global_coords["time"].min().isot
             instance_end = self.global_coords["time"].max().isot
-        elif self.extra_coords and self.axis_world_coords("time", wcs=self.extra_coords):
-            instance_start = self.axis_world_coords("time", wcs=self.extra_coords)[0].min().isot
-            instance_end = self.axis_world_coords("time", wcs=self.extra_coords)[0].max().isot
+        elif self.extra_coords:
+            try:
+                extra_coord_time = self.axis_world_coords("time", wcs=self.extra_coords)
+            except ValueError as e:
+                logger.debug(f"Unable to determine time bounds for SpectrogramCube string representation: {e}")
+                extra_coord_time = None
+            if extra_coord_time:
+                instance_start = extra_coord_time[0].min().isot
+                instance_end = extra_coord_time[0].max().isot
+        if instance_start is None or instance_end is None:
+            try:
+                instance_start = self.time.min().isot
+                instance_end = self.time.max().isot
+            except ValueError as e:
+                logger.debug(f"Unable to determine time bounds for SpectrogramCube string representation: {e}")
+                instance_start = "Unknown"
+                instance_end = "Unknown"
         return textwrap.dedent(
             f"""
             SpectrogramCube
@@ -104,9 +125,38 @@ class SpectrogramCube(SpecCube):
         kwargs["cmap"] = cmap
         if len(self.shape) == 1:
             kwargs.pop("cmap")
-        ax = IRISPlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
+
+    @property
+    def basic_wcs(self):
+        return self._basic_wcs
+
+    @property
+    def raster_boundaries(self):
+        if self._raster_boundaries is None:
+            return ()
+        return tuple(slice(start, stop) for start, stop in self._raster_boundaries)
+
+    def raster_slice(self, index):
+        """
+        Return the subcube corresponding to one original raster.
+        """
+        boundaries = self.raster_boundaries
+        if not boundaries:
+            if index == 0:
+                return self
+            msg = "Raster index out of range."
+            raise IndexError(msg)
+        return self[boundaries[index]]
+
+    def split_rasters(self):
+        """
+        Split the cube into per-raster subcubes.
+        """
+        boundaries = self.raster_boundaries
+        if not boundaries:
+            return (self,)
+        return tuple(self[raster_slice] for raster_slice in boundaries)
 
     def remove_cosmic_rays(
         self,
@@ -146,54 +196,11 @@ class SpectrogramCube(SpecCube):
         )
 
 
-class SpectrogramCubeSequence(SpecSeq):
-    """
-    Class representing spectrogram data described by a collection of separate WCSes.
-
-    So each individual `SpectrogramCube` within represents a single complete raster scan.
-    The sequence contains multiple such cubes till the end of the observation.
-
-    Parameters
-    ----------
-    data_list: `list`
-        List of `SpectrogramCube` objects from the same spectral window and OBS ID.
-    meta: `dict` or header object, optional
-        Metadata associated with the sequence.
-    common_axis: `int`, optional
-        The axis of the NDCubes corresponding to time.
-    """
-
-    def __init__(self, data_list, meta=None, common_axis=0, **kwargs) -> None:
-        # Check that all spectrograms are from same spectral window and OBS ID.
-        if len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
-            msg = "Constituent SpectrogramCube objects must have same value of 'OBSID' in its meta."
-            raise ValueError(msg)
-        super().__init__(data_list, meta=meta, common_axis=common_axis, **kwargs)
-
-    def __str__(self) -> str:
-        # Overload it get the class name in the string
-        return super().__str__()
-
-    def plot(self, *args, **kwargs):
-        cmap = kwargs.get("cmap")
-        if not cmap:
-            try:
-                cmap = plt.get_cmap(name=f"irissji{int(self.meta.detector[:3])}")
-            except Exception as e:  # NOQA: BLE001
-                logger.debug(e)
-                cmap = "viridis"
-        kwargs["cmap"] = cmap
-        if len(self.shape) == 1:
-            kwargs.pop("cmap")
-        ax = IRISSequencePlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
-
-
 class RasterCollection(NDCollection):
     """
-    Subclass of NDCollection for holding a collection of `.SpectrogramCube` or
-    `.SpectrogramCubeSequence` with keys being the spectral windows.
+    Subclass of NDCollection for raster spectral windows keyed by window name.
+
+    Each value is a `SpectrogramCube`.
     """
 
     def __str__(self) -> str:
