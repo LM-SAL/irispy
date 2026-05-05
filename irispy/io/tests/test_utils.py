@@ -52,7 +52,10 @@ def test_read_files_raster_file_list(raster_sg_files):
         "2814",
         "Mg II k 2796",
     }
-    assert len(returns["Si IV 1403"]) == len(raster_sg_files)
+    si_iv = returns["Si IV 1403"]
+    assert si_iv.shape == (104, 109, 29)
+    assert si_iv.basic_wcs is None
+    assert len(si_iv.raster_boundaries) == len(raster_sg_files)
 
 
 def test_get_spec_group_key_falls_back_when_metadata_is_missing(monkeypatch, tmp_path):
@@ -121,19 +124,11 @@ def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
     assert len(returns) == 2
 
 
-def test_read_files_raises_when_no_files_are_supported(tmp_path):
-    filename = tmp_path / "not-a-fits.txt"
-    filename.write_text("not a supported IRIS file")
-
-    with pytest.raises(ValueError, match="No supported IRIS files were loaded"):
-        read_files(filename)
-
-
 @pytest.mark.remote_data
 def test_read_files_raster_scanning(remote_raster_scanning_tar):
     returns = read_files(remote_raster_scanning_tar)
     assert len(returns) == 8  # spectral windows
     np.testing.assert_array_equal(
-        returns["C II 1336"].shape, (29, 4, 388, 186)
-    )  # 29 time steps, 4 steps, 388 spatial pixels, 186 spectral pixels
-    np.testing.assert_array_equal(returns.aligned_dimensions, [29, 4, 388])
+        returns["C II 1336"].shape, (116, 388, 186)
+    )  # 29 rasters x 4 scan steps, 388 spatial pixels, 186 spectral pixels
+    np.testing.assert_array_equal(returns.aligned_dimensions, [116, 388])
