@@ -12,6 +12,8 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 
 from ndcube.utils.exceptions import NDCubeUserWarning
+from sunpy.coordinates import HeliographicStonyhurst
+from sunpy.coordinates.screens import SphericalScreen
 
 from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
 from irispy.io.spectrograph import read_spectrograph_lvl2
@@ -126,6 +128,21 @@ def test_spectrogram_cube_crop_slices_basic_wcs(raster_sg_files):
     assert_quantity_allclose(image_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
 
 
+def test_spectrogram_cube_spectrum_at_returns_nearest_raster_spectrum(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(3, 50, 10)
+
+    expected = cube.crop(
+        cube.wcs.array_index_to_world(3, 50, 0),
+        cube.wcs.array_index_to_world(3, 50, cube.shape[-1] - 1),
+    )
+    spectrum = cube.spectrum_at(target)
+
+    assert spectrum.shape == expected.shape
+    np.testing.assert_array_equal(spectrum.data, expected.data)
+
+
 def test_spectrogram_cube_exposes_raster_grouping_helpers(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
@@ -151,6 +168,63 @@ def test_spectrogram_cube_supports_crop_apis(raster_sg_files):
 
     assert spectrum.data.ndim == 1
     assert spectrum_by_values.data.ndim == 1
+
+
+def test_spectrogram_cube_spectrum_at_works_without_basic_wcs(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+
+    expected = cube.crop(
+        cube.wcs.array_index_to_world(10, 50, 0),
+        cube.wcs.array_index_to_world(10, 50, cube.shape[-1] - 1),
+    )
+    spectrum = cube.spectrum_at(target)
+
+    assert cube.basic_wcs is None
+    assert spectrum.shape == expected.shape
+    np.testing.assert_array_equal(spectrum.data, expected.data)
+
+
+def test_spectrogram_cube_spectrum_at_transforms_target_frame(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+    expected = cube.spectrum_at(target)
+
+    with SphericalScreen(target.observer):
+        transformed_target = target.transform_to(HeliographicStonyhurst(obstime=target.obstime))
+
+    spectrum = cube.spectrum_at(transformed_target)
+
+    assert cube.basic_wcs is None
+    assert spectrum.shape == expected.shape
+    np.testing.assert_array_equal(spectrum.data, expected.data)
+
+
+def test_spectrogram_cube_spectrum_at_combined_raster_clip_false_raises(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+    outside_target = target.spherical_offsets_by(1000 * u.arcsec, 1000 * u.arcsec)
+
+    with pytest.raises(ValueError, match="Target is outside the raster bounds"):
+        cube.spectrum_at(outside_target, clip=False)
+
+
+def test_spectrogram_cube_spectrum_at_avoids_full_sky_grid_when_segment_wcs_exists(raster_sg_files, monkeypatch):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+
+    def fail_axis_world_coords(*_args, **_kwargs):
+        msg = "full sky grid lookup should not be used"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(cube, "axis_world_coords", fail_axis_world_coords)
+    spectrum = cube.spectrum_at(target)
+
+    assert spectrum.shape == (cube.shape[-1],)
 
 
 def test_spectrogram_cube_scan_slice_recovers_segment_basic_wcs(raster_sg_files):
@@ -185,6 +259,8 @@ def test_memmap_split_rasters_returns_lazy_subcubes(raster_sg_files):
 def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
     cube = raster["Si IV 1403"]
+    _, target, _, _ = cube.wcs.array_index_to_world(10, 50, 0)
+    spectrum = cube.spectrum_at(target)
     image = cube.crop(
         [SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2]), None, None, None],
         [SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2]), None, None, None],
@@ -196,6 +272,7 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
     assert len(cube.raster_boundaries) == 13
     assert cube.basic_wcs is None
     assert cube.uncertainty is None
+    assert spectrum.data.ndim == 1
     assert image.data.ndim == 2
 
 
@@ -211,6 +288,10 @@ def test_memmap_raster_values_match_raw_fits_after_reader_returns(raster_sg_file
 
     np.testing.assert_array_equal(raster0.data.compute(), expected_data)
     np.testing.assert_array_equal(raster0.mask.compute(), expected_data == BAD_PIXEL_VALUE_UNSCALED)
+
+    _, target, _, _ = raster0.wcs.array_index_to_world(3, 50, 0)
+    spectrum = cube.spectrum_at(target)
+    np.testing.assert_array_equal(spectrum.data.compute(), expected_data[3, 50])
 
 
 def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):
