@@ -1,1 +1,1 @@
-Added a two-Gaussian Mg II k spectral fitting example: :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py`.
+Added a double Gaussian Mg II k spectral fitting example: :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py`.

@@ -10,7 +10,7 @@ This is direct contrast to taking the spectral moments of the data cube, which i
 the following example, :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
 where we calculate the spectral moments of the data cube directly.
 
-If you want to see a similar example but with a two-Gaussian fit to the Mg II k line,
+If you want to see a similar example but with a double Gaussian fit to the Mg II k line,
 see :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py`.
 """
 

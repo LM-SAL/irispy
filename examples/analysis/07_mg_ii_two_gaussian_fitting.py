@@ -4,7 +4,7 @@ Fit Spectral Models to Spectra - Double Gaussian Fitting
 ========================================================
 
 In this example, we are going to fit spectral lines from IRIS, using the raster data
-with a two-Gaussian model. Then we will use the fitted values to calculate the Gaussian moments.
+with a double Gaussian model. Then we will use the fitted values to calculate the Gaussian moments.
 
 If you want to see a similar example but with a single Gaussian fit to the Si IV 1403 line,
 see :ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py`.
@@ -72,7 +72,7 @@ upper_corner = [SpectralCoord(279.80, unit=u.nm), None]
 mg_ii_k = mg_ii_k.crop(lower_corner, upper_corner)
 
 ###############################################################################
-# We use the spatially averaged profile to tune the initial two-Gaussian model.
+# We use the spatially averaged profile to tune the initial double Gaussian model.
 
 spatial_mean = mg_ii_k.rebin((*mg_ii_k.data.shape[:-1], 1))[0, 0, :]
 spectral_axis = "em.wl"
@@ -104,7 +104,7 @@ ax.set_title("Mg II k average profile")
 plt.legend()
 
 ###############################################################################
-# We now fit the two-Gaussian model to every spatial pixel.
+# We now fit the double Gaussian model to every spatial pixel.
 
 mg_ii_model_fit = parallel_fit_dask(
     data=np.nan_to_num(mg_ii_k.data.clip(min=0)),
