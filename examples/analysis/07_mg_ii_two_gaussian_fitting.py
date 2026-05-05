@@ -75,10 +75,11 @@ mg_ii_k = mg_ii_k.crop(lower_corner, upper_corner)
 # We use the spatially averaged profile to tune the initial two-Gaussian model.
 
 spatial_mean = mg_ii_k.rebin((*mg_ii_k.data.shape[:-1], 1))[0, 0, :]
-wavelength_coords = spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)
+spectral_axis = "em.wl"
+wavelength_coords = spatial_mean.axis_world_coords(spectral_axis)[0].to(u.nm)
 
-continuum = np.nanpercentile(spatial_mean.data, 10) * mg_ii_k.unit
-peak = np.nanmax(spatial_mean.data) * mg_ii_k.unit
+continuum = np.nanpercentile(spatial_mean.data, 10) * spatial_mean.unit
+peak = np.nanmax(spatial_mean.data) * spatial_mean.unit
 initial_model = (
     m.Const1D(amplitude=continuum)
     + m.Gaussian1D(amplitude=0.65 * peak, mean=279.621 * u.nm, stddev=0.008 * u.nm)
@@ -130,7 +131,7 @@ mg_ii_model_fit = parallel_fit_dask(
 
 mg_ii_core = 279.6351 * u.nm
 line_core = mg_ii_k.crop([SpectralCoord(mg_ii_core), None], [SpectralCoord(mg_ii_core), None])
-wavelength_step = np.mean(np.diff(mg_ii_k.axis_world_coords("wl")[0])).to(u.nm)
+wavelength_step = np.mean(np.diff(mg_ii_k.axis_world_coords(spectral_axis)[0])).to(u.nm)
 
 blue_flux = np.sqrt(2 * np.pi) * mg_ii_model_fit.amplitude_1 * mg_ii_model_fit.stddev_1.quantity / wavelength_step
 red_flux = np.sqrt(2 * np.pi) * mg_ii_model_fit.amplitude_2 * mg_ii_model_fit.stddev_2.quantity / wavelength_step
