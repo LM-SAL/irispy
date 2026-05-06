@@ -3,11 +3,11 @@
 Remove Cosmic Ray Hits from IRIS data
 =====================================
 
-This example illustrates how to remove cosmic ray hits from IRIS data.
+This example illustrates how to remove cosmic ray hits from IRIS SJI data.
 
 We will use the ``astroscrappy`` backend and has to be installed separately using ``pip`` or ``conda``.
 
-``irispy`` supports two backends for cosmic ray removal, they are compared in this example: :ref:`sphx_glr_generated_gallery_calibration_04_compare_cosmic_ray_backends.py`.
+``irispy`` supports two backends for cosmic ray removal, they are compared on spectra here: :ref:`sphx_glr_generated_gallery_calibration_04_compare_cosmic_ray_backends.py`.
 """
 
 import matplotlib.pyplot as plt
