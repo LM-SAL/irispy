@@ -2,6 +2,7 @@ import textwrap
 import warnings
 from numbers import Integral
 
+import numpy as np
 import matplotlib.pyplot as plt
 
 from astropy.wcs import WCS
@@ -190,11 +191,12 @@ class SJICube(SpectrogramCube):
         """
         dust_mask = calculate_dust_mask(self.data)
         if undo:
-            # If undo kwarg IS set, unmask dust pixels.
-            self.mask[dust_mask] = False
+            if self.mask is not None:
+                self.mask[dust_mask] = False
             self.dust_masked = False
         else:
-            # If undo kwarg is NOT set, mask dust pixels.
+            if self.mask is None:
+                self.mask = np.zeros(self.shape, dtype=bool)
             self.mask[dust_mask] = True
             self.dust_masked = True
 

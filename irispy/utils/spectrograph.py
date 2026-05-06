@@ -29,12 +29,11 @@ def _get_calibration_fits_wcs(cube):
     ``cube.basic_wcs``. This helper prefers a direct FITS WCS and falls back to
     unwrapping sliced FITS-WCS adapters when needed.
     """
-    if hasattr(cube.wcs, "wcs"):
-        return cube.wcs.wcs
+    for wcs in (cube.wcs, getattr(cube, "basic_wcs", None)):
+        if wcs is not None and hasattr(wcs, "wcs"):
+            return wcs.wcs
     basic_wcs = getattr(cube, "basic_wcs", None)
     if basic_wcs is not None:
-        if hasattr(basic_wcs, "wcs"):
-            return basic_wcs.wcs
         return unwrap_wcs_to_fitswcs(basic_wcs)[0].wcs
     return unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs
 
