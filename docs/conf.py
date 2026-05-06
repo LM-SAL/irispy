@@ -26,6 +26,10 @@ if on_rtd:
     os.environ["LC_ALL"] = "C"
     os.environ["PARFIVE_HIDE_PROGRESS"] = "True"
 
+# Enable extra Sphinx-Gallery runtime and memory reporting only for the
+# GitHub Actions gallery tox job. Do not enable this on Read the Docs.
+profile_gallery = os.environ.get("IRISPY_GALLERY_PROFILE") == "1" and not on_rtd
+
 # -- Project information ------------------------------------------------------
 
 # The full version, including alpha/beta/rc tags
@@ -58,6 +62,15 @@ warnings.filterwarnings("error", category=SunpyDeprecationWarning)
 warnings.filterwarnings("error", category=SunpyPendingDeprecationWarning)
 warnings.filterwarnings("error", category=MatplotlibDeprecationWarning)
 warnings.filterwarnings("error", category=AstropyDeprecationWarning)
+
+# Suppress spurious RuntimeWarning from astropy's Angle.to_string() vectorized
+# formatter (astropy/astropy#18989). It fires benignly when WCSAxes formats tick
+# labels and can appear during gallery builds for examples with grid/contour plots.
+warnings.filterwarnings(
+    "ignore",
+    message="invalid value encountered in do_format",
+    category=RuntimeWarning,
+)
 
 # Wrap large function/method signatures
 maximum_signature_line_length = 80
@@ -213,6 +226,8 @@ sphinx_gallery_conf = {
     "doc_module": ("sunpy"),
     "only_warn_on_example_error": True,
     "matplotlib_animations": True,
+    "write_computation_times": profile_gallery,
+    "show_memory": profile_gallery,
 }
 
 
