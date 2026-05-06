@@ -13,7 +13,7 @@ repos:
         args: ["--fix", "--unsafe-fixes"]
         types: [python]
         # Define here once and then reference using YAML anchor
-        exclude: &exclude_dirs ^aiapy/(data|extern)/
+        exclude: &exclude_dirs ^irispy/(data|extern)/
       - id: ruff-format
         types: [python]
         exclude: *exclude_dirs
