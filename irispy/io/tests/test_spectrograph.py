@@ -13,7 +13,8 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import _create_raster_gwcs, _sanitize_raster_wcs_tables, read_spectrograph_lvl2
+from irispy._spectrograph_wcs import _create_raster_gwcs, _sanitize_raster_wcs_tables
+from irispy.io.spectrograph import read_spectrograph_lvl2
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):

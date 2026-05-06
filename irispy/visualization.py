@@ -38,8 +38,8 @@ def _suppress_wcs_nan_tick_formatting_warning():
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
-            message="invalid value encountered in do_format",
             category=RuntimeWarning,
+            module="matplotlib",
         )
         yield
 
@@ -93,10 +93,6 @@ def _set_axis_properties(axis, label, color):
     axis.set_axislabel(label, color=color, fontsize=8)
 
 
-def _get_matching_coords(ax, labels):
-    return [coord for coord in ax.coords if coord.default_label.lower() in labels]
-
-
 def _set_coord_position(coord, position):
     coord.set_ticks_visible(True)
     coord.set_ticklabel_visible(True)
@@ -114,24 +110,12 @@ def _hide_coord(coord):
     coord.set_axislabel("")
 
 
-def _has_visible_edge(coord):
-    return bool(coord.get_ticks_position())
-
-
 def _select_scan_coord_kind(axes_coordinates):
     if axes_coordinates:
         lowered = {coord.lower() for coord in axes_coordinates if isinstance(coord, str)}
         if lowered.intersection(TIME_LABEL_PRIORITY):
             return "time"
     return "longitude"
-
-
-def _pick_time_coord(time_coords):
-    for preferred_label in TIME_LABEL_PRIORITY:
-        for coord in time_coords:
-            if coord.default_label.lower() == preferred_label:
-                return coord
-    return None
 
 
 def _set_raster_animation_axis_properties(ax, axes_coordinates):
@@ -143,26 +127,31 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
     auxiliary scan-step helper, and moves the selected scan coordinate onto the
     visible frame edge.
     """
-    if not _get_matching_coords(ax, SCAN_STEP_LABELS):
+    scan_step_coords = [coord for coord in ax.coords if coord.default_label.lower() in SCAN_STEP_LABELS]
+    if not scan_step_coords:
         return
 
-    wavelength_coords = _get_matching_coords(ax, WAVELENGTH_LABELS)
-    lon_coords = _get_matching_coords(ax, LON_LABELS)
-    lat_coords = _get_matching_coords(ax, LAT_LABELS)
-    time_coords = _get_matching_coords(ax, TIME_LABEL_PRIORITY)
+    wavelength_coords = [coord for coord in ax.coords if coord.default_label.lower() in WAVELENGTH_LABELS]
+    lon_coords = [coord for coord in ax.coords if coord.default_label.lower() in LON_LABELS]
+    lat_coords = [coord for coord in ax.coords if coord.default_label.lower() in LAT_LABELS]
+    time_coords = [coord for coord in ax.coords if coord.default_label.lower() in TIME_LABEL_PRIORITY]
     if not lon_coords or not lat_coords or not time_coords:
         return
-    if wavelength_coords and _has_visible_edge(wavelength_coords[0]):
+    if wavelength_coords and wavelength_coords[0].get_ticks_position():
         return
 
     selected_scan_kind = _select_scan_coord_kind(axes_coordinates)
     selected_scan_coord = lon_coords[0]
     if selected_scan_kind == "time":
-        selected_time_coord = _pick_time_coord(time_coords)
-        if selected_time_coord is not None:
-            selected_scan_coord = selected_time_coord
+        for preferred_label in TIME_LABEL_PRIORITY:
+            for coord in time_coords:
+                if coord.default_label.lower() == preferred_label:
+                    selected_scan_coord = coord
+                    break
+            else:
+                continue
+            break
 
-    scan_step_coords = _get_matching_coords(ax, SCAN_STEP_LABELS)
     for coord in scan_step_coords:
         _hide_coord(coord)
     for coord in time_coords:

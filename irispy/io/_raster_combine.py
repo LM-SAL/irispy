@@ -12,6 +12,8 @@ from astropy.time import Time
 from irispy.spectrograph import SpectrogramCube
 from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 
+LAZY_RASTER_CHUNK_TARGET_BYTES = 4 * 1024 * 1024
+
 
 def _concatenate_scan_aligned_values(values):
     first = values[0]
@@ -129,7 +131,7 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap, create_raster_gwcs
 
 def _lazy_raster_scan_chunk_rows(cube):
     row_bytes = int(np.prod(cube.shape[1:]) * np.dtype(cube.data.dtype).itemsize)
-    return max(1, min(cube.shape[0], 4 * 1024 * 1024 // max(row_bytes, 1)))
+    return max(1, min(cube.shape[0], LAZY_RASTER_CHUNK_TARGET_BYTES // max(row_bytes, 1)))
 
 
 def _read_memmap_window_chunk(filename, ext, flip, start, stop):
@@ -145,30 +147,32 @@ def _read_memmap_window_chunk(filename, ext, flip, start, stop):
         return np.array(data, copy=True)
 
 
-def _build_lazy_raster_data(cubes):
-    chunks = []
-    for cube in cubes:
-        chunk_rows = _lazy_raster_scan_chunk_rows(cube)
-        filename = getattr(cube, "_memmap_path", None)
-        ext = getattr(cube, "_memmap_ext", None)
-        if filename is None or ext is None:
-            chunks.append(
-                da.from_array(
-                    cube.data,
-                    chunks=(chunk_rows, *cube.shape[1:]),
-                    fancy=False,
-                    asarray=False,
-                )
-            )
-            continue
+def _cube_to_dask(cube, *, chunk_rows):
+    """Return a Dask array for one cube, reading from disk if memmap-backed."""
+    filename = getattr(cube, "_memmap_path", None)
+    ext = getattr(cube, "_memmap_ext", None)
+    if filename is None or ext is None:
+        return da.from_array(
+            cube.data,
+            chunks=(chunk_rows, *cube.shape[1:]),
+            fancy=False,
+            asarray=False,
+        )
 
-        raster_chunks = []
-        for start in range(0, cube.shape[0], chunk_rows):
-            stop = min(start + chunk_rows, cube.shape[0])
-            chunk = delayed(_read_memmap_window_chunk)(filename, ext, getattr(cube, "_flip", False), start, stop)
-            raster_chunks.append(da.from_delayed(chunk, shape=(stop - start, *cube.shape[1:]), dtype=cube.data.dtype))
-        chunks.append(da.concatenate(raster_chunks, axis=0))
-    return da.concatenate(chunks, axis=0)
+    raster_chunks = []
+    flip = getattr(cube, "_flip", False)
+    for start in range(0, cube.shape[0], chunk_rows):
+        stop = min(start + chunk_rows, cube.shape[0])
+        chunk = delayed(_read_memmap_window_chunk)(filename, ext, flip, start, stop)
+        raster_chunks.append(
+            da.from_delayed(chunk, shape=(stop - start, *cube.shape[1:]), dtype=cube.data.dtype)
+        )
+    return da.concatenate(raster_chunks, axis=0)
+
+
+def _build_lazy_raster_data(cubes):
+    dask_chunks = [_cube_to_dask(cube, chunk_rows=_lazy_raster_scan_chunk_rows(cube)) for cube in cubes]
+    return da.concatenate(dask_chunks, axis=0)
 
 
 def _combine_raster_cubes_lazy(cubes, create_raster_gwcs):
