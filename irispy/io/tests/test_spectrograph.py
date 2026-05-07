@@ -210,6 +210,26 @@ def test_read_spectrograph_lvl2_rejects_mismatched_observation(tmp_path, raster_
         read_spectrograph_lvl2(copied_files)
 
 
+def test_v34_flip_reverses_exposure_fov_center(tmp_path, raster_sg_file):
+    destination = tmp_path / Path(raster_sg_file).name
+    with fits.open(raster_sg_file) as hdulist:
+        hdulist.writeto(destination)
+
+    with fits.open(destination, mode="update") as hdulist:
+        hdulist[0].header["STEPS_AV"] = -1.0
+
+    with fits.open(destination) as hdulist:
+        aux = hdulist[-2]
+        expected_x = aux.data[:, aux.header["XCENIX"]] * u.arcsec
+        expected_y = aux.data[:, aux.header["YCENIX"]] * u.arcsec
+
+    scan = read_spectrograph_lvl2(destination)["Si IV 1403"]
+    fov_center = scan.meta["exposure FOV center"]
+
+    assert_quantity_allclose(fov_center.Tx.to(u.arcsec), expected_x[::-1])
+    assert_quantity_allclose(fov_center.Ty.to(u.arcsec), expected_y[::-1])
+
+
 def test_combined_raster_metadata_shape_and_end_time_are_consistent(raster_sg_files):
     raster_collection = read_spectrograph_lvl2(raster_sg_files)
     scan = raster_collection["Si IV 1403"]

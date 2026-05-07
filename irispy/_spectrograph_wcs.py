@@ -23,6 +23,19 @@ AUX_NUV_SLIT_OFFSET_COLUMN = 45
 AUX_PC_ANGLE_1_COLUMN = 20
 AUX_PC_ANGLE_2_COLUMN = 22
 SIT_AND_STARE_CDELT3_PLACEHOLDER = 1e-10
+_SPECTROGRAM_CUBE_METADATA_KWARGS = (
+    "_basic_wcs",
+    "_basic_wcs_segments",
+    "_raster_boundaries",
+    "_memmap",
+    "_raster_wcs_header",
+    "_raster_pc_table",
+    "_raster_crval_table",
+    "_raster_observer",
+    "_memmap_path",
+    "_memmap_ext",
+    "_flip",
+)
 
 
 def _safe_slice_wcs(wcs, item, context):
@@ -38,6 +51,13 @@ def _safe_slice_wcs(wcs, item, context):
     except (IndexError, NotImplementedError, TypeError, ValueError) as e:
         logger.debug(f"Unable to slice {context} with item {item!r}: {e}")
         return None
+
+
+def _spectrogram_cube_metadata_kwargs_for_copy(cube):
+    """
+    Return `to_nddata` kwargs that preserve SpectrogramCube-specific metadata.
+    """
+    return {attr: "copy" for attr in _SPECTROGRAM_CUBE_METADATA_KWARGS if hasattr(cube, attr)}
 
 
 class _SpectrogramCubeWCSMixin:

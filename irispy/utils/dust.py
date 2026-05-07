@@ -9,6 +9,7 @@ from scipy import ndimage
 
 import astropy.units as u
 
+from irispy._spectrograph_wcs import _spectrogram_cube_metadata_kwargs_for_copy
 from .utils import calculate_dust_mask
 
 __all__ = ["remove_dust"]
@@ -188,8 +189,7 @@ def remove_dust(
     }
     if hasattr(cube, "scaled"):
         cleaned_cube_kwargs["scaled"] = "copy"
-    if hasattr(cube, "_basic_wcs"):
-        cleaned_cube_kwargs["_basic_wcs"] = "copy"
+    cleaned_cube_kwargs.update(_spectrogram_cube_metadata_kwargs_for_copy(cube))
     cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
     if hasattr(cleaned_cube, "dust_masked"):
         cleaned_cube.dust_masked = bool(np.any(output_mask & dust_mask))

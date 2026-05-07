@@ -120,12 +120,12 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap, create_raster_gwcs
         ],
         _raster_boundaries=[(start, start + cube.shape[0]) for start, cube in zip(starts, cubes, strict=True)],
         _memmap=memmap,
+        _raster_wcs_header=cubes[0]._raster_wcs_header,
+        _raster_pc_table=pc_all,
+        _raster_crval_table=crval_all,
+        _raster_observer=cubes[0]._raster_observer,
     )
     combined_cube.extra_coords.add("time", 0, times, physical_types="time")
-    combined_cube._raster_wcs_header = cubes[0]._raster_wcs_header
-    combined_cube._raster_pc_table = pc_all
-    combined_cube._raster_crval_table = crval_all
-    combined_cube._raster_observer = cubes[0]._raster_observer
     return combined_cube
 
 

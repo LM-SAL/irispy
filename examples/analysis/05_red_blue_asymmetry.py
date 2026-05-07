@@ -43,7 +43,7 @@ raster_filename = pooch.retrieve(
 
 raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 # We are after the Si IV 1403 line, which we can select using a key.
-si_iv = raster["Si IV 1403"][0]
+si_iv = raster["Si IV 1403"]
 
 ###############################################################################
 # Now we will calculate the red-blue asymmetry on a small cutout around the

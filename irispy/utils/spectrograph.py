@@ -9,6 +9,7 @@ from astropy import constants
 
 from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 
+from irispy._spectrograph_wcs import _spectrogram_cube_metadata_kwargs_for_copy
 from irispy.spectrograph import SpectrogramCube
 from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
@@ -33,6 +34,10 @@ def _get_calibration_fits_wcs(cube):
         if wcs is not None and hasattr(wcs, "wcs"):
             return wcs.wcs
     basic_wcs = getattr(cube, "basic_wcs", None)
+    if basic_wcs is None:
+        basic_wcs_segments = getattr(cube, "_basic_wcs_segments", None)
+        if basic_wcs_segments:
+            basic_wcs = basic_wcs_segments[0][2]
     if basic_wcs is not None:
         return unwrap_wcs_to_fitswcs(basic_wcs)[0].wcs
     return unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs
@@ -129,7 +134,7 @@ def radiometric_calibration(cube: SpectrogramCube) -> SpectrogramCube:
         nddata_type=type(cube),
         extra_coords="copy",
         global_coords="copy",
-        _basic_wcs=getattr(cube, "basic_wcs", None),
+        **_spectrogram_cube_metadata_kwargs_for_copy(cube),
     )
 
 
