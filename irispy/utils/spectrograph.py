@@ -148,7 +148,7 @@ def convert_photons_per_sec_to_radiance(
     Parameters
     ----------
     data_quantities: iterable of `astropy.units.Quantity`
-        Quantities to be converted.  Must have units of counts/s or
+        Quantities to be converted. Must have units of counts/s or
         radiance equivalent counts, e.g. erg / cm**2 / s / sr / Angstrom.
     iris_response: dict
         The IRIS response data loaded from `irispy.utils.response.get_latest_response`.

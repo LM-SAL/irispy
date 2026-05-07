@@ -332,7 +332,9 @@ def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files
 
 
 def test_sanitize_raster_wcs_tables_all_bad_rows_uses_fallback():
-    """When every row is all-zero, fallback values must be applied."""
+    """
+    When every row is all-zero, fallback values must be applied.
+    """
     pc = np.zeros((3, 2, 2)) * u.pix
     crval = np.zeros((3, 2)) * u.arcsec
     fallback_pc = np.array([[1.0, 0.1], [0.2, 0.9]]) * u.pix
@@ -352,7 +354,9 @@ def test_sanitize_raster_wcs_tables_all_bad_rows_uses_fallback():
 
 
 def test_sanitize_raster_wcs_tables_all_bad_rows_without_fallback_raises():
-    """When every row is all-zero and no fallback is given, a clear error is raised."""
+    """
+    When every row is all-zero and no fallback is given, a clear error is raised.
+    """
     pc = np.zeros((2, 2, 2)) * u.pix
     crval = np.zeros((2, 2)) * u.arcsec
 

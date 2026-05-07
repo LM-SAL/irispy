@@ -34,12 +34,14 @@ WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
 
 @contextmanager
 def _suppress_wcs_nan_tick_formatting_warning():
-    """Ignore upstream formatter warnings from hidden/NaN WCS animation axes."""
+    """
+    Ignore upstream formatter warnings from hidden/NaN WCS animation axes.
+    """
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
+            message=".*do_format.*",
             category=RuntimeWarning,
-            module="matplotlib",
         )
         yield
 
@@ -122,10 +124,9 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
     """
     Place the raster scan coordinate on the frame edge selected by the user.
 
-    Raster image animations can expose either helioprojective longitude or time
-    on the scan axis. This helper keeps latitude on the left edge, hides the
-    auxiliary scan-step helper, and moves the selected scan coordinate onto the
-    visible frame edge.
+    Raster image animations can expose either helioprojective longitude or time on the
+    scan axis. This helper keeps latitude on the left edge, hides the auxiliary scan-
+    step helper, and moves the selected scan coordinate onto the visible frame edge.
     """
     scan_step_coords = [coord for coord in ax.coords if coord.default_label.lower() in SCAN_STEP_LABELS]
     if not scan_step_coords:

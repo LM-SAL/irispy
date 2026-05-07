@@ -1,7 +1,6 @@
+import warnings
 from copy import copy
 from numbers import Integral
-
-import warnings
 
 import numpy as np
 
@@ -11,13 +10,13 @@ import gwcs
 import gwcs.coordinate_frames as cf
 from astropy.wcs.wcsapi import HighLevelWCSWrapper, SlicedLowLevelWCS
 from astropy.wcs.wcsapi.wrappers.sliced_wcs import sanitize_slices
+
 from dkist.wcs.models import AsymmetricMapping, CoupledCompoundModel, VaryingCelestialTransform
 from sunpy import log as logger
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.time import parse_time
 
 from irispy.utils.constants import SLIT_WIDTH
-
 
 AUX_FUV_SLIT_OFFSET_COLUMN = 34
 AUX_NUV_SLIT_OFFSET_COLUMN = 45
@@ -27,7 +26,9 @@ SIT_AND_STARE_CDELT3_PLACEHOLDER = 1e-10
 
 
 def _safe_slice_wcs(wcs, item, context):
-    """Slice a WCS, logging debug on failure instead of raising."""
+    """
+    Slice a WCS, logging debug on failure instead of raising.
+    """
     try:
         if hasattr(wcs, "slice"):
             return wcs.slice(item, numpy_order=True)
@@ -40,10 +41,14 @@ def _safe_slice_wcs(wcs, item, context):
 
 
 class _SpectrogramCubeWCSMixin:
-    """Mixin that handles ``basic_wcs`` and raster-metadata slicing for `SpectrogramCube`."""
+    """
+    Mixin that handles ``basic_wcs`` and raster-metadata slicing for `SpectrogramCube`.
+    """
 
-    def _normalize_basic_wcs_item(self, item):
-        """Normalize index to tuple of length ndim with only int/slice entries."""
+    def _normalize_basic_wcs_item(self, item):  # NOQA: PLR0911
+        """
+        Normalize index to tuple of length ndim with only int/slice entries.
+        """
         if isinstance(item, (Integral, slice)):
             return (item, *([slice(None)] * (self.data.ndim - 1)))
         if item is Ellipsis:
@@ -71,7 +76,7 @@ class _SpectrogramCubeWCSMixin:
             return None
         return tuple(normalized)
 
-    def _slice_basic_wcs(self, item):
+    def _slice_basic_wcs(self, item):  # NOQA: PLR0911
         normalized_item = self._normalize_basic_wcs_item(item)
         if normalized_item is None:
             return None
@@ -103,7 +108,9 @@ class _SpectrogramCubeWCSMixin:
         return None
 
     def _slice_basic_wcs_segments_for_slice(self, scan_item):
-        """Rebuild segment list for a slice; returns None for stepped slices."""
+        """
+        Rebuild segment list for a slice; returns None for stepped slices.
+        """
         if not self._basic_wcs_segments:
             return None
 
@@ -172,7 +179,9 @@ class _SpectrogramCubeWCSMixin:
 
 
 def _raster_wcs_bad_row_mask(pc, crval):
-    """Return AUX rows whose PC or CRVAL table entries are unusable."""
+    """
+    Return AUX rows whose PC or CRVAL table entries are unusable.
+    """
     pc_values = pc.to_value(u.pix) if hasattr(pc, "to_value") else np.asarray(pc)
     crval_values = crval.to_value(u.arcsec) if hasattr(crval, "to_value") else np.asarray(crval)
     pc_bad = np.isclose(pc_values, 0).all(axis=(1, 2))
@@ -181,7 +190,9 @@ def _raster_wcs_bad_row_mask(pc, crval):
 
 
 def _interpolate_wcs_bad_rows(pc, crval, bad_rows, good_indices):
-    """Fill bad rows by linear interpolation between nearest good neighbours."""
+    """
+    Fill bad rows by linear interpolation between nearest good neighbours.
+    """
     for i in np.where(bad_rows)[0]:
         before = good_indices[good_indices < i]
         after = good_indices[good_indices > i]
@@ -201,7 +212,9 @@ def _interpolate_wcs_bad_rows(pc, crval, bad_rows, good_indices):
 
 
 def _apply_wcs_fallback(pc, crval, fallback_pc, fallback_crval):
-    """Replace every row with the fallback mean values."""
+    """
+    Replace every row with the fallback mean values.
+    """
     warnings.warn(
         "All steps in this file have bad WCS tables. Using fallback values from observation mean.",
         UserWarning,
@@ -214,7 +227,9 @@ def _apply_wcs_fallback(pc, crval, fallback_pc, fallback_crval):
 
 
 def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None, *, bad_rows=None):
-    """Replace all-zero PC/crval rows via neighbour interpolation or fallback."""
+    """
+    Replace all-zero PC/crval rows via neighbour interpolation or fallback.
+    """
     if bad_rows is None:
         bad_rows = _raster_wcs_bad_row_mask(pc, crval)
 
@@ -239,7 +254,9 @@ def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None
 
 
 def _normalize_spectral_axis_units(header):
-    """Convert spectral axis values from Angstrom to nm in-place when needed."""
+    """
+    Convert spectral axis values from Angstrom to nm in-place when needed.
+    """
     if header.get("CUNIT1", "").lower() == "angstrom":
         header["CUNIT1"] = "nm"
         header["CRVAL1"] *= 0.1
@@ -339,7 +356,9 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     forward_transform.inverse = spectral.inverse & non_spectral.inverse
 
     base_time = parse_time(t_ref)
-    spectral_frame = cf.SpectralFrame(axes_order=(0,), unit=spectral_unit, name="wavelength", axes_names=("wavelength",))
+    spectral_frame = cf.SpectralFrame(
+        axes_order=(0,), unit=spectral_unit, name="wavelength", axes_names=("wavelength",)
+    )
     celestial_frame = cf.CelestialFrame(
         axes_order=(1, 2),
         unit=(u.arcsec, u.arcsec),

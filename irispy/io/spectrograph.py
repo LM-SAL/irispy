@@ -76,7 +76,9 @@ WINDOW_COMPATIBILITY_KEYS = (
 
 
 def _validate_observation_compatible(reference_header, header, filename):
-    """Check that observation-level keys match the reference file."""
+    """
+    Check that observation-level keys match the reference file.
+    """
     for key in OBSERVATION_COMPATIBILITY_KEYS:
         expected = reference_header.get(key)
         actual = header.get(key)
@@ -100,7 +102,9 @@ def _validate_observation_compatible(reference_header, header, filename):
 
 
 def _validate_window_compatible(reference_window_headers, hdulist, filename, window_fits_indices, window_names):
-    """Check that each spectral window header matches the reference."""
+    """
+    Check that each spectral window header matches the reference.
+    """
     for reference_window_header, window_index, window_name in zip(
         reference_window_headers,
         window_fits_indices,
@@ -303,7 +307,7 @@ def read_spectrograph_lvl2(
                     data = hdulist[window_fits_indices[i]].data
                 # For multi-file reads the per-file cubes are only intermediate;
                 # the combined cube built in _finalize_window_object gets the
-                # full gWCS.  Skipping it here avoids (n_files-1) redundant
+                # full gWCS. Skipping it here avoids (n_files-1) redundant
                 # constructions.
                 if len(filenames) == 1:
                     cube_wcs = _create_raster_gwcs(
