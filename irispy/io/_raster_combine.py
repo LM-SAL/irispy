@@ -135,7 +135,9 @@ def _lazy_raster_scan_chunk_rows(cube):
 
 
 def _read_memmap_window_chunk(filename, ext, flip, start, stop):
-    """Read one scan-axis chunk from disk after the public reader has returned."""
+    """
+    Read one scan-axis chunk from disk after the public reader has returned.
+    """
     with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
         data = hdulist[ext].data
         if flip:
@@ -148,7 +150,9 @@ def _read_memmap_window_chunk(filename, ext, flip, start, stop):
 
 
 def _cube_to_dask(cube, *, chunk_rows):
-    """Return a Dask array for one cube, reading from disk if memmap-backed."""
+    """
+    Return a Dask array for one cube, reading from disk if memmap-backed.
+    """
     filename = getattr(cube, "_memmap_path", None)
     ext = getattr(cube, "_memmap_ext", None)
     if filename is None or ext is None:
@@ -164,9 +168,7 @@ def _cube_to_dask(cube, *, chunk_rows):
     for start in range(0, cube.shape[0], chunk_rows):
         stop = min(start + chunk_rows, cube.shape[0])
         chunk = delayed(_read_memmap_window_chunk)(filename, ext, flip, start, stop)
-        raster_chunks.append(
-            da.from_delayed(chunk, shape=(stop - start, *cube.shape[1:]), dtype=cube.data.dtype)
-        )
+        raster_chunks.append(da.from_delayed(chunk, shape=(stop - start, *cube.shape[1:]), dtype=cube.data.dtype))
     return da.concatenate(raster_chunks, axis=0)
 
 

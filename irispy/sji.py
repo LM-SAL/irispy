@@ -2,8 +2,8 @@ import textwrap
 import warnings
 from numbers import Integral
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from astropy.wcs import WCS
 

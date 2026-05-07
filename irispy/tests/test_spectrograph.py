@@ -12,6 +12,7 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 
 from ndcube.utils.exceptions import NDCubeUserWarning
+
 from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
@@ -304,7 +305,9 @@ def test_raster_animation_keeps_longitude_axis_after_slider_update(raster_sg_fil
 
 
 def test_spectrogram_cube_fancy_indexing_strips_raster_metadata(raster_sg_files):
-    """Non-standard indices (arrays, booleans) cannot preserve per-raster WCS bridges."""
+    """
+    Non-standard indices (arrays, booleans) cannot preserve per-raster WCS bridges.
+    """
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
 
