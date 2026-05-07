@@ -57,6 +57,13 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         self._basic_wcs_segments = kwargs.pop("_basic_wcs_segments", None)
         self._raster_boundaries = kwargs.pop("_raster_boundaries", None)
         self._memmap = kwargs.pop("_memmap", False)
+        self._raster_wcs_header = kwargs.pop("_raster_wcs_header", None)
+        self._raster_pc_table = kwargs.pop("_raster_pc_table", None)
+        self._raster_crval_table = kwargs.pop("_raster_crval_table", None)
+        self._raster_observer = kwargs.pop("_raster_observer", None)
+        self._memmap_path = kwargs.pop("_memmap_path", None)
+        self._memmap_ext = kwargs.pop("_memmap_ext", None)
+        self._flip = kwargs.pop("_flip", False)
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     @property

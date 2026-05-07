@@ -221,6 +221,7 @@ def read_spectrograph_lvl2(
             flip = v34 and not revert_v34
             if flip:
                 times = times[::-1]
+                fov_center = fov_center[::-1]
                 obs_vrix = obs_vrix[::-1]
                 ophaseix = ophaseix[::-1]
                 exposure_times_fuv = exposure_times_fuv[::-1]
@@ -329,15 +330,15 @@ def read_spectrograph_lvl2(
                     mask=data_mask,
                     _basic_wcs=basic_wcs,
                     _memmap=memmap,
+                    _raster_wcs_header=prepared_wcs_header,
+                    _raster_pc_table=pc_sanitized,
+                    _raster_crval_table=crval,
+                    _raster_observer=observer,
+                    _memmap_path=filename,
+                    _memmap_ext=window_fits_indices[i],
+                    _flip=flip,
                 )
                 cube.extra_coords.add("time", 0, times, physical_types="time")
-                cube._raster_wcs_header = prepared_wcs_header
-                cube._raster_pc_table = pc_sanitized
-                cube._raster_crval_table = crval
-                cube._raster_observer = observer
-                cube._memmap_path = filename
-                cube._memmap_ext = window_fits_indices[i]
-                cube._flip = flip
                 data_dict[window_name].append(cube)
     window_data_pairs = [
         (_window_name, _finalize_window_object(cubes, memmap=memmap, create_raster_gwcs=_create_raster_gwcs))

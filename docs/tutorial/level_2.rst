@@ -133,7 +133,7 @@ Let us check the metadata of this collection, this is stored as a ``meta`` attri
 
 .. code-block:: python
 
-    >>> raster["C II 1336"][0].meta  # doctest: +REMOTE_DATA
+    >>> raster["C II 1336"].meta  # doctest: +REMOTE_DATA
     <irispy.meta.SGMeta object at ...>
     <BLANKLINE>
     SGMeta
@@ -157,7 +157,7 @@ If we want to check the primary header of the raster, we can do the following:
 
 .. code-block:: python
 
-    >>> raster["C II 1336"][0].meta.fits_header  # doctest: +REMOTE_DATA
+    >>> raster["C II 1336"].meta.fits_header  # doctest: +REMOTE_DATA
     SIMPLE  =                    T / Written by IDL:  Mon Nov 15 09:21:38 2021
     BITPIX  =                   16 / Number of bits per data pixel
     NAXIS   =                    0 / Number of data axes

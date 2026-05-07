@@ -75,6 +75,19 @@ def test_radiometric_calibration(sns_sg_file):
     assert new_cube.data.shape == cube.data.shape
 
 
+def test_radiometric_calibration_preserves_combined_raster_metadata(raster_sg_files):
+    raster_collection = read_files(raster_sg_files)
+    cube = raster_collection["Si IV 1403"]
+
+    calibrated_cube = radiometric_calibration(cube)
+
+    assert calibrated_cube.raster_boundaries == cube.raster_boundaries
+    assert len(calibrated_cube.split_rasters()) == len(cube.split_rasters())
+    assert calibrated_cube.raster_slice(0).shape == cube.raster_slice(0).shape
+    assert calibrated_cube._raster_pc_table.shape == cube._raster_pc_table.shape
+    assert calibrated_cube._raster_crval_table.shape == cube._raster_crval_table.shape
+
+
 def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"]
