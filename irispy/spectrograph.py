@@ -1,6 +1,10 @@
 import textwrap
 
 import matplotlib.pyplot as plt
+import numpy as np
+
+import astropy.units as u
+from astropy.wcs.utils import wcs_to_celestial_frame
 
 from ndcube import NDCollection
 from sunpy import log as logger
@@ -11,6 +15,9 @@ from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.visualization import IRISPlotter, finalize_iris_plot
 
 __all__ = ["RasterCollection", "SpectrogramCube"]
+
+RASTER_SEGMENT_STEP_SEARCH_RADIUS = 2
+RASTER_SEGMENT_SLIT_SEARCH_RADIUS = 16
 
 
 class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
@@ -164,6 +171,130 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         if not boundaries:
             return (self,)
         return tuple(self[raster_slice] for raster_slice in boundaries)
+
+    def _search_segment_grid(self, segment_cube, target, step_indices, slit_indices):
+        """Evaluate the gWCS over a grid and return the pixel nearest to *target*."""
+        step_grid, slit_grid = np.meshgrid(step_indices, slit_indices, indexing="ij")
+        sky = segment_cube.wcs.array_index_to_world(step_grid, slit_grid, np.zeros_like(step_grid))[1]
+        separation = sky.separation(target.transform_to(sky.frame)).to_value(u.arcsec)
+        local = np.unravel_index(np.nanargmin(separation), separation.shape)
+        return float(separation[local]), int(step_grid[local]), int(slit_grid[local])
+
+    def _nearest_raster_segment(self, target, *, clip):
+        if not self._raster_boundaries:
+            return None
+
+        best_match = None
+        for segment_index, raster_slice in enumerate(self.raster_boundaries):
+            segment_cube = self[raster_slice]
+            if segment_cube.basic_wcs is not None:
+                guess_target = target.transform_to(wcs_to_celestial_frame(segment_cube.basic_wcs.celestial))
+                step_guess, slit_guess = segment_cube.basic_wcs.celestial.world_to_array_index(guess_target)
+                guess_valid = (
+                    np.isfinite(step_guess)
+                    and np.isfinite(slit_guess)
+                    and 0 <= step_guess < segment_cube.shape[0]
+                    and 0 <= slit_guess < segment_cube.shape[1]
+                )
+                if guess_valid:
+                    step_guess = int(np.rint(np.clip(step_guess, 0, segment_cube.shape[0] - 1)))
+                    slit_guess = int(np.rint(np.clip(slit_guess, 0, segment_cube.shape[1] - 1)))
+                    step_indices = np.arange(
+                        max(0, step_guess - RASTER_SEGMENT_STEP_SEARCH_RADIUS),
+                        min(segment_cube.shape[0], step_guess + RASTER_SEGMENT_STEP_SEARCH_RADIUS + 1),
+                        dtype=int,
+                    )
+                    slit_indices = np.arange(
+                        max(0, slit_guess - RASTER_SEGMENT_SLIT_SEARCH_RADIUS),
+                        min(segment_cube.shape[1], slit_guess + RASTER_SEGMENT_SLIT_SEARCH_RADIUS + 1),
+                        dtype=int,
+                    )
+                    score, step, slit = self._search_segment_grid(segment_cube, target, step_indices, slit_indices)
+                    if best_match is None or score < best_match[0]:
+                        best_match = (score, segment_index, step, slit)
+                    continue
+                if not clip:
+                    continue
+
+            step_indices = np.arange(segment_cube.shape[0], dtype=int)
+            slit_indices = np.arange(segment_cube.shape[1], dtype=int)
+            score, step, slit = self._search_segment_grid(segment_cube, target, step_indices, slit_indices)
+            if best_match is None or score < best_match[0]:
+                best_match = (score, segment_index, step, slit)
+
+        if best_match is None:
+            if clip:
+                return None
+            msg = "Target is outside the raster bounds."
+            raise ValueError(msg)
+        return best_match
+
+    def _crop_spectrum_at_pixel(self, cube, step_index, slit_index):
+        """Extract a 1D spectrum from *cube* at the given pixel."""
+        start = cube.wcs.array_index_to_world(step_index, slit_index, 0)
+        stop = cube.wcs.array_index_to_world(step_index, slit_index, cube.shape[-1] - 1)
+        return cube.crop(start, stop)
+
+    def spectrum_at(self, target, *, clip=True):
+        """
+        Return the spectrum at the raster pixel nearest a sky coordinate.
+
+        Parameters
+        ----------
+        target : `astropy.coordinates.SkyCoord`
+            Sky coordinate to sample.
+        clip : `bool`, optional
+            If `True`, off-raster targets are clipped to the nearest edge pixel.
+            If `False`, out-of-bounds targets raise `ValueError`.
+
+        Returns
+        -------
+        `irispy.spectrograph.SpectrogramCube`
+            One-dimensional spectrum extracted from the nearest raster pixel.
+        """
+        if self.data.ndim != 3:
+            msg = "spectrum_at requires a 3D raster cube."
+            raise ValueError(msg)
+
+        if self.basic_wcs is not None:
+            target_in_frame = target.transform_to(wcs_to_celestial_frame(self.basic_wcs.celestial))
+            step_index, slit_index = self.basic_wcs.celestial.world_to_array_index(target_in_frame)
+            if clip:
+                step_index = int(np.rint(np.clip(step_index, 0, self.shape[0] - 1)))
+                slit_index = int(np.rint(np.clip(slit_index, 0, self.shape[1] - 1)))
+            else:
+                step_index = int(np.rint(step_index))
+                slit_index = int(np.rint(slit_index))
+                if not (0 <= step_index < self.shape[0] and 0 <= slit_index < self.shape[1]):
+                    nearest_segment = self._nearest_raster_segment(target, clip=clip)
+                    if nearest_segment is not None:
+                        _, nearest_segment_index, step_index, slit_index = nearest_segment
+                        return self._crop_spectrum_at_pixel(self.raster_slice(nearest_segment_index), step_index, slit_index)
+                    msg = "Target is outside the raster bounds."
+                    raise ValueError(msg)
+            return self._crop_spectrum_at_pixel(self, step_index, slit_index)
+
+        nearest_segment = self._nearest_raster_segment(target, clip=clip)
+        if nearest_segment is not None:
+            _, nearest_segment_index, step_index, slit_index = nearest_segment
+            return self._crop_spectrum_at_pixel(self.raster_slice(nearest_segment_index), step_index, slit_index)
+
+        sky_grid = self.axis_world_coords("custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat")[0]
+        target_in_frame = target.transform_to(sky_grid.frame)
+        if not clip:
+            lon = target_in_frame.Tx.to(u.arcsec)
+            lat = target_in_frame.Ty.to(u.arcsec)
+            if (
+                lon < np.nanmin(sky_grid.Tx)
+                or lon > np.nanmax(sky_grid.Tx)
+                or lat < np.nanmin(sky_grid.Ty)
+                or lat > np.nanmax(sky_grid.Ty)
+            ):
+                msg = "Target is outside the raster bounds."
+                raise ValueError(msg)
+        separation = sky_grid.separation(target_in_frame)
+        step_index, slit_index = np.unravel_index(np.nanargmin(separation.to_value(u.arcsec)), separation.shape)
+        return self._crop_spectrum_at_pixel(self, step_index, slit_index)
 
     def remove_cosmic_rays(
         self,

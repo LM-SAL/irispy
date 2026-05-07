@@ -1,0 +1,1 @@
+Added `~irispy.spectrograph.SpectrogramCube.spectrum_at` as a convenience wrapper for raster sky-position lookups.
