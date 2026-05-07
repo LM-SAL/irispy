@@ -1,1 +1,0 @@
-Added utilities and examples to calculate moments and red-blue asymmetry maps for `~irispy.spectrograph.SpectrogramCube`.

@@ -1,3 +1,36 @@
+0.7.0 (2026-05-07)
+==================
+
+New Features
+------------
+
+- Added `irispy.utils.dust.remove_dust` and `irispy.sji.SJICube.remove_dust` to repair dust-darkened pixels in IRIS slit-jaw images. (`#111 <https://github.com/LM-SAL/irispy/pull/111>`__)
+- Added ``remove_cosmic_rays`` methods both for SJI and raster cubes, with two possible backends: ``rsliding`` and ``astroscrappy``. (`#113 <https://github.com/LM-SAL/irispy/pull/113>`__)
+- Added a way to calculate the moments for a SpectrumCube with an example: :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`. (`#124 <https://github.com/LM-SAL/irispy/pull/124>`__)
+- Added utilities and examples to calculate moments and red-blue asymmetry maps for `~irispy.spectrograph.SpectrogramCube`. (`#125 <https://github.com/LM-SAL/irispy/pull/125>`__)
+- Added utilities to compute IRIS density diagnostics from line ratios, including `~irispy.utils.density.density_diagnostic` and `~irispy.utils.density.map_ratio_to_quantity`. (`#126 <https://github.com/LM-SAL/irispy/pull/126>`__)
+
+
+Bug Fixes
+---------
+
+- Fixed a few places with incorrect timestamp handling for the gWCS. (`#105 <https://github.com/LM-SAL/irispy/pull/105>`__)
+- Fixed `irispy.sji.SJICube` slicing so ``basic_wcs`` is preserved for common slicing operations, allowing sliced cubes to continue working with `irispy.sji.SJICube.to_maps` and other WCS-based workflows. (`#111 <https://github.com/LM-SAL/irispy/pull/111>`__, `#112 <https://github.com/LM-SAL/irispy/pull/112>`__)
+- Fixed `irispy.utils.spectrograph.radiometric_calibration` so sliced raster `irispy.spectrograph.SpectrogramCube` objects continue to calibrate correctly when slicing changes the WCS wrapper or reduces the data to two dimensions. (`#114 <https://github.com/LM-SAL/irispy/pull/114>`__)
+- Removed ``preserve_units=True`` WCS construction paths due to an upstream bug in Astropy. (`#117 <https://github.com/LM-SAL/irispy/pull/117>`__)
+- Fixed raster file-list reading so plain spectrograph FITS lists load the full observation sequence. (`#117 <https://github.com/LM-SAL/irispy/pull/117>`__)
+- Fixed several edge cases in SJI and spectrograph coordinate preservation, bad-pixel masking, density diagnostics, spectral moments, dust masking, and red-blue asymmetry memory usage. (`#129 <https://github.com/LM-SAL/irispy/pull/129>`__)
+
+
+Documentation
+-------------
+
+- Added a tutorial mirroring how ITN26 is written. (`#106 <https://github.com/LM-SAL/irispy/pull/106>`__)
+- Added an example of using `astroscrappy` to remove cosmic rays from IRIS data: :ref:`sphx_glr_generated_gallery_calibration_01_remove_spikes.py`. (`#106 <https://github.com/LM-SAL/irispy/pull/106>`__)
+- Added a how-to example showing how to remove dust from IRIS slit-jaw images with `irispy.sji.SJICube.remove_dust`: :ref:`sphx_glr_generated_gallery_calibration_03_remove_dust.py`. (`#111 <https://github.com/LM-SAL/irispy/pull/111>`__)
+- Added a double Gaussian Mg II k spectral fitting example: :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py`. (`#130 <https://github.com/LM-SAL/irispy/pull/130>`__)
+
+
 0.6.0 (2026-01-26)
 ==================
 

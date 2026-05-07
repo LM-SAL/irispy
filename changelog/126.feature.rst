@@ -1,1 +1,0 @@
-Added utilities to compute IRIS density diagnostics from line ratios, including `~irispy.utils.density.density_diagnostic` and `~irispy.utils.density.map_ratio_to_quantity`.

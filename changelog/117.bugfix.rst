@@ -1,1 +1,0 @@
-Fixed raster file-list reading so plain spectrograph FITS lists load the full observation sequence.

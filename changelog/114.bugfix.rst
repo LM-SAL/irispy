@@ -1,1 +1,0 @@
-Fixed `irispy.utils.spectrograph.radiometric_calibration` so sliced raster `irispy.spectrograph.SpectrogramCube` objects continue to calibrate correctly when slicing changes the WCS wrapper or reduces the data to two dimensions.

@@ -1,1 +1,0 @@
-Added a how-to example showing how to remove dust from IRIS slit-jaw images with `irispy.sji.SJICube.remove_dust`: :ref:`sphx_glr_generated_gallery_calibration_03_remove_dust.py`.

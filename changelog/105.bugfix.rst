@@ -1,1 +1,0 @@
-Fixed a few places with incorrect timestamp handling for the gWCS.

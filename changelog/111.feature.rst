@@ -1,1 +1,0 @@
-Added `irispy.utils.dust.remove_dust` and `irispy.sji.SJICube.remove_dust` to repair dust-darkened pixels in IRIS slit-jaw images.
