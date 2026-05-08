@@ -55,6 +55,8 @@ print(raster)
 
 mg_ii_k = raster["Mg II k 2796"]
 mg_ii_k_unflipped = raster_unflipped["Mg II k 2796"]
+first_raster = mg_ii_k.raster_slice(0)
+first_raster_unflipped = mg_ii_k_unflipped.raster_slice(0)
 print(mg_ii_k)
 
 ###############################################################################
@@ -64,13 +66,13 @@ print(mg_ii_k)
 # We can use the ``crop`` method to get this information, this will
 # require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
 
-# None, means that the axis is not cropped
+# None means that the world component is not cropped.
 # Since we want one physical coordinate, we will just use the
-# same spectral coordinate for both axes.
-lower_corner = [SpectralCoord(280, unit=u.nm), None]
+# same spectral coordinate for both bounds.
+lower_corner = [SpectralCoord(280, unit=u.nm), None, None, None]
 
-mg_spec_crop = mg_ii_k[0].crop(lower_corner, lower_corner)
-mg_spec_unflipped_crop = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
+mg_spec_crop = first_raster.crop(lower_corner, lower_corner)
+mg_spec_unflipped_crop = first_raster_unflipped.crop(lower_corner, lower_corner)
 
 fig = plt.figure(figsize=(6, 12))
 ax = fig.add_subplot(121, projection=mg_spec_crop.wcs)
@@ -98,12 +100,18 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 # We choose a specific helioprojective location and crop the spectrogram down to the
 # spectrum at that point.
 
-iris_observer = wcs_to_celestial_frame(mg_ii_k[0].wcs.celestial).observer
+iris_observer = wcs_to_celestial_frame(first_raster.basic_wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-lower_corner = [None, SkyCoord(-908 * u.arcsec, 311 * u.arcsec, frame=iris_frame)]
+target = SkyCoord(-908 * u.arcsec, 311 * u.arcsec, frame=iris_frame)
 
-mg_ii_k_unflipped_spectra = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
-mg_ii_k_spectra = mg_ii_k[0].crop(lower_corner, lower_corner)
+mg_ii_k_unflipped_spectra = first_raster_unflipped.crop(
+    [SpectralCoord(first_raster_unflipped.spectral_axis[0]), target],
+    [SpectralCoord(first_raster_unflipped.spectral_axis[-1]), target],
+)
+mg_ii_k_spectra = first_raster.crop(
+    [SpectralCoord(first_raster.spectral_axis[0]), target],
+    [SpectralCoord(first_raster.spectral_axis[-1]), target],
+)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii_k_unflipped_spectra.wcs)

@@ -51,24 +51,24 @@ raster_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 #
-# We read only the Mg II k window and select the one complete scan.
+# We read only the Mg II k window.
 
 raster = read_files(raster_filename, spectral_windows="Mg II k 2796")
-mg_ii_k = raster["Mg II k 2796"][0]
+mg_ii_k = raster["Mg II k 2796"]
 
 ###############################################################################
 # We crop the spatial field of view to keep the example light enough
 # for the documentation build. We will also focus on the Mg II k core,
 # which is the part of the spectrum we are going to fit.
 
-iris_observer = wcs_to_celestial_frame(mg_ii_k.wcs.celestial).observer
+iris_observer = wcs_to_celestial_frame(mg_ii_k.basic_wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-top_left = [None, SkyCoord(-350 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
-bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
+top_left = [None, SkyCoord(-350 * u.arcsec, 310 * u.arcsec, frame=iris_frame), None, None]
+bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame), None, None]
 mg_ii_k = mg_ii_k.crop(top_left, bottom_right)
 
-lower_corner = [SpectralCoord(279.40, unit=u.nm), None]
-upper_corner = [SpectralCoord(279.80, unit=u.nm), None]
+lower_corner = [SpectralCoord(279.40, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(279.80, unit=u.nm), None, None, None]
 mg_ii_k = mg_ii_k.crop(lower_corner, upper_corner)
 
 ###############################################################################
@@ -130,7 +130,10 @@ mg_ii_model_fit = parallel_fit_dask(
 # radiative-transfer inversion.
 
 mg_ii_core = 279.6351 * u.nm
-line_core = mg_ii_k.crop([SpectralCoord(mg_ii_core), None], [SpectralCoord(mg_ii_core), None])
+line_core = mg_ii_k.crop(
+    [SpectralCoord(mg_ii_core), None, None, None],
+    [SpectralCoord(mg_ii_core), None, None, None],
+)
 wavelength_step = np.mean(np.diff(mg_ii_k.axis_world_coords(spectral_axis)[0])).to(u.nm)
 
 blue_flux = np.sqrt(2 * np.pi) * mg_ii_model_fit.amplitude_1 * mg_ii_model_fit.stddev_1.quantity / wavelength_step

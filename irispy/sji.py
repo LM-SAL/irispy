@@ -16,7 +16,7 @@ from sunraster import SpectrogramCube
 from irispy.utils import calculate_dust_mask
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import remove_dust as _remove_dust
-from irispy.visualization import IRISPlotter, set_axis_properties
+from irispy.visualization import IRISPlotter, finalize_iris_plot
 
 __all__ = ["AIACube", "SJICube"]
 
@@ -174,9 +174,7 @@ class SJICube(SpectrogramCube):
                 logger.debug(e)
                 cmap = "viridis"
         kwargs["cmap"] = cmap
-        ax = IRISPlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
 
     def apply_dust_mask(self, *, undo=False):
         """
@@ -191,15 +189,14 @@ class SJICube(SpectrogramCube):
             If True, dust particles positions mask will be removed.
             Default=False
         """
-        if self.mask is None:
-            self.mask = np.zeros(self.data.shape, dtype=bool)
         dust_mask = calculate_dust_mask(self.data)
         if undo:
-            # If undo kwarg IS set, unmask dust pixels.
-            self.mask[dust_mask] = False
+            if self.mask is not None:
+                self.mask[dust_mask] = False
             self.dust_masked = False
         else:
-            # If undo kwarg is NOT set, mask dust pixels.
+            if self.mask is None:
+                self.mask = np.zeros(self.shape, dtype=bool)
             self.mask[dust_mask] = True
             self.dust_masked = True
 

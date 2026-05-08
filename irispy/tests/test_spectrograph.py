@@ -1,10 +1,21 @@
 import copy
+from types import SimpleNamespace
 
+import dask.array as da
+import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
+import astropy.units as u
+from astropy.coordinates import SpectralCoord
 from astropy.io import fits
+from astropy.tests.helper import assert_quantity_allclose
 
+from ndcube.utils.exceptions import NDCubeUserWarning
+
+from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
 from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 
 
 def test_fits_data_comparison(sns_sg_file):
@@ -19,20 +30,9 @@ def test_fits_data_comparison(sns_sg_file):
         data1 = copy.deepcopy(hdulist[1].data)
         data2 = copy.deepcopy(hdulist[2].data)
         data3 = copy.deepcopy(hdulist[3].data)
-        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window1].data[0].data, data1)
-        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window2].data[0].data, data2)
-        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window3].data[0].data, data3)
-
-
-def test_spectrogram_cube_slice_preserves_coordinates(sns_sg_file):
-    raster = read_spectrograph_lvl2(sns_sg_file)
-    cube = raster["C II 1336"][0]
-
-    sliced_cube = cube[0]
-    sliced_sequence = cube[:1]
-
-    assert "time" in tuple(sliced_cube.global_coords)
-    assert "time" in tuple(sliced_sequence.extra_coords.keys())
+        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window1].data, data1)
+        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window2].data, data2)
+        np.testing.assert_array_almost_equal(iris_l2_test_raster[spectral_window3].data, data3)
 
 
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
@@ -56,7 +56,7 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
 
     raster = read_spectrograph_lvl2(sns_sg_file)
     key = next(iter(raster.keys()))
-    cube = raster[key][0]
+    cube = raster[key]
     cleaned_cube = cube.remove_cosmic_rays(
         method="astroscrappy",
         sigma=5.0,
@@ -72,9 +72,259 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     assert captured["max_iters"] == 5
     assert captured["method_kwargs"]["batch_size"] == 16
     np.testing.assert_array_equal(captured["mask"], cube.mask)
-    # WCS is deep-copied, so check equivalence not identity
-    assert dict(cleaned_cube.wcs.to_header()) == dict(cube.wcs.to_header())
+    array_index = (3, 20, 10)
+    world = cube.wcs.array_index_to_world(*array_index)
+    assert cleaned_cube.wcs.world_to_array_index(*world) == array_index
     assert list(cleaned_cube.global_coords) == list(cube.global_coords)
     assert cleaned_cube.unit == cube.unit
     # meta is an NDMeta subclass that may contain arrays; compare keys only
     assert set(cleaned_cube.meta.keys()) == set(cube.meta.keys())
+
+
+def test_spectrogram_cube_slice_slices_basic_wcs(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    scan_index = cube.shape[0] // 2
+    step_index = cube.shape[1] // 2
+    segment_cube = cube.raster_slice(scan_index)
+
+    sliced_cube = cube[scan_index, step_index]
+    row_index = sliced_cube.shape[0] // 2
+    column_index = sliced_cube.shape[1] // 2
+
+    assert sliced_cube.basic_wcs is not None
+    assert sliced_cube.basic_wcs.pixel_n_dim == sliced_cube.wcs.pixel_n_dim == 2
+    sliced_spectral, sliced_sky = sliced_cube.basic_wcs.array_index_to_world(row_index, column_index)
+    expected_spectral, expected_sky = segment_cube.basic_wcs.array_index_to_world(step_index, row_index, column_index)
+    assert_quantity_allclose(sliced_spectral.to(u.nm), expected_spectral.to(u.nm))
+    assert_quantity_allclose(sliced_sky.Tx.to(u.arcsec), expected_sky.Tx.to(u.arcsec))
+    assert_quantity_allclose(sliced_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
+
+
+def test_spectrogram_cube_crop_slices_basic_wcs(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"].raster_slice(0)
+    wavelength_index = len(cube.spectral_axis) // 2
+    wavelength = cube.spectral_axis[wavelength_index]
+    image = cube.crop(
+        [SpectralCoord(wavelength), None, None, None],
+        [SpectralCoord(wavelength), None, None, None],
+    )
+    row_index = image.shape[0] // 2
+    column_index = image.shape[1] // 2
+
+    assert image.basic_wcs is not None
+    assert image.basic_wcs.pixel_n_dim == image.wcs.pixel_n_dim == 2
+    image_sky = image.basic_wcs.array_index_to_world(row_index, column_index)
+    _, expected_sky = cube.basic_wcs.array_index_to_world(row_index, column_index, wavelength_index)
+    assert_quantity_allclose(image_sky.Tx.to(u.arcsec), expected_sky.Tx.to(u.arcsec))
+    assert_quantity_allclose(image_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
+
+
+def test_spectrogram_cube_exposes_raster_grouping_helpers(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+
+    assert len(cube.raster_boundaries) == 13
+    assert cube.raster_slice(0).shape == (8, 109, 29)
+    assert len(cube.split_rasters()) == 13
+
+
+def test_spectrogram_cube_supports_crop_apis(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+
+    spectrum = cube.crop(
+        cube.wcs.array_index_to_world(1, 2, 50, 0),
+        cube.wcs.array_index_to_world(1, 2, 50, cube.shape[-1] - 1),
+    )
+    spectrum_by_values = cube.crop_by_values(
+        cube.wcs.array_index_to_world_values(1, 2, 50, 0),
+        cube.wcs.array_index_to_world_values(1, 2, 50, cube.shape[-1] - 1),
+        units=(u.nm, u.arcsec, u.arcsec, u.s, u.pix, u.pix),
+    )
+
+    assert spectrum.data.ndim == 1
+    assert spectrum_by_values.data.ndim == 1
+
+
+def test_spectrogram_cube_scan_slice_recovers_segment_basic_wcs(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+
+    subcube = cube[1]
+    array_index = (2, 50, 10)
+
+    expected_segment = cube.raster_slice(1)
+    assert subcube.shape == expected_segment.shape
+    assert subcube.basic_wcs is not None
+    sub_spectral, sub_sky = subcube.basic_wcs.array_index_to_world(*array_index)
+    expected_spectral, expected_sky = expected_segment.basic_wcs.array_index_to_world(*array_index)
+    assert_quantity_allclose(sub_spectral.to(u.nm), expected_spectral.to(u.nm))
+    assert_quantity_allclose(sub_sky.Tx.to(u.arcsec), expected_sky.Tx.to(u.arcsec))
+    assert_quantity_allclose(sub_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
+
+
+def test_memmap_split_rasters_returns_lazy_subcubes(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
+    cube = raster["Si IV 1403"].split_rasters()[0]
+
+    assert isinstance(cube.data, da.Array)
+    assert isinstance(cube.mask, da.Array)
+    assert cube.uncertainty is None
+    assert cube._memmap is True
+    assert cube.basic_wcs is not None
+    assert cube.shape == (8, 109, 29)
+
+
+def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
+    cube = raster["Si IV 1403"]
+    image = cube.crop(
+        [SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2]), None, None, None, None],
+        [SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2]), None, None, None, None],
+    )
+
+    assert isinstance(cube.data, da.Array)
+    assert isinstance(cube.mask, da.Array)
+    assert cube._memmap is True
+    assert len(cube.raster_boundaries) == 13
+    assert cube.basic_wcs is None
+    assert cube.uncertainty is None
+    assert image.data.ndim == 3
+
+
+def test_memmap_raster_values_match_raw_fits_after_reader_returns(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
+    cube = raster["Si IV 1403"]
+    raster0 = cube.raster_slice(0)
+
+    with fits.open(raster_sg_files[0], memmap=True, do_not_scale_image_data=True) as hdulist:
+        windows = np.array([hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)])
+        window_ext = int(np.where(windows == "Si IV 1403")[0][0]) + 1
+        expected_data = np.array(hdulist[window_ext].data, copy=True)
+
+    np.testing.assert_array_equal(raster0.data.compute(), expected_data)
+    np.testing.assert_array_equal(raster0.mask.compute(), expected_data == BAD_PIXEL_VALUE_UNSCALED)
+
+    np.testing.assert_array_equal(raster0[3, 50, :].data.compute(), expected_data[3, 50])
+
+
+def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True)
+    cube = raster["Si IV 1403"]
+    expected_rows = _lazy_raster_scan_chunk_rows(cube.raster_slice(0))
+
+    assert isinstance(cube.data, da.Array)
+    assert max(cube.data.chunks[1]) == expected_rows
+    assert len(cube.data.chunks[0]) == len(cube.raster_boundaries)
+
+
+def _get_coord(ax, *, coord_type=None, coord_unit=None):
+    for coord in ax.coords:
+        if coord_type is not None and coord.coord_type != coord_type:
+            continue
+        if coord_unit is not None and coord.coord_unit != coord_unit:
+            continue
+        return coord
+    pytest.fail(f"Coordinate with type={coord_type!r} and unit={coord_unit!r} not found.")
+    # Unreachable in practice because pytest.fail raises, but explicit return keeps static analysis happy.
+    return None
+
+
+def test_default_raster_animation_keeps_wavelength_on_bottom(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"].raster_slice(0)
+    fig = plt.figure()
+    animator = cube.plot(fig=fig)
+    ax = animator.axes
+    wavelength = _get_coord(ax, coord_type="scalar", coord_unit=u.nm)
+
+    assert "b" in wavelength.get_ticks_position()
+    assert "b" in wavelength.get_axislabel_position()
+    plt.close(fig)
+
+
+def test_raster_animation_can_show_time_axis(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    fig = plt.figure()
+    with pytest.warns(
+        NDCubeUserWarning,
+        match="Animating a NDCube does not support transposing the array",
+    ):
+        animator = cube.plot(
+            fig=fig,
+            plot_axes=["x", "y", None, None],
+            axes_coordinates=["time", "custom:pos.helioprojective.lat", None, None],
+            vmin=0,
+            vmax=1000,
+        )
+    ax = animator.axes
+    longitude = _get_coord(ax, coord_type="longitude")
+    latitude = _get_coord(ax, coord_type="latitude")
+    time = _get_coord(ax, coord_type="scalar", coord_unit=u.s)
+    step = _get_coord(ax, coord_type="scalar", coord_unit=u.pix)
+
+    assert "b" in time.get_ticks_position()
+    assert "b" in time.get_axislabel_position()
+    assert "r" in step.get_ticks_position()
+    assert latitude.get_axislabel()
+    assert longitude.get_axislabel()
+    plt.close(fig)
+
+
+def test_raster_animation_keeps_longitude_axis_after_slider_update(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    fig = plt.figure()
+    with pytest.warns(
+        NDCubeUserWarning,
+        match="Animating a NDCube does not support transposing the array",
+    ):
+        animator = cube.plot(fig=fig, plot_axes=["x", "y", None, None], vmin=0, vmax=1000)
+
+    class _DummyText:
+        def set_text(self, _):
+            return None
+
+    slider = SimpleNamespace(cval=0, slider_ind=0, valtext=_DummyText())
+    animator.update_plot(1, animator.im, slider)
+    ax = animator.axes
+    longitude = _get_coord(ax, coord_type="longitude")
+    latitude = _get_coord(ax, coord_type="latitude")
+    time = _get_coord(ax, coord_type="scalar", coord_unit=u.s)
+
+    assert longitude.get_axislabel()
+    assert latitude.get_axislabel()
+    assert time.get_axislabel()
+    plt.close(fig)
+
+
+def test_spectrogram_cube_fancy_indexing_strips_raster_metadata(raster_sg_files):
+    """
+    Non-standard indices (arrays, booleans) cannot preserve per-raster WCS bridges.
+    """
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+
+    # _normalize_basic_wcs_item returns None for non-standard indices
+    fancy_item = (np.array([0, 2, 4]), slice(None), slice(None), slice(None))
+    assert cube._normalize_basic_wcs_item(fancy_item) is None
+
+    # Verify _slice_raster_metadata strips metadata when normalization fails
+    sliced = cube[0:1]
+    cube._slice_raster_metadata(fancy_item, sliced)
+    assert sliced._basic_wcs_segments is None
+    assert sliced._raster_boundaries is None
+
+
+def test_spectrogram_cube_slice_preserves_coordinates(raster_sg_files):
+    """
+    Slicing a raster cube should preserve global coords and extra coord keys.
+    """
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    sliced = cube[0:1]
+    assert sliced.global_coords == cube.global_coords
+    assert list(sliced.extra_coords.keys()) == list(cube.extra_coords.keys())

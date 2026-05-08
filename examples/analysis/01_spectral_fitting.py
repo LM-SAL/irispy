@@ -51,27 +51,27 @@ raster_filename = pooch.retrieve(
 ###############################################################################
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
-# We read only the Si IV 1403 window and select the one complete scan.
+# We read only the Si IV 1403 window.
 
 raster = read_files(raster_filename, spectral_windows="Si IV 1403")
-si_iv_1403 = raster["Si IV 1403"][0]
+si_iv_1403 = raster["Si IV 1403"]
 
 ###############################################################################
 # However, before we get to fitting, we will shrink the data cube to make it easier to work with.
 # This is done primarily to speed up the fitting process on the online documentation build.
 
-iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
+iris_observer = wcs_to_celestial_frame(si_iv_1403.basic_wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-bottom_right = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
-si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
+top_left = SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)
+bottom_right = SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)
+si_iv_1403 = si_iv_1403.crop([None, bottom_right, None, None], [None, top_left, None, None])
 
 ###############################################################################
 # Let us just get the full field of view at the line core.
 
 si_iv_core = 140.277 * u.nm
-lower_corner = [SpectralCoord(si_iv_core), None]
-upper_corner = [SpectralCoord(si_iv_core), None]
+lower_corner = [SpectralCoord(si_iv_core), None, None, None]
+upper_corner = [SpectralCoord(si_iv_core), None, None, None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
 ###############################################################################
