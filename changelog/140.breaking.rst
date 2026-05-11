@@ -1,0 +1,3 @@
+``calculate_red_blue_asymmetry`` now takes ``degree`` (int) instead of ``interpolation_kind``
+(str), ``mask_negative`` is removed (negatives are always masked), and ``rest_wavelength``
+defaults to ``None`` (auto-detected from cube metadata).
