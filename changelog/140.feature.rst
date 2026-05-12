@@ -1,2 +1,2 @@
-Add ``rest_wavelength`` and ``detector_band`` properties to metadata classes, and
-``spectral_dispersion`` and ``solid_angle`` properties to ``SpectrogramCube``.
+Add ``rest_wavelength`` and ``detector_band`` properties to the metadata.
+Add ``spectral_dispersion`` and ``solid_angle`` properties to ``SpectrogramCube``.
