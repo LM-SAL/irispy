@@ -32,19 +32,15 @@ def _remove_cosmic_rays_rsliding(
     method_kwargs: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
     slidingsigmaclipping = _import_optional_backend("rsliding", method="rsliding").SlidingSigmaClipping
-    kwargs = {
-        "kernel": 3,
-        "center_choice": "median",
-        "borders": "reflect",
-        "threads": 1,
-        **method_kwargs,
-    }
-    kwargs["sigma"] = sigma if sigma is not None else kwargs.get("sigma", 3.0)
-    kwargs["max_iters"] = max_iters if max_iters is not None else kwargs.get("max_iters", 5)
-    kwargs["masked_array"] = True
+    method_kwargs = dict(method_kwargs)
+    if sigma is not None:
+        method_kwargs["sigma"] = sigma
+    if max_iters is not None:
+        method_kwargs["max_iters"] = max_iters
+    method_kwargs["masked_array"] = True
     working_data = data.astype(np.float64, copy=True)
     working_data[mask] = np.nan
-    clipped = slidingsigmaclipping(data=working_data, **kwargs).clipped
+    clipped = slidingsigmaclipping(data=working_data, **method_kwargs).clipped
     cleaned_data = np.ma.getdata(clipped)
     cosmic_ray_mask = np.asarray(np.ma.getmaskarray(clipped), dtype=bool)
     return cleaned_data, cosmic_ray_mask
@@ -59,10 +55,12 @@ def _remove_cosmic_rays_astroscrappy(
     method_kwargs: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
     astroscrappy = _import_optional_backend("astroscrappy", method="astroscrappy")
-    kwargs = {"verbose": False, **method_kwargs}
-    kwargs["sigclip"] = sigma if sigma is not None else kwargs.get("sigclip", 4.5)
-    kwargs["niter"] = max_iters if max_iters is not None else kwargs.get("niter", 4)
-    inmask = kwargs.pop("inmask", None)
+    method_kwargs = {"verbose": False, **method_kwargs}
+    if sigma is not None:
+        method_kwargs["sigclip"] = sigma
+    if max_iters is not None:
+        method_kwargs["niter"] = max_iters
+    inmask = method_kwargs.pop("inmask", None)
     if inmask is not None:
         mask = mask | np.asarray(inmask, dtype=bool)
     working_data = data.copy()
@@ -70,10 +68,12 @@ def _remove_cosmic_rays_astroscrappy(
     cleaned_data = np.empty_like(working_data)
     cosmic_ray_mask = np.zeros(working_data.shape, dtype=bool)
     if working_data.ndim == 2:
-        cosmic_ray_mask, cleaned_data = astroscrappy.detect_cosmics(working_data, inmask=mask, **kwargs)
+        cosmic_ray_mask, cleaned_data = astroscrappy.detect_cosmics(working_data, inmask=mask, **method_kwargs)
         return cleaned_data, np.asarray(cosmic_ray_mask, dtype=bool)
     for index in np.ndindex(working_data.shape[:-2]):
-        frame_mask, cleaned_frame = astroscrappy.detect_cosmics(working_data[index], inmask=mask[index], **kwargs)
+        frame_mask, cleaned_frame = astroscrappy.detect_cosmics(
+            working_data[index], inmask=mask[index], **method_kwargs
+        )
         cosmic_ray_mask[index] = frame_mask
         cleaned_data[index] = cleaned_frame
     return cleaned_data, cosmic_ray_mask
@@ -95,9 +95,7 @@ def remove_cosmic_rays(
     cube : irispy.sji.SJICube or irispy.spectrograph.SpectrogramCube
         Cube object to clean.
     method : ``{"rsliding", "astroscrappy"}``, optional
-        Cosmic ray removal backend. ``"rsliding"`` is the default and operates on
-        the full array. ``"astroscrappy"`` is applied frame-by-frame over the last
-        two axes.
+        Cosmic ray removal backend.
     sigma : `float`, optional
         Shared clipping threshold override. This maps to ``sigma`` for
         ``rsliding`` and ``sigclip`` for ``astroscrappy``.
@@ -137,7 +135,6 @@ def remove_cosmic_rays(
         msg = f"Unsupported method {method!r}. Supported methods are: {sorted(backends)}."
         raise ValueError(msg)
     cleaned_data, _ = backends[method]()
-
     cleaned_cube_kwargs = {
         "data": cleaned_data,
         "mask": "copy",

@@ -70,7 +70,7 @@ optional-dependencies.docs = [
   "sunpy-sphinx-theme",
 ]
 optional-dependencies.tests = [
-  "irispy-lmsal[cosmic-rays]",
+  "irispy-lmsal[all]",
   "pooch",
   "pytest-astropy",
   "pytest-mpl",
