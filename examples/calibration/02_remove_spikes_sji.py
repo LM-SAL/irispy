@@ -66,15 +66,10 @@ del sji_2832
 # and you will need to read the documentation and experiment with the parameters
 # to find the best solution for your data.
 #
-# One warning is that inside ``irispy``, we do not freeze the default parameters
-# for either backend. Therefore it is possible that in the future, the default
-# parameters for a backend might change in their original package,
-# which will affect the results of this function if you use the default parameters.
-#
 # What we can say that is for ``astroscrappy``, is the defaults work pretty well
 # for SJI data out of the box.
 #
-# A few other notes about ``astroscrappy``:
+# A few other notes about ``astroscrappy``, found running on spectra data:
 #
 # ``astroscrappy`` does not remove small negative dips "flanking" positive spikes, which happens
 # commonly.

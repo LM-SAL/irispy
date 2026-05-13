@@ -64,11 +64,6 @@ raster = raster["Si IV 1403"][10][4]
 # and you will need to read the documentation and experiment with the parameters
 # to find the best solution for your data.
 #
-# One warning is that inside ``irispy``, we do not freeze the default parameters
-# for either backend. Therefore it is possible that in the future, the default
-# parameters for a backend might change in their original package,
-# which will affect the results of this function if you use the default parameters.
-#
 # What we can say that is for ``rsliding``, the main parameter to change is the kernel
 # size, which controls how aggressive the algorithm is in removing spikes.
 # The size will depend on the spectral resolution of the data.
@@ -92,14 +87,14 @@ raster = raster["Si IV 1403"][10][4]
 # For example, these set of parameters was shown to show better treatment of values around
 # any spikes, basically to smooth more around each spike. (Thanks to Juraj).
 method_kwargs = {"kernel": 5, "center_choice": "median", "borders": "reflect"}
-raster_rsliding = raster.remove_cosmic_rays(method="rsliding", method_kwargs=method_kwargs)
+raster_rsliding = raster.remove_cosmic_rays(method="rsliding", sigma=3, method_kwargs=method_kwargs)
 
 ###############################################################################
 # One reason to always be cautious when removing cosmic rays is that you can
 # easily remove real features in the data if you are too aggressive.
 # For example, in this case, we have a strong Si IV 1403 line at around row 246,
-# which is removed as a spike by both algorithms.
-# But we will look at a different row instead, which has a cleaner profile for Si IV 1403.
+# which is removed as a spike. But we will look at a different row instead,
+# which has a cleaner profile for Si IV 1403.
 
 si_iv_idx = 66
 
