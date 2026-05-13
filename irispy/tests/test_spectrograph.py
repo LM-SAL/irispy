@@ -2,9 +2,12 @@ import copy
 
 import numpy as np
 
+import astropy.units as u
 from astropy.io import fits
 
 from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.tests.helpers import make_test_spectrogram_cube
+from irispy.utils.constants import SLIT_WIDTH
 
 
 def test_fits_data_comparison(sns_sg_file):
@@ -78,3 +81,26 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     assert cleaned_cube.unit == cube.unit
     # meta is an NDMeta subclass that may contain arrays; compare keys only
     assert set(cleaned_cube.meta.keys()) == set(cube.meta.keys())
+
+
+def test_spectral_dispersion():
+    wavelengths = np.arange(10) * 0.02 * u.nm + 140 * u.nm
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 10)), wavelengths)
+    dispersion = cube.spectral_dispersion
+    assert dispersion.unit.is_equivalent(u.nm)
+    assert u.isclose(dispersion, 0.02 * u.nm, rtol=0.01)
+
+
+def test_solid_angle():
+    wavelengths = np.arange(10) * 0.02 * u.nm + 140 * u.nm
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 10)), wavelengths)
+    angle = cube.solid_angle
+    assert angle.unit.is_equivalent(u.sr)
+    expected = 1.0 * u.arcsec * SLIT_WIDTH
+    assert u.isclose(angle.to(u.sr), expected.to(u.sr), rtol=0.01)
+
+
+def test_wavelength_axis():
+    wavelengths = np.arange(10) * 0.02 * u.nm + 140 * u.nm
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 10)), wavelengths)
+    assert cube.wavelength_axis == 2
