@@ -34,8 +34,7 @@ def test_sgmeta_rest_wavelength_no_twave():
     header = _make_sg_header()
     del header["TWAVE1"]
     meta = SGMeta(header, "Si IV 1403")
-    with pytest.raises((KeyError, TypeError)):
-        _ = meta.rest_wavelength
+    assert meta.rest_wavelength is None
 
 
 def test_sgmeta_detector_band_fuv():
@@ -88,6 +87,14 @@ def test_sgmeta_temporal_cadence(date_start, date_end, n_frames, expect_none):
         end = Time(date_end)
         expected = (end - start) / (n_frames - 1)
         assert u.allclose(cadence.to(u.s), expected.to(u.s), rtol=0, atol=1e-6 * u.s)
+
+
+def test_sgmeta_temporal_cadence_no_data_shape():
+    header = _make_sg_header()
+    header["DATE_OBS"] = "2013-07-24T00:00:00.000"
+    header["DATE_END"] = "2013-07-24T00:00:09.000"
+    meta = SGMeta(header, "Si IV 1403")
+    assert meta.temporal_cadence is None
 
 
 def test_sgmeta_real_sns_data(sns_sg_file):

@@ -77,11 +77,13 @@ class BaseMeta(NDMeta):
         date_end = self.date_end
         if date_start is None or date_end is None:
             return None
-        duration = (date_end - date_start).to(u.s)
-        n_frames = self.data_shape[0] if len(self.data_shape) > 0 else None
-        if n_frames is None or n_frames <= 1:
+        shape = self.data_shape
+        if shape is None or len(shape) == 0:
             return None
-        return duration / (n_frames - 1)
+        n_frames = shape[0]
+        if n_frames <= 1:
+            return None
+        return (date_end - date_start).to(u.s) / (n_frames - 1)
 
     @property
     def observing_mode_id(self):
@@ -185,9 +187,15 @@ class BaseMeta(NDMeta):
         Rest wavelength of the spectral line for this window.
 
         Read from the ``TWAVE<n>`` FITS keyword and returned in nm.
+        Returns `None` if the keyword is absent or non-numeric.
         """
         value = self.get(f"TWAVE{self._iwin}")
-        return (value * u.AA).to(u.nm)
+        if value is None:
+            return None
+        try:
+            return (float(value) * u.AA).to(u.nm)
+        except (TypeError, ValueError):
+            return None
 
     @property
     def raster_fov_width_y(self):
