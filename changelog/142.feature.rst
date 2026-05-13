@@ -1,0 +1,1 @@
+Add ``rest_wavelength``, ``detector_band``, and ``temporal_cadence`` properties to the metadata.
