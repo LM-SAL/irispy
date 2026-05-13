@@ -72,18 +72,14 @@ class BaseMeta(NDMeta):
     def temporal_cadence(self):
         """
         Average time between exposures along the first axis.
+
+        Read from the ``CADEX_AV`` FITS keyword (in seconds).
+        Returns `None` if the keyword is absent.
         """
-        date_start = self.date_start
-        date_end = self.date_end
-        if date_start is None or date_end is None:
-            return None
-        shape = self.data_shape
-        if shape is None or len(shape) == 0:
-            return None
-        n_frames = shape[0]
-        if n_frames <= 1:
-            return None
-        return (date_end - date_start).to(u.s) / (n_frames - 1)
+        value = self.get("CADEX_AV")
+        if value is not None:
+            return float(value) * u.s
+        return None
 
     @property
     def observing_mode_id(self):
