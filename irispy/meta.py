@@ -69,6 +69,21 @@ class BaseMeta(NDMeta):
         return self._construct_time("DATE_END")
 
     @property
+    def temporal_cadence(self):
+        """
+        Average time between exposures along the first axis.
+        """
+        date_start = self.date_start
+        date_end = self.date_end
+        if date_start is None or date_end is None:
+            return None
+        duration = (date_end - date_start).to(u.s)
+        n_frames = self.data_shape[0] if len(self.data_shape) > 0 else None
+        if n_frames is None or n_frames <= 1:
+            return None
+        return duration / (n_frames - 1)
+
+    @property
     def observing_mode_id(self):
         return int(self.get("OBSID"))
 
@@ -146,6 +161,33 @@ class BaseMeta(NDMeta):
         The spectral band of the spectral window.
         """
         return SPECTRAL_BAND.get(self.spectral_window, self.spectral_window)
+
+    @property
+    def detector_band(self):
+        """
+        Normalized detector band: ``'FUV'``, ``'NUV'``, or ``'SJI'``.
+
+        Derived from :attr:`detector` by stripping the trailing digit (e.g. ``'FUV2'`` →
+        ``'FUV'``). For non-IRIS detectors the original string is returned unchanged.
+        """
+        det = self.detector
+        if det is None:
+            return None
+        det_upper = det.upper()
+        for band in ("FUV", "NUV", "SJI"):
+            if det_upper.startswith(band):
+                return band
+        return det
+
+    @property
+    def rest_wavelength(self):
+        """
+        Rest wavelength of the spectral line for this window.
+
+        Read from the ``TWAVE<n>`` FITS keyword and returned in nm.
+        """
+        value = self.get(f"TWAVE{self._iwin}")
+        return (value * u.AA).to(u.nm)
 
     @property
     def raster_fov_width_y(self):
