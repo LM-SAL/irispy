@@ -3,6 +3,7 @@ import textwrap
 import numpy as np
 
 import astropy.units as u
+from astropy.constants import R_sun as _R_SUN
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
@@ -70,12 +71,7 @@ class BaseMeta(NDMeta):
         rsun = self.get("RSUN_OBS")
         if rsun is not None:
             return float(rsun) * u.arcsec
-        dsun = self.get("DSUN_OBS")
-        if dsun is not None:
-            from astropy.constants import R_sun
-
-            return np.arctan(R_sun.to(u.m).value / float(dsun)) * u.rad
-        return None
+        return np.arctan(_R_SUN.to(u.m).value / float(self.get("DSUN_OBS"))) * u.rad
 
     @property
     def observer_radial_velocity(self):
@@ -84,10 +80,7 @@ class BaseMeta(NDMeta):
 
         Read from ``OBS_VR``.
         """
-        value = self.get("OBS_VR")
-        if value is not None:
-            return float(value) * u.m / u.s
-        return None
+        return float(self.get("OBS_VR")) * u.m / u.s
 
     @property
     def distance_to_sun(self):

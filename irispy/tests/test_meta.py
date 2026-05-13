@@ -92,13 +92,7 @@ def test_sgmeta_sun_angular_radius_from_dsun():
     header["DSUN_OBS"] = 1.5e11
     meta = SGMeta(header, "Si IV 1403", data_shape=(10, 2, 2))
     radius = meta.sun_angular_radius
-    assert radius is not None
     assert radius.unit.is_equivalent(u.arcsec)
-
-
-def test_sgmeta_sun_angular_radius_missing():
-    meta = SGMeta(_make_sg_header(), "Si IV 1403", data_shape=(10, 2, 2))
-    assert meta.sun_angular_radius is None
 
 
 def test_sgmeta_observer_radial_velocity():
@@ -106,11 +100,6 @@ def test_sgmeta_observer_radial_velocity():
     header["OBS_VR"] = 3500.0
     meta = SGMeta(header, "Si IV 1403", data_shape=(10, 2, 2))
     assert u.isclose(meta.observer_radial_velocity, 3500.0 * u.m / u.s)
-
-
-def test_sgmeta_observer_radial_velocity_missing():
-    meta = SGMeta(_make_sg_header(), "Si IV 1403", data_shape=(10, 2, 2))
-    assert meta.observer_radial_velocity is None
 
 
 def test_sgmeta_number_of_spectral_windows():
