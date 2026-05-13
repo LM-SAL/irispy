@@ -150,11 +150,20 @@ class SpectrogramCube(SpecCube):
         )
 
     @property
+    def _fits_wcs(self):
+        """
+        Underlying FITS WCS object, unwrapped if necessary.
+        """
+        if hasattr(self.wcs, "wcs"):
+            return self.wcs.wcs
+        return unwrap_wcs_to_fitswcs(self.wcs)[0].wcs
+
+    @property
     def spectral_dispersion(self):
         """
         Spectral dispersion per pixel along the wavelength axis.
         """
-        wcs = unwrap_wcs_to_fitswcs(self.wcs)[0].wcs if not hasattr(self.wcs, "wcs") else self.wcs.wcs
+        wcs = self._fits_wcs
         mask = np.array([ctype == "WAVE" for ctype in wcs.ctype])
         if not mask.any():
             msg = "Cannot determine spectral axis (no WAVE ctype in WCS) for spectral_dispersion"
@@ -167,7 +176,7 @@ class SpectrogramCube(SpecCube):
         """
         Solid angle per spatial pixel (slit width x spatial pixel scale).
         """
-        wcs = unwrap_wcs_to_fitswcs(self.wcs)[0].wcs if not hasattr(self.wcs, "wcs") else self.wcs.wcs
+        wcs = self._fits_wcs
         mask = np.array(["HPLT" in ctype for ctype in wcs.ctype])
         if not mask.any():
             msg = "Cannot determine latitude axis (no HPLT ctype in WCS) for solid_angle computation"
@@ -180,11 +189,15 @@ class SpectrogramCube(SpecCube):
         """
         Index of the spectral (wavelength) axis.
         """
-        return next(
-            axis
-            for axis, physical_types in enumerate(self.array_axis_physical_types)
-            if physical_types and "em.wl" in physical_types
-        )
+        try:
+            return next(
+                axis
+                for axis, physical_types in enumerate(self.array_axis_physical_types)
+                if physical_types and "em.wl" in physical_types
+            )
+        except StopIteration:
+            msg = "Could not identify a spectral wavelength axis on the cube"
+            raise ValueError(msg) from None
 
 
 class SpectrogramCubeSequence(SpecSeq):

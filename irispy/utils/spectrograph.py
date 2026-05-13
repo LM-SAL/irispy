@@ -31,7 +31,7 @@ def radiometric_calibration(
 
     This takes into account the spectral dispersion and solid angle of the pixels
     based on the WCS, which is different from the IDL code that does not take spectral
-    dispersion into account. If you want the same results as the IDL code, can multiply
+    dispersion into account. If you want the same results as the IDL code, you can multiply
     the output by the spectral dispersion.
 
     Parameters
@@ -60,11 +60,7 @@ def radiometric_calibration(
     spectral_dispersion_per_pixel = cube.spectral_dispersion
     solid_angle = cube.solid_angle
     # Get wavelength for each pixel.
-    wavelength_axis_index = next(
-        axis
-        for axis, physical_types in enumerate(cube.array_axis_physical_types)
-        if physical_types and "em.wl" in physical_types
-    )
+    wavelength_axis_index = cube.wavelength_axis
     wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
     time_obs = cube.meta.date_reference
     iris_response = get_latest_response(time_obs)
@@ -137,7 +133,7 @@ def convert_photons_per_sec_to_radiance(
     This is designed to do the same as `nrl/iris_calib.pro <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/nrl/iris_calib.pro>`__ IDL code.
     The difference is that this function takes into account the spectral dispersion which the IDL code
     does not.
-    To get the same results as the IDL code, can multiply the output by the spectral dispersion
+    To get the same results as the IDL code, you can multiply the output by the spectral dispersion
     or set the keyword to have the value of 1 Angstrom.
     """
     for i, data in enumerate(data_quantities):
