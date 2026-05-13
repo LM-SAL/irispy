@@ -6,7 +6,7 @@ Remove Cosmic Rays from IRIS SG data
 This example illustrates how to remove cosmic ray hits from IRIS spectrograph data.
 
 We will use ``rsliding`` backend, which has to be installed separately using ``pip`` or ``conda``.
-We select ``rsliding`` for the SG data, is that it is considered the better solution for spectral data.
+We select ``rsliding`` for the SG data because it is considered the better solution for spectral data.
 
 To understand ``rsliding``, how it works and what are allowed parameters, we suggest you read the original
 documentation:
@@ -61,13 +61,13 @@ raster = raster["Si IV 1403"][10][4]
 # In addition, there is a lot of optional parameters that can be tweaked, which might
 # improve the results for your data and science case or make it worse.
 # Unfortunately, there is no one-size-fits-all solution for cosmic ray removal,
-# and you will need read the documentation and experiment with the parameters
+# and you will need to read the documentation and experiment with the parameters
 # to find the best solution for your data.
 #
 # One warning is that inside ``irispy``, we do not freeze the default parameters
 # for either backend. Therefore it is possible that in the future, the default
 # parameters for a backend might change in their original package,
-# which will affect the results of this function if you use the default parameters. .
+# which will affect the results of this function if you use the default parameters.
 #
 # What we can say that is for ``rsliding``, the main parameter to change is the kernel
 # size, which controls how aggressive the algorithm is in removing spikes.

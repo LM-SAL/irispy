@@ -6,7 +6,7 @@ Remove Cosmic Rays from IRIS SJI data
 This example illustrates how to remove cosmic ray hits from IRIS SJI data.
 
 We will use the ``astroscrappy`` backend, which has to be installed separately using ``pip`` or ``conda``.
-We select ``astroscrappy`` for the SJI data, is that it is considered the better solution for imaging data.
+We select ``astroscrappy`` for the SJI data because it is considered the better solution for imaging data.
 
 To understand ``astroscrappy``, how it works and what are allowed parameters, we suggest you read the original
 documentation:
@@ -56,14 +56,14 @@ del sji_2832
 #
 # ``astroscrappy`` is a more general-purpose cosmic ray removal algorithm that
 # is widely used in the astronomy community for imaging data. Note that this is
-# not the default backend used for `~sirispy.SJICube.remove_cosmic_rays`.
+# not the default backend used for `~irispy.SJICube.remove_cosmic_rays`.
 #
 # ``astroscrappy`` has a set of default parameters that are not necessarily
 # optimal for IRIS data.
 # In addition, there is a lot of optional parameters that can be tweaked, which might
 # improve the results for your data and science case or make it worse.
 # Unfortunately, there is no one-size-fits-all solution for cosmic ray removal,
-# and you will need read the documentation and experiment with the parameters
+# and you will need to read the documentation and experiment with the parameters
 # to find the best solution for your data.
 #
 # One warning is that inside ``irispy``, we do not freeze the default parameters
