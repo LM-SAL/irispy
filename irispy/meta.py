@@ -71,15 +71,9 @@ class BaseMeta(NDMeta):
     @property
     def temporal_cadence(self):
         """
-        Average time between exposures along the first axis.
-
-        Read from the ``CADEX_AV`` FITS keyword (in seconds).
-        Returns `None` if the keyword is absent.
+        Average time between exposures.
         """
-        value = self.get("CADEX_AV")
-        if value is not None:
-            return float(value) * u.s
-        return None
+        return float(self.get("CADEX_AV")) * u.s
 
     @property
     def observing_mode_id(self):
@@ -165,30 +159,18 @@ class BaseMeta(NDMeta):
         """
         Detector band: ``'FUV'``, ``'NUV'``, or ``'SJI'``.
         """
-        det = self.detector
-        if det is None:
-            return None
-        det_upper = det.upper()
-        for band in ("FUV", "NUV", "SJI"):
-            if det_upper.startswith(band):
-                return band
-        return det
+        det_upper = self.detector.upper()
+        return next(
+            (band for band in ("FUV", "NUV", "SJI") if det_upper.startswith(band)),
+            det_upper,
+        )
 
     @property
     def rest_wavelength(self):
         """
         Rest wavelength of the spectral line for this window.
-
-        Read from the ``TWAVE<n>`` FITS keyword and returned in nm.
-        Returns `None` if the keyword is absent or non-numeric.
         """
-        value = self.get(f"TWAVE{self._iwin}")
-        if value is None:
-            return None
-        try:
-            return (float(value) * u.AA).to(u.nm)
-        except (TypeError, ValueError):
-            return None
+        return (float(self.get(f"TWAVE{self._iwin}")) * u.AA).to(u.nm)
 
     @property
     def raster_fov_width_y(self):

@@ -1,5 +1,3 @@
-import pytest
-
 import astropy.units as u
 from astropy.io import fits
 
@@ -27,13 +25,6 @@ def test_sgmeta_rest_wavelength():
     meta = SGMeta(_make_sg_header(), "Si IV 1403")
     assert meta.rest_wavelength.unit == u.nm
     assert u.isclose(meta.rest_wavelength, 140.277 * u.nm, rtol=1e-4)
-
-
-def test_sgmeta_rest_wavelength_no_twave():
-    header = _make_sg_header()
-    del header["TWAVE1"]
-    meta = SGMeta(header, "Si IV 1403")
-    assert meta.rest_wavelength is None
 
 
 def test_sgmeta_detector_band_fuv():
@@ -66,13 +57,7 @@ def test_sgmeta_temporal_cadence():
     header["CADEX_AV"] = 9.264
     meta = SGMeta(header, "Si IV 1403", data_shape=(10, 2, 2))
     cadence = meta.temporal_cadence
-    assert cadence is not None
     assert u.isclose(cadence, 9.264 * u.s, rtol=1e-4)
-
-
-def test_sgmeta_temporal_cadence_missing():
-    meta = SGMeta(_make_sg_header(), "Si IV 1403")
-    assert meta.temporal_cadence is None
 
 
 def test_sgmeta_real_sns_data(sns_sg_file):
@@ -83,5 +68,4 @@ def test_sgmeta_real_sns_data(sns_sg_file):
     assert meta.detector_band == "FUV"
     assert meta.rest_wavelength.unit == u.nm
     assert u.isclose(meta.rest_wavelength, 140.277 * u.nm, rtol=1e-3)
-    assert meta.temporal_cadence is not None
     assert meta.temporal_cadence.unit.is_equivalent(u.s)
