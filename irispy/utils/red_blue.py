@@ -393,12 +393,14 @@ def calculate_red_blue_asymmetry(
     if rest_wavelength is None:
         try:
             rest_wavelength = cube.meta.rest_wavelength
-        except (AttributeError, TypeError) as exc:
+        except AttributeError as exc:
+            pass
+        if rest_wavelength is None:
             msg = (
                 "rest_wavelength was not provided and could not be read from cube.meta. "
                 "Pass rest_wavelength explicitly or provide a cube with SGMeta containing TWAVE keywords."
             )
-            raise ValueError(msg) from exc
+            raise ValueError(msg)
     rest_wavelength = u.Quantity(rest_wavelength).to(u.nm)
 
     velocity_range = u.Quantity(velocity_range).to(u.km / u.s)
