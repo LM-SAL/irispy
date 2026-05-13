@@ -163,10 +163,7 @@ class BaseMeta(NDMeta):
     @property
     def detector_band(self):
         """
-        Normalized detector band: ``'FUV'``, ``'NUV'``, or ``'SJI'``.
-
-        Derived from :attr:`detector` by stripping the trailing digit (e.g. ``'FUV2'`` →
-        ``'FUV'``). For non-IRIS detectors the original string is returned unchanged.
+        Detector band: ``'FUV'``, ``'NUV'``, or ``'SJI'``.
         """
         det = self.detector
         if det is None:
