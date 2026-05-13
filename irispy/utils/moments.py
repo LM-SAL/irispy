@@ -1,6 +1,8 @@
 """
-This module provides spectral moment calculation utilities for IRIS spectrogram cubes.
+Spectral moment calculation utilities for IRIS spectrogram cubes.
 """
+
+import contextlib
 
 import numpy as np
 
@@ -30,8 +32,6 @@ def _parse_wings(wings):
     raise TypeError(msg)
 
 
-# NOTE: We do not use @u.quantity_input because it cannot validate tuple
-# Quantities like ``(0.05, 0.15) * u.Angstrom`` for the ``wings`` argument.
 def calculate_moments(
     cube, *, rest_wavelength=None, wings=None, integrated=False, min_intensity=None, saturation_limit=None
 ):
@@ -50,7 +50,10 @@ def calculate_moments(
     cube : `irispy.spectrograph.SpectrogramCube`
         The input data cube. Must have a spectral (wavelength) axis.
     rest_wavelength : `astropy.units.Quantity`, optional
-        The rest wavelength of the spectral line. Required if ``wings`` is given.
+        The rest wavelength of the spectral line. If omitted, read from
+        ``cube.meta.rest_wavelength`` (requires an `~irispy.meta.SGMeta`
+        instance with a ``TWAVE<n>`` FITS keyword). Required if ``wings``
+        is given and no rest wavelength can be auto-detected.
     wings : `astropy.units.Quantity`, optional
         The spectral range around ``rest_wavelength`` to include in the calculation.
         Must be an `~astropy.units.Quantity` with appropriate units (e.g., nm or Angstrom).
@@ -61,15 +64,12 @@ def calculate_moments(
         with units of ``DN·nm``. If `False` (default), it is computed as :math:`\sum I(\lambda)`
         with units of ``DN`` (i.e., per-pixel sum, matching the convention used in
         Gaussian fitting).
-    min_intensity : `float`, optional
+    min_intensity : `float` or `astropy.units.Quantity`, optional
         Minimum integrated (or per-pixel) intensity required for a pixel to be
-        considered valid. Pixels with intensity **below** this value have all
-        their moments (including intensity) set to NaN. Useful for excluding
-        noisy low-signal pixels.
-    saturation_limit : `float`, optional
-        Maximum allowed peak intensity in any spectral bin. Pixels where any
-        bin in the (cropped) profile exceeds this value are treated as
-        saturated and have all their moments set to NaN.
+        considered valid. Pixels below this value have all moments set to NaN.
+    saturation_limit : `float` or `astropy.units.Quantity`, optional
+        Maximum allowed peak intensity in any spectral bin. Pixels exceeding
+        this value have all moments set to NaN.
 
     Returns
     -------
@@ -83,14 +83,14 @@ def calculate_moments(
         * ``"centroid"`` — 1st moment (centroid wavelength)
         * ``"width"`` — 2nd moment (standard deviation)
 
-        Additionally, if ``rest_wavelength`` is provided:
+        Additionally, if ``rest_wavelength`` is known:
 
         * ``"velocity"`` — Doppler shift from the centroid in km/s
         * ``"velocity_width"`` — line width converted to velocity units in km/s
 
     Notes
     -----
-    * Negative and non-finite (NaN/inf) data values are set to zero before computing moments.
+    * Negative and non-finite data values are set to zero before computing moments.
     * Wavelength coordinates are converted to **nm** internally, so ``centroid`` and ``width``
       are always returned in nm.
     * For a uniform spectral grid, the 1st and 2nd moments are identical regardless of the
@@ -102,13 +102,12 @@ def calculate_moments(
     * `arXiv:2005.02029, Section 3.1 <https://arxiv.org/abs/2005.02029>`__
     * `Færder et al. (2024), ApJ, Appendix C <https://iopscience.iop.org/article/10.3847/1538-4357/ac4223>`__
     """
+    if rest_wavelength is None:
+        with contextlib.suppress(AttributeError, TypeError):
+            rest_wavelength = cube.meta.rest_wavelength
     try:
-        wavelength_axis = next(
-            axis
-            for axis, physical_types in enumerate(cube.array_axis_physical_types)
-            if physical_types and "em.wl" in physical_types
-        )
-    except StopIteration as exc:
+        wavelength_axis = cube.wavelength_axis
+    except (AttributeError, StopIteration) as exc:
         msg = "Could not identify a spectral wavelength axis on the input cube"
         raise ValueError(msg) from exc
     wavelengths = cube.axis_world_coords(wavelength_axis)[0]
@@ -119,7 +118,7 @@ def calculate_moments(
     mask = None if cube.mask is None else np.asarray(cube.mask, dtype=bool)
     if wings is not None:
         if rest_wavelength is None:
-            msg = "rest_wavelength must be provided when wings is given"
+            msg = "rest_wavelength must be provided (or detectable from cube metadata) when wings is given"
             raise ValueError(msg)
         rest_wavelength = u.Quantity(rest_wavelength)
         wing_low, wing_high = _parse_wings(wings)
@@ -141,32 +140,27 @@ def calculate_moments(
     if mask is not None:
         data[mask] = 0
     data[(data < 0) | ~np.isfinite(data)] = 0
-    # Calculate wavelength step (assumed uniform)
+
     dwvl = np.mean(np.diff(wavelengths))
-    # Move wavelength axis to the end for vectorised computation
     data_moved = np.moveaxis(data, wavelength_axis, -1)
     wvls = wavelengths.value
-    # Broadcast wavelengths to match moved data shape
     broadcast_shape = [1] * data_moved.ndim
     broadcast_shape[-1] = -1
     wvls_broadcast = wvls.reshape(broadcast_shape)
     dwvl_value = dwvl.value
-    # Weights for moment calculation: integrated (x dλ) or per-pixel
+
     if integrated:
         weights = data_moved * dwvl_value
         intensity_unit = cube.unit * dwvl.unit
     else:
         weights = data_moved
         intensity_unit = cube.unit
-    # 0th moment
+
     intensity_value = np.nansum(weights, axis=-1)
-    # 1st and 2nd moments are ratios where the weighting cancels out,
-    # so the result is the same for uniform dλ regardless of ``integrated``.
     intensity_nonzero = intensity_value != 0
     centroid_numerator = np.nansum(weights * wvls_broadcast, axis=-1)
     with np.errstate(invalid="ignore"):
         centroid_value = np.where(intensity_nonzero, centroid_numerator / intensity_value, np.nan)
-    # 2nd moment (variance)
     variance_numerator = np.nansum(((wvls_broadcast - centroid_value[..., np.newaxis]) ** 2) * weights, axis=-1)
     with np.errstate(invalid="ignore"):
         variance_value = np.where(intensity_nonzero, variance_numerator / intensity_value, np.nan)
@@ -174,37 +168,29 @@ def calculate_moments(
     stddev_value = np.sqrt(variance_value)
 
     if min_intensity is not None:
-        if isinstance(min_intensity, u.Quantity):
-            min_intensity_value = min_intensity.to_value(intensity_unit)
-        else:
-            min_intensity_value = min_intensity
+        min_intensity_value = (
+            min_intensity.to_value(intensity_unit) if isinstance(min_intensity, u.Quantity) else min_intensity
+        )
         low_intensity = intensity_value < min_intensity_value
         intensity_value = np.where(low_intensity, np.nan, intensity_value)
         centroid_value = np.where(low_intensity, np.nan, centroid_value)
         stddev_value = np.where(low_intensity, np.nan, stddev_value)
 
     if saturation_limit is not None:
-        peak_value = np.max(data_moved, axis=-1)
-        if isinstance(saturation_limit, u.Quantity):
-            saturation_limit_value = saturation_limit.to_value(cube.unit)
-        else:
-            saturation_limit_value = saturation_limit
-        saturated = peak_value > saturation_limit_value
+        saturation_limit_value = (
+            saturation_limit.to_value(cube.unit) if isinstance(saturation_limit, u.Quantity) else saturation_limit
+        )
+        saturated = np.max(data_moved, axis=-1) > saturation_limit_value
         intensity_value = np.where(saturated, np.nan, intensity_value)
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)
 
     template = make_spatial_template(cube, wavelength_axis)
-
-    intensity_cube = make_map_cube(template, intensity_value, intensity_unit, mask_invalid=True)
-    centroid_cube = make_map_cube(template, centroid_value, wavelengths.unit, mask_invalid=True)
-    width_cube = make_map_cube(template, stddev_value, wavelengths.unit, mask_invalid=True)
     cubes = [
-        ("intensity", intensity_cube),
-        ("centroid", centroid_cube),
-        ("width", width_cube),
+        ("intensity", make_map_cube(template, intensity_value, intensity_unit, mask_invalid=True)),
+        ("centroid", make_map_cube(template, centroid_value, wavelengths.unit, mask_invalid=True)),
+        ("width", make_map_cube(template, stddev_value, wavelengths.unit, mask_invalid=True)),
     ]
-    # Compute velocity equivalents when rest_wavelength is known
     if rest_wavelength is not None:
         rest_wavelength = u.Quantity(rest_wavelength)
         with np.errstate(invalid="ignore"):
@@ -218,9 +204,13 @@ def calculate_moments(
                 / rest_wavelength
                 * constants.c.to(u.km / u.s)
             )
-        velocity_cube = make_map_cube(template, velocity_value.value, velocity_value.unit, mask_invalid=True)
-        velocity_width_cube = make_map_cube(
-            template, velocity_width_value.value, velocity_width_value.unit, mask_invalid=True
+        cubes.extend(
+            [
+                ("velocity", make_map_cube(template, velocity_value.value, velocity_value.unit, mask_invalid=True)),
+                (
+                    "velocity_width",
+                    make_map_cube(template, velocity_width_value.value, velocity_width_value.unit, mask_invalid=True),
+                ),
+            ]
         )
-        cubes.extend([("velocity", velocity_cube), ("velocity_width", velocity_width_cube)])
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
