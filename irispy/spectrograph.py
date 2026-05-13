@@ -3,11 +3,15 @@ import textwrap
 import matplotlib.pyplot as plt
 import numpy as np
 
+import astropy.units as u
+
 from ndcube import NDCollection
+from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
 from sunraster import SpectrogramSequence as SpecSeq
 
+from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.visualization import IRISPlotter, IRISSequencePlotter, set_axis_properties
 
@@ -143,6 +147,43 @@ class SpectrogramCube(SpecCube):
             sigma=sigma,
             max_iters=max_iters,
             method_kwargs=method_kwargs,
+        )
+
+    @property
+    def spectral_dispersion(self):
+        """
+        Spectral dispersion per pixel along the wavelength axis.
+        """
+        wcs = unwrap_wcs_to_fitswcs(self.wcs)[0].wcs if not hasattr(self.wcs, "wcs") else self.wcs.wcs
+        mask = np.array([ctype == "WAVE" for ctype in wcs.ctype])
+        if not mask.any():
+            msg = "Cannot determine spectral axis (no WAVE ctype in WCS) for spectral_dispersion"
+            raise ValueError(msg)
+        idx = np.argmax(mask)
+        return wcs.cdelt[idx] * u.Unit(wcs.cunit[idx])
+
+    @property
+    def solid_angle(self):
+        """
+        Solid angle per spatial pixel (slit width x spatial pixel scale).
+        """
+        wcs = unwrap_wcs_to_fitswcs(self.wcs)[0].wcs if not hasattr(self.wcs, "wcs") else self.wcs.wcs
+        mask = np.array(["HPLT" in ctype for ctype in wcs.ctype])
+        if not mask.any():
+            msg = "Cannot determine latitude axis (no HPLT ctype in WCS) for solid_angle computation"
+            raise ValueError(msg)
+        lat_idx = np.argmax(mask)
+        return wcs.cdelt[lat_idx] * u.Unit(wcs.cunit[lat_idx]) * SLIT_WIDTH
+
+    @property
+    def wavelength_axis(self):
+        """
+        Index of the spectral (wavelength) axis.
+        """
+        return next(
+            axis
+            for axis, physical_types in enumerate(self.array_axis_physical_types)
+            if physical_types and "em.wl" in physical_types
         )
 
 

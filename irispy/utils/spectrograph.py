@@ -7,10 +7,8 @@ import numpy as np
 import astropy.units as u
 from astropy import constants
 
-from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
-
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
-from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
+from irispy.utils.constants import RADIANCE_UNIT
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
 __all__ = [
@@ -31,15 +29,10 @@ def radiometric_calibration(
 
     The data is also exposure time corrected during the conversion.
 
-    This takes into account the spectral dispersion and solid angle of the pixels based on the WCS.
-    Which is different from the IDL code as does not take spectral dispersion into account.
-    If you want the same results as the IDL code, can multiply the output by the spectral dispersion.
-
-    The spectral dispersion and solid angle are calculated using the WCS information.
-    The wavelength axis and spatial axis should be determined dynamically from the WCS, rather than assuming fixed axis indices.
-    For example, the spectral dispersion is calculated as ``cube.wcs.wcs.cdelt[wavelength_axis] * cube.wcs.wcs.cunit[wavelength_axis]``,
-    and the solid angle as ``cube.wcs.wcs.cdelt[spatial_axis] * cube.wcs.wcs.cunit[spatial_axis] * SLIT_WIDTH``,
-    where ``wavelength_axis`` and ``spatial_axis`` are determined from the WCS.
+    This takes into account the spectral dispersion and solid angle of the pixels
+    based on the WCS, which is different from the IDL code that does not take spectral
+    dispersion into account. If you want the same results as the IDL code, can multiply
+    the output by the spectral dispersion.
 
     Parameters
     ----------
@@ -63,15 +56,9 @@ def radiometric_calibration(
     """
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
-    detector_type = cube.meta.detector
-    underlying_wcs = unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs if not hasattr(cube.wcs, "wcs") else cube.wcs.wcs
-    # Get spectral dispersion per pixel.
-    spectral_wcs_index = np.where(np.array(underlying_wcs.ctype) == "WAVE")[0][0]
-    spectral_dispersion_per_pixel = underlying_wcs.cdelt[spectral_wcs_index] * underlying_wcs.cunit[spectral_wcs_index]
-    # Get solid angle from slit width for a pixel.
-    lat_wcs_index = ["HPLT" in c for c in underlying_wcs.ctype]
-    lat_wcs_index = np.arange(len(underlying_wcs.ctype))[lat_wcs_index][0]
-    solid_angle = underlying_wcs.cdelt[lat_wcs_index] * underlying_wcs.cunit[lat_wcs_index] * SLIT_WIDTH
+    detector_type = cube.meta.detector_band
+    spectral_dispersion_per_pixel = cube.spectral_dispersion
+    solid_angle = cube.solid_angle
     # Get wavelength for each pixel.
     wavelength_axis_index = next(
         axis
