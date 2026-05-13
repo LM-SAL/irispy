@@ -2,7 +2,6 @@ import pytest
 
 import astropy.units as u
 from astropy.io import fits
-from astropy.time import Time
 
 from irispy.io.utils import read_files
 from irispy.meta import SGMeta, SJIMeta
@@ -62,38 +61,17 @@ def test_sgmeta_detector_band_sji():
     assert meta.detector_band == "SJI"
 
 
-@pytest.mark.parametrize(
-    ("date_start", "date_end", "n_frames", "expect_none"),
-    [
-        (None, "2013-07-24T00:00:09.000", 10, True),
-        ("2013-07-24T00:00:00.000", None, 10, True),
-        ("2013-07-24T00:00:00.000", "2013-07-24T00:00:09.000", 1, True),
-        ("2013-07-24T00:00:00.000", "2013-07-24T00:00:09.000", 10, False),
-    ],
-)
-def test_sgmeta_temporal_cadence(date_start, date_end, n_frames, expect_none):
+def test_sgmeta_temporal_cadence():
     header = _make_sg_header()
-    if date_start is not None:
-        header["DATE_OBS"] = date_start
-    if date_end is not None:
-        header["DATE_END"] = date_end
-    meta = SGMeta(header, "Si IV 1403", data_shape=(n_frames, 2, 2))
+    header["CADEX_AV"] = 9.264
+    meta = SGMeta(header, "Si IV 1403", data_shape=(10, 2, 2))
     cadence = meta.temporal_cadence
-    if expect_none:
-        assert cadence is None
-    else:
-        assert cadence is not None
-        start = Time(date_start)
-        end = Time(date_end)
-        expected = (end - start) / (n_frames - 1)
-        assert u.allclose(cadence.to(u.s), expected.to(u.s), rtol=0, atol=1e-6 * u.s)
+    assert cadence is not None
+    assert u.isclose(cadence, 9.264 * u.s, rtol=1e-4)
 
 
-def test_sgmeta_temporal_cadence_no_data_shape():
-    header = _make_sg_header()
-    header["DATE_OBS"] = "2013-07-24T00:00:00.000"
-    header["DATE_END"] = "2013-07-24T00:00:09.000"
-    meta = SGMeta(header, "Si IV 1403")
+def test_sgmeta_temporal_cadence_missing():
+    meta = SGMeta(_make_sg_header(), "Si IV 1403")
     assert meta.temporal_cadence is None
 
 
