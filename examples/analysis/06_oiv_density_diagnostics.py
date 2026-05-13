@@ -59,7 +59,6 @@ ratio_definitions = [
 fig, axes = plt.subplots(
     ncols=2,
     figsize=(11, 4.2),
-    constrained_layout=True,
     sharex=True,
 )
 

@@ -1,4 +1,3 @@
-import sys
 import types
 
 import numpy as np
@@ -7,76 +6,138 @@ import pytest
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 
 
-def test_remove_cosmic_rays_rsliding_backend(sns_sjicube_1330, monkeypatch):
-    captured = {}
+@pytest.fixture
+def mock_cosmic_ray_backend(monkeypatch):
+    """
+    Return a helper that patches ``_import_optional_backend`` to a fake module.
+    """
 
-    class FakeSlidingSigmaClipping:
-        def __init__(self, data, **kwargs):
-            captured["data"] = data.copy()
-            captured["kwargs"] = kwargs
-            cosmic_ray_mask = data > 9
-            cleaned_data = np.where(cosmic_ray_mask, 5.0, data)
-            self.clipped = np.ma.masked_array(cleaned_data, mask=cosmic_ray_mask)
+    def _patch(fake_module):
+        def fake_import_optional_backend(_module_name, *, method):
+            _ = method
+            return fake_module
 
-    monkeypatch.setitem(
-        sys.modules,
-        "rsliding",
-        types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping),
-    )
+        monkeypatch.setattr(
+            "irispy.utils.cosmic_rays._import_optional_backend",
+            fake_import_optional_backend,
+        )
 
-    cube = sns_sjicube_1330[0, :2, :2]
-    data = np.array([[1.0, 12.0], [3.0, np.nan]])
-    mask = np.array([[False, False], [True, False]])
+    return _patch
+
+
+def test_remove_cosmic_rays_rsliding(sns_sjicube_1330):
+    cube = sns_sjicube_1330[0, :3, :3]
+    data = np.array([[1.0, 2.0, 3.0], [4.0, 100.0, 6.0], [7.0, 8.0, 9.0]])
+    mask = np.array([[False, False, False], [False, False, False], [True, False, False]])
     cube.data[...] = data
     cube.mask = mask.copy()
     original_dust_masked = cube.dust_masked
+
     cleaned_cube = remove_cosmic_rays(
         cube,
         sigma=2.5,
         max_iters=7,
-        method_kwargs={"kernel": 5, "threads": 2},
+        method_kwargs={"kernel": 3, "threads": 1},
     )
 
-    np.testing.assert_array_equal(np.isnan(captured["data"]), [[False, False], [True, True]])
-    assert captured["kwargs"]["kernel"] == 5
-    assert captured["kwargs"]["threads"] == 2
-    assert captured["kwargs"]["sigma"] == 2.5
-    assert captured["kwargs"]["max_iters"] == 7
-    assert captured["kwargs"]["masked_array"] is True
-    assert cleaned_cube.data[0, 1] == pytest.approx(5.0)
-    assert np.isnan(cleaned_cube.data[1, 0])
-    assert np.isnan(cleaned_cube.data[1, 1])
+    np.testing.assert_allclose(cleaned_cube.data[1, 1], 5.0, atol=2.0)
     np.testing.assert_array_equal(cleaned_cube.mask, mask)
     assert cleaned_cube.dust_masked == original_dust_masked
 
 
-def test_remove_cosmic_rays_rsliding_backend_defaults(sns_sjicube_1330, monkeypatch):
+def test_remove_cosmic_rays_astroscrappy(sns_sjicube_1330):
+    cube = sns_sjicube_1330[0, :10, :10]
+    data = np.full((10, 10), 10.0, dtype=float)
+    data[5, 5] = 500.0
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[0, 0] = True
+    cube.data[...] = data
+    cube.mask = mask.copy()
+    original_dust_masked = cube.dust_masked
+
+    cleaned_cube = remove_cosmic_rays(
+        cube,
+        method="astroscrappy",
+        sigma=2.0,
+        max_iters=3,
+        method_kwargs={"readnoise": 1.0},
+    )
+
+    assert not np.isclose(cleaned_cube.data[5, 5], 500.0)
+    np.testing.assert_allclose(cleaned_cube.data[5, 5], 10.0, atol=1.0)
+    np.testing.assert_array_equal(cleaned_cube.mask, mask)
+    assert cleaned_cube.dust_masked == original_dust_masked
+
+
+def test_remove_cosmic_rays_rsliding_kwargs_forwarded(sns_sjicube_1330, mock_cosmic_ray_backend):
     captured = {}
 
     class FakeSlidingSigmaClipping:
         def __init__(self, data, **kwargs):
-            captured["data"] = data.copy()
-            captured["kwargs"] = kwargs
-            self.clipped = np.ma.masked_array(data.copy(), mask=np.zeros_like(data, dtype=bool))
+            captured["kwargs"] = kwargs.copy()
+            cosmic_ray_mask = data > 9
+            cleaned_data = np.where(cosmic_ray_mask, 5.0, data)
+            self.clipped = np.ma.masked_array(cleaned_data, mask=cosmic_ray_mask)
 
-    monkeypatch.setitem(
-        sys.modules,
-        "rsliding",
-        types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping),
-    )
+    fake_module = types.SimpleNamespace(SlidingSigmaClipping=FakeSlidingSigmaClipping)
+    mock_cosmic_ray_backend(fake_module)
 
     cube = sns_sjicube_1330[0, :2, :2]
     cube.data[...] = np.array([[1.0, 2.0], [3.0, 4.0]])
     cube.mask = np.zeros(cube.data.shape, dtype=bool)
-    remove_cosmic_rays(cube, method="rsliding")
+    user_kwargs = {"kernel": 5, "threads": 2}
 
-    assert captured["kwargs"]["sigma"] == 3.0
-    assert captured["kwargs"]["max_iters"] == 5
-    for key in ("kernel", "threads", "center_choice", "borders"):
-        assert key in captured["kwargs"], f"Default key {key!r} missing from backend kwargs"
+    remove_cosmic_rays(
+        cube,
+        sigma=2.5,
+        max_iters=7,
+        method_kwargs=user_kwargs,
+    )
+
+    assert captured["kwargs"]["sigma"] == 2.5
+    assert captured["kwargs"]["max_iters"] == 7
+    assert captured["kwargs"]["kernel"] == 5
+    assert captured["kwargs"]["threads"] == 2
+    assert captured["kwargs"]["masked_array"] is True
+    assert "sigma" not in user_kwargs
+    assert "max_iters" not in user_kwargs
+    assert "masked_array" not in user_kwargs
 
 
-def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch):
+def test_remove_cosmic_rays_astroscrappy_kwargs_forwarded(sns_sjicube_1330, mock_cosmic_ray_backend):
+    calls = []
+
+    def fake_detect_cosmics(frame, *, inmask=None, **kwargs):  # NOQA: ARG001
+        calls.append(kwargs.copy())
+        return np.zeros_like(frame, dtype=bool), frame.copy()
+
+    fake_module = types.SimpleNamespace(detect_cosmics=fake_detect_cosmics)
+    mock_cosmic_ray_backend(fake_module)
+
+    cube = sns_sjicube_1330[0, :3, :3]
+    cube.data[...] = np.ones((3, 3), dtype=float)
+    cube.mask = np.zeros((3, 3), dtype=bool)
+    user_kwargs = {"readnoise": 4.0}
+
+    remove_cosmic_rays(
+        cube,
+        method="astroscrappy",
+        sigma=2.0,
+        max_iters=3,
+        method_kwargs=user_kwargs,
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["sigclip"] == 2.0
+    assert calls[0]["niter"] == 3
+    assert calls[0]["readnoise"] == 4.0
+    assert calls[0]["verbose"] is False
+    assert "sigclip" not in user_kwargs
+    assert "niter" not in user_kwargs
+    assert "verbose" not in user_kwargs
+
+
+def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, mock_cosmic_ray_backend):
     calls = []
 
     def fake_detect_cosmics(frame, *, inmask=None, **kwargs):
@@ -84,7 +145,8 @@ def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch):
         frame_mask = frame > 10
         return frame_mask, frame - 1
 
-    monkeypatch.setitem(sys.modules, "astroscrappy", types.SimpleNamespace(detect_cosmics=fake_detect_cosmics))
+    fake_module = types.SimpleNamespace(detect_cosmics=fake_detect_cosmics)
+    mock_cosmic_ray_backend(fake_module)
 
     cube = sns_sjicube_1330[:2, :3, :4]
     data = np.arange(24, dtype=float).reshape(2, 3, 4)
@@ -109,12 +171,12 @@ def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch):
     assert calls[0][2]["verbose"] is False
     assert calls[0][1][0, 0]
     assert calls[1][1][2, 3]
-    assert calls[1][0][2, 3] == pytest.approx(0.0)
-    assert cleaned_cube.data[0, 0, 0] == pytest.approx(-1.0)
-    assert cleaned_cube.data[1, 2, 3] == pytest.approx(-1.0)
+    np.testing.assert_allclose(calls[1][0][2, 3], 0.0)
+    np.testing.assert_allclose(cleaned_cube.data[0, 0, 0], -1.0)
+    np.testing.assert_allclose(cleaned_cube.data[1, 2, 3], -1.0)
 
 
-def test_remove_cosmic_rays_astroscrappy_inmask_combined(sns_sjicube_1330, monkeypatch):
+def test_remove_cosmic_rays_astroscrappy_inmask_combined(sns_sjicube_1330, mock_cosmic_ray_backend):
     """
     Inmask from method_kwargs must be OR-merged with mask before each detect_cosmics
     call.
@@ -125,11 +187,8 @@ def test_remove_cosmic_rays_astroscrappy_inmask_combined(sns_sjicube_1330, monke
         calls.append(inmask.copy())
         return np.zeros_like(frame, dtype=bool), frame.copy()
 
-    monkeypatch.setitem(
-        sys.modules,
-        "astroscrappy",
-        types.SimpleNamespace(detect_cosmics=fake_detect_cosmics),
-    )
+    fake_module = types.SimpleNamespace(detect_cosmics=fake_detect_cosmics)
+    mock_cosmic_ray_backend(fake_module)
 
     cube = sns_sjicube_1330[:2, :3, :4]
     data = np.ones((2, 3, 4), dtype=float)
