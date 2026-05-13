@@ -20,7 +20,7 @@ import astropy.units as u
 from astropy.visualization import time_support
 
 from irispy.io import read_files
-from irispy.utils.red_blue import calculate_red_blue_asymmetry
+from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
 
 time_support()
 
@@ -64,9 +64,10 @@ velocity_range = (25, 75) * u.km / u.s
 # Ignore pixels where the line peak is too weak for a useful wing comparison.
 min_intensity = 75 * si_iv.unit
 
+# rest_wavelength is auto-detected from the cube metadata (TWAVE[N] FITS keyword).
+# You can also pass it explicitly: rest_wavelength=si_iv_rest.
 red_blue = calculate_red_blue_asymmetry(
     si_iv,
-    rest_wavelength=si_iv_rest,
     velocity_range=velocity_range,
     min_intensity=min_intensity,
     return_profiles=True,
@@ -102,7 +103,8 @@ axes = [
 
 # This plot will be the RBA values over the full raster.
 ax = axes[0]
-rba_map = np.where(quality.data == 0, asymmetry.data, np.nan)
+rba_map = np.where(quality.data == int(RBAQualityFlag.OK), asymmetry.data, np.nan)
+# Colour scale: 98th percentile of absolute RBA, floored so subtle features remain visible.
 vmax = max(np.nanpercentile(np.abs(rba_map), 98), 0.15)
 im = ax.imshow(rba_map, cmap="RdBu_r", origin="lower", aspect="auto", vmin=-vmax, vmax=vmax)
 ax.plot(
