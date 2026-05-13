@@ -55,7 +55,8 @@ def _remove_cosmic_rays_astroscrappy(
     method_kwargs: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
     astroscrappy = _import_optional_backend("astroscrappy", method="astroscrappy")
-    method_kwargs = {"verbose": False, **method_kwargs}
+    method_kwargs = dict(method_kwargs)
+    method_kwargs.setdefault("verbose", False)
     if sigma is not None:
         method_kwargs["sigclip"] = sigma
     if max_iters is not None:
