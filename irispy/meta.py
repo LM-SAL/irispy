@@ -56,7 +56,7 @@ class BaseMeta(NDMeta):
     @property
     def camera(self):
         """
-        IRIS camera ID: 1 for FUV, 2 for NUV/SJI.
+        IRIS camera ID - 1 for FUV, 2 for NUV/SJI.
         """
         return self.get("CAMERA")
 
@@ -64,9 +64,6 @@ class BaseMeta(NDMeta):
     def sun_angular_radius(self):
         """
         Apparent angular radius of the Sun at the observer location.
-
-        Read from ``RSUN_OBS`` (arcsec) if present, otherwise computed
-        from ``DSUN_OBS``.
         """
         rsun = self.get("RSUN_OBS")
         if rsun is not None:
@@ -77,8 +74,6 @@ class BaseMeta(NDMeta):
     def observer_radial_velocity(self):
         """
         Radial velocity of the observer relative to the Sun (m/s).
-
-        Read from ``OBS_VR``.
         """
         return float(self.get("OBS_VR")) * u.m / u.s
 
@@ -187,7 +182,7 @@ class BaseMeta(NDMeta):
     @property
     def detector_band(self):
         """
-        Detector band: ``'FUV'``, ``'NUV'``, or ``'SJI'``.
+        Detector band - ``'FUV'``, ``'NUV'``, or ``'SJI'``.
         """
         det_upper = self.detector.upper()
         return next(
@@ -297,7 +292,7 @@ class BaseMeta(NDMeta):
     @property
     def data_status(self):
         """
-        Processing status: ``'Quicklook'`` or ``'Final'``.
+        Processing status.
         """
         return self.get("STATUS")
 
