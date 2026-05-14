@@ -3,9 +3,7 @@ Red-blue asymmetry utilities for IRIS spectrogram cubes.
 """
 
 import warnings
-import contextlib
 from enum import IntEnum
-from dataclasses import dataclass
 
 import numpy as np
 from scipy.interpolate import make_interp_spline
@@ -92,35 +90,6 @@ def _make_profile_cube(cube, *, data, velocity_grid, wavelength_axis, meta, unce
     )
 
 
-@dataclass
-class _PixelCoreResult:
-    quality: RBAQualityFlag
-    rba: float = np.nan
-    red_wing: float = np.nan
-    blue_wing: float = np.nan
-    peak_intensity: float = np.nan
-    peak_velocity: float = np.nan
-    red_blue_error: float = np.nan
-    red_wing_error: float = np.nan
-    blue_wing_error: float = np.nan
-
-
-@dataclass
-class _PixelProfileDetail:
-    interp_profile: np.ndarray
-    interp_error: np.ndarray | None = None
-
-
-@dataclass
-class _RBAContext:
-    velocity: np.ndarray
-    interp_velocity: np.ndarray
-    degree: int
-    red_mask: np.ndarray
-    blue_mask: np.ndarray
-    min_wing_coverage: float
-
-
 def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
     """
     Extract data/errors, mask negatives, subtract continuum, move spectral axis to -1.
@@ -160,139 +129,6 @@ def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
             errors = np.sqrt(errors**2 + continuum_errors[..., np.newaxis] ** 2)
 
     return data, errors
-
-
-def _center_profile_on_peak(profile, profile_error, velocity, peak_index):
-    if peak_index == 0 or peak_index == profile.size - 1:
-        return None, None, None, RBAQualityFlag.PEAK_AT_EDGE
-    return velocity - velocity[peak_index], profile, profile_error, RBAQualityFlag.OK
-
-
-def _interpolate_profile_and_error(shifted_velocity, profile, profile_error, interp_velocity, degree):
-    finite = np.isfinite(shifted_velocity) & np.isfinite(profile)
-    min_points = degree + 1
-    if finite.sum() < min_points:
-        return None, None, RBAQualityFlag.TOO_FEW_POINTS
-
-    sv, sp = shifted_velocity[finite], profile[finite]
-    order = np.argsort(sv)
-    ordered_velocity, ordered_profile = sv[order], sp[order]
-
-    try:
-        interp_profile = make_interp_spline(ordered_velocity, ordered_profile, k=degree)(
-            interp_velocity, extrapolate=False
-        )
-    except ValueError:
-        return None, None, RBAQualityFlag.INTERP_FAILED
-
-    interp_error = None
-    if profile_error is not None:
-        ordered_error = profile_error[finite][order]
-        finite_error = np.isfinite(ordered_error)
-        if finite_error.sum() >= min_points:
-            try:
-                interp_error = make_interp_spline(
-                    ordered_velocity[finite_error], ordered_error[finite_error], k=degree
-                )(interp_velocity, extrapolate=False)
-                interp_error = np.where(interp_error >= 0, interp_error, np.nan)
-            except ValueError:
-                return None, None, RBAQualityFlag.INTERP_FAILED
-
-    return interp_profile, interp_error, RBAQualityFlag.OK
-
-
-def _compute_wings_and_peak(interp_profile, red_mask, blue_mask, min_wing_coverage):
-    red_finite = red_mask & np.isfinite(interp_profile)
-    blue_finite = blue_mask & np.isfinite(interp_profile)
-    if red_finite.sum() < min_wing_coverage * red_mask.sum() or blue_finite.sum() < min_wing_coverage * blue_mask.sum():
-        return np.nan, np.nan, np.nan, RBAQualityFlag.INCOMPLETE_WINGS
-
-    red_intensity = np.nanmean(interp_profile[red_finite]) if red_finite.any() else np.nan
-    blue_intensity = np.nanmean(interp_profile[blue_finite]) if blue_finite.any() else np.nan
-    peak = np.nanmax(interp_profile)
-    if not np.isfinite(peak) or np.isclose(peak, 0):
-        return np.nan, np.nan, np.nan, RBAQualityFlag.PEAK_IS_ZERO
-
-    return red_intensity, blue_intensity, peak, RBAQualityFlag.OK
-
-
-def _propagate_rba_error(red_intensity, blue_intensity, peak, interp_error, red_mask, blue_mask, interp_profile):
-    """Propagate uncertainties through ``(I_R - I_B) / I_p``."""
-    if interp_error is None:
-        return np.nan, np.nan, np.nan
-
-    n_red = np.isfinite(interp_error[red_mask]).sum()
-    n_blue = np.isfinite(interp_error[blue_mask]).sum()
-    red_err = np.sqrt(np.nansum(interp_error[red_mask] ** 2)) / n_red if n_red > 0 else np.nan
-    blue_err = np.sqrt(np.nansum(interp_error[blue_mask] ** 2)) / n_blue if n_blue > 0 else np.nan
-    peak_err = interp_error[np.nanargmax(interp_profile)]
-    numerator = red_intensity - blue_intensity
-    num_err = np.sqrt(red_err**2 + blue_err**2)
-
-    rba_error = np.nan
-    numerator_is_zero = np.isclose(numerator, 0)
-    if np.isfinite(num_err) and (numerator_is_zero or np.isfinite(peak_err)):
-        variance = (num_err / peak) ** 2
-        if not numerator_is_zero:
-            variance += (numerator * peak_err / peak**2) ** 2
-        rba_error = np.sqrt(variance)
-
-    return rba_error, red_err, blue_err
-
-
-def _process_pixel(profile, profile_error, ctx: _RBAContext):
-    """
-    Compute RBA for a single spatial pixel.
-
-    Returns (``_PixelCoreResult``, ``_PixelProfileDetail | None``).
-    """
-    finite_profile = np.isfinite(profile)
-    if not finite_profile.any():
-        return _PixelCoreResult(quality=RBAQualityFlag.NO_FINITE_DATA), None
-
-    peak_index = np.nanargmax(np.where(finite_profile, profile, np.nan))
-    peak_velocity = ctx.velocity[peak_index]
-
-    shifted_velocity, profile, profile_error, quality = _center_profile_on_peak(
-        profile,
-        profile_error,
-        ctx.velocity,
-        peak_index,
-    )
-    if quality is not RBAQualityFlag.OK:
-        return _PixelCoreResult(quality=quality, peak_velocity=peak_velocity), None
-
-    interp_profile, interp_error, interp_quality = _interpolate_profile_and_error(
-        shifted_velocity, profile, profile_error, ctx.interp_velocity, ctx.degree
-    )
-    detail = _PixelProfileDetail(interp_profile, interp_error) if interp_profile is not None else None
-
-    if interp_quality is not RBAQualityFlag.OK:
-        return _PixelCoreResult(quality=interp_quality, peak_velocity=peak_velocity), detail
-
-    red_intensity, blue_intensity, peak, quality = _compute_wings_and_peak(
-        interp_profile, ctx.red_mask, ctx.blue_mask, ctx.min_wing_coverage
-    )
-    if quality is not RBAQualityFlag.OK:
-        return _PixelCoreResult(quality=quality, peak_velocity=peak_velocity), detail
-
-    rba = (red_intensity - blue_intensity) / peak
-    rba_error, red_err, blue_err = _propagate_rba_error(
-        red_intensity, blue_intensity, peak, interp_error, ctx.red_mask, ctx.blue_mask, interp_profile
-    )
-
-    core = _PixelCoreResult(
-        quality=RBAQualityFlag.OK,
-        rba=rba,
-        red_wing=red_intensity,
-        blue_wing=blue_intensity,
-        peak_intensity=peak,
-        peak_velocity=peak_velocity,
-        red_blue_error=rba_error,
-        red_wing_error=red_err,
-        blue_wing_error=blue_err,
-    )
-    return core, detail
 
 
 def calculate_red_blue_asymmetry(
@@ -348,8 +184,7 @@ def calculate_red_blue_asymmetry(
     `irispy.spectrograph.RasterCollection`
     """
     if rest_wavelength is None:
-        with contextlib.suppress(AttributeError):
-            rest_wavelength = cube.meta.rest_wavelength
+        rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
         if rest_wavelength is None:
             msg = (
                 "rest_wavelength was not provided and could not be read from cube.meta. "
@@ -399,23 +234,8 @@ def calculate_red_blue_asymmetry(
     red_mask = (interp_velocity >= low) & (interp_velocity <= high)
     blue_mask = (interp_velocity >= -high) & (interp_velocity <= -low)
 
-    ctx = _RBAContext(
-        velocity=velocity,
-        interp_velocity=interp_velocity,
-        degree=degree,
-        red_mask=red_mask,
-        blue_mask=blue_mask,
-        min_wing_coverage=0.8,
-    )
-
     red_blue = np.full(output_shape, np.nan)
     red_blue_error = np.full(output_shape, np.nan)
-    red_wing = np.full(output_shape, np.nan)
-    blue_wing = np.full(output_shape, np.nan)
-    red_wing_error = np.full(output_shape, np.nan)
-    blue_wing_error = np.full(output_shape, np.nan)
-    peak_intensity = np.full(output_shape, np.nan)
-    peak_velocity = np.full(output_shape, np.nan)
     quality = np.full(output_shape, RBAQualityFlag.OK, dtype=np.uint8)
 
     with warnings.catch_warnings():
@@ -441,25 +261,92 @@ def calculate_red_blue_asymmetry(
         else None
     )
 
+    min_points = degree + 1
+    min_wing_coverage = 0.8
     for index in np.ndindex(output_shape):
         if quality[index] in (RBAQualityFlag.LOW_SIGNAL, RBAQualityFlag.SATURATED):
             continue
 
-        core, detail = _process_pixel(data[index], None if errors is None else errors[index], ctx)
+        profile = data[index]
+        profile_error = None if errors is None else errors[index]
+        finite_profile = np.isfinite(profile)
+        if not finite_profile.any():
+            quality[index] = RBAQualityFlag.NO_FINITE_DATA
+            continue
 
-        red_blue[index] = core.rba
-        red_wing[index] = core.red_wing
-        blue_wing[index] = core.blue_wing
-        peak_intensity[index] = core.peak_intensity
-        peak_velocity[index] = core.peak_velocity
-        quality[index] = core.quality
-        red_blue_error[index] = core.red_blue_error
-        red_wing_error[index] = core.red_wing_error
-        blue_wing_error[index] = core.blue_wing_error
-        if return_profiles and detail is not None:
-            interpolated_profiles[index] = detail.interp_profile
-            if interpolated_errors is not None and detail.interp_error is not None:
-                interpolated_errors[index] = detail.interp_error
+        peak_index = np.nanargmax(np.where(finite_profile, profile, np.nan))
+        if peak_index == 0 or peak_index == profile.size - 1:
+            quality[index] = RBAQualityFlag.PEAK_AT_EDGE
+            continue
+
+        shifted_velocity = velocity - velocity[peak_index]
+        finite = np.isfinite(shifted_velocity) & finite_profile
+        if finite.sum() < min_points:
+            quality[index] = RBAQualityFlag.TOO_FEW_POINTS
+            continue
+
+        order = np.argsort(shifted_velocity[finite])
+        ordered_velocity = shifted_velocity[finite][order]
+        ordered_profile = profile[finite][order]
+        try:
+            interp_profile = make_interp_spline(ordered_velocity, ordered_profile, k=degree)(
+                interp_velocity, extrapolate=False
+            )
+        except ValueError:
+            quality[index] = RBAQualityFlag.INTERP_FAILED
+            continue
+
+        interp_error = None
+        if profile_error is not None:
+            ordered_error = profile_error[finite][order]
+            finite_error = np.isfinite(ordered_error)
+            if finite_error.sum() >= min_points:
+                try:
+                    interp_error = make_interp_spline(
+                        ordered_velocity[finite_error], ordered_error[finite_error], k=degree
+                    )(interp_velocity, extrapolate=False)
+                except ValueError:
+                    quality[index] = RBAQualityFlag.INTERP_FAILED
+                    continue
+                interp_error = np.where(interp_error >= 0, interp_error, np.nan)
+
+        if return_profiles:
+            interpolated_profiles[index] = interp_profile
+            if interpolated_errors is not None and interp_error is not None:
+                interpolated_errors[index] = interp_error
+
+        red_finite = red_mask & np.isfinite(interp_profile)
+        blue_finite = blue_mask & np.isfinite(interp_profile)
+        if red_finite.sum() < min_wing_coverage * red_mask.sum():
+            quality[index] = RBAQualityFlag.INCOMPLETE_WINGS
+            continue
+        if blue_finite.sum() < min_wing_coverage * blue_mask.sum():
+            quality[index] = RBAQualityFlag.INCOMPLETE_WINGS
+            continue
+
+        red_intensity = np.nanmean(interp_profile[red_finite]) if red_finite.any() else np.nan
+        blue_intensity = np.nanmean(interp_profile[blue_finite]) if blue_finite.any() else np.nan
+        peak = np.nanmax(interp_profile)
+        if not np.isfinite(peak) or np.isclose(peak, 0):
+            quality[index] = RBAQualityFlag.PEAK_IS_ZERO
+            continue
+
+        numerator = red_intensity - blue_intensity
+        red_blue[index] = numerator / peak
+
+        if interp_error is not None:
+            n_red = np.isfinite(interp_error[red_mask]).sum()
+            n_blue = np.isfinite(interp_error[blue_mask]).sum()
+            red_err = np.sqrt(np.nansum(interp_error[red_mask] ** 2)) / n_red if n_red > 0 else np.nan
+            blue_err = np.sqrt(np.nansum(interp_error[blue_mask] ** 2)) / n_blue if n_blue > 0 else np.nan
+            peak_err = interp_error[np.nanargmax(interp_profile)]
+            num_err = np.sqrt(red_err**2 + blue_err**2)
+            numerator_is_zero = np.isclose(numerator, 0)
+            if np.isfinite(num_err) and (numerator_is_zero or np.isfinite(peak_err)):
+                variance = (num_err / peak) ** 2
+                if not numerator_is_zero:
+                    variance += (numerator * peak_err / peak**2) ** 2
+                red_blue_error[index] = np.sqrt(variance)
 
     meta = {
         "rba_rest_wavelength": rest_wavelength.to_value(u.nm),
@@ -480,20 +367,10 @@ def calculate_red_blue_asymmetry(
 
     cubes = [
         ("red_blue_asymmetry", red_blue, u.dimensionless_unscaled),
-        ("red_wing", red_wing, cube.unit),
-        ("blue_wing", blue_wing, cube.unit),
-        ("peak_intensity", peak_intensity, cube.unit),
-        ("peak_velocity", peak_velocity, u.km / u.s),
         ("quality", quality, u.dimensionless_unscaled),
     ]
     if errors is not None:
-        cubes.extend(
-            [
-                ("red_blue_asymmetry_error", red_blue_error, u.dimensionless_unscaled),
-                ("red_wing_error", red_wing_error, cube.unit),
-                ("blue_wing_error", blue_wing_error, cube.unit),
-            ]
-        )
+        cubes.append(("red_blue_asymmetry_error", red_blue_error, u.dimensionless_unscaled))
 
     result_cubes = []
     for name, values, unit in cubes:

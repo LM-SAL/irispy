@@ -44,20 +44,12 @@ def test_calculate_red_blue_asymmetry_red_and_blue_signs():
     assert isinstance(result, RasterCollection)
     assert set(result.keys()) == {
         "red_blue_asymmetry",
-        "red_wing",
-        "blue_wing",
-        "peak_intensity",
-        "peak_velocity",
         "quality",
         "observed_profile",
         "interpolated_profile",
     }
     assert_quantity_allclose(result["red_blue_asymmetry"].data[0, 0] * u.one, 0.2 * u.one)
     assert_quantity_allclose(result["red_blue_asymmetry"].data[0, 1] * u.one, -0.3 * u.one)
-    assert_quantity_allclose(result["red_wing"].data[0, 0] * result["red_wing"].unit, 3 * u.DN)
-    assert_quantity_allclose(result["blue_wing"].data[0, 0] * result["blue_wing"].unit, 1 * u.DN)
-    assert_quantity_allclose(result["peak_intensity"].data[0, 0] * result["peak_intensity"].unit, 10 * u.DN)
-    assert result["peak_velocity"].unit == u.km / u.s
     assert result["quality"].unit == u.dimensionless_unscaled
     assert RBAQualityFlag(result["quality"].data[0, 0]) is RBAQualityFlag.OK
     assert RBAQualityFlag(result["quality"].data[0, 0]).description == "ok"
@@ -119,16 +111,12 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
     )
     assert "red_blue_asymmetry_error" in result
     assert result["red_blue_asymmetry_error"].unit == u.one
-    red_wing = float(result["red_wing"].data[0, 0])
-    blue_wing = float(result["blue_wing"].data[0, 0])
-    peak = float(result["peak_intensity"].data[0, 0])
-    numerator = red_wing - blue_wing
+    numerator = 2
+    peak = 10
     n_wing_bins = int((150 - 50) / 10) + 1
     wing_error = np.sqrt(np.sum(np.full(n_wing_bins, 0.1) ** 2)) / n_wing_bins
     expected_propagated_error = np.sqrt((np.sqrt(2) * wing_error / peak) ** 2 + (numerator * 0.1 / peak**2) ** 2)
     assert_quantity_allclose(result["red_blue_asymmetry_error"].data[0, 0] * u.one, expected_propagated_error * u.one)
-    assert result["red_wing_error"].unit == u.DN
-    assert result["blue_wing_error"].unit == u.DN
     assert result["red_blue_asymmetry"].meta["rba_rest_wavelength"] == 140.277
     assert result["red_blue_asymmetry"].meta["rba_interpolation_degree"] == 1
 

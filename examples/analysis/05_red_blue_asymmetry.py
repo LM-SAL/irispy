@@ -74,7 +74,6 @@ red_blue = calculate_red_blue_asymmetry(
 )
 
 asymmetry = red_blue["red_blue_asymmetry"]
-peak_velocity = red_blue["peak_velocity"]
 quality = red_blue["quality"]
 observed_profiles = red_blue["observed_profile"]
 
@@ -132,9 +131,7 @@ ax.axvspan(-v_high, -v_low, color="C0", alpha=0.1)
 ax.axvspan(v_low, v_high, color="C3", alpha=0.1)
 
 ax.set_title(
-    f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f}   "
-    f"Peak vel = {float(peak_velocity.data[selected_pixel_index]):.1f} km/s   "
-    f"Quality = {int(quality.data[selected_pixel_index]):d}"
+    f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f}   Quality = {int(quality.data[selected_pixel_index]):d}"
 )
 ax.set_xlabel("Velocity [km/s]")
 ax.set_ylabel(f"Intensity [{si_iv.unit.to_string()}]")
