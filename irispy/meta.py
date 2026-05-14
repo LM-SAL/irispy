@@ -68,7 +68,7 @@ class BaseMeta(NDMeta):
         rsun = self.get("RSUN_OBS")
         if rsun is not None:
             return float(rsun) * u.arcsec
-        return np.arctan(_R_SUN.to(u.m).value / float(self.get("DSUN_OBS"))) * u.rad
+        return (np.arctan(_R_SUN.to(u.m).value / float(self.get("DSUN_OBS"))) * u.rad).to(u.arcsec)
 
     @property
     def observer_radial_velocity(self):
