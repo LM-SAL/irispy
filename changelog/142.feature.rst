@@ -1,1 +1,1 @@
-Add ``rest_wavelength``, ``detector_band``, and ``temporal_cadence`` properties to the metadata.
+Exposed much more FITS metadata to the user via the ``meta``.
