@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -11,7 +12,7 @@ import irispy.utils.red_blue as red_blue_module
 from irispy.io.utils import read_files
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube
-from irispy.tests.helpers import make_test_spectrogram_cube
+from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
 from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
 
 REST_WAVELENGTH = 140.277 * u.nm
@@ -258,6 +259,50 @@ def test_calculate_red_blue_asymmetry_continuum_subtraction():
     assert np.isfinite(rba_with)
     assert_quantity_allclose(rba_with * u.one, (2 / 9) * u.one)
     assert not np.isclose(rba_without, rba_with)
+
+
+@figure_test
+def test_calculate_red_blue_asymmetry_continuum_figure():
+    velocity = np.arange(-200, 201, 10) * u.km / u.s
+    wavelengths = _wavelengths_from_velocity(velocity)
+    profile = _flat_wing_profile(velocity, red_excess=2)
+    cube = make_test_spectrogram_cube((profile + 5).reshape(1, 1, -1), wavelengths)
+    continuum_wavelengths = (
+        u.Quantity([[wavelengths[0].value, wavelengths[2].value], [wavelengths[-3].value, wavelengths[-1].value]])
+        * wavelengths.unit
+    )
+
+    result_without = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
+    result_with = calculate_red_blue_asymmetry(
+        cube,
+        rest_wavelength=REST_WAVELENGTH,
+        degree=1,
+        continuum_windows=continuum_wavelengths,
+    )
+    rba_without = float(result_without["red_blue_asymmetry"].data[0, 0])
+    rba_with = float(result_with["red_blue_asymmetry"].data[0, 0])
+    assert_quantity_allclose(rba_without * u.one, (2 / 15) * u.one)
+    assert_quantity_allclose(rba_with * u.one, (2 / 9) * u.one)
+
+    raw_profile = result_without["observed_profile"][0, 0]
+    continuum_profile = result_with["observed_profile"][0, 0]
+    velocities = raw_profile.axis_world_coords(0)[0].to_value(u.km / u.s)
+    v_low, v_high = 50, 150
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.5), constrained_layout=True)
+    axes[0].plot(velocities, raw_profile.data, "o-", color="0.2", markersize=3, label="Input + continuum")
+    axes[0].plot(velocities, continuum_profile.data, "o-", color="C3", markersize=3, label="Continuum subtracted")
+    axes[0].axvspan(-v_high, -v_low, color="C0", alpha=0.12)
+    axes[0].axvspan(v_low, v_high, color="C3", alpha=0.12)
+    axes[0].set(xlabel="Velocity [km/s]", ylabel="Intensity [DN]", title="Profiles")
+    axes[0].legend(fontsize=8)
+
+    axes[1].bar(["Raw", "Subtracted"], [rba_without, rba_with], color=["0.5", "C3"])
+    axes[1].axhline(0, color="0.2", linewidth=0.8)
+    axes[1].set(ylabel="Red-Blue Asymmetry", title="Continuum correction")
+    axes[1].set_ylim(0, 0.26)
+
+    return fig
 
 
 def test_calculate_red_blue_asymmetry_flags_incomplete_wings():
