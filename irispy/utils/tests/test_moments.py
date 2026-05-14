@@ -56,12 +56,17 @@ def test_calculate_moments_basic(sns_sg_file):
 def test_calculate_moments_sliced_cube(sns_sg_file):
     """
     Test that calculate_moments works on a sliced cube and with default arguments.
+
+    With real IRIS data, rest_wavelength is auto-detected from cube metadata, so
+    velocity outputs are included.
     """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     cube_slice = cube[10, :, :]
     moments = calculate_moments(cube_slice)
-    assert set(moments.keys()) == {"intensity", "centroid", "width"}
+    assert "intensity" in moments
+    assert "centroid" in moments
+    assert "width" in moments
     assert moments["intensity"].shape == cube_slice.shape[:-1]
     assert moments["centroid"].shape == cube_slice.shape[:-1]
     assert moments["width"].shape == cube_slice.shape[:-1]
@@ -106,13 +111,13 @@ def test_calculate_moments_asymmetric_wings_rejects_bare_tuple():
 
 def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
     """
-    Test that calculate_moments raises an error when wings is given without
-    rest_wavelength.
+    Test that calculate_moments auto-detects rest_wavelength from cube metadata when
+    wings is given without explicit rest_wavelength.
     """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
-    with pytest.raises(ValueError, match="rest_wavelength must be provided"):
-        calculate_moments(cube, wings=1.0 * u.Angstrom)
+    moments = calculate_moments(cube, wings=5.0 * u.Angstrom)
+    assert "velocity" in moments
 
 
 def test_calculate_moments_requires_wavelength_axis():
@@ -123,6 +128,17 @@ def test_calculate_moments_requires_wavelength_axis():
 
     with pytest.raises(ValueError, match="Could not identify a spectral wavelength axis"):
         calculate_moments(cube)
+
+
+def test_calculate_moments_wings_no_meta_no_rest_wavelength():
+    """
+    Wings with no rest_wavelength and no detectable meta should raise.
+    """
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), np.arange(5) * u.nm)
+    # Simulate meta without rest_wavelength attribute
+    del cube.meta["TWAVE1"]
+    with pytest.raises((ValueError, AttributeError), match="rest_wavelength must be provided"):
+        calculate_moments(cube, wings=1.0 * u.Angstrom)
 
 
 def test_calculate_moments_ignores_negative_nonfinite_and_masked_values():
