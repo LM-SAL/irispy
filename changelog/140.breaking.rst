@@ -1,3 +1,4 @@
 `irispy.utils.calculate_red_blue_asymmetry` now takes ``degree`` instead of ``interpolation_kind``.
 Removed ``mask_negative`` as it is now always masked.
 ``rest_wavelength`` defaults to ``None`` as we now get the value from the cube metadata.
+Removed ``uncertainty``, ``center_on_peak``, ``velocity_window``, and ``fit_window`` from ``calculate_red_blue_asymmetry``.

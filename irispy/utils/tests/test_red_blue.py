@@ -23,7 +23,7 @@ def _wavelengths_from_velocity(velocity):
 
 def _flat_wing_profile(velocity, *, red_excess=0, blue_excess=0):
     profile = np.ones(velocity.shape, dtype=float)
-    profile[np.abs(velocity.to_value(u.km / u.s)) <= 20] = 10
+    profile[np.isclose(velocity.to_value(u.km / u.s), 0)] = 10
     red = (velocity >= 50 * u.km / u.s) & (velocity <= 150 * u.km / u.s)
     blue = (velocity >= -150 * u.km / u.s) & (velocity <= -50 * u.km / u.s)
     profile[red] += red_excess
@@ -39,7 +39,7 @@ def test_calculate_red_blue_asymmetry_red_and_blue_signs():
     data = np.stack([red_profile, blue_profile]).reshape(1, 2, -1)
     cube = make_test_spectrogram_cube(data, wavelengths)
 
-    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
 
     assert isinstance(result, RasterCollection)
     assert set(result.keys()) == {
@@ -73,7 +73,7 @@ def test_calculate_red_blue_asymmetry_uses_masked_bins():
     red = (velocity >= 50 * u.km / u.s) & (velocity <= 150 * u.km / u.s)
     cube.mask[..., red] = True
 
-    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
     assert_quantity_allclose(result["red_blue_asymmetry"].data[0, 0] * u.one, 0 * u.one, atol=1e-12 * u.one)
 
 
@@ -87,7 +87,7 @@ def test_calculate_red_blue_asymmetry_output_does_not_inherit_first_wavelength_m
     cube.mask[0, 0, 0] = True
     cube.mask[0, 1, :] = True
 
-    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
     assert np.isfinite(result["red_blue_asymmetry"].data[0, 0])
     assert not result["red_blue_asymmetry"].mask[0, 0]
     assert result["quality"].data[0, 0] == 0
@@ -110,14 +110,12 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
     profile = _flat_wing_profile(velocity, red_excess=2)
     data = profile.reshape(1, 1, -1)
     cube = make_test_spectrogram_cube(data, wavelengths)
-    uncertainty = np.full(cube.shape, 0.1) * u.DN
+    cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
 
     result = calculate_red_blue_asymmetry(
         cube,
         rest_wavelength=REST_WAVELENGTH,
-        uncertainty=uncertainty,
         degree=1,
-        center_on_peak=False,
     )
     assert "red_blue_asymmetry_error" in result
     assert result["red_blue_asymmetry_error"].unit == u.one
@@ -132,15 +130,14 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
     assert result["red_wing_error"].unit == u.DN
     assert result["blue_wing_error"].unit == u.DN
     assert result["red_blue_asymmetry"].meta["rba_rest_wavelength"] == 140.277
-    assert result["red_blue_asymmetry"].meta["rba_center_on_peak"] is False
+    assert result["red_blue_asymmetry"].meta["rba_interpolation_degree"] == 1
 
     symmetric_cube = make_test_spectrogram_cube(_flat_wing_profile(velocity).reshape(1, 1, -1), wavelengths)
+    symmetric_cube.uncertainty = StdDevUncertainty(np.full(symmetric_cube.shape, 0.1))
     symmetric_result = calculate_red_blue_asymmetry(
         symmetric_cube,
         rest_wavelength=REST_WAVELENGTH,
-        uncertainty=uncertainty,
         degree=1,
-        center_on_peak=False,
     )
     expected_zero_error = np.sqrt(2) * wing_error / 10
     assert_quantity_allclose(symmetric_result["red_blue_asymmetry"].data[0, 0] * u.one, 0 * u.one)
@@ -162,19 +159,18 @@ def test_calculate_red_blue_asymmetry_flags_error_interpolation_failure(monkeypa
     velocity = np.arange(-200, 201, 10) * u.km / u.s
     wavelengths = _wavelengths_from_velocity(velocity)
     cube = make_test_spectrogram_cube(_flat_wing_profile(velocity, red_excess=2).reshape(1, 1, -1), wavelengths)
+    cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
 
     result = calculate_red_blue_asymmetry(
         cube,
         rest_wavelength=REST_WAVELENGTH,
-        uncertainty=np.full(cube.shape, 0.1) * u.DN,
         degree=1,
-        center_on_peak=False,
     )
     assert RBAQualityFlag(result["quality"].data[0, 0]) is RBAQualityFlag.INTERP_FAILED
     assert np.isnan(result["red_blue_asymmetry"].data[0, 0])
 
 
-def test_calculate_red_blue_asymmetry_center_on_peak():
+def test_calculate_red_blue_asymmetry_centers_profiles_on_peak():
     velocity = np.arange(-200, 201, 10) * u.km / u.s
     wavelengths = _wavelengths_from_velocity(velocity)
     profile = np.ones(velocity.shape, dtype=float)
@@ -189,10 +185,7 @@ def test_calculate_red_blue_asymmetry_center_on_peak():
         cube,
         rest_wavelength=REST_WAVELENGTH,
         velocity_range=(50, 150) * u.km / u.s,
-        velocity_window=160 * u.km / u.s,
-        fit_window=190 * u.km / u.s,
         degree=1,
-        center_on_peak=True,
     )
     assert result["red_blue_asymmetry"].data[0, 0] > 0
     assert np.isfinite(result["red_blue_asymmetry"].data[0, 0])
@@ -206,13 +199,13 @@ def test_calculate_red_blue_asymmetry_return_profiles():
     cube = make_test_spectrogram_cube(data, wavelengths)
     cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
 
-    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
     observed_cube = result["observed_profile"]
     interp_cube = result["interpolated_profile"]
     assert isinstance(observed_cube, SpectrogramCube)
     assert isinstance(interp_cube, SpectrogramCube)
     assert observed_cube.data.shape == cube.shape
-    assert interp_cube.data.shape == (1, 2, 41)
+    assert interp_cube.data.shape == (1, 2, 31)
     assert "spect.dopplerVeloc" in observed_cube.wcs.world_axis_physical_types
     assert "spect.dopplerVeloc" in interp_cube.wcs.world_axis_physical_types
     assert interp_cube.uncertainty.array.shape == interp_cube.shape
@@ -227,12 +220,12 @@ def test_calculate_red_blue_asymmetry_return_profiles_on_sliced_cube():
     data = np.tile(profile, (2, 3, 1))
     cube = make_test_spectrogram_cube(data, wavelengths)[:, :1, :]
 
-    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
     assert result["observed_profile"].shape == cube.shape
-    assert result["interpolated_profile"].shape == (2, 1, 41)
+    assert result["interpolated_profile"].shape == (2, 1, 31)
     assert_quantity_allclose(
         result["interpolated_profile"][0, 0].axis_world_coords(0)[0],
-        np.arange(-200, 201, 10) * u.km / u.s,
+        np.arange(-150, 151, 10) * u.km / u.s,
     )
 
 
@@ -246,7 +239,6 @@ def test_calculate_red_blue_asymmetry_can_skip_profile_outputs():
         cube,
         rest_wavelength=REST_WAVELENGTH,
         degree=1,
-        center_on_peak=False,
         return_profiles=False,
     )
     assert "observed_profile" not in result
@@ -261,7 +253,7 @@ def test_calculate_red_blue_asymmetry_continuum_subtraction():
     data = (profile + 5).reshape(1, 1, -1)
     cube = make_test_spectrogram_cube(data, wavelengths)
 
-    result_without = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1, center_on_peak=False)
+    result_without = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
 
     continuum_wavelengths = (
         u.Quantity([[wavelengths[0].value, wavelengths[2].value], [wavelengths[-3].value, wavelengths[-1].value]])
@@ -271,7 +263,6 @@ def test_calculate_red_blue_asymmetry_continuum_subtraction():
         cube,
         rest_wavelength=REST_WAVELENGTH,
         degree=1,
-        center_on_peak=False,
         continuum_windows=continuum_wavelengths,
     )
     rba_without = result_without["red_blue_asymmetry"].data[0, 0]
@@ -293,10 +284,7 @@ def test_calculate_red_blue_asymmetry_flags_incomplete_wings():
         cube,
         rest_wavelength=REST_WAVELENGTH,
         velocity_range=(50, 150) * u.km / u.s,
-        velocity_window=160 * u.km / u.s,
-        fit_window=190 * u.km / u.s,
         degree=1,
-        center_on_peak=True,
     )
     assert RBAQualityFlag(result["quality"].data[0, 0]) is RBAQualityFlag.INCOMPLETE_WINGS
     assert np.isnan(result["red_blue_asymmetry"].data[0, 0])
@@ -320,7 +308,6 @@ def test_calculate_red_blue_asymmetry_quality_thresholds(option, value, expected
         cube,
         rest_wavelength=REST_WAVELENGTH,
         degree=1,
-        center_on_peak=False,
         **{option: value},
     )
     assert RBAQualityFlag(result["quality"].data[0, 0]) is expected_flag
@@ -334,7 +321,6 @@ def test_calculate_red_blue_asymmetry_real_cube_shape_and_coords(sns_sg_file):
         cube,
         rest_wavelength=133.29 * u.nm,
         velocity_range=(20, 60) * u.km / u.s,
-        velocity_window=80 * u.km / u.s,
         degree=1,
     )
     assert result["red_blue_asymmetry"].shape == cube.shape[:-1]
@@ -352,7 +338,7 @@ def test_calculate_red_blue_asymmetry_explicit_rest_wavelength():
     wavelengths = _wavelengths_from_velocity(velocity)
     profile = _flat_wing_profile(velocity, red_excess=2)
     cube = make_test_spectrogram_cube(profile.reshape(1, 1, -1), wavelengths)
-    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
     assert np.isfinite(result["red_blue_asymmetry"].data[0, 0])
 
 
@@ -378,7 +364,7 @@ def test_calculate_red_blue_asymmetry_auto_detect_rest_wavelength():
     meta = SGMeta(header, "Si IV 1403", data_shape=data.shape)
     cube.meta = meta
 
-    result = calculate_red_blue_asymmetry(cube, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, degree=1)
     assert np.isfinite(result["red_blue_asymmetry"].data[0, 0])
     assert u.isclose(
         result["red_blue_asymmetry"].meta["rba_rest_wavelength"] * u.nm,
@@ -390,6 +376,6 @@ def test_calculate_red_blue_asymmetry_auto_detect_rest_wavelength():
 def test_calculate_red_blue_asymmetry_auto_detect_on_real_data(sns_sg_file):
     raster = read_files(sns_sg_file)
     cube = raster["C II 1336"][0]
-    result = calculate_red_blue_asymmetry(cube, degree=1, center_on_peak=False)
+    result = calculate_red_blue_asymmetry(cube, degree=1)
     assert "red_blue_asymmetry" in result
     assert result["red_blue_asymmetry"].shape == cube.shape[:-1]

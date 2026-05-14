@@ -3,6 +3,7 @@ Red-blue asymmetry utilities for IRIS spectrogram cubes.
 """
 
 import warnings
+import contextlib
 from enum import IntEnum
 from dataclasses import dataclass
 
@@ -114,16 +115,13 @@ class _PixelProfileDetail:
 class _RBAContext:
     velocity: np.ndarray
     interp_velocity: np.ndarray
-    center_on_peak: bool
-    fit_window: float
-    d_velocity: float
     degree: int
     red_mask: np.ndarray
     blue_mask: np.ndarray
     min_wing_coverage: float
 
 
-def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows, uncertainty):
+def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
     """
     Extract data/errors, mask negatives, subtract continuum, move spectral axis to -1.
     """
@@ -132,12 +130,7 @@ def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows, uncerta
         data = np.where(cube.mask, np.nan, data)
     data = np.where(data < 0, np.nan, data)
 
-    if uncertainty is not None:
-        errors = u.Quantity(uncertainty, cube.unit).to_value(cube.unit)
-    elif cube.uncertainty is not None:
-        errors = np.asarray(cube.uncertainty.array, dtype=float)
-    else:
-        errors = None
+    errors = np.asarray(cube.uncertainty.array, dtype=float) if cube.uncertainty is not None else None
     if errors is not None and cube.mask is not None:
         errors = np.where(cube.mask, np.nan, errors)
 
@@ -169,26 +162,10 @@ def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows, uncerta
     return data, errors
 
 
-def _window_profile(profile, profile_error, velocity, peak_index, *, center_on_peak, fit_window, d_velocity):
-    if center_on_peak:
-        if peak_index == 0 or peak_index == profile.size - 1:
-            return None, None, None, RBAQualityFlag.PEAK_AT_EDGE
-        window_pixels = profile.size if d_velocity == 0 else int(fit_window / abs(d_velocity))
-        low_idx = max(0, peak_index - window_pixels)
-        high_idx = min(profile.size, peak_index + window_pixels)
-        fit_slice = slice(low_idx, high_idx)
-        shifted_velocity = velocity[fit_slice] - velocity[peak_index]
-        profile = profile[fit_slice]
-        if profile_error is not None:
-            profile_error = profile_error[fit_slice]
-    else:
-        fit_mask = np.abs(velocity) <= fit_window
-        shifted_velocity = velocity[fit_mask]
-        profile = profile[fit_mask]
-        if profile_error is not None:
-            profile_error = profile_error[fit_mask]
-
-    return shifted_velocity, profile, profile_error, RBAQualityFlag.OK
+def _center_profile_on_peak(profile, profile_error, velocity, peak_index):
+    if peak_index == 0 or peak_index == profile.size - 1:
+        return None, None, None, RBAQualityFlag.PEAK_AT_EDGE
+    return velocity - velocity[peak_index], profile, profile_error, RBAQualityFlag.OK
 
 
 def _interpolate_profile_and_error(shifted_velocity, profile, profile_error, interp_velocity, degree):
@@ -276,14 +253,11 @@ def _process_pixel(profile, profile_error, ctx: _RBAContext):
     peak_index = np.nanargmax(np.where(finite_profile, profile, np.nan))
     peak_velocity = ctx.velocity[peak_index]
 
-    shifted_velocity, profile, profile_error, quality = _window_profile(
+    shifted_velocity, profile, profile_error, quality = _center_profile_on_peak(
         profile,
         profile_error,
         ctx.velocity,
         peak_index,
-        center_on_peak=ctx.center_on_peak,
-        fit_window=ctx.fit_window,
-        d_velocity=ctx.d_velocity,
     )
     if quality is not RBAQualityFlag.OK:
         return _PixelCoreResult(quality=quality, peak_velocity=peak_velocity), None
@@ -326,12 +300,8 @@ def calculate_red_blue_asymmetry(
     *,
     rest_wavelength=None,
     velocity_range=(50, 150) * u.km / u.s,
-    velocity_window=None,
-    fit_window=None,
     dv=10 * u.km / u.s,
-    center_on_peak=True,
     continuum_windows=None,
-    uncertainty=None,
     degree=3,
     min_intensity=None,
     saturation_limit=None,
@@ -355,24 +325,11 @@ def calculate_red_blue_asymmetry(
         `~irispy.meta.SGMeta` instance with a ``TWAVE<n>`` FITS keyword).
     velocity_range : `astropy.units.Quantity`, optional
         Two positive velocities defining the wing range to average.
-    velocity_window : `astropy.units.Quantity`, optional
-        Symmetric interpolation window about zero velocity. Defaults to the
-        high end of ``velocity_range`` plus 50 km/s.
-    fit_window : `astropy.units.Quantity`, optional
-        Velocity half-width used to crop the source profile before
-        interpolation. Defaults to the high end of ``velocity_range`` plus
-        100 km/s.
     dv : `astropy.units.Quantity`, optional
         Velocity spacing for the interpolated profile.
-    center_on_peak : `bool`, optional
-        If `True`, shift each profile so its peak lies at zero velocity before
-        sampling the wings.
     continuum_windows : `astropy.units.Quantity`, optional
         One or more wavelength windows used to estimate and subtract a
         continuum.
-    uncertainty : `astropy.units.Quantity`, optional
-        Per-bin intensity uncertainty. If omitted, ``cube.uncertainty`` is
-        used when available.
     degree : `int`, optional
         Spline degree for `scipy.interpolate.make_interp_spline`.
     min_intensity : `float` or `astropy.units.Quantity`, optional
@@ -391,10 +348,8 @@ def calculate_red_blue_asymmetry(
     `irispy.spectrograph.RasterCollection`
     """
     if rest_wavelength is None:
-        try:
+        with contextlib.suppress(AttributeError):
             rest_wavelength = cube.meta.rest_wavelength
-        except AttributeError as exc:
-            pass
         if rest_wavelength is None:
             msg = (
                 "rest_wavelength was not provided and could not be read from cube.meta. "
@@ -402,6 +357,9 @@ def calculate_red_blue_asymmetry(
             )
             raise ValueError(msg)
     rest_wavelength = u.Quantity(rest_wavelength).to(u.nm)
+    if rest_wavelength.shape != () or not np.isfinite(rest_wavelength.value) or rest_wavelength <= 0 * u.nm:
+        msg = "rest_wavelength must be a positive finite scalar wavelength"
+        raise ValueError(msg)
 
     velocity_range = u.Quantity(velocity_range).to(u.km / u.s)
     if velocity_range.shape != (2,):
@@ -412,19 +370,7 @@ def calculate_red_blue_asymmetry(
         msg = "velocity_range must be positive and increasing"
         raise ValueError(msg)
 
-    velocity_window = (
-        velocity_high + 50 * u.km / u.s if velocity_window is None else u.Quantity(velocity_window)
-    ).to_value(u.km / u.s)
-    fit_window = (velocity_high + 100 * u.km / u.s if fit_window is None else u.Quantity(fit_window)).to_value(
-        u.km / u.s
-    )
     dv = u.Quantity(dv).to_value(u.km / u.s)
-    if velocity_window <= velocity_high.to_value(u.km / u.s):
-        msg = "velocity_window must be larger than velocity_range high end"
-        raise ValueError(msg)
-    if fit_window <= velocity_window:
-        msg = "fit_window must be larger than velocity_window"
-        raise ValueError(msg)
     if dv <= 0:
         msg = "dv must be positive"
         raise ValueError(msg)
@@ -441,13 +387,13 @@ def calculate_red_blue_asymmetry(
     wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
     rest_wavelength = rest_wavelength.to(wavelengths.unit)
     velocity = ((wavelengths - rest_wavelength) / rest_wavelength * constants.c).to_value(u.km / u.s)
-    interp_velocity = np.arange(-velocity_window, velocity_window + dv, dv)
+    interp_extent = velocity_high.to_value(u.km / u.s)
+    interp_velocity = np.arange(-interp_extent, interp_extent + dv, dv)
     velocity_range_kms = (velocity_low.to_value(u.km / u.s), velocity_high.to_value(u.km / u.s))
 
-    data, errors = _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows, uncertainty)
+    data, errors = _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows)
 
     output_shape = data.shape[:-1]
-    d_velocity = float(np.nanmean(np.diff(velocity))) if velocity.size > 1 else 1.0
 
     low, high = velocity_range_kms
     red_mask = (interp_velocity >= low) & (interp_velocity <= high)
@@ -456,9 +402,6 @@ def calculate_red_blue_asymmetry(
     ctx = _RBAContext(
         velocity=velocity,
         interp_velocity=interp_velocity,
-        center_on_peak=center_on_peak,
-        fit_window=fit_window,
-        d_velocity=d_velocity,
         degree=degree,
         red_mask=red_mask,
         blue_mask=blue_mask,
@@ -522,10 +465,7 @@ def calculate_red_blue_asymmetry(
         "rba_rest_wavelength": rest_wavelength.to_value(u.nm),
         "rba_rest_wavelength_unit": "nm",
         "rba_velocity_range": velocity_range_kms,
-        "rba_velocity_window": velocity_window,
-        "rba_fit_window": fit_window,
         "rba_dv": dv,
-        "rba_center_on_peak": center_on_peak,
         "rba_interpolation_degree": degree,
     }
     if continuum_windows is not None:
