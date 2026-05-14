@@ -3,6 +3,7 @@ import textwrap
 import numpy as np
 
 import astropy.units as u
+from astropy.constants import R_sun as _R_SUN
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
@@ -53,6 +54,30 @@ class BaseMeta(NDMeta):
         return int(self.get("DATA_LEV"))
 
     @property
+    def camera(self):
+        """
+        IRIS camera ID - 1 for FUV, 2 for NUV/SJI.
+        """
+        return self.get("CAMERA")
+
+    @property
+    def sun_angular_radius(self):
+        """
+        Apparent angular radius of the Sun at the observer location.
+        """
+        rsun = self.get("RSUN_OBS")
+        if rsun is not None:
+            return float(rsun) * u.arcsec
+        return np.arctan(_R_SUN.to(u.m).value / float(self.get("DSUN_OBS"))) * u.rad
+
+    @property
+    def observer_radial_velocity(self):
+        """
+        Radial velocity of the observer relative to the Sun (m/s).
+        """
+        return float(self.get("OBS_VR")) * u.m / u.s
+
+    @property
     def distance_to_sun(self):
         return (self.get("DSUN_OBS") * u.m).to(u.AU)
 
@@ -67,6 +92,13 @@ class BaseMeta(NDMeta):
     @property
     def date_end(self):
         return self._construct_time("DATE_END")
+
+    @property
+    def temporal_cadence(self):
+        """
+        Average time between exposures.
+        """
+        return float(self.get("CADEX_AV")) * u.s
 
     @property
     def observing_mode_id(self):
@@ -148,6 +180,24 @@ class BaseMeta(NDMeta):
         return SPECTRAL_BAND.get(self.spectral_window, self.spectral_window)
 
     @property
+    def detector_band(self):
+        """
+        Detector band - ``'FUV'``, ``'NUV'``, or ``'SJI'``.
+        """
+        det_upper = self.detector.upper()
+        return next(
+            (band for band in ("FUV", "NUV", "SJI") if det_upper.startswith(band)),
+            det_upper,
+        )
+
+    @property
+    def rest_wavelength(self):
+        """
+        Rest wavelength of the spectral line for this window.
+        """
+        return (float(self.get(f"TWAVE{self._iwin}")) * u.AA).to(u.nm)
+
+    @property
     def raster_fov_width_y(self):
         """
         Width of the field of view of the raster in the Y (slit) direction.
@@ -203,6 +253,167 @@ class BaseMeta(NDMeta):
         if "fuv" in self.detector.lower():
             return self.get("SUMSPTRF")
         return self.get("SUMSPTRN")
+
+    @property
+    def exposure_time(self):
+        """
+        Mean exposure duration (shutter open time).
+        """
+        return float(self.get("EXPTIME")) * u.s
+
+    @property
+    def exposure_time_min(self):
+        """
+        Minimum exposure duration in this raster/SJI.
+        """
+        return float(self.get("EXPMIN")) * u.s
+
+    @property
+    def exposure_time_max(self):
+        """
+        Maximum exposure duration in this raster/SJI.
+        """
+        return float(self.get("EXPMAX")) * u.s
+
+    @property
+    def data_type(self):
+        """
+        Type of data, e.g. ``'Intensity'``.
+        """
+        return self.get("BTYPE")
+
+    @property
+    def data_unit(self):
+        """
+        Unit of the data values.
+        """
+        return self.get("BUNIT")
+
+    @property
+    def data_status(self):
+        """
+        Processing status.
+        """
+        return self.get("STATUS")
+
+    @property
+    def build_version(self):
+        """
+        Build version from ``jsoc_version.h``.
+        """
+        return self.get("BLD_VERS")
+
+    @property
+    def reformat_version(self):
+        """
+        Version of the software that reformatted the data to Level 2.
+        """
+        return self.get("VER_RF2")
+
+    @property
+    def reformat_date(self):
+        """
+        Date of reformatting to Level 2.
+        """
+        return self._construct_time("DATE_RF2")
+
+    @property
+    def observing_label(self):
+        """
+        Observing list string.
+        """
+        return self.get("OBSLABEL")
+
+    @property
+    def observing_title(self):
+        """
+        Title given by the planner.
+        """
+        return self.get("OBSTITLE")
+
+    @property
+    def lut_id(self):
+        """
+        Look-up table ID.
+        """
+        return self.get("LUTID")
+
+    @property
+    def number_of_exposures(self):
+        """
+        Number of exposures in this raster/SJI.
+        """
+        return self.get("NEXP")
+
+    @property
+    def number_of_exposures_planned(self):
+        """
+        Number of planned exposures in this raster/SJI.
+        """
+        return self.get("NEXP_PRP")
+
+    @property
+    def number_of_exposures_observation(self):
+        """
+        Expected total number of exposures in the whole observation.
+        """
+        return self.get("NEXPOBS")
+
+    @property
+    def number_of_saturated_pixels(self):
+        """
+        Number of saturated pixels.
+        """
+        return self.get("NSATPIX")
+
+    @property
+    def number_of_spikes(self):
+        """
+        Number of pixels identified as noise (cosmic-ray) spikes.
+        """
+        return self.get("NSPIKES")
+
+    @property
+    def percent_data(self):
+        """
+        Percentage of valid data values.
+        """
+        return self.get("PERCENTD")
+
+    @property
+    def data_mean(self):
+        """
+        Mean value of all pixels.
+        """
+        return self.get("DATAMEAN")
+
+    @property
+    def data_rms(self):
+        """
+        RMS deviation from the mean value of all pixels.
+        """
+        return self.get("DATARMS")
+
+    @property
+    def data_median(self):
+        """
+        Median value of all pixels.
+        """
+        return self.get("DATAMEDN")
+
+    @property
+    def data_min(self):
+        """
+        Minimum value of all pixels.
+        """
+        return self.get("DATAMIN")
+
+    @property
+    def data_max(self):
+        """
+        Maximum value of all pixels.
+        """
+        return self.get("DATAMAX")
 
 
 class SJIMeta(BaseMeta, RemoteSensorMetaABC):
@@ -267,6 +478,146 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
             )
         self._iwin = np.arange(len(spectral_windows))[window_mask][0] + 1
         self._fits_header = header
+
+    @property
+    def number_of_spectral_windows(self):
+        """
+        Number of spectral windows in this observation.
+        """
+        return self.get("NWIN")
+
+    @property
+    def raster_repetition(self):
+        """
+        Current raster repetition counter.
+        """
+        return self.get("RASRPT")
+
+    @property
+    def step_size_average(self):
+        """
+        Average of the basic raster step size.
+        """
+        return self.get("STEPS_AV")
+
+    @property
+    def step_size_stddev(self):
+        """
+        Standard deviation of the basic raster step size.
+        """
+        return self.get("STEPS_DV")
+
+    @property
+    def step_time_average(self):
+        """
+        Average of the basic raster step time.
+        """
+        return self.get("STEPT_AV")
+
+    @property
+    def step_time_stddev(self):
+        """
+        Standard deviation of the basic raster step time.
+        """
+        return self.get("STEPT_DV")
+
+    @property
+    def cadence_planned_average(self):
+        """
+        Mean cadence of the raster as planned.
+        """
+        return float(self.get("CADPL_AV")) * u.s
+
+    @property
+    def cadence_planned_stddev(self):
+        """
+        Standard deviation of the planned raster cadence.
+        """
+        return float(self.get("CADPL_DV")) * u.s
+
+    @property
+    def cadence_executed_stddev(self):
+        """
+        Standard deviation of the executed raster cadence.
+        """
+        return float(self.get("CADEX_DV")) * u.s
+
+    @property
+    def raster_type_index(self):
+        """
+        Raster type number.
+        """
+        return self.get("RASTYPDX")
+
+    @property
+    def raster_type_total(self):
+        """
+        Total number of raster types.
+        """
+        return self.get("RASTYPNX")
+
+    @property
+    def number_of_missing_raster_files(self):
+        """
+        Number of missing Level 1 files in this raster.
+        """
+        return self.get("MISSRAS")
+
+    @property
+    def number_of_missing_observation_files(self):
+        """
+        Number of missing Level 1 files in the whole observation.
+        """
+        return self.get("MISSOBS")
+
+    @property
+    def window_mean(self):
+        """
+        Mean value of all pixels in this spectral window.
+        """
+        return self.get(f"TDMEAN{self._iwin}")
+
+    @property
+    def window_rms(self):
+        """
+        RMS deviation from the mean value of all pixels in this spectral window.
+        """
+        return self.get(f"TDRMS{self._iwin}")
+
+    @property
+    def window_median(self):
+        """
+        Median value of all pixels in this spectral window.
+        """
+        return self.get(f"TDMEDN{self._iwin}")
+
+    @property
+    def window_min(self):
+        """
+        Minimum value of all pixels in this spectral window.
+        """
+        return self.get(f"TDMIN{self._iwin}")
+
+    @property
+    def window_max(self):
+        """
+        Maximum value of all pixels in this spectral window.
+        """
+        return self.get(f"TDMAX{self._iwin}")
+
+    @property
+    def window_saturated_pixels(self):
+        """
+        Number of saturated pixels in this spectral window.
+        """
+        return self.get(f"TSATPX{self._iwin}")
+
+    @property
+    def window_spikes(self):
+        """
+        Number of pixels identified as noise spikes in this spectral window.
+        """
+        return self.get(f"TSPIKE{self._iwin}")
 
     def __str__(self) -> str:
         return textwrap.dedent(

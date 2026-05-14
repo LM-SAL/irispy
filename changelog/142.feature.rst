@@ -1,0 +1,1 @@
+Exposed much more FITS metadata to the user via the ``meta``.
