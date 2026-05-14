@@ -12,6 +12,7 @@ import astropy.units as u
 from astropy.io import fits
 from astropy.wcs import WCS
 
+from irispy.meta import SGMeta
 from irispy.spectrograph import SpectrogramCube
 
 __all__ = ["make_test_spectrogram_cube", "warnings_as_errors"]
@@ -113,5 +114,13 @@ def make_test_spectrogram_cube(data, wavelengths):
     header["CDELT3"] = 1.0
     header["CRVAL3"] = 0.0
     wcs = WCS(header)
-    meta = {"OBSID": 1, "detector type": "FUV", "spectral window": "test"}
+    # Build minimal header for SGMeta
+    meta_header = fits.Header()
+    meta_header["NWIN"] = 1
+    meta_header["TDESC1"] = "test"
+    meta_header["TWAVE1"] = float(wavelengths.to(u.AA).value[0])
+    meta_header["TWMIN1"] = float(wavelengths.to(u.AA).value[0])
+    meta_header["TWMAX1"] = float(wavelengths.to(u.AA).value[-1])
+    meta_header["TDET1"] = "FUV"
+    meta = SGMeta(meta_header, "test")
     return SpectrogramCube(data, wcs=wcs, uncertainty=None, unit=u.DN, meta=meta, mask=None)

@@ -2,8 +2,6 @@
 Spectral moment calculation utilities for IRIS spectrogram cubes.
 """
 
-import contextlib
-
 import numpy as np
 
 import astropy.units as u
@@ -50,10 +48,7 @@ def calculate_moments(
     cube : `irispy.spectrograph.SpectrogramCube`
         The input data cube. Must have a spectral (wavelength) axis.
     rest_wavelength : `astropy.units.Quantity`, optional
-        The rest wavelength of the spectral line. If omitted, read from
-        ``cube.meta.rest_wavelength`` (requires an `~irispy.meta.SGMeta`
-        instance with a ``TWAVE<n>`` FITS keyword). Required if ``wings``
-        is given and no rest wavelength can be auto-detected.
+        The rest wavelength of the spectral line.
     wings : `astropy.units.Quantity`, optional
         The spectral range around ``rest_wavelength`` to include in the calculation.
         Must be an `~astropy.units.Quantity` with appropriate units (e.g., nm or Angstrom).
@@ -103,13 +98,11 @@ def calculate_moments(
     * `Færder et al. (2024), ApJ, Appendix C <https://iopscience.iop.org/article/10.3847/1538-4357/ac4223>`__
     """
     if rest_wavelength is None:
-        with contextlib.suppress(AttributeError, TypeError):
+        try:
             rest_wavelength = cube.meta.rest_wavelength
-    try:
-        wavelength_axis = cube.wavelength_axis
-    except (AttributeError, StopIteration) as exc:
-        msg = "Could not identify a spectral wavelength axis on the input cube"
-        raise ValueError(msg) from exc
+        except (AttributeError, TypeError):
+            rest_wavelength = None
+    wavelength_axis = cube.wavelength_axis
     wavelengths = cube.axis_world_coords(wavelength_axis)[0]
     if not isinstance(wavelengths, u.Quantity):
         wavelengths = wavelengths * u.one

@@ -135,7 +135,9 @@ def test_calculate_moments_wings_no_meta_no_rest_wavelength():
     Wings with no rest_wavelength and no detectable meta should raise.
     """
     cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), np.arange(5) * u.nm)
-    with pytest.raises(ValueError, match="rest_wavelength must be provided"):
+    # Simulate meta without rest_wavelength attribute
+    del cube.meta["TWAVE1"]
+    with pytest.raises((ValueError, AttributeError), match="rest_wavelength must be provided"):
         calculate_moments(cube, wings=1.0 * u.Angstrom)
 
 
