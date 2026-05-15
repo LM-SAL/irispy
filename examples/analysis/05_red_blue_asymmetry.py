@@ -20,7 +20,7 @@ import astropy.units as u
 from astropy.visualization import time_support
 
 from irispy.io import read_files
-from irispy.utils.red_blue import calculate_red_blue_asymmetry
+from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
 
 time_support()
 
@@ -64,16 +64,16 @@ velocity_range = (25, 75) * u.km / u.s
 # Ignore pixels where the line peak is too weak for a useful wing comparison.
 min_intensity = 75 * si_iv.unit
 
+# rest_wavelength is auto-detected from the cube metadata (TWAVE[N] FITS keyword).
+# You can also pass it explicitly: rest_wavelength=si_iv_rest.
 red_blue = calculate_red_blue_asymmetry(
     si_iv,
-    rest_wavelength=si_iv_rest,
     velocity_range=velocity_range,
     min_intensity=min_intensity,
     return_profiles=True,
 )
 
 asymmetry = red_blue["red_blue_asymmetry"]
-peak_velocity = red_blue["peak_velocity"]
 quality = red_blue["quality"]
 observed_profiles = red_blue["observed_profile"]
 
@@ -102,7 +102,8 @@ axes = [
 
 # This plot will be the RBA values over the full raster.
 ax = axes[0]
-rba_map = np.where(quality.data == 0, asymmetry.data, np.nan)
+rba_map = np.where(quality.data == int(RBAQualityFlag.OK), asymmetry.data, np.nan)
+# Colour scale: 98th percentile of absolute RBA, floored so subtle features remain visible.
 vmax = max(np.nanpercentile(np.abs(rba_map), 98), 0.15)
 im = ax.imshow(rba_map, cmap="RdBu_r", origin="lower", aspect="auto", vmin=-vmax, vmax=vmax)
 ax.plot(
@@ -130,9 +131,7 @@ ax.axvspan(-v_high, -v_low, color="C0", alpha=0.1)
 ax.axvspan(v_low, v_high, color="C3", alpha=0.1)
 
 ax.set_title(
-    f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f}   "
-    f"Peak vel = {float(peak_velocity.data[selected_pixel_index]):.1f} km/s   "
-    f"Quality = {int(quality.data[selected_pixel_index]):d}"
+    f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f}   Quality = {int(quality.data[selected_pixel_index]):d}"
 )
 ax.set_xlabel("Velocity [km/s]")
 ax.set_ylabel(f"Intensity [{si_iv.unit.to_string()}]")
