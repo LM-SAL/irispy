@@ -194,7 +194,7 @@ def test_calculate_red_blue_asymmetry_return_profiles():
     assert isinstance(observed_cube, SpectrogramCube)
     assert isinstance(interp_cube, SpectrogramCube)
     assert observed_cube.data.shape == cube.shape
-    assert interp_cube.data.shape == (1, 2, 31)
+    assert interp_cube.data.shape == (1, 2, 33)
     assert "spect.dopplerVeloc" in observed_cube.wcs.world_axis_physical_types
     assert "spect.dopplerVeloc" in interp_cube.wcs.world_axis_physical_types
     assert interp_cube.uncertainty.array.shape == interp_cube.shape
@@ -211,10 +211,10 @@ def test_calculate_red_blue_asymmetry_return_profiles_on_sliced_cube():
 
     result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
     assert result["observed_profile"].shape == cube.shape
-    assert result["interpolated_profile"].shape == (2, 1, 31)
+    assert result["interpolated_profile"].shape == (2, 1, 33)
     assert_quantity_allclose(
         result["interpolated_profile"][0, 0].axis_world_coords(0)[0],
-        np.arange(-150, 151, 10) * u.km / u.s,
+        np.arange(-160, 161, 10) * u.km / u.s,
     )
 
 

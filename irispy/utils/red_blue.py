@@ -20,6 +20,9 @@ from irispy.utils._spectral import drop_extra_coords_dependent_on_axis, make_map
 
 __all__ = ["RBAQualityFlag", "calculate_red_blue_asymmetry"]
 
+# Minimum fraction of wing bins that must have finite interpolated values.
+_MIN_WING_COVERAGE = 0.8
+
 
 class RBAQualityFlag(IntEnum):
     """
@@ -182,6 +185,12 @@ def calculate_red_blue_asymmetry(
     Returns
     -------
     `irispy.spectrograph.RasterCollection`
+        Always contains ``"red_blue_asymmetry"`` and ``"quality"`` 2D maps.
+        ``"red_blue_asymmetry_error"`` is added when the input cube has uncertainty.
+        ``"observed_profile"`` and ``"interpolated_profile"`` 3D cubes are added
+        when ``return_profiles=True``. The interpolated profile velocity axis is
+        peak-centred; the observed profile velocity axis is relative to
+        ``rest_wavelength``.
     """
     if rest_wavelength is None:
         rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
@@ -214,15 +223,11 @@ def calculate_red_blue_asymmetry(
         msg = "degree must be a non-negative integer"
         raise ValueError(msg)
 
-    try:
-        wavelength_axis = cube.wavelength_axis
-    except (AttributeError, StopIteration) as exc:
-        msg = "Could not identify a spectral wavelength axis on the input cube"
-        raise ValueError(msg) from exc
+    wavelength_axis = cube.wavelength_axis
     wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
     rest_wavelength = rest_wavelength.to(wavelengths.unit)
     velocity = ((wavelengths - rest_wavelength) / rest_wavelength * constants.c).to_value(u.km / u.s)
-    interp_extent = velocity_high.to_value(u.km / u.s)
+    interp_extent = velocity_high.to_value(u.km / u.s) + dv
     interp_velocity = np.arange(-interp_extent, interp_extent + dv, dv)
     velocity_range_kms = (velocity_low.to_value(u.km / u.s), velocity_high.to_value(u.km / u.s))
 
@@ -245,12 +250,12 @@ def calculate_red_blue_asymmetry(
         min_intensity_value = (
             min_intensity.to_value(cube.unit) if isinstance(min_intensity, u.Quantity) else min_intensity
         )
-        quality = np.where(raw_peak < min_intensity_value, RBAQualityFlag.LOW_SIGNAL, quality)
+        quality = np.where(raw_peak < min_intensity_value, RBAQualityFlag.LOW_SIGNAL, quality).astype(np.uint8)
     if saturation_limit is not None:
         saturation_limit_value = (
             saturation_limit.to_value(cube.unit) if isinstance(saturation_limit, u.Quantity) else saturation_limit
         )
-        quality = np.where(raw_peak > saturation_limit_value, RBAQualityFlag.SATURATED, quality)
+        quality = np.where(raw_peak > saturation_limit_value, RBAQualityFlag.SATURATED, quality).astype(np.uint8)
 
     interpolated_profiles = (
         np.full((*output_shape, interp_velocity.size), np.nan, dtype=float) if return_profiles else None
@@ -262,7 +267,6 @@ def calculate_red_blue_asymmetry(
     )
 
     min_points = degree + 1
-    min_wing_coverage = 0.8
     for index in np.ndindex(output_shape):
         if quality[index] in (RBAQualityFlag.LOW_SIGNAL, RBAQualityFlag.SATURATED):
             continue
@@ -317,10 +321,10 @@ def calculate_red_blue_asymmetry(
 
         red_finite = red_mask & np.isfinite(interp_profile)
         blue_finite = blue_mask & np.isfinite(interp_profile)
-        if red_finite.sum() < min_wing_coverage * red_mask.sum():
+        if red_finite.sum() < _MIN_WING_COVERAGE * red_mask.sum():
             quality[index] = RBAQualityFlag.INCOMPLETE_WINGS
             continue
-        if blue_finite.sum() < min_wing_coverage * blue_mask.sum():
+        if blue_finite.sum() < _MIN_WING_COVERAGE * blue_mask.sum():
             quality[index] = RBAQualityFlag.INCOMPLETE_WINGS
             continue
 
