@@ -4,6 +4,8 @@ omit =
   irispy/*setup_package*
   irispy/extern/*
   irispy/version*
+  irispy/_dev/*
+  */irispy/_dev/*
   */irispy/conftest.py
   */irispy/*setup_package*
   */irispy/extern/*
