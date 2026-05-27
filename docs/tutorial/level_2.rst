@@ -410,6 +410,7 @@ This only applies to the slit-jaw images, as the raster cubes do not have a sing
     plt.show()
 
 Since they are both series of images, the plot method will automatically create a slider to scroll through the different time steps or raster steps.
+Use the ``slider_labels`` keyword to override the slider text, for example ``iris_sji.plot(slider_labels=["Frame"])``.
 Furthermore, the tick and axes labels have been automatically set based on the coordinate system of the cube and are colored according to the axis direction.
 
 Within the :ref:`irispy-example-index`, there are more examples of how to visualize the data and customize the plots.

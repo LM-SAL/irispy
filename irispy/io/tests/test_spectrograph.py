@@ -13,8 +13,8 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
-from irispy.io._raster_combine import _validate_combinable_raster_cubes
 from irispy._spectrograph_wcs import _create_raster_gwcs, _sanitize_raster_wcs_tables
+from irispy.io._raster_combine import _validate_combinable_raster_cubes
 from irispy.io.spectrograph import read_spectrograph_lvl2
 
 

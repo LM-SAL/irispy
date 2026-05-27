@@ -268,11 +268,22 @@ def test_raster_animation_can_show_time_axis(raster_sg_files):
     time = _get_coord(ax, coord_type="scalar", coord_unit=u.s)
     step = _get_coord(ax, coord_type="scalar", coord_unit=u.pix)
 
+    assert animator.slider_labels == ["Scan", "Wavelength"]
     assert "b" in time.get_ticks_position()
     assert "b" in time.get_axislabel_position()
     assert "r" in step.get_ticks_position()
     assert latitude.get_axislabel()
     assert longitude.get_axislabel()
+    plt.close(fig)
+
+
+def test_default_raster_sequence_animation_labels_scan_and_step(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    fig = plt.figure()
+    animator = cube.plot(fig=fig, vmin=0, vmax=1000)
+
+    assert animator.slider_labels == ["Scan number", "Raster step"]
     plt.close(fig)
 
 
@@ -300,6 +311,26 @@ def test_raster_animation_keeps_longitude_axis_after_slider_update(raster_sg_fil
     assert longitude.get_axislabel()
     assert latitude.get_axislabel()
     assert time.get_axislabel()
+    plt.close(fig)
+
+
+def test_raster_animation_accepts_custom_slider_labels(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster["Si IV 1403"]
+    fig = plt.figure()
+    with pytest.warns(
+        NDCubeUserWarning,
+        match="Animating a NDCube does not support transposing the array",
+    ):
+        animator = cube.plot(
+            fig=fig,
+            plot_axes=["x", "y", None, None],
+            slider_labels=["Slit", "Line"],
+            vmin=0,
+            vmax=1000,
+        )
+
+    assert animator.slider_labels == ["Slit", "Line"]
     plt.close(fig)
 
 

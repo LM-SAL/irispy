@@ -29,7 +29,27 @@ LON_LABELS = [
 ]
 TIME_LABEL_PRIORITY = ["seconds from start (s)", "time (utc)", "time"]
 SCAN_STEP_LABELS = ["custom:step", "scan_step"]
+SLIDER_SCAN_STEP_LABELS = [*SCAN_STEP_LABELS, "raster_step"]
+SLIDER_SCAN_LABELS = ["custom:scan", "raster_scan"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
+
+
+def _shorten_slider_label(label):
+    """
+    Return a concise label for common IRIS animation sliders.
+    """
+    lowered_label_parts = {label_part.strip().lower() for label_part in str(label).split(" / ")}
+    if lowered_label_parts.intersection(SLIDER_SCAN_STEP_LABELS):
+        return "Raster step"
+    if lowered_label_parts.intersection(SLIDER_SCAN_LABELS):
+        return "Scan number"
+    if lowered_label_parts.intersection(WAVELENGTH_LABELS):
+        return "Wavelength"
+    if lowered_label_parts.intersection(TIME_LABEL_PRIORITY):
+        return "Time"
+    if lowered_label_parts and lowered_label_parts.issubset(set(LON_LABELS + LAT_LABELS)):
+        return "Scan"
+    return label
 
 
 @contextmanager
@@ -185,7 +205,8 @@ class Plot2DMixin:
 
 
 class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
-    pass
+    def _compute_slider_labels_from_wcs(self, slices):
+        return [_shorten_slider_label(label) for label in super()._compute_slider_labels_from_wcs(slices)]
 
 
 class IRISPlotter(MatplotlibPlotter):

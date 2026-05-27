@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 
 import sunpy.map
@@ -68,3 +69,19 @@ def test_to_map(sns_sjicube_1330):
     assert isinstance(output, sunpy.map.mapsequence.MapSequence)
     assert output.data.shape == (40, 37, 52)
     assert np.all([output.reference_date is not None for output in output])
+
+
+def test_sji_plot_uses_short_slider_label(sns_sjicube_1330):
+    fig = plt.figure()
+    animator = sns_sjicube_1330.plot(fig=fig)
+
+    assert animator.slider_labels == ["Time"]
+    plt.close(fig)
+
+
+def test_sji_plot_accepts_custom_slider_label(sns_sjicube_1330):
+    fig = plt.figure()
+    animator = sns_sjicube_1330.plot(fig=fig, slider_labels=["Frame"])
+
+    assert animator.slider_labels == ["Frame"]
+    plt.close(fig)

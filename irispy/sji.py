@@ -165,7 +165,17 @@ class SJICube(SpectrogramCube):
             sliced_self._basic_wcs = self._basic_wcs[basic_wcs_item]
         return sliced_self
 
-    def plot(self, *args, **kwargs):
+    def plot(self, *args, slider_labels=None, **kwargs):
+        """
+        Plot the SJI cube.
+
+        Parameters
+        ----------
+        slider_labels : sequence of str, optional
+            Labels to use for animation sliders, in the order the sliders are shown.
+        **kwargs
+            Additional keyword arguments are passed to the ndcube plotting machinery.
+        """
         cmap = kwargs.get("cmap")
         if not cmap:
             try:
@@ -174,6 +184,8 @@ class SJICube(SpectrogramCube):
                 logger.debug(e)
                 cmap = "viridis"
         kwargs["cmap"] = cmap
+        if slider_labels is not None:
+            kwargs["slider_labels"] = slider_labels
         return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
 
     def apply_dust_mask(self, *, undo=False):
