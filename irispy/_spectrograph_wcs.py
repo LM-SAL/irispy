@@ -286,7 +286,9 @@ def _raster_wcs_bad_row_mask(pc, crval):
     crval_values = crval.to_value(u.arcsec) if hasattr(crval, "to_value") else np.asarray(crval)
     pc_bad = np.isclose(pc_values, 0).all(axis=(1, 2))
     crval_bad = np.isclose(crval_values, 0).all(axis=1)
-    return pc_bad | crval_bad
+    # Require BOTH pc and crval to be all-zero: crval=(0,0) alone is valid for
+    # disk-centre pointings.  A truly unfilled row will have an all-zero PC matrix.
+    return pc_bad & crval_bad
 
 
 def _interpolate_wcs_bad_rows(pc, crval, bad_rows, good_indices):

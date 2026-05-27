@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -93,6 +94,12 @@ def read_spectrograph_lvl2(
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
+    if uncertainty and memmap:
+        warnings.warn(
+            "uncertainty is not computed when memmap=True; uncertainty will be None.",
+            UserWarning,
+            stacklevel=2,
+        )
     compute_uncertainty = uncertainty and not memmap
     with fits.open(filenames[0], memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
         v34 = hdulist[0].header["STEPS_AV"] < -0.01
@@ -196,7 +203,7 @@ def read_spectrograph_lvl2(
                     offset_index = 34 if meta.spectral_band == "FUV" else 45
                     xcen = aux.data[:, aux.header["XCENIX"]] - aux.data[:, offset_index] * (SLIT_WIDTH.value / 2)
                     ycen = aux.data[:, aux.header["YCENIX"]]
-                    crval = np.column_stack((ycen, xcen)) * u.arcsec
+                    crval = np.column_stack((xcen, ycen)) * u.arcsec
                     if flip:
                         crval = crval[::-1]
 
@@ -233,6 +240,10 @@ def read_spectrograph_lvl2(
                     )
                 if flip:
                     data = np.flip(hdulist[window_fits_indices[i]].data, axis=0)
+                    if data_mask is not None:
+                        data_mask = np.flip(data_mask, axis=0)
+                    if out_uncertainty is not None:
+                        out_uncertainty = np.flip(out_uncertainty, axis=0)
                 else:
                     data = hdulist[window_fits_indices[i]].data
                 cube_wcs = _create_raster_gwcs(

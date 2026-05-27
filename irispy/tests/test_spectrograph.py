@@ -166,7 +166,8 @@ def test_spectrogram_cube_scan_slice_recovers_segment_basic_wcs(raster_sg_files)
 
 
 def test_memmap_split_rasters_returns_lazy_subcubes(raster_sg_files):
-    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
+    with pytest.warns(UserWarning, match="uncertainty is not computed when memmap=True"):
+        raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
     cube = raster["Si IV 1403"].split_rasters()[0]
 
     assert isinstance(cube.data, da.Array)
@@ -178,7 +179,8 @@ def test_memmap_split_rasters_returns_lazy_subcubes(raster_sg_files):
 
 
 def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
-    raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
+    with pytest.warns(UserWarning, match="uncertainty is not computed when memmap=True"):
+        raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)
     cube = raster["Si IV 1403"]
     image = cube.crop(
         [SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2]), None, None, None, None],
