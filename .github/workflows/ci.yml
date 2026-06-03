@@ -31,7 +31,7 @@ permissions: {}
 
 jobs:
   core:
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2.6.3  # zizmor: ignore[unpinned-uses]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
     with:
       submodules: false
       coverage: codecov
@@ -47,10 +47,10 @@ jobs:
   sdist_verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2  # zizmor: ignore[unpinned-uses]
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6  # zizmor: ignore[unpinned-uses]
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.14'
       - run: python -m pip install -U --user build
@@ -60,7 +60,7 @@ jobs:
 
   test:
     needs: [core, sdist_verify]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2.6.3  # zizmor: ignore[unpinned-uses]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
     with:
       submodules: false
       coverage: codecov
@@ -82,7 +82,7 @@ jobs:
 
   docs:
     needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2.6.3  # zizmor: ignore[unpinned-uses]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
     with:
       default_python: '3.13'
       submodules: false
@@ -104,7 +104,7 @@ jobs:
   online:
     if: "!startsWith(github.event.ref, 'refs/tags/v')"
     needs: [docs]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v2.6.3 # zizmor: ignore[unpinned-uses]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017 # v2.6.4
     with:
       default_python: '3.13'
       submodules: false
@@ -135,7 +135,7 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'Run publish')
       )
     needs: [test, docs]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@v2.6.3  # zizmor: ignore[unpinned-uses]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
     with:
       python-version: '3.13'
       libraries: "ffmpeg"
