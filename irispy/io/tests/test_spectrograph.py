@@ -13,8 +13,13 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
-from irispy._spectrograph_wcs import _create_raster_gwcs, _sanitize_raster_wcs_tables
-from irispy.io._raster_combine import _validate_combinable_raster_cubes
+from irispy._spectrograph_wcs import (
+    SIT_AND_STARE_CDELT3_PLACEHOLDER,
+    _create_raster_gwcs,
+    _raster_wcs_bad_row_mask,
+    _sanitize_raster_wcs_tables,
+)
+from irispy.io._raster_combine import _combine_raster_cubes, _validate_combinable_raster_cubes
 from irispy.io.spectrograph import read_spectrograph_lvl2
 
 
@@ -178,6 +183,7 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(raster_sg_files)
 
 
+@pytest.mark.filterwarnings("ignore:uncertainty is not computed when memmap=True:UserWarning")
 def test_memmap_mode_never_computes_uncertainty(sns_sg_file, raster_sg_files):
     sit_and_stare = read_spectrograph_lvl2(sns_sg_file, memmap=True, uncertainty=True)["Si IV 1403"]
     raster = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)["Si IV 1403"]
@@ -343,6 +349,7 @@ def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic(raster_sg_fi
         dt_all,
         scan.time[0],
         scan._raster_observer,
+        sit_and_stare=scan._sit_and_stare,
     )
 
     for scan_index in (1, scan.shape[0] + 1):
@@ -353,6 +360,7 @@ def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic(raster_sg_fi
 def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files):
     raster_collection = read_spectrograph_lvl2(raster_sg_files)
     scan = raster_collection["Si IV 1403"].raster_slice(0)
+    assert not scan._sit_and_stare
 
     for array_index in ((0, 50, 3), (3, 50, 10), (7, 80, 20)):
         spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
@@ -361,6 +369,94 @@ def test_raster_gwcs_matches_basic_wcs_forward_world_coordinates(raster_sg_files
         assert_quantity_allclose(spectral.to(u.nm), basic_spectral.to(u.nm))
         assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=10 * u.arcsec)
         assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=1 * u.arcsec)
+
+
+def test_sit_and_stare_gwcs_matches_basic_wcs_forward_world_coordinates(sns_sg_file):
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
+    scan = raster_collection["Si IV 1403"]
+    assert scan._sit_and_stare
+
+    for array_index in ((3, 20, 10), (4, 25, 10), (10, 30, 5)):
+        spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
+        basic_spectral, basic_sky = scan.basic_wcs.array_index_to_world(*array_index)
+
+        assert_quantity_allclose(spectral.to(u.nm), basic_spectral.to(u.nm))
+        assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=0.05 * u.arcsec)
+        assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=0.02 * u.arcsec)
+
+
+def test_raster_gwcs_crpix_reference_pixel_is_zero_based():
+    header = {
+        "CUNIT1": "nm",
+        "CDELT1": 0.1,
+        "CRVAL1": 140.0,
+        "CRPIX1": 1.0,
+        "CDELT2": 0.5,
+        "CDELT3": 2.0,
+        "CRPIX2": 3.0,
+        "CRPIX3": 4.0,
+    }
+    crval = np.repeat([[10.0, 20.0]], 6, axis=0) * u.arcsec
+    pc = np.repeat(np.eye(2)[np.newaxis, :, :], 6, axis=0) * u.pix
+    dt = np.arange(6) * u.s
+    observer = HeliographicStonyhurst(0 * u.deg, 0 * u.deg, 1 * u.AU, obstime="2020-01-01")
+
+    wcs = _create_raster_gwcs(header, pc, crval, dt, "2020-01-01", observer, sit_and_stare=False)
+    _, sky, _, _ = wcs.array_index_to_world(3, 2, 0)
+
+    assert_quantity_allclose(sky.Tx.to(u.arcsec), 10 * u.arcsec)
+    assert_quantity_allclose(sky.Ty.to(u.arcsec), 20 * u.arcsec)
+
+
+def test_tiny_nonzero_cdelt3_is_not_sit_and_stare():
+    header = {
+        "CUNIT1": "nm",
+        "CDELT1": 0.1,
+        "CRVAL1": 140.0,
+        "CRPIX1": 1.0,
+        "CDELT2": 0.5,
+        "CDELT3": SIT_AND_STARE_CDELT3_PLACEHOLDER,
+        "CRPIX2": 3.0,
+        "CRPIX3": 4.0,
+    }
+    crval = np.repeat([[10.0, 20.0]], 6, axis=0) * u.arcsec
+    pc = np.repeat(np.eye(2)[np.newaxis, :, :], 6, axis=0) * u.pix
+    dt = np.arange(6) * u.s
+    observer = HeliographicStonyhurst(0 * u.deg, 0 * u.deg, 1 * u.AU, obstime="2020-01-01")
+
+    wcs = _create_raster_gwcs(header, pc, crval, dt, "2020-01-01", observer, sit_and_stare=False)
+    _, sky, _, _ = wcs.array_index_to_world(3, 2, 0)
+
+    assert_quantity_allclose(sky.Tx.to(u.arcsec), 10 * u.arcsec)
+    assert_quantity_allclose(sky.Ty.to(u.arcsec), 20 * u.arcsec)
+
+
+def test_separate_raster_step_slice_slices_wcs_tables(raster_sg_files):
+    raster_collection = read_spectrograph_lvl2(raster_sg_files)
+    cube = raster_collection["Si IV 1403"]
+
+    sliced = cube[:, 0:4]
+
+    assert sliced.data.shape == (13, 4, 109, 29)
+    assert sliced._raster_pc_table.shape == (13, 4, 2, 2)
+    assert sliced._raster_crval_table.shape == (13, 4, 2)
+    assert sliced._raster_wcs_header["NAXIS3"] == 4
+
+    split_cubes = sliced.split_rasters()
+    assert all(split_cube._raster_pc_table.shape == (4, 2, 2) for split_cube in split_cubes)
+    assert all(split_cube._raster_crval_table.shape == (4, 2) for split_cube in split_cubes)
+
+    recombined = _combine_raster_cubes(split_cubes, _create_raster_gwcs)
+    assert recombined.shape == sliced.shape
+    assert recombined._raster_pc_table.shape == sliced._raster_pc_table.shape
+
+    for array_index in ((0, 0, 50, 3), (12, 3, 80, 20)):
+        spectral, sky, _, _, _ = recombined.wcs.array_index_to_world(*array_index)
+        expected_spectral, expected_sky, _, _, _ = sliced.wcs.array_index_to_world(*array_index)
+
+        assert_quantity_allclose(spectral.to(u.nm), expected_spectral.to(u.nm))
+        assert_quantity_allclose(sky.Tx.to(u.arcsec), expected_sky.Tx.to(u.arcsec))
+        assert_quantity_allclose(sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
 
 
 def test_sanitize_raster_wcs_tables_all_bad_rows_uses_fallback():
@@ -383,6 +479,30 @@ def test_sanitize_raster_wcs_tables_all_bad_rows_uses_fallback():
     expected_crval = np.repeat(fallback_crval.to_value(u.arcsec)[None, ...], 3, axis=0)
     np.testing.assert_allclose(pc_out.to_value(u.pix), expected_pc)
     np.testing.assert_allclose(crval_out.to_value(u.arcsec), expected_crval)
+
+
+def test_sit_and_stare_zero_pc_rows_are_interpolated():
+    pc = (
+        np.array(
+            [
+                [[1.0, 0.0], [0.0, 1.0]],
+                [[0.0, 0.0], [0.0, 0.0]],
+                [[3.0, 0.0], [0.0, 3.0]],
+            ]
+        )
+        * u.pix
+    )
+    crval = np.repeat([[10.0, 20.0]], 3, axis=0) * u.arcsec
+
+    assert not _raster_wcs_bad_row_mask(pc, crval).any()
+    bad_rows = _raster_wcs_bad_row_mask(pc, crval, pc_only=True)
+
+    with pytest.warns(UserWarning, match="all-zero WCS tables"):
+        pc_out, crval_out = _sanitize_raster_wcs_tables(pc.copy(), crval.copy(), bad_rows=bad_rows)
+
+    np.testing.assert_array_equal(bad_rows, [False, True, False])
+    np.testing.assert_allclose(pc_out[1].to_value(u.pix), [[2.0, 0.0], [0.0, 2.0]])
+    assert_quantity_allclose(crval_out[1], [10.0, 20.0] * u.arcsec)
 
 
 def test_sanitize_raster_wcs_tables_all_bad_rows_without_fallback_raises():

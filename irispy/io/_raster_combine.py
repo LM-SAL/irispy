@@ -174,6 +174,7 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap, create_raster_gwcs
             (times - times[0, 0]).to_value(u.s) * u.s,
             times[0, 0],
             cubes[0]._raster_observer,
+            sit_and_stare=cubes[0]._sit_and_stare,
         ),
         uncertainty=_stack_uncertainty(cubes),
         unit=cubes[0].unit,
@@ -187,6 +188,7 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap, create_raster_gwcs
         _raster_crval_table=crval_all,
         _raster_observer=cubes[0]._raster_observer,
         _separate_raster_axis=True,
+        _sit_and_stare=cubes[0]._sit_and_stare,
     )
 
 

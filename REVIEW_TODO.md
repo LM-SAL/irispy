@@ -35,6 +35,7 @@ coordinate and mask everything downstream that compares against `basic_wcs`.
   pixel. Land with item 1, then re-run the forward-coordinates test.
 
 ### 3. Slicing leaves stale per-step pc/crval tables (step axis ignored)
+- **Status:** Fixed by slicing sidecar WCS tables with both scan and step items.
 - **Where:** `irispy/_spectrograph_wcs.py:242` (`_slice_raster_metadata`,
   separate-raster-axis branch)
 - **What:** Tables are sliced only by the scan index (`value[scan_item]`); the
@@ -48,6 +49,7 @@ coordinate and mask everything downstream that compares against `basic_wcs`.
   `split_rasters()` → `_build_combined_raster_cube` produces matching coordinates.
 
 ### 4. Sit-and-stare PC-only-zero AUX rows are never flagged
+- **Status:** Fixed with a sit-and-stare-only PC bad-row mask path.
 - **Where:** `irispy/_spectrograph_wcs.py:281-291` (`_raster_wcs_bad_row_mask`)
 - **What:** Mask requires `pc_bad & crval_bad`. The sit-and-stare path fills crval
   from header CRVAL3/CRVAL2 (nonzero off disk-center), so an unfilled AUX row with
@@ -61,6 +63,7 @@ coordinate and mask everything downstream that compares against `basic_wcs`.
   row → row gets interpolated.
 
 ### 5. Sit-and-stare detection via `np.isclose` sentinel is fragile (three variants)
+- **Status:** Fixed by deciding sit-and-stare exactly in the reader and passing it through WCS construction.
 - **Where:** `irispy/_spectrograph_wcs.py:435` & `:472` (`np.isclose(CDELT3, 1e-10)`
   hardcoded, ignoring the defined `SIT_AND_STARE_CDELT3_PLACEHOLDER`),
   `irispy/io/spectrograph.py:192` (`np.isclose(CDELT3, 0)`)
@@ -150,13 +153,14 @@ coordinate and mask everything downstream that compares against `basic_wcs`.
   than files (or zero cubes → drop the window with a warning).
 
 ### 12. Two tests fail deterministically
+- **Status:** Fixed with a test-local `pytest.mark.filterwarnings`.
 - **Where:** `irispy/io/tests/test_spectrograph.py:182`
   (`test_memmap_mode_never_computes_uncertainty`)
 - **What:** Calls `read_spectrograph_lvl2(memmap=True, uncertainty=True)` without
   `pytest.warns`; the reader now emits a UserWarning for that combination and
   pytest config sets `filterwarnings = error`. Confirmed failing locally.
-- **Fix:** Wrap the call in
-  `pytest.warns(UserWarning, match="uncertainty is not computed")`.
+- **Fix:** Filter the expected warning on this test with
+  `pytest.mark.filterwarnings`.
   (The other deterministic failure is the shape assertion in item 9.)
 
 ### 13. Stale 2-element crop calls in v34 example

@@ -41,11 +41,13 @@ _SPECTROGRAM_CUBE_METADATA_KWARGS = (
     "_memmap_ext",
     "_flip",
     "_separate_raster_axis",
+    "_sit_and_stare",
 )
 _SPECTROGRAM_CUBE_METADATA_DEFAULTS = {
     "_memmap": False,
     "_flip": False,
     "_separate_raster_axis": False,
+    "_sit_and_stare": False,
 }
 
 
@@ -223,26 +225,50 @@ class _SpectrogramCubeWCSMixin:
                 boundaries.append((overlap_start - scan_start, overlap_stop - scan_start))
         return boundaries or None
 
+    def _slice_raster_wcs_header_for_step_slice(self, step_item, step_axis_length):
+        header = getattr(self, "_raster_wcs_header", None)
+        if header is None:
+            return None
+        if isinstance(step_item, Integral):
+            return header
+
+        step_start, step_stop, step = step_item.indices(step_axis_length)
+        sliced_header = copy(header)
+        sliced_header["CRPIX3"] = (sliced_header["CRPIX3"] - 1 - step_start) / step + 1
+        sliced_header["CDELT3"] *= step
+        if "NAXIS3" in sliced_header:
+            sliced_header["NAXIS3"] = len(range(step_start, step_stop, step))
+        return sliced_header
+
     def _slice_raster_metadata(self, item, sliced_self):
         normalized_item = self._normalize_basic_wcs_item(item)
         if normalized_item is None:
             sliced_self._basic_wcs_segments = None
             sliced_self._raster_boundaries = None
             sliced_self._separate_raster_axis = False
+            sliced_self._sit_and_stare = False
             return
 
         scan_item = normalized_item[0]
 
-        sliced_self._raster_wcs_header = getattr(self, "_raster_wcs_header", None)
         sliced_self._raster_observer = getattr(self, "_raster_observer", None)
         sliced_self._memmap = self._memmap
         sliced_self._separate_raster_axis = getattr(self, "_separate_raster_axis", False)
+        sliced_self._sit_and_stare = getattr(self, "_sit_and_stare", False)
 
         if self._separate_raster_axis:
+            step_item = normalized_item[1]
+            sliced_self._raster_wcs_header = self._slice_raster_wcs_header_for_step_slice(step_item, self.shape[1])
             for attr in ("_raster_pc_table", "_raster_crval_table"):
                 value = getattr(self, attr, None)
                 if value is not None:
-                    setattr(sliced_self, attr, value[scan_item])
+                    setattr(sliced_self, attr, value[scan_item, step_item])
+
+            if isinstance(step_item, Integral):
+                sliced_self._separate_raster_axis = False
+                sliced_self._basic_wcs_segments = None
+                sliced_self._raster_boundaries = None
+                return
 
             if isinstance(scan_item, Integral):
                 sliced_self._separate_raster_axis = False
@@ -269,6 +295,7 @@ class _SpectrogramCubeWCSMixin:
             sliced_self._raster_boundaries = None
             return
 
+        sliced_self._raster_wcs_header = self._slice_raster_wcs_header_for_step_slice(scan_item, self.shape[0])
         for attr in ("_raster_pc_table", "_raster_crval_table"):
             value = getattr(self, attr, None)
             if value is not None:
@@ -278,13 +305,15 @@ class _SpectrogramCubeWCSMixin:
         sliced_self._raster_boundaries = self._slice_raster_boundaries_for_slice(scan_item)
 
 
-def _raster_wcs_bad_row_mask(pc, crval):
+def _raster_wcs_bad_row_mask(pc, crval, *, pc_only=False):
     """
     Return AUX rows whose PC or CRVAL table entries are unusable.
     """
     pc_values = pc.to_value(u.pix) if hasattr(pc, "to_value") else np.asarray(pc)
     crval_values = crval.to_value(u.arcsec) if hasattr(crval, "to_value") else np.asarray(crval)
     pc_bad = np.isclose(pc_values, 0).all(axis=(1, 2))
+    if pc_only:
+        return pc_bad
     crval_bad = np.isclose(crval_values, 0).all(axis=1)
     # Require BOTH pc and crval to be all-zero: crval=(0,0) alone is valid for
     # disk-centre pointings.  A truly unfilled row will have an all-zero PC matrix.
@@ -365,12 +394,25 @@ def _normalize_spectral_axis_units(header):
         header["CDELT1"] *= 0.1
 
 
-def _prepare_raster_wcs_header(header, aux_data, spectral_band, *, flip):
+def _pc_table_to_lon_lat_order(pc_table, cdelt_lat_lon):
+    """
+    Convert FITS lat/lon PC matrices to the lon/lat order expected by gWCS.
+    """
+    pc_values = pc_table.to_value(u.pix) if hasattr(pc_table, "to_value") else np.asarray(pc_table)
+    cdelt_lat_lon = np.asarray(cdelt_lat_lon)
+    cd_matrix = cdelt_lat_lon[:, np.newaxis] * pc_values
+    cd_matrix_lon_lat = cd_matrix[..., [1, 0], :][..., :, [1, 0]]
+    cdelt_lon_lat = cdelt_lat_lon[[1, 0]]
+    pc_lon_lat = cd_matrix_lon_lat / cdelt_lon_lat[:, np.newaxis]
+    return pc_lon_lat * u.pix if hasattr(pc_table, "unit") else pc_lon_lat
+
+
+def _prepare_raster_wcs_header(header, aux_data, spectral_band, *, sit_and_stare, flip):
     header = copy(header)
     _normalize_spectral_axis_units(header)
     offset_index = AUX_FUV_SLIT_OFFSET_COLUMN if spectral_band == "FUV" else AUX_NUV_SLIT_OFFSET_COLUMN
     header["CRVAL3"] -= aux_data[:, offset_index].mean() * (SLIT_WIDTH.value / 2)
-    if header["CDELT3"] == 0:
+    if sit_and_stare:
         header["CDELT3"] = SIT_AND_STARE_CDELT3_PLACEHOLDER
         dispersion_ratio = header["CDELT3"] / header["CDELT2"]
         angle_1 = aux_data[:, AUX_PC_ANGLE_1_COLUMN].mean()
@@ -388,7 +430,7 @@ def _prepare_raster_wcs_header(header, aux_data, spectral_band, *, flip):
     return header
 
 
-def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observer):
+def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observer, *, sit_and_stare):
     """
     Build the raster gWCS from per-step AUX sky and timing tables.
 
@@ -417,33 +459,26 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         name="Wavelength",
     )
 
-    crpix_table = np.array([window_header["CRPIX2"], window_header["CRPIX3"]]) * u.pix
-    cdelt = np.array([window_header["CDELT2"], window_header["CDELT3"]]) * (u.arcsec / u.pix)
+    cdelt_lat_lon = np.array([window_header["CDELT2"], window_header["CDELT3"]])
+    crpix_values = np.array([window_header["CRPIX3"], window_header["CRPIX2"]])
+    crpix_values[0] -= 1
+    if not sit_and_stare:
+        crpix_values[1] -= 1
+    crpix_table = crpix_values * u.pix
+    cdelt = cdelt_lat_lon[[1, 0]] * (u.arcsec / u.pix)
     separate_raster_axis = pc_all.ndim == 4
     if separate_raster_axis:
         n_scans, n_steps = pc_all.shape[:2]
         # Pixel inputs are (wavelength, slit, step, scan), so lookup tables use (step, scan).
-        pc_table = np.swapaxes(pc_all, 0, 1)
+        pc_table = _pc_table_to_lon_lat_order(np.swapaxes(pc_all, 0, 1), cdelt_lat_lon)
         crval_table = np.swapaxes(crval_all, 0, 1)
         dt_table = np.swapaxes(dt_all, 0, 1)
-        celestial_raw = _RasterSequenceCelestialTransform(
+        celestial = _RasterSequenceCelestialTransform(
             cdelt=cdelt,
             pc_table=pc_table,
             crval_table=crval_table,
             crpix_table=crpix_table,
         )
-        if np.isclose(window_header["CDELT3"], 1e-10):
-            celestial = celestial_raw
-        else:
-            celestial = celestial_raw | m.Mapping((1, 0), name="SwapHelioprojectiveAxes")
-            celestial.inverse = (
-                m.Mapping(
-                    (1, 0, 2, 3),
-                    n_inputs=4,
-                    name="SwapHelioprojectiveAxesInverseInputs",
-                )
-                | celestial_raw.inverse
-            )
 
         temporal = m.Tabular2D(
             points=(np.arange(n_steps) * u.pix, np.arange(n_scans) * u.pix),
@@ -453,29 +488,27 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
             method="linear",
             name="Time",
         )
-        celestial_mapping = m.Mapping((0, 1, 1, 2), n_inputs=3, name="SlitStepScanMapping")
+        celestial_mapping = m.Mapping((1, 0, 1, 2), n_inputs=3, name="StepSlitScanMapping")
         celestial_forward = celestial_mapping | celestial
         sky_time = CoupledCompoundModel("&", left=celestial_forward, right=temporal, shared_inputs=2)
         non_spectral = CoupledCompoundModel("&", left=sky_time, right=m.Identity(2, name="step_scan"), shared_inputs=2)
-        non_spectral.inverse = m.Mapping(
-            (0, 1, 3, 4, 4),
-            n_inputs=5,
-            name="SelectSkyStepScan",
-        ) | (celestial.inverse & m.Identity(1, name="scan"))
+        non_spectral.inverse = (
+            m.Mapping(
+                (0, 1, 3, 4, 3, 4),
+                n_inputs=5,
+                name="SelectSkyStepScan",
+            )
+            | (celestial.inverse & m.Identity(2, name="step_scan"))
+            | m.Mapping((1, 2, 3), n_inputs=4, name="SelectSlitStepScan")
+        )
     else:
-        celestial_raw = VaryingCelestialTransform(
+        pc_table = _pc_table_to_lon_lat_order(pc_all, cdelt_lat_lon)
+        celestial = VaryingCelestialTransform(
             cdelt=cdelt,
-            pc_table=pc_all,
+            pc_table=pc_table,
             crval_table=crval_all,
             crpix_table=crpix_table,
         )
-        if np.isclose(window_header["CDELT3"], 1e-10):
-            celestial = celestial_raw
-        else:
-            celestial = celestial_raw | m.Mapping((1, 0), name="SwapHelioprojectiveAxes")
-            celestial.inverse = m.Mapping((1, 0, 2), n_inputs=3, name="SwapHelioprojectiveAxesInverseInputs") | (
-                celestial_raw.inverse
-            )
 
         temporal = m.Tabular1D(
             np.arange(pc_all.shape[0]) * u.pix,
@@ -485,18 +518,19 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
             method="linear",
             name="Time",
         )
-        slit_step_mapping = AsymmetricMapping([0, 1, 1, 1], [0, 1], name="SlitStepMapping")
+        slit_step_mapping = AsymmetricMapping([1, 0, 1, 1], [1, 0], name="StepSlitMapping")
         non_spectral_rhs = CoupledCompoundModel("&", left=celestial, right=temporal, shared_inputs=1) & m.Identity(
             1, name="step"
         )
         non_spectral = slit_step_mapping | non_spectral_rhs
         non_spectral.inverse = (
             m.Mapping(
-                (0, 1, 3),
+                (0, 1, 3, 3),
                 n_inputs=4,
                 name="SelectSkyAndExplicitStep",
             )
-            | celestial.inverse
+            | (celestial.inverse & m.Identity(1, name="step"))
+            | m.Mapping((1, 2), n_inputs=3, name="SelectSlitStep")
         )
     forward_transform = spectral & non_spectral
     forward_transform.inverse = spectral.inverse & non_spectral.inverse

@@ -183,13 +183,15 @@ def read_spectrograph_lvl2(
                 meta.add("exposure FOV center", fov_center, None, 0)
                 meta.add("observer radial velocity", obs_vrix, None, 0)
                 meta.add("orbital phase", ophaseix, None, 0)
+                sit_and_stare = window_header["CDELT3"] == 0
                 prepared_wcs_header = _prepare_raster_wcs_header(
                     window_header,
                     aux.data,
                     meta.spectral_band,
+                    sit_and_stare=sit_and_stare,
                     flip=flip,
                 )
-                if np.isclose(window_header["CDELT3"], 0):
+                if sit_and_stare:
                     # Sit-and-stare: CRVAL comes from the header, only PC may need fallback.
                     crval = (
                         np.repeat(
@@ -210,7 +212,7 @@ def read_spectrograph_lvl2(
                 running_pc_sum, running_crval_sum, running_count = running_wcs_fallbacks[window_name]
                 fallback_pc = (running_pc_sum / running_count * u.pix) if running_count > 0 else None
                 fallback_crval = (running_crval_sum / running_count * u.arcsec) if running_count > 0 else None
-                bad_rows = _raster_wcs_bad_row_mask(pc, crval)
+                bad_rows = _raster_wcs_bad_row_mask(pc, crval, pc_only=sit_and_stare)
                 good_mask = ~bad_rows
                 # Accumulate raw observed values before sanitization for running mean.
                 if good_mask.any():
@@ -253,6 +255,7 @@ def read_spectrograph_lvl2(
                     dt,
                     t_ref,
                     observer,
+                    sit_and_stare=sit_and_stare,
                 )
                 cube = SpectrogramCube(
                     data,
@@ -270,6 +273,7 @@ def read_spectrograph_lvl2(
                     _memmap_path=filename,
                     _memmap_ext=window_fits_indices[i],
                     _flip=flip,
+                    _sit_and_stare=sit_and_stare,
                 )
                 cube.extra_coords.add("time", 0, times, physical_types="time")
                 data_dict[window_name].append(cube)
