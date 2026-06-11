@@ -54,7 +54,7 @@ def test_read_files_raster_file_list(raster_sg_files):
     }
     si_iv = returns["Si IV 1403"]
     assert si_iv.shape == (13, 8, 109, 29)
-    assert si_iv.basic_wcs is None
+    assert si_iv.fits_wcs is None
     assert len(si_iv.raster_boundaries) == len(raster_sg_files)
 
 
@@ -124,14 +124,27 @@ def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
     assert len(returns) == 2
 
 
+def test_read_files_raster_scanning_synthetic(synthetic_scanning_raster_tar):
+    returns = read_files(synthetic_scanning_raster_tar)
+
+    assert sorted(returns.keys()) == ["Mg II k 2796", "Si IV 1403"]
+    si_iv = returns["Si IV 1403"]
+    np.testing.assert_array_equal(si_iv.shape, (4, 4, 24, 16))  # 4 scans, 4 steps, 24 slit, 16 spectral
+    np.testing.assert_array_equal(returns.aligned_dimensions, [4, 4, 24])
+    assert len(si_iv.raster_boundaries) == 4
+    assert si_iv.time.shape == (4, 4)
+    assert si_iv.fits_wcs is None
+    assert si_iv.raster_slice(0).fits_wcs is not None
+
+
 @pytest.mark.remote_data
 def test_read_files_raster_scanning(remote_raster_scanning_tar):
     returns = read_files(remote_raster_scanning_tar)
     assert len(returns) == 8  # spectral windows
     np.testing.assert_array_equal(
-        returns["C II 1336"].shape, (116, 388, 186)
-    )  # 29 rasters x 4 scan steps, 388 spatial pixels, 186 spectral pixels
-    np.testing.assert_array_equal(returns.aligned_dimensions, [116, 388])
+        returns["C II 1336"].shape, (29, 4, 388, 186)
+    )  # 29 rasters, 4 scan steps, 388 spatial pixels, 186 spectral pixels
+    np.testing.assert_array_equal(returns.aligned_dimensions, [29, 4, 388])
 
 
 def test_read_files_raises_when_no_files_are_supported(tmp_path):

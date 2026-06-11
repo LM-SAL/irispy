@@ -264,3 +264,8 @@ package.json
 
 # Examples data
 examples/**/*.fits
+
+# Local scratch data and review notes (not for the repo)
+/iris_l2_*
+AGENTS.md
+REVIEW_SUGGESTIONS.md

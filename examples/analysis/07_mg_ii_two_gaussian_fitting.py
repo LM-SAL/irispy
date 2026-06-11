@@ -26,9 +26,6 @@ from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.visualization import time_support
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 
@@ -61,11 +58,16 @@ mg_ii_k = raster["Mg II k 2796"]
 # for the documentation build. We will also focus on the Mg II k core,
 # which is the part of the spectrum we are going to fit.
 
-iris_observer = wcs_to_celestial_frame(mg_ii_k.basic_wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
-top_left = [None, SkyCoord(-350 * u.arcsec, 310 * u.arcsec, frame=iris_frame), None, None]
-bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame), None, None]
-mg_ii_k = mg_ii_k.crop(top_left, bottom_right)
+iris_frame = mg_ii_k.celestial_frame
+top_left = SkyCoord(-350 * u.arcsec, 310 * u.arcsec, frame=iris_frame)
+bottom_right = SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)
+crop_wavelength = SpectralCoord(279.63, unit=u.nm)
+bottom_step, bottom_slit_pixel, _ = mg_ii_k.fits_wcs.world_to_array_index(crop_wavelength, bottom_right)
+top_step, top_slit_pixel, _ = mg_ii_k.fits_wcs.world_to_array_index(crop_wavelength, top_left)
+mg_ii_k = mg_ii_k.crop(
+    mg_ii_k.wcs.array_index_to_world(top_step, top_slit_pixel, 0),
+    mg_ii_k.wcs.array_index_to_world(bottom_step, bottom_slit_pixel, mg_ii_k.data.shape[-1] - 1),
+)
 
 lower_corner = [SpectralCoord(279.40, unit=u.nm), None, None, None]
 upper_corner = [SpectralCoord(279.80, unit=u.nm), None, None, None]

@@ -13,9 +13,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.visualization import quantity_support
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 
@@ -120,9 +117,8 @@ ax.plot(mg_wave.to("AA"), mg_ii.data[120, 200])
 # Now, let's take a look at the WCS information.
 # For example, what is the wavelength position that corresponds to Mg II k core (279.63 nm)?
 
-iris_observer = wcs_to_celestial_frame(mg_ii.basic_wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
-wcs_loc = mg_ii.basic_wcs.world_to_pixel(
+iris_frame = mg_ii.celestial_frame
+wcs_loc = mg_ii.fits_wcs.world_to_pixel(
     SpectralCoord(279.63, unit=u.nm),
     SkyCoord(0 * u.arcsec, 0 * u.arcsec, frame=iris_frame),
 )
@@ -149,9 +145,10 @@ mg_spec_crop.plot(axes=ax)
 # the spectrum at that location?
 
 target = SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=iris_frame)
+raster_step, slit_pixel, _ = mg_ii.fits_wcs.world_to_array_index(SpectralCoord(279.63, unit=u.nm), target)
 mg_ii_cut = mg_ii.crop(
-    [None, target, None, None],
-    [None, target, None, None],
+    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, 0),
+    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, mg_ii.data.shape[-1] - 1),
 )
 
 fig = plt.figure()
@@ -168,7 +165,7 @@ print(mg_ii.meta)
 
 ###############################################################################
 # But this is mostly about the observation in general.
-# Times of individual scans are saved in .extra_coords['time'].
-# Getting access to it can be done in the following  way:
+# Times of individual exposures are available on the cube's time coordinate.
+# For combined raster files this is indexed by raster scan and raster step.
 
-print(mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords))
+print(mg_ii.time)

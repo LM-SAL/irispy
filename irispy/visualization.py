@@ -32,6 +32,12 @@ SCAN_STEP_LABELS = ["custom:step", "scan_step"]
 SLIDER_SCAN_STEP_LABELS = [*SCAN_STEP_LABELS, "raster_step"]
 SLIDER_SCAN_LABELS = ["custom:scan", "raster_scan"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
+LON_PHYSICAL_TYPES = {"custom:pos.helioprojective.lon"}
+LAT_PHYSICAL_TYPES = {"custom:pos.helioprojective.lat"}
+TIME_PHYSICAL_TYPES = {"time"}
+STEP_PHYSICAL_TYPES = {"custom:step"}
+SCAN_PHYSICAL_TYPES = {"custom:scan"}
+WAVELENGTH_PHYSICAL_TYPES = {"em.wl"}
 
 
 def _shorten_slider_label(label):
@@ -72,14 +78,15 @@ def set_axis_properties(ax, axes_coordinates=None, *, animate=False):
     """
     if hasattr(ax, "axes") and not hasattr(ax, "coords"):
         ax = ax.axes
-    for axis in ax.coords:
-        if axis.default_label.lower() in WAVELENGTH_LABELS:
+    for axis, physical_type in _iter_coords_with_physical_types(ax):
+        default_label = axis.default_label.lower()
+        if physical_type in WAVELENGTH_PHYSICAL_TYPES or default_label in WAVELENGTH_LABELS:
             axis.set_format_unit(u.nm)
             axis.set_major_formatter("x.x")
             axis.set_axislabel("Wavelength [$\\mathrm{nm}$]")
-        elif axis.default_label.lower() in LAT_LABELS:
+        elif physical_type in LAT_PHYSICAL_TYPES or default_label in LAT_LABELS:
             _set_axis_properties(axis, "Helioprojective Latitude [arcsec]", "red")
-        elif axis.default_label.lower() in LON_LABELS:
+        elif physical_type in LON_PHYSICAL_TYPES or default_label in LON_LABELS:
             _set_axis_properties(axis, "Helioprojective Longitude [arcsec]", "black")
     if animate:
         _set_raster_animation_axis_properties(ax, axes_coordinates)
@@ -132,6 +139,32 @@ def _hide_coord(coord):
     coord.set_axislabel("")
 
 
+def _iter_coords_with_physical_types(ax):
+    physical_types = tuple(getattr(ax.wcs, "world_axis_physical_types", ()) or ())
+    for index, coord in enumerate(ax.coords):
+        physical_type = physical_types[index].lower() if index < len(physical_types) and physical_types[index] else ""
+        yield coord, physical_type
+
+
+def _unique_coords(coords):
+    unique = []
+    for coord in coords:
+        if coord not in unique:
+            unique.append(coord)
+    return unique
+
+
+def _coords_by_physical_type_or_label(ax, physical_types, labels):
+    physical_types = {physical_type.lower() for physical_type in physical_types}
+    labels = {label.lower() for label in labels}
+    coords = [
+        coord
+        for coord, physical_type in _iter_coords_with_physical_types(ax)
+        if physical_type in physical_types or coord.default_label.lower() in labels
+    ]
+    return _unique_coords(coords)
+
+
 def _select_scan_coord_kind(axes_coordinates):
     if axes_coordinates:
         lowered = {coord.lower() for coord in axes_coordinates if isinstance(coord, str)}
@@ -148,14 +181,15 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
     scan axis. This helper keeps latitude on the left edge, hides the auxiliary scan-
     step helper, and moves the selected scan coordinate onto the visible frame edge.
     """
-    scan_step_coords = [coord for coord in ax.coords if coord.default_label.lower() in SCAN_STEP_LABELS]
-    if not scan_step_coords:
+    step_coords = _coords_by_physical_type_or_label(ax, STEP_PHYSICAL_TYPES, SLIDER_SCAN_STEP_LABELS)
+    scan_coords = _coords_by_physical_type_or_label(ax, SCAN_PHYSICAL_TYPES, SLIDER_SCAN_LABELS)
+    if not step_coords and not scan_coords:
         return
 
-    wavelength_coords = [coord for coord in ax.coords if coord.default_label.lower() in WAVELENGTH_LABELS]
-    lon_coords = [coord for coord in ax.coords if coord.default_label.lower() in LON_LABELS]
-    lat_coords = [coord for coord in ax.coords if coord.default_label.lower() in LAT_LABELS]
-    time_coords = [coord for coord in ax.coords if coord.default_label.lower() in TIME_LABEL_PRIORITY]
+    wavelength_coords = _coords_by_physical_type_or_label(ax, WAVELENGTH_PHYSICAL_TYPES, WAVELENGTH_LABELS)
+    lon_coords = _coords_by_physical_type_or_label(ax, LON_PHYSICAL_TYPES, LON_LABELS)
+    lat_coords = _coords_by_physical_type_or_label(ax, LAT_PHYSICAL_TYPES, LAT_LABELS)
+    time_coords = _coords_by_physical_type_or_label(ax, TIME_PHYSICAL_TYPES, TIME_LABEL_PRIORITY)
     if not lon_coords or not lat_coords or not time_coords:
         return
     if wavelength_coords and wavelength_coords[0].get_ticks_position():
@@ -174,7 +208,7 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
                 continue
             break
 
-    for coord in scan_step_coords:
+    for coord in [*step_coords, *scan_coords]:
         _hide_coord(coord)
     for coord in time_coords:
         if coord is not selected_scan_coord:
@@ -192,16 +226,56 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
 
 
 class Plot2DMixin:
+    def _slider_axis_changes_visible_wcs(self, ax_ind):
+        try:
+            wcs_pixel_axis = self.wcs.pixel_n_dim - ax_ind - 1
+            axis_correlation_matrix = self.wcs.axis_correlation_matrix
+        except AttributeError:
+            return True
+
+        visible_world_axes = [
+            index
+            for index, coord in enumerate(self.axes.coords)
+            if any(position != "#" for position in coord.get_ticks_position())
+        ]
+        if not visible_world_axes:
+            return True
+        return any(axis_correlation_matrix[index, wcs_pixel_axis] for index in visible_world_axes)
+
+    def _update_plot_2d_data_only(self, val, artist, slider):
+        artist.set_array(self.data_transposed)
+        if self.clip_interval is not None:
+            vmin, vmax = self._get_2d_plot_limits()
+            artist.set_clim(vmin, vmax)
+        slider.cval = val
+
     def update_plot(self, val, artist, slider):
+        if self.plot_dimensionality != 2:
+            with _suppress_wcs_nan_tick_formatting_warning():
+                return super().update_plot(val, artist, slider)
+
+        ind = int(val)
+        if ind == int(slider.cval):
+            return None
+        ax_ind = self.slider_axes[slider.slider_ind]
+        self.frame_slice[ax_ind] = ind
+        self.slices_wcsaxes[self.wcs.pixel_n_dim - ax_ind - 1] = ind
+        reset_wcs = self._slider_axis_changes_visible_wcs(ax_ind)
+
         with _suppress_wcs_nan_tick_formatting_warning():
-            result = super().update_plot(val, artist, slider)
-        if self.plot_dimensionality == 2:
+            if reset_wcs:
+                self.update_plot_2d(val, artist, slider)
+            else:
+                self._update_plot_2d_data_only(val, artist, slider)
+
+        if reset_wcs:
+            self._apply_coord_params(self.axes)
             set_axis_properties(
                 self.axes,
                 axes_coordinates=getattr(self, "_iris_requested_axes_coordinates", None),
                 animate=True,
             )
-        return result
+        return super(ArrayAnimatorWCS, self).update_plot(val, artist, slider)
 
 
 class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):

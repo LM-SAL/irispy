@@ -46,7 +46,7 @@ class RBAQualityFlag(IntEnum):
 
 
 def _make_velocity_wcs(cube, array_shape, velocity_axis, velocity_grid):
-    base_wcs = getattr(cube, "basic_wcs", None) or cube.wcs
+    base_wcs = getattr(cube, "fits_wcs", None) or cube.wcs
     fits_wcs = base_wcs if hasattr(base_wcs, "to_header") else unwrap_wcs_to_fitswcs(base_wcs)[0]
     header = fits_wcs.to_header()
     naxis = len(array_shape)

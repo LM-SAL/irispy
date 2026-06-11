@@ -21,6 +21,7 @@ from sunpy import log as logger
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.time import parse_time
 
+from irispy._interpolation import _interpolate_bad_axis0_rows
 from irispy.utils.constants import SLIT_WIDTH
 
 AUX_FUV_SLIT_OFFSET_COLUMN = 34
@@ -29,8 +30,8 @@ AUX_PC_ANGLE_1_COLUMN = 20
 AUX_PC_ANGLE_2_COLUMN = 22
 SIT_AND_STARE_CDELT3_PLACEHOLDER = 1e-10
 _SPECTROGRAM_CUBE_METADATA_KWARGS = (
-    "_basic_wcs",
-    "_basic_wcs_segments",
+    "_fits_wcs",
+    "_fits_wcs_segments",
     "_raster_boundaries",
     "_memmap",
     "_raster_wcs_header",
@@ -103,89 +104,82 @@ def _spectrogram_cube_metadata_kwargs_for_copy(cube):
 
 class _SpectrogramCubeWCSMixin:
     """
-    Mixin that handles ``basic_wcs`` and raster-metadata slicing for `SpectrogramCube`.
+    Mixin that handles ``fits_wcs`` and raster-metadata slicing for `SpectrogramCube`.
     """
 
-    def _normalize_basic_wcs_item(self, item):  # NOQA: PLR0911
+    def _normalize_fits_wcs_item(self, item):
         """
         Normalize index to tuple of length ndim with only int/slice entries.
         """
-        if isinstance(item, (Integral, slice)):
-            return (item, *([slice(None)] * (self.data.ndim - 1)))
-        if item is Ellipsis:
-            return tuple([slice(None)] * self.data.ndim)
-
-        if not isinstance(item, tuple):
-            return None
-
-        normalized = []
-        ellipsis_seen = False
-        for subitem in item:
-            if subitem is Ellipsis:
-                if ellipsis_seen:
-                    return None
-                ellipsis_seen = True
-                missing = self.data.ndim - (len(item) - 1)
-                normalized.extend([slice(None)] * missing)
-            else:
-                normalized.append(subitem)
-        if len(normalized) < self.data.ndim:
-            normalized.extend([slice(None)] * (self.data.ndim - len(normalized)))
-        if len(normalized) != self.data.ndim:
+        try:
+            normalized = tuple(sanitize_slices(item, self.data.ndim))
+        except (IndexError, TypeError, ValueError):
             return None
         if not all(isinstance(s, (Integral, slice)) for s in normalized):
             return None
-        return tuple(normalized)
+        return normalized
 
-    def _slice_basic_wcs(self, item):  # NOQA: PLR0911
-        normalized_item = self._normalize_basic_wcs_item(item)
+    def _slice_fits_wcs(self, item):  # NOQA: PLR0911
+        normalized_item = self._normalize_fits_wcs_item(item)
         if normalized_item is None:
             return None
 
-        if self._basic_wcs is not None:
-            sliced = _safe_slice_wcs(self._basic_wcs, normalized_item, "SpectrogramCube basic_wcs")
+        if self._fits_wcs is not None:
+            sliced = _safe_slice_wcs(self._fits_wcs, normalized_item, "SpectrogramCube fits_wcs")
             if sliced is not None:
                 return sliced
 
-        if not self._basic_wcs_segments:
+        if not self._fits_wcs_segments:
             return None
 
         if self._separate_raster_axis:
             scan_item = normalized_item[0]
             if isinstance(scan_item, Integral):
                 scan_index = scan_item if scan_item >= 0 else self.shape[0] + scan_item
-                for seg_start, seg_stop, seg_wcs in self._basic_wcs_segments:
-                    if seg_start <= scan_index < seg_stop:
-                        return _safe_slice_wcs(
-                            seg_wcs,
-                            normalized_item[1:],
-                            "SpectrogramCube segment basic_wcs",
-                        )
+                segment = self._fits_wcs_segment_for_index(scan_index)
+                if segment is not None:
+                    return _safe_slice_wcs(
+                        segment[2],
+                        normalized_item[1:],
+                        "SpectrogramCube segment fits_wcs",
+                    )
             return None
 
         scan_item = normalized_item[0]
         if isinstance(scan_item, Integral):
             scan_index = scan_item if scan_item >= 0 else self.shape[0] + scan_item
-            for seg_start, seg_stop, seg_wcs in self._basic_wcs_segments:
-                if seg_start <= scan_index < seg_stop:
-                    relative = (scan_index - seg_start, *normalized_item[1:])
-                    return _safe_slice_wcs(seg_wcs, relative, "SpectrogramCube segment basic_wcs")
+            segment = self._fits_wcs_segment_for_index(scan_index)
+            if segment is not None:
+                relative = (scan_index - segment[0], *normalized_item[1:])
+                return _safe_slice_wcs(segment[2], relative, "SpectrogramCube segment fits_wcs")
             return None
 
         scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
         if scan_step != 1 or scan_start >= scan_stop:
             return None
-        for seg_start, seg_stop, seg_wcs in self._basic_wcs_segments:
-            if seg_start <= scan_start and scan_stop <= seg_stop:
-                relative = (slice(scan_start - seg_start, scan_stop - seg_start), *normalized_item[1:])
-                return _safe_slice_wcs(seg_wcs, relative, "SpectrogramCube segment basic_wcs")
+        segment = self._fits_wcs_segment_for_slice(scan_start, scan_stop)
+        if segment is not None:
+            relative = (slice(scan_start - segment[0], scan_stop - segment[0]), *normalized_item[1:])
+            return _safe_slice_wcs(segment[2], relative, "SpectrogramCube segment fits_wcs")
         return None
 
-    def _slice_basic_wcs_segments_for_slice(self, scan_item):
+    def _fits_wcs_segment_for_index(self, scan_index):
+        for seg_start, seg_stop, seg_wcs in self._fits_wcs_segments:
+            if seg_start <= scan_index < seg_stop:
+                return seg_start, seg_stop, seg_wcs
+        return None
+
+    def _fits_wcs_segment_for_slice(self, scan_start, scan_stop):
+        for seg_start, seg_stop, seg_wcs in self._fits_wcs_segments:
+            if seg_start <= scan_start and scan_stop <= seg_stop:
+                return seg_start, seg_stop, seg_wcs
+        return None
+
+    def _slice_fits_wcs_segments_for_slice(self, scan_item):
         """
         Rebuild segment list for a slice; returns None for stepped slices.
         """
-        if not self._basic_wcs_segments:
+        if not self._fits_wcs_segments:
             return None
 
         scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
@@ -193,7 +187,7 @@ class _SpectrogramCubeWCSMixin:
             return None
 
         sliced_segments = []
-        for seg_start, seg_stop, seg_wcs in self._basic_wcs_segments:
+        for seg_start, seg_stop, seg_wcs in self._fits_wcs_segments:
             overlap_start = max(seg_start, scan_start)
             overlap_stop = min(seg_stop, scan_stop)
             if overlap_start >= overlap_stop:
@@ -203,7 +197,7 @@ class _SpectrogramCubeWCSMixin:
                 slice(None),
                 slice(None),
             )
-            overlap_wcs = _safe_slice_wcs(seg_wcs, relative, "SpectrogramCube segment basic_wcs")
+            overlap_wcs = _safe_slice_wcs(seg_wcs, relative, "SpectrogramCube segment fits_wcs")
             if overlap_wcs is None:
                 return None
             sliced_segments.append((overlap_start - scan_start, overlap_stop - scan_start, overlap_wcs))
@@ -241,9 +235,9 @@ class _SpectrogramCubeWCSMixin:
         return sliced_header
 
     def _slice_raster_metadata(self, item, sliced_self):
-        normalized_item = self._normalize_basic_wcs_item(item)
+        normalized_item = self._normalize_fits_wcs_item(item)
         if normalized_item is None:
-            sliced_self._basic_wcs_segments = None
+            sliced_self._fits_wcs_segments = None
             sliced_self._raster_boundaries = None
             sliced_self._separate_raster_axis = False
             sliced_self._sit_and_stare = False
@@ -266,32 +260,32 @@ class _SpectrogramCubeWCSMixin:
 
             if isinstance(step_item, Integral):
                 sliced_self._separate_raster_axis = False
-                sliced_self._basic_wcs_segments = None
+                sliced_self._fits_wcs_segments = None
                 sliced_self._raster_boundaries = None
                 return
 
             if isinstance(scan_item, Integral):
                 sliced_self._separate_raster_axis = False
-                sliced_self._basic_wcs_segments = None
+                sliced_self._fits_wcs_segments = None
                 sliced_self._raster_boundaries = [(0, sliced_self.shape[0])] if sliced_self.data.ndim >= 3 else None
                 return
 
             scan_start, scan_stop, scan_step = scan_item.indices(self.shape[0])
             if scan_step != 1 or scan_start >= scan_stop:
-                sliced_self._basic_wcs_segments = None
+                sliced_self._fits_wcs_segments = None
                 sliced_self._raster_boundaries = None
                 return
-            if self._basic_wcs_segments:
-                sliced_self._basic_wcs_segments = [
+            if self._fits_wcs_segments:
+                sliced_self._fits_wcs_segments = [
                     (start - scan_start, stop - scan_start, seg_wcs)
-                    for start, stop, seg_wcs in self._basic_wcs_segments
+                    for start, stop, seg_wcs in self._fits_wcs_segments
                     if scan_start <= start and stop <= scan_stop
                 ]
             sliced_self._raster_boundaries = [(index, index + 1) for index in range(sliced_self.shape[0])]
             return
 
         if isinstance(scan_item, Integral):
-            sliced_self._basic_wcs_segments = None
+            sliced_self._fits_wcs_segments = None
             sliced_self._raster_boundaries = None
             return
 
@@ -301,7 +295,7 @@ class _SpectrogramCubeWCSMixin:
             if value is not None:
                 setattr(sliced_self, attr, value[scan_item])
 
-        sliced_self._basic_wcs_segments = self._slice_basic_wcs_segments_for_slice(scan_item)
+        sliced_self._fits_wcs_segments = self._slice_fits_wcs_segments_for_slice(scan_item)
         sliced_self._raster_boundaries = self._slice_raster_boundaries_for_slice(scan_item)
 
 
@@ -320,25 +314,12 @@ def _raster_wcs_bad_row_mask(pc, crval, *, pc_only=False):
     return pc_bad & crval_bad
 
 
-def _interpolate_wcs_bad_rows(pc, crval, bad_rows, good_indices):
+def _interpolate_wcs_bad_rows(pc, crval, bad_rows):
     """
     Fill bad rows by linear interpolation between nearest good neighbours.
     """
-    for i in np.where(bad_rows)[0]:
-        before = good_indices[good_indices < i]
-        after = good_indices[good_indices > i]
-        if before.size > 0 and after.size > 0:
-            b = before[-1]
-            a = after[0]
-            weight = (i - b) / (a - b)
-            pc[i] = pc[b] * (1 - weight) + pc[a] * weight
-            crval[i] = crval[b] * (1 - weight) + crval[a] * weight
-        elif before.size > 0:
-            pc[i] = pc[before[-1]]
-            crval[i] = crval[before[-1]]
-        elif after.size > 0:
-            pc[i] = pc[after[0]]
-            crval[i] = crval[after[0]]
+    _interpolate_bad_axis0_rows(pc, bad_rows)
+    _interpolate_bad_axis0_rows(crval, bad_rows)
     return pc, crval
 
 
@@ -374,14 +355,13 @@ def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None
         stacklevel=3,
     )
 
-    good_indices = np.nonzero(~bad_rows)[0]
-    if good_indices.size == 0:
+    if not np.any(~bad_rows):
         if fallback_pc is None or fallback_crval is None:
             msg = "All WCS table rows are bad and no fallback values are available."
             raise ValueError(msg)
         return _apply_wcs_fallback(pc, crval, fallback_pc, fallback_crval)
 
-    return _interpolate_wcs_bad_rows(pc, crval, bad_rows, good_indices)
+    return _interpolate_wcs_bad_rows(pc, crval, bad_rows)
 
 
 def _normalize_spectral_axis_units(header):
@@ -430,6 +410,47 @@ def _prepare_raster_wcs_header(header, aux_data, spectral_band, *, sit_and_stare
     return header
 
 
+def _as_value_array(value, unit):
+    return np.asarray(value.to_value(unit) if hasattr(value, "to_value") else value)
+
+
+def _validate_raster_wcs_inputs(window_header, pc_all, crval_all, dt_all):
+    """
+    Validate the cheap table/header invariants needed to build the raster gWCS.
+    """
+    for key in ("CDELT1", "CRVAL1", "CDELT2", "CDELT3", "CRPIX2", "CRPIX3"):
+        try:
+            value = float(window_header[key])
+        except KeyError as e:
+            msg = f"Missing WCS header key {key!r}."
+            raise ValueError(msg) from e
+        except (TypeError, ValueError) as e:
+            msg = f"WCS header key {key!r} must be numeric."
+            raise ValueError(msg) from e
+        if not np.isfinite(value):
+            msg = f"WCS header key {key!r} must be finite."
+            raise ValueError(msg)
+
+    pc_values = _as_value_array(pc_all, u.pix)
+    crval_values = _as_value_array(crval_all, u.arcsec)
+    dt_values = _as_value_array(dt_all, u.s)
+    table_shape = pc_values.shape[:-2]
+
+    if pc_values.ndim not in (3, 4) or pc_values.shape[-2:] != (2, 2):
+        msg = "Raster PC table must have shape (step, 2, 2) or (scan, step, 2, 2)."
+        raise ValueError(msg)
+    if crval_values.shape != (*table_shape, 2):
+        msg = "Raster CRVAL table shape must match the PC table leading dimensions plus a 2-vector."
+        raise ValueError(msg)
+    if dt_values.shape != table_shape:
+        msg = "Raster time-offset table shape must match the PC table leading dimensions."
+        raise ValueError(msg)
+    for name, values in (("PC", pc_values), ("CRVAL", crval_values), ("time-offset", dt_values)):
+        if not np.all(np.isfinite(values)):
+            msg = f"Raster {name} table must contain only finite values."
+            raise ValueError(msg)
+
+
 def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observer, *, sit_and_stare):
     """
     Build the raster gWCS from per-step AUX sky and timing tables.
@@ -448,6 +469,7 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     return the same pixel regardless of the time value passed in the world
     tuple.
     """
+    _validate_raster_wcs_inputs(window_header, pc_all, crval_all, dt_all)
     _normalize_spectral_axis_units(window_header)
     spectral_unit = u.Unit(window_header.get("CUNIT1", "nm"))
     cdelt1 = window_header["CDELT1"]

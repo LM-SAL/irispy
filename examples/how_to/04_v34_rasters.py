@@ -14,9 +14,6 @@ import pooch
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 
@@ -100,17 +97,21 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 # We choose a specific helioprojective location and crop the spectrogram down to the
 # spectrum at that point.
 
-iris_observer = wcs_to_celestial_frame(first_raster.basic_wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
+iris_frame = first_raster.celestial_frame
 target = SkyCoord(-908 * u.arcsec, 311 * u.arcsec, frame=iris_frame)
+wavelength = SpectralCoord(280, unit=u.nm)
 
+unflipped_step, unflipped_slit_pixel, _ = first_raster_unflipped.fits_wcs.world_to_array_index(wavelength, target)
 mg_ii_k_unflipped_spectra = first_raster_unflipped.crop(
-    [SpectralCoord(first_raster_unflipped.spectral_axis[0]), target],
-    [SpectralCoord(first_raster_unflipped.spectral_axis[-1]), target],
+    first_raster_unflipped.wcs.array_index_to_world(unflipped_step, unflipped_slit_pixel, 0),
+    first_raster_unflipped.wcs.array_index_to_world(
+        unflipped_step, unflipped_slit_pixel, first_raster_unflipped.data.shape[-1] - 1
+    ),
 )
+step, slit_pixel, _ = first_raster.fits_wcs.world_to_array_index(wavelength, target)
 mg_ii_k_spectra = first_raster.crop(
-    [SpectralCoord(first_raster.spectral_axis[0]), target],
-    [SpectralCoord(first_raster.spectral_axis[-1]), target],
+    first_raster.wcs.array_index_to_world(step, slit_pixel, 0),
+    first_raster.wcs.array_index_to_world(step, slit_pixel, first_raster.data.shape[-1] - 1),
 )
 
 fig = plt.figure()

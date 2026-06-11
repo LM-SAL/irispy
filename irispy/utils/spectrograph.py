@@ -9,7 +9,6 @@ from astropy import constants
 
 from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 
-from irispy._spectrograph_wcs import _spectrogram_cube_metadata_kwargs_for_copy
 from irispy.spectrograph import SpectrogramCube
 from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
@@ -27,19 +26,19 @@ def _get_calibration_fits_wcs(cube):
     Return the FITS WCS used to derive spectral dispersion and slit solid angle.
 
     Raster cubes may carry a gWCS on ``cube.wcs`` and a FITS WCS bridge on
-    ``cube.basic_wcs``. This helper prefers a direct FITS WCS and falls back to
+    ``cube.fits_wcs``. This helper prefers a direct FITS WCS and falls back to
     unwrapping sliced FITS-WCS adapters when needed.
     """
-    for wcs in (cube.wcs, getattr(cube, "basic_wcs", None)):
+    for wcs in (cube.wcs, getattr(cube, "fits_wcs", None)):
         if wcs is not None and hasattr(wcs, "wcs"):
             return wcs.wcs
-    basic_wcs = getattr(cube, "basic_wcs", None)
-    if basic_wcs is None:
-        basic_wcs_segments = getattr(cube, "_basic_wcs_segments", None)
-        if basic_wcs_segments:
-            basic_wcs = basic_wcs_segments[0][2]
-    if basic_wcs is not None:
-        return unwrap_wcs_to_fitswcs(basic_wcs)[0].wcs
+    fits_wcs = getattr(cube, "fits_wcs", None)
+    if fits_wcs is None:
+        fits_wcs_segments = getattr(cube, "_fits_wcs_segments", None)
+        if fits_wcs_segments:
+            fits_wcs = fits_wcs_segments[0][2]
+    if fits_wcs is not None:
+        return unwrap_wcs_to_fitswcs(fits_wcs)[0].wcs
     return unwrap_wcs_to_fitswcs(cube.wcs)[0].wcs
 
 
@@ -52,6 +51,17 @@ def _reshape_exposure_time_for_broadcast(cube):
     for axis in exposure_axes:
         item[axis] = slice(None)
     return exposure_time[tuple(item)]
+
+
+def _unit_has_inverse_time(unit):
+    decomposed = unit.decompose()
+    return any(base == u.s and power < 0 for base, power in zip(decomposed.bases, decomposed.powers, strict=True))
+
+
+def _exposure_time_corrected_cube_for_calibration(cube):
+    if _unit_has_inverse_time(cube.unit):
+        return cube
+    return cube / _reshape_exposure_time_for_broadcast(cube)
 
 
 def radiometric_calibration(cube: SpectrogramCube) -> SpectrogramCube:
@@ -68,7 +78,7 @@ def radiometric_calibration(cube: SpectrogramCube) -> SpectrogramCube:
 
     The spectral dispersion and solid angle are calculated using an underlying FITS WCS.
     For FITS-WCS-backed cubes this comes directly from ``cube.wcs``; for raster gWCS-backed cubes
-    it falls back to ``cube.basic_wcs``. The wavelength axis and spatial axis are determined
+    it falls back to ``cube.fits_wcs``. The wavelength axis and spatial axis are determined
     dynamically from that WCS rather than assuming fixed axis indices.
 
     Parameters
@@ -119,7 +129,7 @@ def radiometric_calibration(cube: SpectrogramCube) -> SpectrogramCube:
     wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
     time_obs = cube.meta.date_reference
     iris_response = get_latest_response(time_obs)
-    exp_corrected_cube = cube / _reshape_exposure_time_for_broadcast(cube)
+    exp_corrected_cube = _exposure_time_corrected_cube_for_calibration(cube)
     # Convert to radiance units.
     data_quantities = (exp_corrected_cube.data * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s),)
     if exp_corrected_cube.uncertainty is not None:
@@ -145,7 +155,6 @@ def radiometric_calibration(cube: SpectrogramCube) -> SpectrogramCube:
         nddata_type=type(cube),
         extra_coords="copy",
         global_coords="copy",
-        **_spectrogram_cube_metadata_kwargs_for_copy(cube),
     )
 
 

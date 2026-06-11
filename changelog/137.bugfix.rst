@@ -1,0 +1,1 @@
+Fixed a sign error in the per-exposure PC matrices of v34 raster gWCS coordinates: reading a v34 observation with the default flipping produced sky positions offset along the slit direction by up to a few tenths of an arcsecond compared to ``revert_v34=True``. Both read modes now agree on the world coordinates of each exposure.

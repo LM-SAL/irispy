@@ -6,19 +6,24 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.time import Time, TimeDelta
+from astropy.time import TimeDelta
 from astropy.wcs import WCS
 
+from sunpy import log as logger
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import HeliographicStonyhurst, Helioprojective
 from sunpy.coordinates.screens import SphericalScreen
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
+from sunpy.time import parse_time
 
 from irispy._spectrograph_wcs import (
+    AUX_FUV_SLIT_OFFSET_COLUMN,
+    AUX_NUV_SLIT_OFFSET_COLUMN,
     _create_raster_gwcs,
     _prepare_raster_wcs_header,
     _raster_wcs_bad_row_mask,
     _sanitize_raster_wcs_tables,
+    _validate_raster_wcs_inputs,
 )
 from irispy.io._raster_combine import _finalize_window_object
 from irispy.meta import SGMeta
@@ -33,9 +38,13 @@ def _header_time(header, *keys):
     for key in keys:
         value = header.get(key)
         if value:
-            return Time(value, format="isot", scale="utc")
+            return parse_time(value)
     msg = f"Header is missing all usable time keys: {keys}"
     raise ValueError(msg)
+
+
+def _slit_offset_column(spectral_band):
+    return AUX_FUV_SLIT_OFFSET_COLUMN if spectral_band == "FUV" else AUX_NUV_SLIT_OFFSET_COLUMN
 
 
 def _make_observer(primary_header):
@@ -71,7 +80,8 @@ def read_spectrograph_lvl2(
     ----------
     filenames: `list` of `str` or `str`
         Filename or list of filenames to be read. They must all be associated with the same
-        OBS number. This is not checked by this function by design.
+        OBS number; multi-file reads raise a `ValueError` if the OBSID or STARTOBS
+        values do not match across files.
     spectral_windows: iterable of `str` or `str`
         Spectral windows to extract from files. Default=None, implies, extract all
         spectral windows.
@@ -94,6 +104,7 @@ def read_spectrograph_lvl2(
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
+    combine_files = len(filenames) > 1
     if uncertainty and memmap:
         warnings.warn(
             "uncertainty is not computed when memmap=True; uncertainty will be None.",
@@ -162,7 +173,13 @@ def read_spectrograph_lvl2(
                 ophaseix = ophaseix[::-1]
                 exposure_times_fuv = exposure_times_fuv[::-1]
                 exposure_times_nuv = exposure_times_nuv[::-1]
-                pc = pc[::-1]
+                # Reversing the step axis flips the sign of CDELT3 in the
+                # prepared header, so the step-coupled off-diagonal PC terms
+                # must change sign too, exactly as _prepare_raster_wcs_header
+                # does for the header PC2_3/PC3_2.
+                pc = pc[::-1].copy()
+                pc[:, 0, 1] *= -1
+                pc[:, 1, 0] *= -1
             dt = (times - t_ref).to_value(u.s) * u.s
 
             for i, window_name in enumerate(spectral_windows_req):
@@ -202,7 +219,7 @@ def read_spectrograph_lvl2(
                         * u.arcsec
                     )
                 else:
-                    offset_index = 34 if meta.spectral_band == "FUV" else 45
+                    offset_index = _slit_offset_column(meta.spectral_band)
                     xcen = aux.data[:, aux.header["XCENIX"]] - aux.data[:, offset_index] * (SLIT_WIDTH.value / 2)
                     ycen = aux.data[:, aux.header["YCENIX"]]
                     crval = np.column_stack((xcen, ycen)) * u.arcsec
@@ -227,8 +244,31 @@ def read_spectrograph_lvl2(
                     bad_rows=bad_rows,
                 )
 
-                basic_wcs = WCS(prepared_wcs_header)
-                _set_wcs_aux_obs_coord(basic_wcs, observer)
+                try:
+                    fits_wcs = WCS(prepared_wcs_header)
+                    _set_wcs_aux_obs_coord(fits_wcs, observer)
+                    # Window headers carry no DATE-OBS; without it the frame
+                    # derived from this WCS has obstime=None and cannot be
+                    # transformed to/from cube.celestial_frame.
+                    fits_wcs.wcs.dateobs = observer.obstime.utc.isot
+                    _validate_raster_wcs_inputs(prepared_wcs_header, pc_sanitized, crval, dt)
+                    if combine_files:
+                        cube_wcs = fits_wcs
+                    else:
+                        cube_wcs = _create_raster_gwcs(
+                            prepared_wcs_header,
+                            pc_sanitized,
+                            crval,
+                            dt,
+                            t_ref,
+                            observer,
+                            sit_and_stare=sit_and_stare,
+                        )
+                except Exception as e:  # NOQA: BLE001
+                    logger.warning(
+                        f"Skipping spectral window {window_name!r} in {filename}: unable to construct WCS ({e})"
+                    )
+                    continue
 
                 out_uncertainty = None
                 data_mask = None
@@ -248,15 +288,6 @@ def read_spectrograph_lvl2(
                         out_uncertainty = np.flip(out_uncertainty, axis=0)
                 else:
                     data = hdulist[window_fits_indices[i]].data
-                cube_wcs = _create_raster_gwcs(
-                    prepared_wcs_header,
-                    pc_sanitized,
-                    crval,
-                    dt,
-                    t_ref,
-                    observer,
-                    sit_and_stare=sit_and_stare,
-                )
                 cube = SpectrogramCube(
                     data,
                     wcs=cube_wcs,
@@ -264,7 +295,7 @@ def read_spectrograph_lvl2(
                     unit=dn_unit,
                     meta=meta,
                     mask=data_mask,
-                    _basic_wcs=basic_wcs,
+                    _fits_wcs=fits_wcs,
                     _memmap=memmap,
                     _raster_wcs_header=prepared_wcs_header,
                     _raster_pc_table=pc_sanitized,
@@ -275,11 +306,17 @@ def read_spectrograph_lvl2(
                     _flip=flip,
                     _sit_and_stare=sit_and_stare,
                 )
+                cube._defer_raster_gwcs = combine_files
                 cube.extra_coords.add("time", 0, times, physical_types="time")
                 data_dict[window_name].append(cube)
-    window_data_pairs = [
-        (_window_name, _finalize_window_object(cubes, memmap=memmap, create_raster_gwcs=_create_raster_gwcs))
-        for _window_name, cubes in data_dict.items()
-    ]
+    window_data_pairs = []
+    for _window_name, cubes in data_dict.items():
+        if not cubes:
+            logger.warning(f"Skipping spectral window {_window_name!r}: no readable cubes were loaded.")
+            continue
+        window_data_pairs.append((_window_name, _finalize_window_object(cubes, memmap=memmap)))
+    if not window_data_pairs:
+        msg = "No spectral windows could be loaded."
+        raise ValueError(msg)
     aligned_axes = tuple(range(window_data_pairs[0][1].data.ndim - 1))
     return RasterCollection(window_data_pairs, aligned_axes=aligned_axes)

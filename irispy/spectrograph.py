@@ -1,4 +1,5 @@
 import textwrap
+from numbers import Integral
 
 import matplotlib.pyplot as plt
 
@@ -9,15 +10,17 @@ from sunraster import SpectrogramCube as SpecCube
 from irispy._spectrograph_wcs import (
     _SPECTROGRAM_CUBE_METADATA_DEFAULTS,
     _SPECTROGRAM_CUBE_METADATA_KWARGS,
+    _spectrogram_cube_metadata_kwargs_for_copy,
     _SpectrogramCubeWCSMixin,
 )
+from irispy._wcs_compat import _FitsWCSCompatMixin
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.visualization import IRISPlotter, finalize_iris_plot
 
 __all__ = ["RasterCollection", "SpectrogramCube"]
 
 
-class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
+class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
@@ -61,6 +64,23 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
             setattr(self, attr, kwargs.pop(attr, _SPECTROGRAM_CUBE_METADATA_DEFAULTS.get(attr)))
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
+    def _new_instance(self, **kwargs):
+        for attr in _SPECTROGRAM_CUBE_METADATA_KWARGS:
+            kwargs.setdefault(attr, getattr(self, attr, _SPECTROGRAM_CUBE_METADATA_DEFAULTS.get(attr)))
+        return super()._new_instance(**kwargs)
+
+    def to_nddata(self, *args, nddata_type=None, **kwargs):
+        if nddata_type is None:
+            return super().to_nddata(*args, **kwargs)
+        try:
+            copies_metadata = issubclass(nddata_type, SpectrogramCube)
+        except TypeError:
+            copies_metadata = False
+        if copies_metadata:
+            for attr, value in _spectrogram_cube_metadata_kwargs_for_copy(self).items():
+                kwargs.setdefault(attr, value)
+        return super().to_nddata(*args, nddata_type=nddata_type, **kwargs)
+
     @property
     def time(self):
         time = super().time
@@ -69,11 +89,11 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         return time
 
     def __getitem__(self, item):
-        normalized_item = self._normalize_basic_wcs_item(item)
+        normalized_item = self._normalize_fits_wcs_item(item)
         item_for_super = normalized_item if normalized_item is not None else item
         sliced_self = super().__getitem__(item_for_super)
         if isinstance(sliced_self, SpectrogramCube):
-            sliced_self._basic_wcs = self._slice_basic_wcs(item_for_super)
+            sliced_self._fits_wcs = self._slice_fits_wcs(item_for_super)
             self._slice_raster_metadata(item_for_super, sliced_self)
         return sliced_self
 
@@ -140,8 +160,12 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
 
     @property
-    def basic_wcs(self):
-        return self._basic_wcs
+    def fits_wcs(self):
+        """
+        The plain FITS WCS built from the window header, or `None` when no single FITS
+        WCS describes this cube (for example a combined multi-file cube).
+        """
+        return self._fits_wcs
 
     @property
     def raster_boundaries(self):
@@ -156,6 +180,8 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         Return the subcube corresponding to one original raster.
         """
         if self._separate_raster_axis:
+            if isinstance(index, Integral) and index < 0:
+                index += self.shape[0]
             return self[index]
         boundaries = self.raster_boundaries
         if not boundaries:

@@ -1,4 +1,5 @@
 import textwrap
+from copy import deepcopy
 
 import numpy as np
 
@@ -13,6 +14,50 @@ from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 from irispy.utils.constants import SPECTRAL_BAND
 
 __all__ = ["BaseMeta", "SGMeta", "SJIMeta"]
+
+
+def _pad_scan_aligned_value(value, target_length):
+    if value.shape[0] == target_length:
+        return value
+    pad_count = target_length - value.shape[0]
+    if isinstance(value, SkyCoord):
+        return SkyCoord(
+            Tx=np.concatenate(
+                [
+                    value.Tx.to_value(u.arcsec),
+                    np.repeat(value.Tx[-1].to_value(u.arcsec), pad_count),
+                ]
+            )
+            * u.arcsec,
+            Ty=np.concatenate(
+                [
+                    value.Ty.to_value(u.arcsec),
+                    np.repeat(value.Ty[-1].to_value(u.arcsec), pad_count),
+                ]
+            )
+            * u.arcsec,
+            frame=value.frame,
+        )
+    if isinstance(value, u.Quantity):
+        return (
+            np.concatenate([value.to_value(value.unit), np.repeat(value[-1].to_value(value.unit), pad_count)])
+            * value.unit
+        )
+    return np.concatenate([value, np.repeat(value[-1], pad_count)])
+
+
+def _stack_scan_aligned_values(values, target_length):
+    values = [_pad_scan_aligned_value(value, target_length) for value in values]
+    first = values[0]
+    if isinstance(first, SkyCoord):
+        return SkyCoord(
+            Tx=np.stack([value.Tx.to_value(u.arcsec) for value in values]) * u.arcsec,
+            Ty=np.stack([value.Ty.to_value(u.arcsec) for value in values]) * u.arcsec,
+            frame=first.frame,
+        )
+    if isinstance(first, u.Quantity):
+        return np.stack([value.to_value(first.unit) for value in values]) * first.unit
+    return np.stack(values)
 
 
 class BaseMeta(NDMeta):
@@ -267,6 +312,38 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
             )
         self._iwin = np.arange(len(spectral_windows))[window_mask][0] + 1
         self._fits_header = header
+
+    @classmethod
+    def combine(cls, metas, combined_shape):
+        metas = tuple(metas)
+        if not metas:
+            msg = "Cannot combine an empty SGMeta sequence."
+            raise ValueError(msg)
+
+        target_steps = combined_shape[1]
+        meta = deepcopy(metas[0])
+        meta._data_shape = np.asarray(combined_shape, dtype=int)
+        meta["NAXIS4"] = combined_shape[0]
+        meta["NAXIS3"] = combined_shape[1]
+        if "NAXIS3" in meta.fits_header:
+            meta.fits_header["NAXIS3"] = combined_shape[1]
+        meta.fits_header["NAXIS4"] = combined_shape[0]
+        for key in ("DATE_END", "ENDOBS"):
+            if metas[-1].get(key) is not None:
+                meta[key] = metas[-1][key]
+                if key in meta.fits_header:
+                    meta.fits_header[key] = metas[-1][key]
+
+        for key, axes in metas[0]._axes.items():
+            if not np.array_equal(axes, [0]):
+                continue
+            meta.add(
+                key,
+                _stack_scan_aligned_values([source_meta[key] for source_meta in metas], target_steps),
+                axes=(0, 1),
+                overwrite=True,
+            )
+        return meta
 
     def __str__(self) -> str:
         return textwrap.dedent(

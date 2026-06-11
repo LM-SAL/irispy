@@ -27,9 +27,6 @@ from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.visualization import time_support
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 
@@ -60,11 +57,16 @@ si_iv_1403 = raster["Si IV 1403"]
 # However, before we get to fitting, we will shrink the data cube to make it easier to work with.
 # This is done primarily to speed up the fitting process on the online documentation build.
 
-iris_observer = wcs_to_celestial_frame(si_iv_1403.basic_wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
+iris_frame = si_iv_1403.celestial_frame
 top_left = SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)
 bottom_right = SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)
-si_iv_1403 = si_iv_1403.crop([None, bottom_right, None, None], [None, top_left, None, None])
+crop_wavelength = SpectralCoord(140.277, unit=u.nm)
+bottom_step, bottom_slit_pixel, _ = si_iv_1403.fits_wcs.world_to_array_index(crop_wavelength, bottom_right)
+top_step, top_slit_pixel, _ = si_iv_1403.fits_wcs.world_to_array_index(crop_wavelength, top_left)
+si_iv_1403 = si_iv_1403.crop(
+    si_iv_1403.wcs.array_index_to_world(bottom_step, bottom_slit_pixel, 0),
+    si_iv_1403.wcs.array_index_to_world(top_step, top_slit_pixel, si_iv_1403.data.shape[-1] - 1),
+)
 
 ###############################################################################
 # Let us just get the full field of view at the line core.

@@ -1,10 +1,20 @@
 import sys
 import types
 
+import dask.array as da
 import numpy as np
 import pytest
 
 from irispy.utils.cosmic_rays import remove_cosmic_rays
+
+
+class FakeCube:
+    def __init__(self, data, mask=None):
+        self.data = data
+        self.mask = mask
+
+    def to_nddata(self, **kwargs):
+        return types.SimpleNamespace(data=kwargs["data"], mask=self.mask)
 
 
 def test_remove_cosmic_rays_rsliding_backend(sns_sjicube_1330, monkeypatch):
@@ -146,6 +156,37 @@ def test_remove_cosmic_rays_astroscrappy_inmask_combined(sns_sjicube_1330, monke
     assert len(calls) == 2
     np.testing.assert_array_equal(calls[0], mask[0] | inmask[0])
     np.testing.assert_array_equal(calls[1], mask[1] | inmask[1])
+
+
+def test_remove_cosmic_rays_astroscrappy_handles_dask_frames(monkeypatch):
+    calls = []
+
+    def fake_detect_cosmics(frame, *, inmask=None, **kwargs):  # NOQA: ARG001
+        calls.append((frame.copy(), inmask.copy()))
+        return frame > 10, frame - 1
+
+    monkeypatch.setitem(sys.modules, "astroscrappy", types.SimpleNamespace(detect_cosmics=fake_detect_cosmics))
+
+    data = np.arange(24, dtype=float).reshape(2, 3, 4)
+    data[1, 2, 3] = np.nan
+    mask = np.zeros(data.shape, dtype=bool)
+    mask[0, 0, 0] = True
+    cube = FakeCube(da.from_array(data, chunks=(1, 3, 4)), da.from_array(mask, chunks=(1, 3, 4)))
+
+    cleaned_cube = remove_cosmic_rays(cube, method="astroscrappy")
+
+    assert len(calls) == 2
+    assert calls[0][1][0, 0]
+    assert calls[1][1][2, 3]
+    assert calls[1][0][2, 3] == pytest.approx(0.0)
+    assert cleaned_cube.data[1, 2, 3] == pytest.approx(-1.0)
+
+
+def test_remove_cosmic_rays_rsliding_rejects_dask_cube():
+    cube = FakeCube(da.from_array(np.ones((2, 3, 4)), chunks=(1, 3, 4)))
+
+    with pytest.raises(ValueError, match="requires the full cube in memory"):
+        remove_cosmic_rays(cube, method="rsliding")
 
 
 @pytest.mark.parametrize("method", ["rsliding", "astroscrappy"])

@@ -6,9 +6,8 @@ from typing import Any
 from importlib import import_module
 from collections.abc import Mapping
 
+import dask.array as da
 import numpy as np
-
-from irispy._spectrograph_wcs import _spectrogram_cube_metadata_kwargs_for_copy
 
 __all__ = ["remove_cosmic_rays"]
 
@@ -53,8 +52,8 @@ def _remove_cosmic_rays_rsliding(
 
 
 def _remove_cosmic_rays_astroscrappy(
-    data: np.ndarray,
-    mask: np.ndarray,
+    data,
+    mask,
     *,
     sigma: float | None,
     max_iters: int | None,
@@ -65,20 +64,31 @@ def _remove_cosmic_rays_astroscrappy(
     kwargs["sigclip"] = sigma if sigma is not None else kwargs.get("sigclip", 4.5)
     kwargs["niter"] = max_iters if max_iters is not None else kwargs.get("niter", 4)
     inmask = kwargs.pop("inmask", None)
-    if inmask is not None:
-        mask = mask | np.asarray(inmask, dtype=bool)
-    working_data = data.copy()
-    working_data[mask] = 0.0
-    cleaned_data = np.empty_like(working_data)
-    cosmic_ray_mask = np.zeros(working_data.shape, dtype=bool)
-    if working_data.ndim == 2:
-        cosmic_ray_mask, cleaned_data = astroscrappy.detect_cosmics(working_data, inmask=mask, **kwargs)
-        return cleaned_data, np.asarray(cosmic_ray_mask, dtype=bool)
-    for index in np.ndindex(working_data.shape[:-2]):
-        frame_mask, cleaned_frame = astroscrappy.detect_cosmics(working_data[index], inmask=mask[index], **kwargs)
-        cosmic_ray_mask[index] = frame_mask
+    data_shape = data.shape
+    cleaned_data = np.empty(data_shape, dtype=data.dtype)
+    cosmic_ray_mask = np.zeros(data_shape, dtype=bool)
+    frame_indices = [()] if len(data_shape) == 2 else np.ndindex(data_shape[:-2])
+
+    for index in frame_indices:
+        frame = np.asarray(data[index]).copy()
+        frame_mask = np.zeros(frame.shape, dtype=bool) if mask is None else np.asarray(mask[index], dtype=bool)
+        if np.issubdtype(frame.dtype, np.floating):
+            frame_mask = frame_mask | np.isnan(frame)
+        if inmask is not None:
+            frame_mask = frame_mask | np.asarray(inmask[index], dtype=bool)
+        frame[frame_mask] = 0.0
+        detected_mask, cleaned_frame = astroscrappy.detect_cosmics(frame, inmask=frame_mask, **kwargs)
+        if index == ():
+            cosmic_ray_mask[...] = detected_mask
+            cleaned_data[...] = cleaned_frame
+            continue
+        cosmic_ray_mask[index] = detected_mask
         cleaned_data[index] = cleaned_frame
     return cleaned_data, cosmic_ray_mask
+
+
+def _is_dask_array(value):
+    return isinstance(value, da.Array)
 
 
 def remove_cosmic_rays(
@@ -115,10 +125,20 @@ def remove_cosmic_rays(
         A new cube with cleaned data and copied metadata/coordinates.
     """
     method = method.lower()
-    working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
-    if np.issubdtype(cube.data.dtype, np.floating):
-        working_mask = working_mask | np.isnan(cube.data)
     kwargs = dict(method_kwargs or {})
+    dask_backed = _is_dask_array(cube.data) or _is_dask_array(cube.mask)
+    if dask_backed and method == "rsliding":
+        msg = (
+            "remove_cosmic_rays(method='rsliding') requires the full cube in memory. "
+            "Slice the cube first, load it without memmap=True, or use method='astroscrappy'."
+        )
+        raise ValueError(msg)
+
+    working_mask = None
+    if not dask_backed:
+        working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
+        if np.issubdtype(cube.data.dtype, np.floating):
+            working_mask = working_mask | np.isnan(cube.data)
     backends = {
         "rsliding": lambda: _remove_cosmic_rays_rsliding(
             cube.data,
@@ -129,7 +149,7 @@ def remove_cosmic_rays(
         ),
         "astroscrappy": lambda: _remove_cosmic_rays_astroscrappy(
             cube.data,
-            working_mask,
+            cube.mask if dask_backed else working_mask,
             sigma=sigma,
             max_iters=max_iters,
             method_kwargs=kwargs,
@@ -149,7 +169,6 @@ def remove_cosmic_rays(
     }
     if hasattr(cube, "scaled"):
         cleaned_cube_kwargs["scaled"] = "copy"
-    cleaned_cube_kwargs.update(_spectrogram_cube_metadata_kwargs_for_copy(cube))
     cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
     if hasattr(cleaned_cube, "dust_masked") and hasattr(cube, "dust_masked"):
         cleaned_cube.dust_masked = cube.dust_masked
