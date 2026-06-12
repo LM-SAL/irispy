@@ -13,8 +13,6 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 
-from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
-
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import drop_extra_coords_dependent_on_axis, make_map_cube, make_spatial_template
 
@@ -46,45 +44,32 @@ class RBAQualityFlag(IntEnum):
         return obj
 
 
-def _make_velocity_wcs(base_wcs, array_shape, velocity_axis, velocity_grid):
-    fits_wcs = base_wcs if hasattr(base_wcs, "to_header") else unwrap_wcs_to_fitswcs(base_wcs)[0]
-    header = fits_wcs.to_header()
+def _make_velocity_wcs(array_shape, velocity_axis, velocity_grid):
+    """
+    Return a profile WCS whose only meaningful world axis is Doppler velocity.
+
+    Do not copy the input cube WCS here: profile cubes may have fewer axes than
+    the source cube, so stale FITS-WCS axes can warn or fail during construction.
+    """
     naxis = len(array_shape)
     wcs_axis = naxis - 1 - velocity_axis
-    fits_axis = wcs_axis + 1
-
-    header["NAXIS"] = naxis
-    for array_axis, length in enumerate(array_shape):
-        header[f"NAXIS{naxis - array_axis}"] = int(length)
-
     cdelt = float(np.nanmean(np.diff(velocity_grid))) if velocity_grid.size > 1 else 1.0
-    header[f"CTYPE{fits_axis}"] = "VELO"
-    header[f"CUNIT{fits_axis}"] = "km/s"
-    header[f"CRPIX{fits_axis}"] = 1.0
-    header[f"CRVAL{fits_axis}"] = float(velocity_grid[0])
-    header[f"CDELT{fits_axis}"] = cdelt
-    header.pop(f"CNAME{fits_axis}", None)
 
-    for other_axis in range(1, naxis + 1):
-        for prefix in ("CD",):
-            header.pop(f"{prefix}{fits_axis}_{other_axis}", None)
-            header.pop(f"{prefix}{other_axis}_{fits_axis}", None)
-        if other_axis != fits_axis:
-            header[f"PC{fits_axis}_{other_axis}"] = 0.0
-            header[f"PC{other_axis}_{fits_axis}"] = 0.0
-    header[f"PC{fits_axis}_{fits_axis}"] = 1.0
-
-    for key in list(header):
-        if key.startswith((f"PV{fits_axis}_", f"PS{fits_axis}_")):
-            header.pop(key)
-
-    return WCS(header)
+    wcs = WCS(naxis=naxis)
+    wcs.wcs.ctype[wcs_axis] = "VELO"
+    wcs.wcs.cunit[wcs_axis] = "km/s"
+    wcs.wcs.crpix[wcs_axis] = 1.0
+    wcs.wcs.crval[wcs_axis] = float(velocity_grid[0])
+    wcs.wcs.cdelt[wcs_axis] = cdelt
+    wcs.array_shape = tuple(array_shape)
+    wcs.wcs.set()
+    return wcs
 
 
 def _make_profile_cube(cube, *, data, velocity_grid, wavelength_axis, meta, uncertainty=None, mask=None):
     return SpectrogramCube(
         data,
-        wcs=_make_velocity_wcs(cube.wcs, data.shape, wavelength_axis, velocity_grid),
+        wcs=_make_velocity_wcs(data.shape, wavelength_axis, velocity_grid),
         uncertainty=uncertainty,
         unit=cube.unit,
         meta=meta,

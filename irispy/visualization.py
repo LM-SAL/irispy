@@ -11,6 +11,7 @@ __all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter"]
 
 LAT_LABELS = [
     "custom:pos.helioprojective.lat",
+    "helioprojective latitude",
     "hplt-tan",
     "hplt",
     "lat",
@@ -18,12 +19,26 @@ LAT_LABELS = [
 ]
 LON_LABELS = [
     "custom:pos.helioprojective.lon",
+    "helioprojective longitude",
     "hpln-tan",
     "hpln",
     "lon",
     "longitude",
 ]
+TIME_LABELS = ["time (utc)", "time"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
+SCAN_LABELS = set(LON_LABELS + LAT_LABELS)
+
+
+def _shorten_slider_label(label):
+    label_parts = {label_part.strip().lower() for label_part in str(label).split(" / ")}
+    if label_parts.intersection(WAVELENGTH_LABELS):
+        return "Wavelength"
+    if label_parts.intersection(TIME_LABELS):
+        return "Time"
+    if label_parts and label_parts.issubset(SCAN_LABELS):
+        return "Scan"
+    return label
 
 
 def set_axis_properties(ax):
@@ -67,12 +82,13 @@ class Plot2DMixin:
 
 
 class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
-    pass
+    def _compute_slider_labels_from_wcs(self, slices):
+        return [_shorten_slider_label(label) for label in super()._compute_slider_labels_from_wcs(slices)]
 
 
 class IRISSequenceAnimator(Plot2DMixin, SequenceAnimator):
     def __init__(self, *args, **kwargs):
-        kwargs.setdefault("slider_labels", ["Raster Step", "Scan Number"])
+        kwargs.setdefault("slider_labels", ["Raster step", "Scan number"])
         super().__init__(*args, **kwargs)
 
 

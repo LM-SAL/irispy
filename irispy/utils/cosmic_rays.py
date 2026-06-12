@@ -6,6 +6,7 @@ from typing import Any
 from importlib import import_module
 from collections.abc import Mapping
 
+import dask.array as da
 import numpy as np
 
 __all__ = ["remove_cosmic_rays"]
@@ -24,8 +25,8 @@ def _import_optional_backend(module_name: str, *, method: str):
 
 
 def _remove_cosmic_rays_rsliding(
-    data: np.ndarray,
-    mask: np.ndarray,
+    data,
+    mask,
     *,
     sigma: float | None,
     max_iters: int | None,
@@ -46,6 +47,17 @@ def _remove_cosmic_rays_rsliding(
     return cleaned_data, cosmic_ray_mask
 
 
+def _mask_for_frame(mask, index, data_shape, frame_shape):
+    if mask is None:
+        return np.zeros(frame_shape, dtype=bool)
+    mask_shape = getattr(mask, "shape", np.shape(mask))
+    if mask_shape == frame_shape:
+        return np.asarray(mask, dtype=bool)
+    if mask_shape == data_shape:
+        return np.asarray(mask[index], dtype=bool)
+    return np.asarray(np.broadcast_to(mask, data_shape)[index], dtype=bool)
+
+
 def _remove_cosmic_rays_astroscrappy(
     data: np.ndarray,
     mask: np.ndarray,
@@ -62,20 +74,19 @@ def _remove_cosmic_rays_astroscrappy(
     if max_iters is not None:
         method_kwargs["niter"] = max_iters
     inmask = method_kwargs.pop("inmask", None)
-    if inmask is not None:
-        mask = mask | np.asarray(inmask, dtype=bool)
-    working_data = data.copy()
-    working_data[mask] = 0.0
-    cleaned_data = np.empty_like(working_data)
-    cosmic_ray_mask = np.zeros(working_data.shape, dtype=bool)
-    if working_data.ndim == 2:
-        cosmic_ray_mask, cleaned_data = astroscrappy.detect_cosmics(working_data, inmask=mask, **method_kwargs)
-        return cleaned_data, np.asarray(cosmic_ray_mask, dtype=bool)
-    for index in np.ndindex(working_data.shape[:-2]):
-        frame_mask, cleaned_frame = astroscrappy.detect_cosmics(
-            working_data[index], inmask=mask[index], **method_kwargs
-        )
-        cosmic_ray_mask[index] = frame_mask
+    data_shape = data.shape
+    cleaned_data = np.empty(data_shape, dtype=data.dtype)
+    cosmic_ray_mask = np.zeros(data_shape, dtype=bool)
+    for index in np.ndindex(data_shape[:-2]):
+        frame = np.asarray(data[index]).copy()
+        frame_mask = _mask_for_frame(mask, index, data_shape, frame.shape)
+        if np.issubdtype(frame.dtype, np.floating):
+            frame_mask = frame_mask | np.isnan(frame)
+        if inmask is not None:
+            frame_mask = frame_mask | _mask_for_frame(inmask, index, data_shape, frame.shape)
+        frame[frame_mask] = 0.0
+        detected_mask, cleaned_frame = astroscrappy.detect_cosmics(frame, inmask=frame_mask, **method_kwargs)
+        cosmic_ray_mask[index] = detected_mask
         cleaned_data[index] = cleaned_frame
     return cleaned_data, cosmic_ray_mask
 
@@ -105,6 +116,8 @@ def remove_cosmic_rays(
         ``rsliding`` and ``niter`` for ``astroscrappy``.
     method_kwargs : `dict`, optional
         Additional keyword arguments passed to the selected backend.
+        For dask-backed inputs, ``method="astroscrappy"`` processes one frame
+        at a time but returns an in-memory NumPy array.
 
     Returns
     -------
@@ -112,10 +125,20 @@ def remove_cosmic_rays(
         A new cube with cleaned data and copied metadata/coordinates.
     """
     method = method.lower()
-    working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
-    if np.issubdtype(cube.data.dtype, np.floating):
-        working_mask = working_mask | np.isnan(cube.data)
     kwargs = dict(method_kwargs or {})
+    dask_backed = isinstance(cube.data, da.Array) or isinstance(cube.mask, da.Array)
+    if dask_backed and method == "rsliding":
+        msg = (
+            "remove_cosmic_rays(method='rsliding') requires the full cube in memory. "
+            "Slice the cube first, load it without memmap=True, or use method='astroscrappy'."
+        )
+        raise ValueError(msg)
+
+    working_mask = None
+    if not dask_backed:
+        working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
+        if np.issubdtype(cube.data.dtype, np.floating):
+            working_mask = working_mask | np.isnan(cube.data)
     backends = {
         "rsliding": lambda: _remove_cosmic_rays_rsliding(
             cube.data,
@@ -126,7 +149,7 @@ def remove_cosmic_rays(
         ),
         "astroscrappy": lambda: _remove_cosmic_rays_astroscrappy(
             cube.data,
-            working_mask,
+            cube.mask if dask_backed else working_mask,
             sigma=sigma,
             max_iters=max_iters,
             method_kwargs=kwargs,
