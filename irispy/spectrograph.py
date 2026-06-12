@@ -10,7 +10,6 @@ from sunraster import SpectrogramCube as SpecCube
 from irispy._spectrograph_wcs import (
     _SPECTROGRAM_CUBE_METADATA_DEFAULTS,
     _SPECTROGRAM_CUBE_METADATA_KWARGS,
-    _spectrogram_cube_metadata_kwargs_for_copy,
     _SpectrogramCubeWCSMixin,
 )
 from irispy._wcs_compat import _FitsWCSCompatMixin
@@ -77,8 +76,9 @@ class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
         except TypeError:
             copies_metadata = False
         if copies_metadata:
-            for attr, value in _spectrogram_cube_metadata_kwargs_for_copy(self).items():
-                kwargs.setdefault(attr, value)
+            for attr in _SPECTROGRAM_CUBE_METADATA_KWARGS:
+                if hasattr(self, attr):
+                    kwargs.setdefault(attr, "copy")
         return super().to_nddata(*args, nddata_type=nddata_type, **kwargs)
 
     @property
@@ -164,14 +164,6 @@ class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
         """
         return self._fits_wcs
 
-    @property
-    def raster_boundaries(self):
-        if self._separate_raster_axis:
-            return tuple(slice(index, index + 1) for index in range(self.shape[0]))
-        if self._raster_boundaries is None:
-            return ()
-        return tuple(slice(start, stop) for start, stop in self._raster_boundaries)
-
     def raster_slice(self, index):
         """
         Return the subcube corresponding to one original raster.
@@ -180,13 +172,12 @@ class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
             if isinstance(index, Integral) and index < 0:
                 index += self.shape[0]
             return self[index]
-        boundaries = self.raster_boundaries
-        if not boundaries:
+        if self._raster_boundaries is None:
             if index == 0:
                 return self
             msg = "Raster index out of range."
             raise IndexError(msg)
-        return self[boundaries[index]]
+        return self[slice(*self._raster_boundaries[index])]
 
     def split_rasters(self):
         """
@@ -194,10 +185,9 @@ class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
         """
         if self._separate_raster_axis:
             return tuple(self[i] for i in range(self.shape[0]))
-        boundaries = self.raster_boundaries
-        if not boundaries:
+        if self._raster_boundaries is None:
             return (self,)
-        return tuple(self[raster_slice] for raster_slice in boundaries)
+        return tuple(self[slice(start, stop)] for start, stop in self._raster_boundaries)
 
     def remove_cosmic_rays(
         self,

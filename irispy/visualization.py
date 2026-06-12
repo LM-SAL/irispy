@@ -151,14 +151,6 @@ def _coords_matching(ax, labels):
     )
 
 
-def _select_scan_coord_kind(axes_coordinates):
-    if axes_coordinates:
-        lowered = {coord.lower() for coord in axes_coordinates if isinstance(coord, str)}
-        if lowered.intersection(TIME_LABEL_PRIORITY):
-            return "time"
-    return "longitude"
-
-
 def _set_raster_animation_axis_properties(ax, axes_coordinates):
     """
     Place the raster scan coordinate on the frame edge selected by the user.
@@ -182,7 +174,11 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
         # On 1D spectrum plots, wavelength is on the x-axis; don't reconfigure scan axis.
         return
 
-    selected_scan_kind = _select_scan_coord_kind(axes_coordinates)
+    selected_scan_kind = "longitude"
+    if axes_coordinates:
+        lowered = {coord.lower() for coord in axes_coordinates if isinstance(coord, str)}
+        if lowered.intersection(TIME_LABEL_PRIORITY):
+            selected_scan_kind = "time"
     selected_scan_coord = lon_coords[0]
     if selected_scan_kind == "time":
         selected_scan_coord = next(

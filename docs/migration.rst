@@ -32,7 +32,6 @@ It now returns one 4D cube with the scan number as the leading array axis:
 
 ``raster_slice`` and ``split_rasters`` also work on single-file cubes, where
 they return the cube itself, so code can treat both cases uniformly.
-``raster_boundaries`` exposes the per-scan slices.
 
 The ``wcs`` vs ``fits_wcs`` split
 =================================

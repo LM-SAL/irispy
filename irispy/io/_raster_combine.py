@@ -90,16 +90,6 @@ def _validate_combinable_raster_cubes(cubes):
     return cubes
 
 
-def _warn_if_ragged(cubes, target_steps):
-    if all(cube.shape[0] == target_steps for cube in cubes):
-        return
-    warnings.warn(
-        "Raster sequence has mismatched step counts; padding shorter rasters with NaN data and masked pixels.",
-        UserWarning,
-        stacklevel=3,
-    )
-
-
 def _stack_times(cubes, target_steps):
     times = np.stack([_pad_axis0(cube.time, target_steps).jd for cube in cubes], axis=0)
     return Time(times, format="jd", scale="utc")
@@ -138,7 +128,12 @@ def _materialize_deferred_raster_gwcs(cube):
 
 def _build_combined_raster_cube(cubes, data, *, mask):
     target_steps = data.shape[1]
-    _warn_if_ragged(cubes, target_steps)
+    if any(cube.shape[0] != target_steps for cube in cubes):
+        warnings.warn(
+            "Raster sequence has mismatched step counts; padding shorter rasters with NaN data and masked pixels.",
+            UserWarning,
+            stacklevel=3,
+        )
     times = _stack_times(cubes, target_steps)
     pc_all = np.stack([_pad_axis0(cube._raster_pc_table, target_steps) for cube in cubes], axis=0)
     crval_all = np.stack([_pad_axis0(cube._raster_crval_table, target_steps) for cube in cubes], axis=0)
@@ -240,11 +235,3 @@ def _combine_raster_cubes(cubes, *, memmap=False):
 
     data = _stack_step_aligned_arrays([np.asarray(cube.data) for cube in cubes], target_steps, fill_value=np.nan)
     return _build_combined_raster_cube(cubes, data, mask=_stack_mask(cubes, target_steps))
-
-
-def _finalize_window_object(cubes, *, memmap):
-    if len(cubes) == 1:
-        cube = _materialize_deferred_raster_gwcs(cubes[0])
-        cube._raster_boundaries = [(0, cube.shape[0])]
-        return cube
-    return _combine_raster_cubes(cubes, memmap=memmap)

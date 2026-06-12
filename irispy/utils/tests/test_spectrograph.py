@@ -85,7 +85,7 @@ def test_radiometric_calibration_preserves_combined_raster_metadata(raster_sg_fi
 
     calibrated_cube = radiometric_calibration(cube)
 
-    assert calibrated_cube.raster_boundaries == cube.raster_boundaries
+    assert calibrated_cube._raster_boundaries == cube._raster_boundaries
     assert len(calibrated_cube.split_rasters()) == len(cube.split_rasters())
     assert calibrated_cube.raster_slice(0).shape == cube.raster_slice(0).shape
     assert calibrated_cube._raster_pc_table.shape == cube._raster_pc_table.shape

@@ -86,13 +86,6 @@ def _safe_slice_wcs(wcs, item, context):
         return None
 
 
-def _spectrogram_cube_metadata_kwargs_for_copy(cube):
-    """
-    Return `to_nddata` kwargs that preserve SpectrogramCube-specific metadata.
-    """
-    return {attr: "copy" for attr in _SPECTROGRAM_CUBE_METADATA_KWARGS if hasattr(cube, attr)}
-
-
 class _SpectrogramCubeWCSMixin:
     """
     Mixin that handles ``fits_wcs`` and raster-metadata slicing for `SpectrogramCube`.

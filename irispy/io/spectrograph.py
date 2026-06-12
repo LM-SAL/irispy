@@ -22,7 +22,7 @@ from irispy._spectrograph_wcs import (
     _slit_offset_column,
     _validate_raster_wcs_inputs,
 )
-from irispy.io._raster_combine import _finalize_window_object
+from irispy.io._raster_combine import _combine_raster_cubes, _materialize_deferred_raster_gwcs
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils import calculate_uncertainty
@@ -292,7 +292,12 @@ def read_spectrograph_lvl2(
         if not cubes:
             logger.warning(f"Skipping spectral window {_window_name!r}: no readable cubes were loaded.")
             continue
-        window_data_pairs.append((_window_name, _finalize_window_object(cubes, memmap=memmap)))
+        if len(cubes) == 1:
+            cube = _materialize_deferred_raster_gwcs(cubes[0])
+            cube._raster_boundaries = [(0, cube.shape[0])]
+        else:
+            cube = _combine_raster_cubes(cubes, memmap=memmap)
+        window_data_pairs.append((_window_name, cube))
     if not window_data_pairs:
         msg = "No spectral windows could be loaded."
         raise ValueError(msg)

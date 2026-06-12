@@ -126,7 +126,6 @@ def test_spectrogram_cube_exposes_raster_grouping_helpers(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
 
-    assert len(cube.raster_boundaries) == 13
     assert cube.raster_slice(0).shape == (8, 109, 29)
     assert len(cube.split_rasters()) == 13
 
@@ -189,7 +188,7 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
 
     assert isinstance(cube.data, da.Array)
     assert cube.mask is None
-    assert len(cube.raster_boundaries) == 13
+    assert len(cube.split_rasters()) == 13
     assert cube.fits_wcs is None
     assert cube.uncertainty is None
     assert image.data.ndim == 3
@@ -221,7 +220,7 @@ def test_memmap_raster_uses_subfile_scan_chunks(raster_sg_files):
 
     assert isinstance(cube.data, da.Array)
     assert max(cube.data.chunks[1]) == expected_rows
-    assert len(cube.data.chunks[0]) == len(cube.raster_boundaries)
+    assert len(cube.data.chunks[0]) == len(cube.split_rasters())
 
 
 def test_memmap_raster_single_slice_opens_one_chunk(raster_sg_files, monkeypatch):
@@ -450,7 +449,7 @@ def test_spectrogram_cube_to_nddata_preserves_raster_metadata(raster_sg_files):
         global_coords="copy",
     )
 
-    assert copied.raster_boundaries == cube.raster_boundaries
+    assert copied._raster_boundaries == cube._raster_boundaries
     assert copied.fits_wcs is cube.fits_wcs
     assert copied._raster_wcs_header is cube._raster_wcs_header
     assert copied._raster_pc_table is cube._raster_pc_table
@@ -465,7 +464,7 @@ def test_spectrogram_cube_arithmetic_preserves_raster_metadata(raster_sg_files):
     doubled = cube * 2
 
     assert type(doubled) is type(cube)
-    assert doubled.raster_boundaries == cube.raster_boundaries
+    assert doubled._raster_boundaries == cube._raster_boundaries
     assert doubled.fits_wcs is cube.fits_wcs
     assert doubled._raster_pc_table is cube._raster_pc_table
     assert doubled._raster_crval_table is cube._raster_crval_table

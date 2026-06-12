@@ -92,7 +92,8 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert si_iv.wcs.world_n_dim == 5
     assert si_iv.wcs.pixel_n_dim == 3
     assert si_iv.fits_wcs is not None
-    assert si_iv.raster_boundaries == (slice(0, 187),)
+    assert len(si_iv.split_rasters()) == 1
+    assert si_iv.raster_slice(0).shape == si_iv.shape
 
 
 def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
@@ -174,7 +175,7 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert si_iv.time.format == "isot"
     assert si_iv.time.shape == (13, 8)
     assert si_iv.fits_wcs is None
-    assert len(si_iv.raster_boundaries) == 13
+    assert len(si_iv.split_rasters()) == 13
     assert si_iv.raster_slice(0).shape == (8, 109, 29)
 
 
