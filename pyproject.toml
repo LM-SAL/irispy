@@ -46,34 +46,34 @@ optional-dependencies.all = [
   "irispy-lmsal[cosmic-rays,density]",
 ]
 optional-dependencies.cosmic-rays = [
-  "astroscrappy",
-  "rsliding",
+  "astroscrappy>=1.3.0",
+  "rsliding>=1.0.0",
 ]
 optional-dependencies.density = [
-  "fiasco",
+  "fiasco>=0.3.0",
 ]
 optional-dependencies.dev = [
   "irispy-lmsal[all,docs,tests]",
 ]
 optional-dependencies.docs = [
   "irispy-lmsal[all]",
-  "aiapy",
-  "dask[distributed]",
-  "pooch",
-  "sphinx-automodapi",
-  "sphinx-changelog",
+  "aiapy>=0.9.0",
+  "dask[distributed]>=2024.6.0",
+  "pooch>=1.9.0",
+  "sphinx-automodapi>=0.18.0",
+  "sphinx-changelog>=1.6.0",
   "sphinx-copybutton",
-  "sphinx-design",
-  "sphinx-gallery",
-  "sphinx",
-  "sunkit-image",
-  "sunpy-sphinx-theme",
+  "sphinx-design>=0.6.1",
+  "sphinx-gallery>=0.17.0",
+  "sphinx>=7.4.0",
+  "sunkit-image>=0.6.0",
+  "sunpy-sphinx-theme>=2.0.13",
 ]
 optional-dependencies.tests = [
   "irispy-lmsal[all]",
-  "pooch",
+  "pooch>=1.9.0",
   "pytest-astropy",
-  "pytest-mpl",
+  "pytest-mpl>=0.18.0",
 ]
 urls.Changelog = "https://irispy.readthedocs.io/en/stable/changelog"
 urls.Documentation = "https://irispy.readthedocs.io/en/stable/"
