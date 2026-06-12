@@ -33,7 +33,9 @@ classifiers = [
 dynamic = [ "version" ]
 dependencies = [
   "astropy>=7.2.0",
+  "dask[array]>=2024.6.0",
   "dkist>=1.17.0",
+  "gwcs>=1.0.0",
   "mpl-animators>=1.2.0",
   "ndcube>=2.4.0",
   "pandas>=3.0.0",
@@ -58,7 +60,6 @@ optional-dependencies.dev = [
 optional-dependencies.docs = [
   "irispy-lmsal[all]",
   "aiapy>=0.9.0",
-  "dask[distributed]>=2024.6.0",
   "pooch>=1.9.0",
   "sphinx-automodapi>=0.18.0",
   "sphinx-changelog>=1.6.0",
