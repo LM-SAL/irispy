@@ -17,12 +17,11 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from sunpy.time import parse_time
 
 from irispy._spectrograph_wcs import (
-    AUX_FUV_SLIT_OFFSET_COLUMN,
-    AUX_NUV_SLIT_OFFSET_COLUMN,
     _create_raster_gwcs,
     _prepare_raster_wcs_header,
     _raster_wcs_bad_row_mask,
     _sanitize_raster_wcs_tables,
+    _slit_offset_column,
     _validate_raster_wcs_inputs,
 )
 from irispy.io._raster_combine import _finalize_window_object
@@ -41,10 +40,6 @@ def _header_time(header, *keys):
             return parse_time(value)
     msg = f"Header is missing all usable time keys: {keys}"
     raise ValueError(msg)
-
-
-def _slit_offset_column(spectral_band):
-    return AUX_FUV_SLIT_OFFSET_COLUMN if spectral_band == "FUV" else AUX_NUV_SLIT_OFFSET_COLUMN
 
 
 def _make_observer(primary_header):

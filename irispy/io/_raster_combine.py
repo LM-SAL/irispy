@@ -9,28 +9,11 @@ import astropy.units as u
 from astropy.io import fits
 from astropy.time import Time
 
-from irispy._spectrograph_wcs import _SPECTROGRAM_CUBE_METADATA_KWARGS
+from irispy._interpolation import _pad_axis0
+from irispy._spectrograph_wcs import _SPECTROGRAM_CUBE_METADATA_KWARGS, _create_raster_gwcs
 from irispy.spectrograph import SpectrogramCube
 
 LAZY_RASTER_CHUNK_TARGET_BYTES = 64 * 1024 * 1024
-
-
-def _pad_step_aligned_quantity(value, target_steps):
-    if value.shape[0] == target_steps:
-        return value
-    padding = np.repeat(value[-1:], target_steps - value.shape[0], axis=0)
-    return np.concatenate([value, padding], axis=0)
-
-
-def _stack_data(cubes, target_steps):
-    ragged = any(cube.shape[0] != target_steps for cube in cubes)
-    dtype = np.result_type(*[cube.data.dtype for cube in cubes], float if ragged else cubes[0].data.dtype)
-    data = np.empty((len(cubes), target_steps, *cubes[0].shape[1:]), dtype=dtype)
-    for index, cube in enumerate(cubes):
-        data[index, : cube.shape[0]] = np.asarray(cube.data, dtype=dtype)
-        if cube.shape[0] < target_steps:
-            data[index, cube.shape[0] :] = np.nan
-    return data
 
 
 def _stack_step_aligned_arrays(arrays, target_steps, *, fill_value):
@@ -114,10 +97,6 @@ def _validate_combinable_raster_cubes(cubes):
     return cubes
 
 
-def _target_step_count(cubes):
-    return max(cube.shape[0] for cube in cubes)
-
-
 def _warn_if_ragged(cubes, target_steps):
     if all(cube.shape[0] == target_steps for cube in cubes):
         return
@@ -129,19 +108,11 @@ def _warn_if_ragged(cubes, target_steps):
 
 
 def _stack_times(cubes, target_steps):
-    times = []
-    for cube in cubes:
-        time = cube.time
-        if time.shape[0] == target_steps:
-            times.append(time.jd)
-            continue
-        times.append(np.concatenate([time.jd, np.repeat(time.jd[-1], target_steps - time.shape[0])]))
-    return Time(np.stack(times, axis=0), format="jd", scale="utc")
+    times = np.stack([_pad_axis0(cube.time, target_steps).jd for cube in cubes], axis=0)
+    return Time(times, format="jd", scale="utc")
 
 
 def _single_cube_raster_gwcs(cube):
-    from irispy.io.spectrograph import _create_raster_gwcs  # NOQA: PLC0415
-
     time = cube.time
     return _create_raster_gwcs(
         deepcopy(cube._raster_wcs_header),
@@ -173,13 +144,11 @@ def _materialize_deferred_raster_gwcs(cube):
 
 
 def _build_combined_raster_cube(cubes, data, *, mask, memmap):
-    from irispy.io.spectrograph import _create_raster_gwcs  # NOQA: PLC0415
-
     target_steps = data.shape[1]
     _warn_if_ragged(cubes, target_steps)
     times = _stack_times(cubes, target_steps)
-    pc_all = np.stack([_pad_step_aligned_quantity(cube._raster_pc_table, target_steps) for cube in cubes], axis=0)
-    crval_all = np.stack([_pad_step_aligned_quantity(cube._raster_crval_table, target_steps) for cube in cubes], axis=0)
+    pc_all = np.stack([_pad_axis0(cube._raster_pc_table, target_steps) for cube in cubes], axis=0)
+    crval_all = np.stack([_pad_axis0(cube._raster_crval_table, target_steps) for cube in cubes], axis=0)
     raster_wcs_header = deepcopy(cubes[0]._raster_wcs_header)
     if "NAXIS3" in raster_wcs_header:
         raster_wcs_header["NAXIS3"] = target_steps
@@ -274,12 +243,12 @@ def _combine_raster_cubes(cubes, *, memmap=False):
     cubes = _validate_combinable_raster_cubes(cubes)
     if len(cubes) == 1:
         return cubes[0]
-    target_steps = _target_step_count(cubes)
+    target_steps = max(cube.shape[0] for cube in cubes)
     if memmap:
         data = _build_lazy_raster_data(cubes, target_steps)
         return _build_combined_raster_cube(cubes, data, mask=None, memmap=True)
 
-    data = _stack_data(cubes, target_steps)
+    data = _stack_step_aligned_arrays([np.asarray(cube.data) for cube in cubes], target_steps, fill_value=np.nan)
     return _build_combined_raster_cube(cubes, data, mask=_stack_mask(cubes, target_steps), memmap=False)
 
 

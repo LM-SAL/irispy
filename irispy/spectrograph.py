@@ -131,16 +131,15 @@ class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
             """,
         )
 
-    def plot(self, *args, slider_labels=None, **kwargs):
+    def plot(self, *args, **kwargs):
         """
         Plot the spectrogram cube.
 
         Parameters
         ----------
-        slider_labels : sequence of str, optional
-            Labels to use for animation sliders, in the order the sliders are shown.
         **kwargs
-            Additional keyword arguments are passed to the ndcube plotting machinery.
+            Passed to the ndcube plotting machinery, e.g. ``slider_labels``
+            to override animation slider labels.
         """
         cmap = kwargs.get("cmap")
         if not cmap:
@@ -155,8 +154,6 @@ class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
         kwargs["cmap"] = cmap
         if len(self.shape) == 1:
             kwargs.pop("cmap")
-        if slider_labels is not None:
-            kwargs["slider_labels"] = slider_labels
         return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
 
     @property

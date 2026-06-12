@@ -11,43 +11,14 @@ from ndcube.meta import NDMeta
 from sunpy.coordinates import Helioprojective
 from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 
+from irispy._interpolation import _pad_axis0
 from irispy.utils.constants import SPECTRAL_BAND
 
 __all__ = ["BaseMeta", "SGMeta", "SJIMeta"]
 
 
-def _pad_scan_aligned_value(value, target_length):
-    if value.shape[0] == target_length:
-        return value
-    pad_count = target_length - value.shape[0]
-    if isinstance(value, SkyCoord):
-        return SkyCoord(
-            Tx=np.concatenate(
-                [
-                    value.Tx.to_value(u.arcsec),
-                    np.repeat(value.Tx[-1].to_value(u.arcsec), pad_count),
-                ]
-            )
-            * u.arcsec,
-            Ty=np.concatenate(
-                [
-                    value.Ty.to_value(u.arcsec),
-                    np.repeat(value.Ty[-1].to_value(u.arcsec), pad_count),
-                ]
-            )
-            * u.arcsec,
-            frame=value.frame,
-        )
-    if isinstance(value, u.Quantity):
-        return (
-            np.concatenate([value.to_value(value.unit), np.repeat(value[-1].to_value(value.unit), pad_count)])
-            * value.unit
-        )
-    return np.concatenate([value, np.repeat(value[-1], pad_count)])
-
-
 def _stack_scan_aligned_values(values, target_length):
-    values = [_pad_scan_aligned_value(value, target_length) for value in values]
+    values = [_pad_axis0(value, target_length) for value in values]
     first = values[0]
     if isinstance(first, SkyCoord):
         return SkyCoord(
@@ -55,8 +26,6 @@ def _stack_scan_aligned_values(values, target_length):
             Ty=np.stack([value.Ty.to_value(u.arcsec) for value in values]) * u.arcsec,
             frame=first.frame,
         )
-    if isinstance(first, u.Quantity):
-        return np.stack([value.to_value(first.unit) for value in values]) * first.unit
     return np.stack(values)
 
 

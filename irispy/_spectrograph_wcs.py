@@ -303,8 +303,8 @@ def _raster_wcs_bad_row_mask(pc, crval, *, pc_only=False):
     """
     Return AUX rows whose PC or CRVAL table entries are unusable.
     """
-    pc_values = pc.to_value(u.pix) if hasattr(pc, "to_value") else np.asarray(pc)
-    crval_values = crval.to_value(u.arcsec) if hasattr(crval, "to_value") else np.asarray(crval)
+    pc_values = _as_value_array(pc, u.pix)
+    crval_values = _as_value_array(crval, u.arcsec)
     pc_bad = np.isclose(pc_values, 0).all(axis=(1, 2))
     if pc_only:
         return pc_bad
@@ -312,15 +312,6 @@ def _raster_wcs_bad_row_mask(pc, crval, *, pc_only=False):
     # Require BOTH pc and crval to be all-zero: crval=(0,0) alone is valid for
     # disk-centre pointings.  A truly unfilled row will have an all-zero PC matrix.
     return pc_bad & crval_bad
-
-
-def _interpolate_wcs_bad_rows(pc, crval, bad_rows):
-    """
-    Fill bad rows by linear interpolation between nearest good neighbours.
-    """
-    _interpolate_bad_axis0_rows(pc, bad_rows)
-    _interpolate_bad_axis0_rows(crval, bad_rows)
-    return pc, crval
 
 
 def _apply_wcs_fallback(pc, crval, fallback_pc, fallback_crval):
@@ -332,9 +323,8 @@ def _apply_wcs_fallback(pc, crval, fallback_pc, fallback_crval):
         UserWarning,
         stacklevel=3,
     )
-    for i in range(pc.shape[0]):
-        pc[i] = fallback_pc
-        crval[i] = fallback_crval
+    pc[:] = fallback_pc
+    crval[:] = fallback_crval
     return pc, crval
 
 
@@ -361,7 +351,9 @@ def _sanitize_raster_wcs_tables(pc, crval, fallback_pc=None, fallback_crval=None
             raise ValueError(msg)
         return _apply_wcs_fallback(pc, crval, fallback_pc, fallback_crval)
 
-    return _interpolate_wcs_bad_rows(pc, crval, bad_rows)
+    _interpolate_bad_axis0_rows(pc, bad_rows)
+    _interpolate_bad_axis0_rows(crval, bad_rows)
+    return pc, crval
 
 
 def _normalize_spectral_axis_units(header):
@@ -378,7 +370,7 @@ def _pc_table_to_lon_lat_order(pc_table, cdelt_lat_lon):
     """
     Convert FITS lat/lon PC matrices to the lon/lat order expected by gWCS.
     """
-    pc_values = pc_table.to_value(u.pix) if hasattr(pc_table, "to_value") else np.asarray(pc_table)
+    pc_values = _as_value_array(pc_table, u.pix)
     cdelt_lat_lon = np.asarray(cdelt_lat_lon)
     cd_matrix = cdelt_lat_lon[:, np.newaxis] * pc_values
     cd_matrix_lon_lat = cd_matrix[..., [1, 0], :][..., :, [1, 0]]
@@ -387,11 +379,14 @@ def _pc_table_to_lon_lat_order(pc_table, cdelt_lat_lon):
     return pc_lon_lat * u.pix if hasattr(pc_table, "unit") else pc_lon_lat
 
 
+def _slit_offset_column(spectral_band):
+    return AUX_FUV_SLIT_OFFSET_COLUMN if spectral_band == "FUV" else AUX_NUV_SLIT_OFFSET_COLUMN
+
+
 def _prepare_raster_wcs_header(header, aux_data, spectral_band, *, sit_and_stare, flip):
     header = copy(header)
     _normalize_spectral_axis_units(header)
-    offset_index = AUX_FUV_SLIT_OFFSET_COLUMN if spectral_band == "FUV" else AUX_NUV_SLIT_OFFSET_COLUMN
-    header["CRVAL3"] -= aux_data[:, offset_index].mean() * (SLIT_WIDTH.value / 2)
+    header["CRVAL3"] -= aux_data[:, _slit_offset_column(spectral_band)].mean() * (SLIT_WIDTH.value / 2)
     if sit_and_stare:
         header["CDELT3"] = SIT_AND_STARE_CDELT3_PLACEHOLDER
         dispersion_ratio = header["CDELT3"] / header["CDELT2"]

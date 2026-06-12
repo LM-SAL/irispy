@@ -12,6 +12,7 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
+import irispy.io._raster_combine as raster_combine
 import irispy.io.spectrograph as spectrograph_io
 from irispy._spectrograph_wcs import (
     SIT_AND_STARE_CDELT3_PLACEHOLDER,
@@ -213,6 +214,7 @@ def test_multifile_read_builds_only_combined_gwcs(raster_sg_files, monkeypatch):
         return real_create_raster_gwcs(*args, **kwargs)
 
     monkeypatch.setattr(spectrograph_io, "_create_raster_gwcs", count_gwcs_builds)
+    monkeypatch.setattr(raster_combine, "_create_raster_gwcs", count_gwcs_builds)
 
     raster_collection = read_spectrograph_lvl2(raster_sg_files[:2], spectral_windows="Si IV 1403")
 
@@ -239,6 +241,7 @@ def test_multifile_read_materializes_gwcs_when_one_cube_remains(raster_sg_files,
 
     monkeypatch.setattr(spectrograph_io, "_validate_raster_wcs_inputs", fail_second_file_validation)
     monkeypatch.setattr(spectrograph_io, "_create_raster_gwcs", count_gwcs_builds)
+    monkeypatch.setattr(raster_combine, "_create_raster_gwcs", count_gwcs_builds)
 
     raster_collection = read_spectrograph_lvl2(raster_sg_files[:2], spectral_windows="Si IV 1403")
     si_iv = raster_collection["Si IV 1403"]

@@ -32,12 +32,6 @@ SCAN_STEP_LABELS = ["custom:step", "scan_step"]
 SLIDER_SCAN_STEP_LABELS = [*SCAN_STEP_LABELS, "raster_step"]
 SLIDER_SCAN_LABELS = ["custom:scan", "raster_scan"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
-LON_PHYSICAL_TYPES = {"custom:pos.helioprojective.lon"}
-LAT_PHYSICAL_TYPES = {"custom:pos.helioprojective.lat"}
-TIME_PHYSICAL_TYPES = {"time"}
-STEP_PHYSICAL_TYPES = {"custom:step"}
-SCAN_PHYSICAL_TYPES = {"custom:scan"}
-WAVELENGTH_PHYSICAL_TYPES = {"em.wl"}
 
 
 def _shorten_slider_label(label):
@@ -80,13 +74,13 @@ def set_axis_properties(ax, axes_coordinates=None, *, animate=False):
         ax = ax.axes
     for axis, physical_type in _iter_coords_with_physical_types(ax):
         default_label = axis.default_label.lower()
-        if physical_type in WAVELENGTH_PHYSICAL_TYPES or default_label in WAVELENGTH_LABELS:
+        if physical_type in WAVELENGTH_LABELS or default_label in WAVELENGTH_LABELS:
             axis.set_format_unit(u.nm)
             axis.set_major_formatter("x.x")
             axis.set_axislabel("Wavelength [$\\mathrm{nm}$]")
-        elif physical_type in LAT_PHYSICAL_TYPES or default_label in LAT_LABELS:
+        elif physical_type in LAT_LABELS or default_label in LAT_LABELS:
             _set_axis_properties(axis, "Helioprojective Latitude [arcsec]", "red")
-        elif physical_type in LON_PHYSICAL_TYPES or default_label in LON_LABELS:
+        elif physical_type in LON_LABELS or default_label in LON_LABELS:
             _set_axis_properties(axis, "Helioprojective Longitude [arcsec]", "black")
     if animate:
         _set_raster_animation_axis_properties(ax, axes_coordinates)
@@ -146,23 +140,15 @@ def _iter_coords_with_physical_types(ax):
         yield coord, physical_type
 
 
-def _unique_coords(coords):
-    unique = []
-    for coord in coords:
-        if coord not in unique:
-            unique.append(coord)
-    return unique
-
-
-def _coords_by_physical_type_or_label(ax, physical_types, labels):
-    physical_types = {physical_type.lower() for physical_type in physical_types}
+def _coords_matching(ax, labels):
     labels = {label.lower() for label in labels}
-    coords = [
-        coord
-        for coord, physical_type in _iter_coords_with_physical_types(ax)
-        if physical_type in physical_types or coord.default_label.lower() in labels
-    ]
-    return _unique_coords(coords)
+    return list(
+        dict.fromkeys(
+            coord
+            for coord, physical_type in _iter_coords_with_physical_types(ax)
+            if physical_type in labels or coord.default_label.lower() in labels
+        )
+    )
 
 
 def _select_scan_coord_kind(axes_coordinates):
@@ -181,15 +167,15 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
     scan axis. This helper keeps latitude on the left edge, hides the auxiliary scan-
     step helper, and moves the selected scan coordinate onto the visible frame edge.
     """
-    step_coords = _coords_by_physical_type_or_label(ax, STEP_PHYSICAL_TYPES, SLIDER_SCAN_STEP_LABELS)
-    scan_coords = _coords_by_physical_type_or_label(ax, SCAN_PHYSICAL_TYPES, SLIDER_SCAN_LABELS)
+    step_coords = _coords_matching(ax, SLIDER_SCAN_STEP_LABELS)
+    scan_coords = _coords_matching(ax, SLIDER_SCAN_LABELS)
     if not step_coords and not scan_coords:
         return
 
-    wavelength_coords = _coords_by_physical_type_or_label(ax, WAVELENGTH_PHYSICAL_TYPES, WAVELENGTH_LABELS)
-    lon_coords = _coords_by_physical_type_or_label(ax, LON_PHYSICAL_TYPES, LON_LABELS)
-    lat_coords = _coords_by_physical_type_or_label(ax, LAT_PHYSICAL_TYPES, LAT_LABELS)
-    time_coords = _coords_by_physical_type_or_label(ax, TIME_PHYSICAL_TYPES, TIME_LABEL_PRIORITY)
+    wavelength_coords = _coords_matching(ax, WAVELENGTH_LABELS)
+    lon_coords = _coords_matching(ax, LON_LABELS)
+    lat_coords = _coords_matching(ax, LAT_LABELS)
+    time_coords = _coords_matching(ax, TIME_LABEL_PRIORITY)
     if not lon_coords or not lat_coords or not time_coords:
         return
     if wavelength_coords and wavelength_coords[0].get_ticks_position():
@@ -199,14 +185,15 @@ def _set_raster_animation_axis_properties(ax, axes_coordinates):
     selected_scan_kind = _select_scan_coord_kind(axes_coordinates)
     selected_scan_coord = lon_coords[0]
     if selected_scan_kind == "time":
-        for preferred_label in TIME_LABEL_PRIORITY:
-            for coord in time_coords:
-                if coord.default_label.lower() == preferred_label:
-                    selected_scan_coord = coord
-                    break
-            else:
-                continue
-            break
+        selected_scan_coord = next(
+            (
+                coord
+                for preferred_label in TIME_LABEL_PRIORITY
+                for coord in time_coords
+                if coord.default_label.lower() == preferred_label
+            ),
+            selected_scan_coord,
+        )
 
     for coord in [*step_coords, *scan_coords]:
         _hide_coord(coord)
