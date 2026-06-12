@@ -186,8 +186,6 @@ def remove_dust(
         "extra_coords": "copy",
         "global_coords": "copy",
     }
-    if hasattr(cube, "scaled"):
-        cleaned_cube_kwargs["scaled"] = "copy"
     cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
     if hasattr(cleaned_cube, "dust_masked"):
         cleaned_cube.dust_masked = bool(np.any(output_mask & dust_mask))

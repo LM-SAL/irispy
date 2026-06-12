@@ -83,17 +83,10 @@ def _validate_combinable_raster_cubes(cubes):
         "_raster_wcs_header",
         "_raster_pc_table",
         "_raster_crval_table",
-        "_raster_observer",
     )
     if any(not all(hasattr(cube, attr) for attr in required_attrs) for cube in cubes):
         msg = "Raster cubes do not expose the WCS metadata needed to build a combined cube."
         raise ValueError(msg)
-    # Ensure all cubes share the same observer; combined gWCS uses cubes[0].
-    first_observer = cubes[0]._raster_observer
-    for cube in cubes[1:]:
-        if not np.allclose(cube._raster_observer.cartesian.xyz.value, first_observer.cartesian.xyz.value, atol=1e-6):
-            msg = "All raster cubes must have the same observer coordinate."
-            raise ValueError(msg)
     return cubes
 
 
@@ -120,8 +113,8 @@ def _single_cube_raster_gwcs(cube):
         cube._raster_crval_table,
         (time - time[0]).to_value(u.s) * u.s,
         time[0],
-        cube._raster_observer,
-        sit_and_stare=cube._sit_and_stare,
+        cube.meta.observer,
+        sit_and_stare=cube.meta.get("sit_and_stare", False),
     )
 
 
@@ -143,7 +136,7 @@ def _materialize_deferred_raster_gwcs(cube):
     return materialized
 
 
-def _build_combined_raster_cube(cubes, data, *, mask, memmap):
+def _build_combined_raster_cube(cubes, data, *, mask):
     target_steps = data.shape[1]
     _warn_if_ragged(cubes, target_steps)
     times = _stack_times(cubes, target_steps)
@@ -160,21 +153,18 @@ def _build_combined_raster_cube(cubes, data, *, mask, memmap):
             crval_all,
             (times - times[0, 0]).to_value(u.s) * u.s,
             times[0, 0],
-            cubes[0]._raster_observer,
-            sit_and_stare=cubes[0]._sit_and_stare,
+            cubes[0].meta.observer,
+            sit_and_stare=cubes[0].meta.get("sit_and_stare", False),
         ),
         uncertainty=_stack_uncertainty(cubes, target_steps),
         unit=cubes[0].unit,
         meta=cubes[0].meta.combine([cube.meta for cube in cubes], data.shape),
         mask=mask,
         _fits_wcs_segments=[(index, index + 1, cube.fits_wcs) for index, cube in enumerate(cubes)],
-        _memmap=memmap,
         _raster_wcs_header=raster_wcs_header,
         _raster_pc_table=pc_all,
         _raster_crval_table=crval_all,
-        _raster_observer=cubes[0]._raster_observer,
         _separate_raster_axis=True,
-        _sit_and_stare=cubes[0]._sit_and_stare,
     )
 
 
@@ -202,8 +192,8 @@ def _cube_to_dask(cube, *, chunk_rows):
     """
     Return a Dask array for one cube, reading from disk if memmap-backed.
     """
-    filename = getattr(cube, "_memmap_path", None)
-    ext = getattr(cube, "_memmap_ext", None)
+    filename = cube.meta.get("memmap_path")
+    ext = cube.meta.get("memmap_ext")
     if filename is None or ext is None:
         return da.from_array(
             cube.data,
@@ -213,7 +203,7 @@ def _cube_to_dask(cube, *, chunk_rows):
         )
 
     raster_chunks = []
-    flip = getattr(cube, "_flip", False)
+    flip = cube.meta.get("flipped", False)
     for start in range(0, cube.shape[0], chunk_rows):
         stop = min(start + chunk_rows, cube.shape[0])
         chunk = delayed(_read_memmap_window_chunk)(filename, ext, flip, start, stop)
@@ -246,10 +236,10 @@ def _combine_raster_cubes(cubes, *, memmap=False):
     target_steps = max(cube.shape[0] for cube in cubes)
     if memmap:
         data = _build_lazy_raster_data(cubes, target_steps)
-        return _build_combined_raster_cube(cubes, data, mask=None, memmap=True)
+        return _build_combined_raster_cube(cubes, data, mask=None)
 
     data = _stack_step_aligned_arrays([np.asarray(cube.data) for cube in cubes], target_steps, fill_value=np.nan)
-    return _build_combined_raster_cube(cubes, data, mask=_stack_mask(cubes, target_steps), memmap=False)
+    return _build_combined_raster_cube(cubes, data, mask=_stack_mask(cubes, target_steps))
 
 
 def _finalize_window_object(cubes, *, memmap):

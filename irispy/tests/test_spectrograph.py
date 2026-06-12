@@ -174,7 +174,6 @@ def test_memmap_split_rasters_returns_lazy_subcubes(raster_sg_files):
     assert isinstance(cube.data, da.Array)
     assert cube.mask is None
     assert cube.uncertainty is None
-    assert cube._memmap is True
     assert cube.fits_wcs is not None
     assert cube.shape == (8, 109, 29)
 
@@ -190,7 +189,6 @@ def test_memmap_raster_returns_lazy_combined_cube(raster_sg_files):
 
     assert isinstance(cube.data, da.Array)
     assert cube.mask is None
-    assert cube._memmap is True
     assert len(cube.raster_boundaries) == 13
     assert cube.fits_wcs is None
     assert cube.uncertainty is None
@@ -457,7 +455,7 @@ def test_spectrogram_cube_to_nddata_preserves_raster_metadata(raster_sg_files):
     assert copied._raster_wcs_header is cube._raster_wcs_header
     assert copied._raster_pc_table is cube._raster_pc_table
     assert copied._raster_crval_table is cube._raster_crval_table
-    assert copied._raster_observer is cube._raster_observer
+    assert copied.meta.observer is cube.meta.observer
 
 
 def test_spectrogram_cube_arithmetic_preserves_raster_metadata(raster_sg_files):

@@ -33,7 +33,7 @@ class _FitsWCSCompatMixin:
         cubes (where ``fits_wcs`` is `None`) and on cubes sliced along the
         scan, step, slit, time, or wavelength axes.
         """
-        observer = getattr(self, "_raster_observer", None)
+        observer = getattr(self.meta, "observer", None)
         if observer is not None:
             return Helioprojective(observer=observer, obstime=observer.obstime)
         fits_wcs = self.fits_wcs

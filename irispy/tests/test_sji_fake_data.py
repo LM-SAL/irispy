@@ -227,13 +227,6 @@ def test_sjicube_slice_preserves_fits_wcs(sns_sjicube_1330, item, expected_len):
         assert isinstance(subset.fits_wcs[0], WCS)
 
 
-def test_get_fits_wcs_slice_item_returns_none_for_multiple_ellipsis(sns_sjicube_1330):
-    original_fits_wcs = sns_sjicube_1330.fits_wcs
-
-    assert sns_sjicube_1330._get_fits_wcs_slice_item((Ellipsis, Ellipsis)) is None
-    assert len(sns_sjicube_1330.fits_wcs) == len(original_fits_wcs)
-
-
 def test_sjicube_slice_rejects_multiple_ellipsis(sns_sjicube_1330):
     with pytest.raises((IndexError, ValueError), match=r"single ellipsis|only have a single ellipsis"):
         sns_sjicube_1330[(Ellipsis, Ellipsis)]
@@ -249,22 +242,18 @@ def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
         sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]
 
 
-def test_sjicube_slice_with_none_fits_wcs_keeps_none(cube):
-    cube._fits_wcs = None
-
+def test_sjicube_slice_without_frame_headers_keeps_fits_wcs_none(cube):
     subset = cube[0:1]
 
-    assert cube._get_fits_wcs_slice_item(slice(0, 1)) is None
+    assert cube.fits_wcs is None
     assert subset.fits_wcs is None
 
 
-def test_get_fits_wcs_slice_item_returns_none_when_data_is_not_3d(cube_2d):
-    cube_2d._fits_wcs = [cube_2d.wcs.to_header()]
-
+def test_sjicube_2d_slice(cube_2d):
     subset = cube_2d[:, :2]
 
-    assert cube_2d._get_fits_wcs_slice_item((slice(None), slice(0, 2))) is None
     assert subset.data.ndim == 2
+    assert subset.fits_wcs is None
 
 
 def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):

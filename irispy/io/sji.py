@@ -143,7 +143,10 @@ def _create_headers_wcs(hdulist):
             unit=u.DN,
         )
         wcses.append(new_header)
-    return wcses
+    # Object array (not list) so NDMeta's axis-aware slicing indexes it directly.
+    headers = np.empty(len(wcses), dtype=object)
+    headers[:] = wcses
+    return headers
 
 
 def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
@@ -222,15 +225,16 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             if uncertainty and instrume in ["IRIS", "SJI"]:
                 out_uncertainty = calculate_uncertainty(data, READOUT_NOISE["SJI"], DN_UNIT["SJI"])
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
+        meta = SJIMeta(hdulist[0].header)
+        meta.add("frame_wcs_headers", _create_headers_wcs(hdulist), axes=0)
         map_cube = cube_class(
             data_nan_masked,
             _create_gwcs(hdulist),
             uncertainty=out_uncertainty,
             unit=unit,
-            meta=SJIMeta(hdulist[0].header),
+            meta=meta,
             mask=mask,
             scaled=scaled,
-            _fits_wcs=_create_headers_wcs(hdulist),
         )
         [map_cube.extra_coords.add(*extra_coord) for extra_coord in extra_coords]
     return map_cube

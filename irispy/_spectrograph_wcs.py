@@ -33,22 +33,13 @@ _SPECTROGRAM_CUBE_METADATA_KWARGS = (
     "_fits_wcs",
     "_fits_wcs_segments",
     "_raster_boundaries",
-    "_memmap",
     "_raster_wcs_header",
     "_raster_pc_table",
     "_raster_crval_table",
-    "_raster_observer",
-    "_memmap_path",
-    "_memmap_ext",
-    "_flip",
     "_separate_raster_axis",
-    "_sit_and_stare",
 )
 _SPECTROGRAM_CUBE_METADATA_DEFAULTS = {
-    "_memmap": False,
-    "_flip": False,
     "_separate_raster_axis": False,
-    "_sit_and_stare": False,
 }
 
 
@@ -240,15 +231,11 @@ class _SpectrogramCubeWCSMixin:
             sliced_self._fits_wcs_segments = None
             sliced_self._raster_boundaries = None
             sliced_self._separate_raster_axis = False
-            sliced_self._sit_and_stare = False
             return
 
         scan_item = normalized_item[0]
 
-        sliced_self._raster_observer = getattr(self, "_raster_observer", None)
-        sliced_self._memmap = self._memmap
         sliced_self._separate_raster_axis = getattr(self, "_separate_raster_axis", False)
-        sliced_self._sit_and_stare = getattr(self, "_sit_and_stare", False)
 
         if self._separate_raster_axis:
             step_item = normalized_item[1]

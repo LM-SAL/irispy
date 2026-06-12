@@ -60,7 +60,7 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 14)  # History is missing
+    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 10)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -132,7 +132,7 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 526
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 413 == (len(meta.keys()) + 12)  # History is missing
+    assert len(meta.fits_header) == 413 == (len(meta.keys()) + 10)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -440,8 +440,8 @@ def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic(raster_sg_fi
         crval_all,
         dt_all,
         scan.time[0],
-        scan._raster_observer,
-        sit_and_stare=scan._sit_and_stare,
+        scan.meta.observer,
+        sit_and_stare=scan.meta["sit_and_stare"],
     )
 
     for scan_index in (1, scan.shape[0] + 1):
@@ -452,7 +452,7 @@ def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic(raster_sg_fi
 def test_raster_gwcs_matches_fits_wcs_forward_world_coordinates(raster_sg_files):
     raster_collection = read_spectrograph_lvl2(raster_sg_files)
     scan = raster_collection["Si IV 1403"].raster_slice(0)
-    assert not scan._sit_and_stare
+    assert not scan.meta["sit_and_stare"]
 
     for array_index in ((0, 50, 3), (3, 50, 10), (7, 80, 20)):
         spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
@@ -478,8 +478,8 @@ def v34_raster_file(tmp_path, raster_sg_file):
 @pytest.mark.parametrize("revert_v34", [False, True])
 def test_v34_gwcs_matches_fits_wcs_forward_world_coordinates(v34_raster_file, revert_v34):
     scan = read_spectrograph_lvl2(v34_raster_file, revert_v34=revert_v34)["Si IV 1403"]
-    assert not scan._sit_and_stare
-    assert scan._flip is not revert_v34
+    assert not scan.meta["sit_and_stare"]
+    assert scan.meta["flipped"] is not revert_v34
 
     for array_index in ((0, 50, 3), (3, 50, 10), (7, 80, 20)):
         spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
@@ -566,7 +566,7 @@ def test_v34_flip_and_revert_agree_on_world_coordinates(v34_raster_file):
 def test_sit_and_stare_gwcs_matches_fits_wcs_forward_world_coordinates(sns_sg_file):
     raster_collection = read_spectrograph_lvl2(sns_sg_file)
     scan = raster_collection["Si IV 1403"]
-    assert scan._sit_and_stare
+    assert scan.meta["sit_and_stare"]
 
     for array_index in ((3, 20, 10), (4, 25, 10), (10, 30, 5)):
         spectral, sky, _, _ = scan.wcs.array_index_to_world(*array_index)
@@ -708,20 +708,6 @@ def test_sanitize_raster_wcs_tables_all_bad_rows_without_fallback_raises():
         warnings.simplefilter("ignore", UserWarning)
         with pytest.raises(ValueError, match="All WCS table rows are bad"):
             _sanitize_raster_wcs_tables(pc.copy(), crval)
-
-
-def test_combined_raster_rejects_mismatched_observer(raster_sg_files):
-    """
-    Combining rasters with different observers should raise ValueError.
-    """
-    raster_collection = read_spectrograph_lvl2(raster_sg_files)
-    cube = raster_collection["Si IV 1403"]
-    cubes = cube.split_rasters()
-    if len(cubes) > 1:
-        # Replace observer with a completely different one
-        cubes[1]._raster_observer = HeliographicStonyhurst(0 * u.deg, 0 * u.deg, 1 * u.AU, obstime="2020-01-01")
-        with pytest.raises(ValueError, match="same observer"):
-            _validate_combinable_raster_cubes(cubes)
 
 
 def test_combined_raster_rejects_empty_cubes():

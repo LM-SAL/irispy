@@ -1,6 +1,5 @@
 import textwrap
 import warnings
-from numbers import Integral
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,32 +19,6 @@ from irispy.utils.dust import remove_dust as _remove_dust
 from irispy.visualization import IRISPlotter, finalize_iris_plot
 
 __all__ = ["AIACube", "SJICube"]
-
-
-def _normalize_tuple_index(item, ndim):
-    """
-    Normalize a tuple index to explicit per-axis entries.
-
-    Returns
-    -------
-    list or None
-        A normalized list of length ``ndim`` when normalization is valid.
-        Returns ``None`` when the tuple contains more than one ellipsis.
-    """
-    normalized_item = []
-    ellipsis_seen = False
-    for subitem in item:
-        if subitem is Ellipsis:
-            if ellipsis_seen:
-                return None
-            ellipsis_seen = True
-            missing_dims = ndim - (len(item) - 1)
-            normalized_item.extend([slice(None)] * missing_dims)
-        else:
-            normalized_item.append(subitem)
-    if len(normalized_item) < ndim:
-        normalized_item.extend([slice(None)] * (ndim - len(normalized_item)))
-    return normalized_item
 
 
 class SJICube(_FitsWCSCompatMixin, SpectrogramCube):
@@ -98,11 +71,7 @@ class SJICube(_FitsWCSCompatMixin, SpectrogramCube):
         scaled=None,
         **kwargs,
     ) -> None:
-        self.scaled = scaled
         self.dust_masked = False
-        self._fits_wcs = kwargs.pop("_fits_wcs", None)
-        if self._fits_wcs is not None and not isinstance(self._fits_wcs, list):
-            self._fits_wcs = [self._fits_wcs]
         super().__init__(
             data,
             wcs,
@@ -113,21 +82,15 @@ class SJICube(_FitsWCSCompatMixin, SpectrogramCube):
             copy=copy,
             **kwargs,
         )
+        if scaled is not None:
+            self.meta["scaled"] = scaled
 
-    def _new_instance(self, **kwargs):
-        kwargs.setdefault("_fits_wcs", getattr(self, "_fits_wcs", None))
-        return super()._new_instance(**kwargs)
-
-    def to_nddata(self, *args, nddata_type=None, **kwargs):
-        if nddata_type is None:
-            return super().to_nddata(*args, **kwargs)
-        try:
-            copies_fits_wcs = issubclass(nddata_type, SJICube)
-        except TypeError:
-            copies_fits_wcs = False
-        if copies_fits_wcs:
-            kwargs.setdefault("_fits_wcs", "copy")
-        return super().to_nddata(*args, nddata_type=nddata_type, **kwargs)
+    @property
+    def scaled(self):
+        """
+        Whether the data has had FITS scaling applied.
+        """
+        return self.meta.get("scaled") if self.meta is not None else None
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -156,29 +119,9 @@ class SJICube(_FitsWCSCompatMixin, SpectrogramCube):
             """,
         )
 
-    def _get_fits_wcs_slice_item(self, item):
-        fits_wcs_item = None
-        if self._fits_wcs is not None and self.data.ndim == 3:
-            if isinstance(item, (Integral, slice)):
-                fits_wcs_item = item
-            elif item is Ellipsis:
-                fits_wcs_item = slice(None)
-            elif isinstance(item, tuple):
-                normalized_item = _normalize_tuple_index(item, self.data.ndim)
-                if (
-                    normalized_item is not None
-                    and normalized_item
-                    and isinstance(normalized_item[0], (Integral, slice))
-                ):
-                    fits_wcs_item = normalized_item[0]
-        return fits_wcs_item
-
     def __getitem__(self, item):
         sliced_self = super().__getitem__(item)
-        sliced_self.scaled = self.scaled
-        fits_wcs_item = self._get_fits_wcs_slice_item(item)
-        if fits_wcs_item is not None:
-            sliced_self._fits_wcs = self._fits_wcs[fits_wcs_item]
+        sliced_self.dust_masked = self.dust_masked
         return sliced_self
 
     def plot(self, *args, **kwargs):
@@ -311,11 +254,12 @@ class SJICube(_FitsWCSCompatMixin, SpectrogramCube):
         """
         Returns a standard WCS instead of gWCS.
         """
-        if self._fits_wcs is None:
+        headers = self.meta.get("frame_wcs_headers") if self.meta is not None else None
+        if headers is None:
             return None
-        if isinstance(self._fits_wcs, MetaDict):
-            return WCS(self._fits_wcs)
-        return [WCS(wcs_header) for wcs_header in self._fits_wcs]
+        if isinstance(headers, MetaDict):
+            return WCS(headers)
+        return [WCS(wcs_header) for wcs_header in headers]
 
     def to_maps(self, index: int | list[int] | None = None):
         """

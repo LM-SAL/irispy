@@ -10,9 +10,7 @@ from astropy.time import TimeDelta
 from astropy.wcs import WCS
 
 from sunpy import log as logger
-from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
-from sunpy.coordinates.frames import HeliographicStonyhurst, Helioprojective
-from sunpy.coordinates.screens import SphericalScreen
+from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from sunpy.time import parse_time
 
@@ -40,19 +38,6 @@ def _header_time(header, *keys):
             return parse_time(value)
     msg = f"Header is missing all usable time keys: {keys}"
     raise ValueError(msg)
-
-
-def _make_observer(primary_header):
-    base_time = _header_time(primary_header, "DATE_OBS", "STARTOBS")
-    location = get_body_heliographic_stonyhurst("Earth", base_time.isot)
-    observer = Helioprojective(
-        primary_header["XCEN"] * u.arcsec,
-        primary_header["YCEN"] * u.arcsec,
-        observer=location,
-        obstime=base_time,
-    )
-    with SphericalScreen(observer.observer):
-        return observer.transform_to(HeliographicStonyhurst(obstime=base_time))
 
 
 def read_spectrograph_lvl2(
@@ -134,7 +119,6 @@ def read_spectrograph_lvl2(
                 window_indices.append(int(matches[0]) + 1)
             window_fits_indices = window_indices
         data_dict = {window_name: [] for window_name in spectral_windows_req}
-        observer = _make_observer(primary_header)
 
     # Per-window running means of good WCS table rows across files, used as
     # fallback only when a later file has no good rows for that window.
@@ -195,7 +179,12 @@ def read_spectrograph_lvl2(
                 meta.add("exposure FOV center", fov_center, None, 0)
                 meta.add("observer radial velocity", obs_vrix, None, 0)
                 meta.add("orbital phase", ophaseix, None, 0)
+                observer = meta.observer
                 sit_and_stare = window_header["CDELT3"] == 0
+                meta["sit_and_stare"] = sit_and_stare
+                meta["flipped"] = flip
+                meta["memmap_path"] = filename
+                meta["memmap_ext"] = window_fits_indices[i]
                 prepared_wcs_header = _prepare_raster_wcs_header(
                     window_header,
                     aux.data,
@@ -291,15 +280,9 @@ def read_spectrograph_lvl2(
                     meta=meta,
                     mask=data_mask,
                     _fits_wcs=fits_wcs,
-                    _memmap=memmap,
                     _raster_wcs_header=prepared_wcs_header,
                     _raster_pc_table=pc_sanitized,
                     _raster_crval_table=crval,
-                    _raster_observer=observer,
-                    _memmap_path=filename,
-                    _memmap_ext=window_fits_indices[i],
-                    _flip=flip,
-                    _sit_and_stare=sit_and_stare,
                 )
                 cube._defer_raster_gwcs = combine_files
                 cube.extra_coords.add("time", 0, times, physical_types="time")
