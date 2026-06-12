@@ -31,7 +31,7 @@ permissions: {}
 
 jobs:
   core:
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
     with:
       submodules: false
       coverage: codecov
@@ -60,7 +60,7 @@ jobs:
 
   test:
     needs: [core, sdist_verify]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
     with:
       submodules: false
       coverage: codecov
@@ -82,7 +82,7 @@ jobs:
 
   docs:
     needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
     with:
       default_python: '3.13'
       submodules: false
@@ -104,7 +104,7 @@ jobs:
   online:
     if: "!startsWith(github.event.ref, 'refs/tags/v')"
     needs: [docs]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@4193751d511425d4edc1d5657c24b2128d49b017 # v2.6.4
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87 # v2.6.5
     with:
       default_python: '3.13'
       submodules: false
@@ -135,7 +135,7 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'Run publish')
       )
     needs: [test, docs]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@4193751d511425d4edc1d5657c24b2128d49b017  # v2.6.4
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
     with:
       python-version: '3.13'
       libraries: "ffmpeg"
