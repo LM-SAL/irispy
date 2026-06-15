@@ -12,7 +12,7 @@ from sunpy.util import MetaDict
 from sunpy.util.exceptions import SunpyMetadataWarning
 from sunraster import SpectrogramCube
 
-from irispy._wcs_compat import _FitsWCSCompatMixin
+from irispy._wcs import _celestial_frame_from_cube
 from irispy.utils import calculate_dust_mask
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import remove_dust as _remove_dust
@@ -21,7 +21,7 @@ from irispy.visualization import IRISPlotter, finalize_iris_plot
 __all__ = ["AIACube", "SJICube"]
 
 
-class SJICube(_FitsWCSCompatMixin, SpectrogramCube):
+class SJICube(SpectrogramCube):
     """
     Class representing SJI Image described by a single WCS.
 
@@ -248,6 +248,8 @@ class SJICube(_FitsWCSCompatMixin, SpectrogramCube):
             fallback=fallback,
             spatial_box=spatial_box,
         )
+
+    celestial_frame = property(_celestial_frame_from_cube)
 
     @property
     def fits_wcs(self):

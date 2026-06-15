@@ -1,0 +1,1 @@
+Removed the deprecated ``basic_wcs`` alias from `~irispy.sji.SJICube` and `~irispy.spectrograph.SpectrogramCube`; use ``fits_wcs`` for the plain FITS WCS.

@@ -502,15 +502,6 @@ def test_v34_gwcs_inverse_roundtrips_array_indices(v34_raster_file, revert_v34):
         assert scan.wcs.world_to_array_index(*point) == array_index
 
 
-def test_basic_wcs_is_deprecated_alias_of_fits_wcs(sns_sg_file):
-    cube = read_spectrograph_lvl2(sns_sg_file)["Si IV 1403"]
-
-    with pytest.warns(DeprecationWarning, match="fits_wcs"):
-        deprecated = cube.basic_wcs
-
-    assert deprecated is cube.fits_wcs
-
-
 def test_celestial_frame_is_slicing_invariant(raster_sg_files):
     cube = read_spectrograph_lvl2(raster_sg_files)["Si IV 1403"]
 

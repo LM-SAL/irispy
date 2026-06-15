@@ -16,7 +16,7 @@ from irispy._spectrograph_wcs import (
     _SPECTROGRAM_CUBE_METADATA_KWARGS,
     _SpectrogramCubeWCSMixin,
 )
-from irispy._wcs_compat import _FitsWCSCompatMixin
+from irispy._wcs import _celestial_frame_from_cube
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.visualization import IRISPlotter, finalize_iris_plot
@@ -24,7 +24,7 @@ from irispy.visualization import IRISPlotter, finalize_iris_plot
 __all__ = ["RasterCollection", "SpectrogramCube"]
 
 
-class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
+class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
@@ -160,6 +160,8 @@ class SpectrogramCube(_FitsWCSCompatMixin, _SpectrogramCubeWCSMixin, SpecCube):
         if len(self.shape) == 1:
             kwargs.pop("cmap")
         return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
+
+    celestial_frame = property(_celestial_frame_from_cube)
 
     @property
     def fits_wcs(self):

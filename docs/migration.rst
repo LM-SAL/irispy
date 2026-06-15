@@ -44,8 +44,8 @@ and ``axis_world_coords`` use.
 ``cube.fits_wcs`` is the plain linear `astropy.wcs.WCS` built from the FITS
 window header, kept for interoperability with code that needs a FITS WCS, for
 example reprojection.
-It was previously called ``basic_wcs``; that name still works but emits a
-`DeprecationWarning` and will be removed in a future release.
+It was previously called ``basic_wcs``; use ``fits_wcs`` for code that needs
+the plain FITS WCS.
 
 The two can differ by a few arcseconds along the scan direction because
 ``fits_wcs`` is a single linear approximation of the per-step pointing.
