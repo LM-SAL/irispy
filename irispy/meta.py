@@ -42,11 +42,7 @@ class BaseMeta(NDMeta):
 
     def _construct_time(self, key):
         val = self.get(key)
-        if val is not None and str(val).strip():
-            val = Time(val, format="fits", scale="utc")
-        else:
-            val = None
-        return val
+        return Time(val, format="fits", scale="utc") if val is not None and str(val).strip() else None
 
     @property
     def fits_header(self):

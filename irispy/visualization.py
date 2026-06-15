@@ -25,6 +25,7 @@ LON_LABELS = [
     "longitude",
 ]
 TIME_LABEL_PRIORITY = ["seconds from start (s)", "time (utc)", "time"]
+TIME_OFFSET_LABELS = ["seconds from start (s)"]
 SLIDER_SCAN_STEP_LABELS = ["custom:step", "scan_step", "raster_step"]
 SLIDER_SCAN_LABELS = ["custom:scan", "raster_scan"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
@@ -60,17 +61,21 @@ def set_axis_properties(ax):
             axis.set_format_unit(u.nm)
             axis.set_major_formatter("x.x")
             axis.set_axislabel("Wavelength [$\\mathrm{nm}$]")
+        elif default_label in TIME_OFFSET_LABELS:
+            axis.set_axislabel("Seconds from Start [$\\mathrm{s}$]")
         elif physical_type in LAT_LABELS or default_label in LAT_LABELS:
             _set_axis_properties(axis, "Helioprojective Latitude [arcsec]", "red")
         elif physical_type in LON_LABELS or default_label in LON_LABELS:
             _set_axis_properties(axis, "Helioprojective Longitude [arcsec]", "black")
 
 
-def finalize_iris_plot(ax, _axes_coordinates=None):
+def finalize_iris_plot(ax, axes_coordinates=None):
     """
     Apply IRIS-specific axis formatting.
     """
+    ax._iris_axes_coordinates = axes_coordinates
     set_axis_properties(ax)
+    _set_requested_axis_positions(ax, axes_coordinates)
     return ax
 
 
@@ -98,10 +103,55 @@ def _iter_coords_with_physical_types(ax):
         yield coord, physical_type
 
 
+def _get_coord(ax, labels):
+    for coord, physical_type in _iter_coords_with_physical_types(ax):
+        if physical_type in labels or coord.default_label.lower() in labels:
+            return coord
+    return None
+
+
+def _hide_coord(coord):
+    coord.set_ticks_visible(False)
+    coord.set_ticklabel_visible(False)
+    coord.set_axislabel("")
+
+
+def _show_coord_on_edge(coord, edge):
+    coord.set_ticks_visible(True)
+    coord.set_ticklabel_visible(True)
+    coord.set_ticks_position(edge)
+    coord.set_ticklabel_position(edge)
+    coord.set_axislabel_position(edge)
+
+
+def _set_requested_axis_positions(ax, axes_coordinates):
+    requested = {coord.lower() for coord in axes_coordinates or () if isinstance(coord, str)}
+    if not requested.intersection(LON_LABELS):
+        return
+
+    if hasattr(ax, "axes") and not hasattr(ax, "coords"):
+        ax = ax.axes
+
+    for labels in (TIME_LABEL_PRIORITY, SLIDER_SCAN_STEP_LABELS, SLIDER_SCAN_LABELS):
+        coord = _get_coord(ax, labels)
+        if coord is not None and not requested.intersection(labels):
+            _hide_coord(coord)
+
+    lon = _get_coord(ax, LON_LABELS)
+    if lon is not None:
+        _show_coord_on_edge(lon, "b")
+
+    if requested.intersection(LAT_LABELS):
+        lat = _get_coord(ax, LAT_LABELS)
+        if lat is not None:
+            _show_coord_on_edge(lat, "l")
+
+
 class Plot2DMixin:
     def update_plot_2d(self, val, im, slider):
         super().update_plot_2d(val, im, slider)
         set_axis_properties(self.axes)
+        _set_requested_axis_positions(self.axes, getattr(self, "_iris_axes_coordinates", None))
 
 
 class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):

@@ -94,7 +94,7 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert len(si_iv.split_rasters()) == 1
     assert si_iv.raster_slice(0).shape == si_iv.shape
     assert si_iv.raster_slice(-1).shape == si_iv.shape
-    with pytest.raises(IndexError, match="Raster index out of range."):
+    with pytest.raises(IndexError, match=r"Raster index out of range."):
         si_iv.raster_slice(-2)
 
 

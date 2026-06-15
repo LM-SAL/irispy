@@ -251,8 +251,8 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         Raw FITS WCS keywords (``Wcsprm``) backing this cube.
 
         Raster cubes may carry a gWCS on ``self.wcs`` and a FITS WCS bridge on
-        ``self.fits_wcs``. This prefers a direct FITS WCS and falls back to
-        unwrapping sliced FITS-WCS adapters when needed.
+        ``self.fits_wcs``. This prefers a direct FITS WCS and falls back to unwrapping
+        sliced FITS-WCS adapters when needed.
         """
         for wcs in (self.wcs, self.fits_wcs):
             if wcs is not None and hasattr(wcs, "wcs"):

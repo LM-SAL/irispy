@@ -12,6 +12,8 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs import WCS
 
+from ndcube.utils.exceptions import NDCubeUserWarning
+
 import irispy.io._raster_combine as raster_combine
 from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
 from irispy.io.spectrograph import read_spectrograph_lvl2
@@ -131,7 +133,7 @@ def test_spectrogram_cube_exposes_raster_grouping_helpers(raster_sg_files):
     assert cube.raster_slice(0).shape == (8, 109, 29)
     assert cube.raster_slice(-1).shape == (8, 109, 29)
     assert len(cube.split_rasters()) == 13
-    with pytest.raises(IndexError, match="Raster index out of range."):
+    with pytest.raises(IndexError, match=r"Raster index out of range."):
         cube.raster_slice(-14)
     with pytest.raises(TypeError, match="integer"):
         cube.raster_slice("0")
@@ -276,6 +278,51 @@ def test_raster_animation_reapplies_axis_properties_after_update(raster_sg_files
     assert initial_colors["Helioprojective Longitude [arcsec]"] == "black"
     assert updated_colors["Helioprojective Latitude [arcsec]"] == "red"
     assert updated_colors["Helioprojective Longitude [arcsec]"] == "black"
+    plt.close(fig)
+
+
+def test_raster_animation_can_put_requested_longitude_on_bottom(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")
+    cube = raster["Mg II k 2796"][0]
+    fig = plt.figure()
+    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
+        animator = cube.plot(
+            plot_axes=["x", "y", None],
+            axes_coordinates=["custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat", None],
+            aspect="auto",
+            fig=fig,
+        )
+    slider = SimpleNamespace(cval=0)
+    lon = animator.axes.coords["custom:pos.helioprojective.lon"]
+    lat = animator.axes.coords["custom:pos.helioprojective.lat"]
+    time = animator.axes.coords["time"]
+
+    assert "b" in lon.get_axislabel_position()
+    assert "l" in lat.get_axislabel_position()
+    assert time.get_axislabel() == ""
+
+    animator.update_plot_2d(0, animator.im, slider)
+
+    assert "b" in lon.get_axislabel_position()
+    assert "l" in lat.get_axislabel_position()
+    assert time.get_axislabel() == ""
+    plt.close(fig)
+
+
+def test_raster_animation_time_axis_label_does_not_repeat_unit(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")
+    cube = raster["Mg II k 2796"][0]
+    fig = plt.figure()
+    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
+        animator = cube.plot(plot_axes=["x", "y", None], aspect="auto", fig=fig)
+    slider = SimpleNamespace(cval=0)
+    time = animator.axes.coords["time"]
+
+    assert time.get_axislabel() == "Seconds from Start [$\\mathrm{s}$]"
+
+    animator.update_plot_2d(0, animator.im, slider)
+
+    assert time.get_axislabel() == "Seconds from Start [$\\mathrm{s}$]"
     plt.close(fig)
 
 

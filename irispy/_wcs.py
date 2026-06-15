@@ -5,8 +5,8 @@ from sunpy.coordinates.frames import Helioprojective
 
 def _celestial_frame_from_cube(cube):
     """
-    The `~sunpy.coordinates.frames.Helioprojective` frame of this observation, as
-    seen by the IRIS observer.
+    The `~sunpy.coordinates.frames.Helioprojective` frame of this observation, as seen
+    by the IRIS observer.
 
     This does not depend on slicing: it works on combined multi-file cubes and on
     cubes sliced along the scan, step, slit, time, or wavelength axes.
