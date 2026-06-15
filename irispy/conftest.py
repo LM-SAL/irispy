@@ -150,6 +150,27 @@ def raster_sg_files():
 
 
 @pytest.fixture
+def synthetic_scanning_raster_tar(tmp_path):
+    """
+    A scanning-raster observation (4 scans of 4 steps) bundled the way the
+    archive serves it: a ``*_raster.tar.gz`` containing one file per scan.
+
+    The member files live in ``irispy/data/test/scanning_raster`` and are
+    regenerated with ``irispy/data/test/generate_scanning_raster.py``.
+    """
+    import tarfile  # NOQA: PLC0415
+
+    from irispy.data.test import ROOTDIR  # NOQA: PLC0415
+
+    files = sorted((Path(ROOTDIR) / "scanning_raster").glob("*.fits"))
+    tar_path = tmp_path / "iris_l2_20140329_140938_4000000001_raster.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        for file in files:
+            tar.add(file, arcname=file.name)
+    return str(tar_path)
+
+
+@pytest.fixture
 def raster_sji_filelist():
     return [
         get_test_filepath("raster/iris_l2_20140329_140938_3860258481_SJI_1400_t000.fits"),

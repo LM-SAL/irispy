@@ -22,9 +22,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.visualization import time_support
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 from irispy.utils.moments import calculate_moments
@@ -54,22 +51,26 @@ raster = read_files(raster_filename)
 # We will just focus on the Si IV 1403 line which we can select using a key.
 # Then we will just plot a spectral line selected at random in space.
 
-# There is only one complete scan, so we index that away.
-si_iv_1403 = raster["Si IV 1403"][0]
+si_iv_1403 = raster["Si IV 1403"]
 
 # However, before we get to that, we will shrink the data cube to make it easier to work with.
-iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
-top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-bottom_right = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
-si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
+iris_frame = si_iv_1403.celestial_frame
+top_left = SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)
+bottom_right = SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)
+crop_wavelength = SpectralCoord(140.277, unit=u.nm)
+bottom_step, bottom_slit_pixel, _ = si_iv_1403.fits_wcs.world_to_array_index(crop_wavelength, bottom_right)
+top_step, top_slit_pixel, _ = si_iv_1403.fits_wcs.world_to_array_index(crop_wavelength, top_left)
+si_iv_1403 = si_iv_1403.crop(
+    si_iv_1403.wcs.array_index_to_world(bottom_step, bottom_slit_pixel, 0),
+    si_iv_1403.wcs.array_index_to_world(top_step, top_slit_pixel, si_iv_1403.data.shape[-1] - 1),
+)
 
 ###############################################################################
 # Let us just check the full field of view at the line core.
 
 si_iv_core = 140.277 * u.nm
-lower_corner = [SpectralCoord(si_iv_core), None]
-upper_corner = [SpectralCoord(si_iv_core), None]
+lower_corner = [SpectralCoord(si_iv_core), None, None, None]
+upper_corner = [SpectralCoord(si_iv_core), None, None, None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
 ################################################################################

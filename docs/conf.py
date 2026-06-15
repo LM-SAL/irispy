@@ -167,7 +167,7 @@ copybutton_prompt_is_regexp = True
 
 # -- Options for HTML output --------------------------------------------------
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
+# The theme to use for HTML and HTML Help pages. See the documentation for
 # a list of builtin themes.
 html_theme = "sunpy"
 html_context = {
@@ -267,9 +267,9 @@ class _FiascoDatabaseVersionFilter(logging.Filter):
 
 
 def _ensure_hdf5_database(database_url, destination):
-    from astropy.utils.data import download_file  # noqa: PLC0415
+    from astropy.utils.data import download_file  # NOQA: PLC0415
 
-    import h5py  # noqa: PLC0415
+    import h5py  # NOQA: PLC0415
 
     if destination.is_file():
         try:

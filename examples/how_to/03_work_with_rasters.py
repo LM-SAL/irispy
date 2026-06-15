@@ -13,9 +13,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.visualization import quantity_support
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 
@@ -59,13 +56,8 @@ mg_ii = raster["Mg II k 2796"]
 print(mg_ii)
 
 ###############################################################################
-# This is a `irispy.spectrograph.SpectrogramCubeSequence` which contains each
-# complete raster as one individual `irispy.spectrograph.SpectrogramCube` object.
-# In this case, it was only one complete raster, so the first axis is only length 1.
-#
-# So we will index to get the first raster and work with that.
-
-mg_ii = mg_ii[0]
+# This observation contains a single raster, so the spectral window is already a
+# `irispy.spectrograph.SpectrogramCube` with scan-step, slit, and wavelength axes.
 print(mg_ii)
 
 ###############################################################################
@@ -125,9 +117,8 @@ ax.plot(mg_wave.to("AA"), mg_ii.data[120, 200])
 # Now, let's take a look at the WCS information.
 # For example, what is the wavelength position that corresponds to Mg II k core (279.63 nm)?
 
-iris_observer = wcs_to_celestial_frame(mg_ii.wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
-wcs_loc = mg_ii.wcs.world_to_pixel(
+iris_frame = mg_ii.celestial_frame
+wcs_loc = mg_ii.fits_wcs.world_to_pixel(
     SpectralCoord(279.63, unit=u.nm),
     SkyCoord(0 * u.arcsec, 0 * u.arcsec, frame=iris_frame),
 )
@@ -139,9 +130,10 @@ print(mg_index)
 # We can use the ``crop`` method to get this information, this will
 # require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
 
-# Note that this has to be in axis order and that None, means that the axis is not cropped
-lower_corner = [SpectralCoord(280, unit=u.nm), None]
-upper_corner = [SpectralCoord(280, unit=u.nm), None]
+# Note that this has to be in world-component order and that ``None`` means
+# that component is not cropped.
+lower_corner = [SpectralCoord(280, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(280, unit=u.nm), None, None, None]
 mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()
@@ -152,9 +144,12 @@ mg_spec_crop.plot(axes=ax)
 # Imagine there's a really cool feature at (-338", 275"), how can you plot
 # the spectrum at that location?
 
-lower_corner = [None, SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=iris_frame)]
-upper_corner = [None, SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=iris_frame)]
-mg_ii_cut = mg_ii.crop(lower_corner, upper_corner)
+target = SkyCoord(-338 * u.arcsec, 275 * u.arcsec, frame=iris_frame)
+raster_step, slit_pixel, _ = mg_ii.fits_wcs.world_to_array_index(SpectralCoord(279.63, unit=u.nm), target)
+mg_ii_cut = mg_ii.crop(
+    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, 0),
+    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, mg_ii.data.shape[-1] - 1),
+)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii_cut.wcs)
@@ -170,7 +165,7 @@ print(mg_ii.meta)
 
 ###############################################################################
 # But this is mostly about the observation in general.
-# Times of individual scans are saved in .extra_coords['time'].
-# Getting access to it can be done in the following  way:
+# Times of individual exposures are available on the cube's time coordinate.
+# For combined raster files this is indexed by raster scan and raster step.
 
-print(mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords))
+print(mg_ii.time)

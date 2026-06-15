@@ -21,7 +21,6 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.visualization import time_support
-from astropy.wcs.utils import wcs_to_celestial_frame
 
 from irispy.io import read_files
 
@@ -54,13 +53,14 @@ sji_2796 = read_files(sji_filename)
 ###############################################################################
 # Now we will find the closest SJI time to the 56th raster step.
 
-c_ii = raster["C II 1336"][0]
+c_ii = raster["C II 1336"]
 
-times_SG = c_ii.axis_world_coords("time", wcs=c_ii.extra_coords)
+times_SG = c_ii.time
 (time_2796,) = sji_2796.axis_world_coords("time")
 # We picked randomly.
 raster_idx = 55
-time_target = times_SG[0][raster_idx]
+scan_idx, step_idx = np.unravel_index(raster_idx, times_SG.shape)
+time_target = times_SG[scan_idx, step_idx]
 
 time_idx_2796 = np.abs(time_2796 - time_target).argmin()
 time_stamp_2796 = time_2796[time_idx_2796].isot
@@ -90,16 +90,15 @@ sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, 5]
 # We can now get the slit location from the SG cube and apply the offsets to the location.
 
 sji_2796_closest = sji_2796[time_idx_2796]
-sji_2796_frame = wcs_to_celestial_frame(sji_2796_closest.basic_wcs)
+sji_2796_frame = sji_2796_closest.celestial_frame
 
-raster_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
-raster_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
+raster_sky_coords = c_ii.axis_world_coords("custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat")[0]
 
 # Now we will get the raster location from its WCS and overlay that on the SJI below.
-slit = SkyCoord(Tx=raster_lon_coords, Ty=raster_lat_coords, frame=sji_2796_frame)
+slit = raster_sky_coords[scan_idx, step_idx].transform_to(sji_2796_frame)
 # In this case, the offsets are negative, so we add them instead.
-slit_with_sg_offset = SkyCoord(Tx=raster_lon_coords + (-1 * sg_offset), Ty=raster_lat_coords, frame=sji_2796_frame)
-slit_with_sji_offset = SkyCoord(Tx=raster_lon_coords + (-1 * sji_offset), Ty=raster_lat_coords, frame=sji_2796_frame)
+slit_with_sg_offset = SkyCoord(Tx=slit.Tx + (-1 * sg_offset), Ty=slit.Ty, frame=sji_2796_frame)
+slit_with_sji_offset = SkyCoord(Tx=slit.Tx + (-1 * sji_offset), Ty=slit.Ty, frame=sji_2796_frame)
 
 ###############################################################################
 # Now we can visualize the difference.

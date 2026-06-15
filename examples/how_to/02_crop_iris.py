@@ -12,7 +12,6 @@ import pooch
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from astropy.wcs.utils import wcs_to_celestial_frame
 
 from irispy.io import read_files
 from irispy.obsid import ObsID
@@ -70,7 +69,7 @@ print(sji_45)
 # While this is stored in the WCS, getting a coordinate frame is a little more involved.
 # We will use this to do a cutout later on.
 
-sji_frame = wcs_to_celestial_frame(sji_45.basic_wcs)
+sji_frame = sji_45.celestial_frame
 bbox = [
     SkyCoord(-750 * u.arcsec, 90 * u.arcsec, frame=sji_frame),
     SkyCoord(-750 * u.arcsec, 95 * u.arcsec, frame=sji_frame),

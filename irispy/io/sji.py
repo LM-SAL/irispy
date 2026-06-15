@@ -9,6 +9,7 @@ from astropy.time import Time
 
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 
+from irispy._interpolation import _interpolate_bad_axis0_rows
 from irispy.meta import SJIMeta
 from irispy.sji import AIACube, SJICube
 from irispy.utils import calculate_uncertainty
@@ -82,7 +83,7 @@ def _create_headers_wcs(hdulist):
     This has been set to have an Earth Observer at the time of the observation.
 
     However, this only creates the WCS headers, not the full WCS objects. Those are
-    created in the SJICube class property basic_wcs.
+    created in the SJICube class property fits_wcs.
     """
     from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst  # NOQA: PLC0415
     from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
@@ -114,11 +115,7 @@ def _create_headers_wcs(hdulist):
         pc2_1ix_values,
         pc2_2ix_values,
     ]:
-        zero_idx = np.where(array == 0)[0]
-        if zero_idx.size > 0:
-            nonzero_idx = np.where(array != 0)[0]
-            nonzero_vals = array[nonzero_idx]
-            array[zero_idx] = np.interp(zero_idx, nonzero_idx, nonzero_vals)
+        _interpolate_bad_axis0_rows(array, array == 0)
     for i in range(hdulist[0].header["NAXIS3"]):
         location = get_body_heliographic_stonyhurst("Earth", (obs_times[i]).isot)
         observer = Helioprojective(
@@ -146,7 +143,10 @@ def _create_headers_wcs(hdulist):
             unit=u.DN,
         )
         wcses.append(new_header)
-    return wcses
+    # Object array (not list) so NDMeta's axis-aware slicing indexes it directly.
+    headers = np.empty(len(wcses), dtype=object)
+    headers[:] = wcses
+    return headers
 
 
 def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
@@ -225,15 +225,16 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             if uncertainty and instrume in ["IRIS", "SJI"]:
                 out_uncertainty = calculate_uncertainty(data, READOUT_NOISE["SJI"], DN_UNIT["SJI"])
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
+        meta = SJIMeta(hdulist[0].header)
+        meta.add("frame_wcs_headers", _create_headers_wcs(hdulist), axes=0)
         map_cube = cube_class(
             data_nan_masked,
             _create_gwcs(hdulist),
             uncertainty=out_uncertainty,
             unit=unit,
-            meta=SJIMeta(hdulist[0].header),
+            meta=meta,
             mask=mask,
             scaled=scaled,
-            _basic_wcs=_create_headers_wcs(hdulist),
         )
         [map_cube.extra_coords.add(*extra_coord) for extra_coord in extra_coords]
     return map_cube

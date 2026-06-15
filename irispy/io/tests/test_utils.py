@@ -52,7 +52,10 @@ def test_read_files_raster_file_list(raster_sg_files):
         "2814",
         "Mg II k 2796",
     }
-    assert len(returns["Si IV 1403"]) == len(raster_sg_files)
+    si_iv = returns["Si IV 1403"]
+    assert si_iv.shape == (13, 8, 109, 29)
+    assert si_iv.fits_wcs is None
+    assert len(si_iv.split_rasters()) == len(raster_sg_files)
 
 
 def test_get_spec_group_key_falls_back_when_metadata_is_missing(monkeypatch, tmp_path):
@@ -121,12 +124,17 @@ def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
     assert len(returns) == 2
 
 
-def test_read_files_raises_when_no_files_are_supported(tmp_path):
-    filename = tmp_path / "not-a-fits.txt"
-    filename.write_text("not a supported IRIS file")
+def test_read_files_raster_scanning_synthetic(synthetic_scanning_raster_tar):
+    returns = read_files(synthetic_scanning_raster_tar)
 
-    with pytest.raises(ValueError, match="No supported IRIS files were loaded"):
-        read_files(filename)
+    assert sorted(returns.keys()) == ["Mg II k 2796", "Si IV 1403"]
+    si_iv = returns["Si IV 1403"]
+    np.testing.assert_array_equal(si_iv.shape, (4, 4, 24, 16))  # 4 scans, 4 steps, 24 slit, 16 spectral
+    np.testing.assert_array_equal(returns.aligned_dimensions, [4, 4, 24])
+    assert len(si_iv.split_rasters()) == 4
+    assert si_iv.time.shape == (4, 4)
+    assert si_iv.fits_wcs is None
+    assert si_iv.raster_slice(0).fits_wcs is not None
 
 
 @pytest.mark.remote_data
@@ -135,5 +143,15 @@ def test_read_files_raster_scanning(remote_raster_scanning_tar):
     assert len(returns) == 8  # spectral windows
     np.testing.assert_array_equal(
         returns["C II 1336"].shape, (29, 4, 388, 186)
-    )  # 29 time steps, 4 steps, 388 spatial pixels, 186 spectral pixels
+    )  # 29 rasters, 4 scan steps, 388 spatial pixels, 186 spectral pixels
     np.testing.assert_array_equal(returns.aligned_dimensions, [29, 4, 388])
+
+
+def test_read_files_raises_when_no_files_are_supported(tmp_path):
+    """
+    read_files should raise ValueError when no supported files are found.
+    """
+    unsupported = tmp_path / "unsupported.txt"
+    unsupported.write_text("not a fits file")
+    with pytest.raises(ValueError, match="No supported IRIS files"):
+        read_files(str(unsupported))

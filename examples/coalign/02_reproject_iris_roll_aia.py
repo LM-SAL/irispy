@@ -18,7 +18,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
-from astropy.wcs.utils import wcs_to_celestial_frame
 
 import sunpy.map
 from aiapy.calibrate import update_pointing
@@ -73,7 +72,7 @@ print(sji_cut)
 # We need to get the coordinate frame for the IRIS data.
 # While this is stored in the WCS, getting a coordinate frame is a little more involved.
 
-sji_frame = wcs_to_celestial_frame(sji_cut.basic_wcs)
+sji_frame = sji_cut.celestial_frame
 
 ###############################################################################
 # This dataset has a peculiarity: the observation has a 45 degree roll.
@@ -140,7 +139,7 @@ aia_sub = aia_map.submap(aia_bottom_left, top_right=aia_top_right)
 fig = plt.figure()
 ax = plt.subplot(projection=aia_sub)
 aia_sub.plot()
-extent(ax, sji_cut.basic_wcs)
+extent(ax, sji_cut.fits_wcs)
 
 ###############################################################################
 # We have a green square showing the region of the IRIS observation.
@@ -151,7 +150,7 @@ extent(ax, sji_cut.basic_wcs)
 # We will rotate the AIA data, using `sunpy.map.GenericMap.reproject_to`.
 # As `sunpy` does not support gWCS (yet), we have to use the basic WCS.
 
-aia_reprojected = aia_sub.reproject_to(sji_cut.basic_wcs)
+aia_reprojected = aia_sub.reproject_to(sji_cut.fits_wcs)
 
 ###############################################################################
 # Now we can see the results.
@@ -161,7 +160,7 @@ ax1 = fig.add_subplot(1, 2, 1, projection=aia_reprojected.wcs)
 aia_reprojected.plot(axes=ax1)
 ax1.set_title("")
 
-ax2 = fig.add_subplot(1, 2, 2, projection=sji_cut.basic_wcs)
+ax2 = fig.add_subplot(1, 2, 2, projection=sji_cut.fits_wcs)
 sji_cut.plot(axes=ax2)
 
 fig.tight_layout()

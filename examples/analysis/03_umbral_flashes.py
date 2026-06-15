@@ -50,12 +50,12 @@ sji_1400 = read_files(sji_filename, memmap=True)
 # We are after the Mg II k and C II lines, which we can select using keys.
 # Then we will produce a space-time image of the Mg II k3 line.
 
-mg_ii = raster["Mg II k 2796"][0]
-c_ii = raster["C II 1336"][0]
+mg_ii = raster["Mg II k 2796"]
+c_ii = raster["C II 1336"]
 
 # Instead of using a pixel index, we can crop the data in wavelength space.
-lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
-upper_corner = [SpectralCoord(279.63, unit=u.nm), None]
+lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()

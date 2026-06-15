@@ -1,4 +1,6 @@
 import textwrap
+from copy import deepcopy
+from functools import cached_property
 
 import numpy as np
 
@@ -8,12 +10,27 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from ndcube.meta import NDMeta
-from sunpy.coordinates import Helioprojective
+from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
+from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
+from sunpy.coordinates.screens import SphericalScreen
 from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 
+from irispy._interpolation import _pad_axis0
 from irispy.utils.constants import SPECTRAL_BAND
 
 __all__ = ["BaseMeta", "SGMeta", "SJIMeta"]
+
+
+def _stack_scan_aligned_values(values, target_length):
+    values = [_pad_axis0(value, target_length) for value in values]
+    first = values[0]
+    if isinstance(first, SkyCoord):
+        return SkyCoord(
+            Tx=np.stack([value.Tx.to_value(u.arcsec) for value in values]) * u.arcsec,
+            Ty=np.stack([value.Ty.to_value(u.arcsec) for value in values]) * u.arcsec,
+            frame=first.frame,
+        )
+    return np.stack(values)
 
 
 class BaseMeta(NDMeta):
@@ -479,6 +496,22 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
         self._iwin = np.arange(len(spectral_windows))[window_mask][0] + 1
         self._fits_header = header
 
+    @cached_property
+    def observer(self):
+        """
+        The IRIS observer location at the observation start, assumed to be at Earth.
+        """
+        base_time = self.date_reference or self.observing_campaign_start
+        location = get_body_heliographic_stonyhurst("Earth", base_time.isot)
+        observer = Helioprojective(
+            self["XCEN"] * u.arcsec,
+            self["YCEN"] * u.arcsec,
+            observer=location,
+            obstime=base_time,
+        )
+        with SphericalScreen(observer.observer):
+            return observer.transform_to(HeliographicStonyhurst(obstime=base_time))
+
     @property
     def number_of_spectral_windows(self):
         """
@@ -618,6 +651,40 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
         Number of pixels identified as noise spikes in this spectral window.
         """
         return self.get(f"TSPIKE{self._iwin}")
+
+    @classmethod
+    def combine(cls, metas, combined_shape):
+        metas = tuple(metas)
+        if not metas:
+            msg = "Cannot combine an empty SGMeta sequence."
+            raise ValueError(msg)
+
+        target_steps = combined_shape[1]
+        meta = deepcopy(metas[0])
+        for key in ("memmap_path", "memmap_ext"):
+            meta.pop(key, None)
+        meta._data_shape = np.asarray(combined_shape, dtype=int)
+        meta["NAXIS4"] = combined_shape[0]
+        meta["NAXIS3"] = combined_shape[1]
+        if "NAXIS3" in meta.fits_header:
+            meta.fits_header["NAXIS3"] = combined_shape[1]
+        meta.fits_header["NAXIS4"] = combined_shape[0]
+        for key in ("DATE_END", "ENDOBS"):
+            if metas[-1].get(key) is not None:
+                meta[key] = metas[-1][key]
+                if key in meta.fits_header:
+                    meta.fits_header[key] = metas[-1][key]
+
+        for key, axes in metas[0]._axes.items():
+            if not np.array_equal(axes, [0]):
+                continue
+            meta.add(
+                key,
+                _stack_scan_aligned_values([source_meta[key] for source_meta in metas], target_steps),
+                axes=(0, 1),
+                overwrite=True,
+            )
+        return meta
 
     def __str__(self) -> str:
         return textwrap.dedent(

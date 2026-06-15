@@ -32,7 +32,7 @@ def test_sns_read_sji_lvl2(sns_sji_2832_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 164 == (len(meta.keys()) + 16)  # History is missing
+    assert len(meta.fits_header) == 164 == (len(meta.keys()) + 14)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -83,7 +83,7 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 526
     assert meta.exposure_control_triggers_in_raster == 475
-    assert len(meta.fits_header) == 163 == (len(meta.keys()) + 15)  # History is missing
+    assert len(meta.fits_header) == 163 == (len(meta.keys()) + 13)  # History is missing
     assert meta["XCEN"] == 505.392 == meta.fov_center.Tx.to_value(u.arcsec)
     assert meta["YCEN"] == 279.88 == meta.fov_center.Ty.to_value(u.arcsec)
     assert meta.key_comments == {}
