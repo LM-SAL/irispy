@@ -98,22 +98,6 @@ complete world tuples from pixel indices:
         cube.wcs.array_index_to_world(step, slit_pixel, cube.data.shape[-1] - 1),
     )
 
-Time access
-===========
-
-Exposure times are now part of the WCS rather than an extra coordinate:
-
-.. code-block:: python
-
-    # Old
-    (times,) = cube.axis_world_coords("time", wcs=cube.extra_coords)
-
-    # New
-    times = cube.time
-
-On combined multi-file cubes ``cube.time`` is 2D, indexed by
-``(raster scan, raster step)``.
-
 Memmap reads
 ============
 
@@ -124,3 +108,8 @@ Derive it from the unscaled data when needed:
 .. code-block:: python
 
     bad = cube.data == irispy.utils.constants.BAD_PIXEL_VALUE_UNSCALED
+
+For multi-file rasters, ``memmap=True`` keeps data lazy only when all files have
+the same number of raster steps.
+If the files are ragged, use ``memmap=False`` so shorter rasters can be padded
+with masked NaNs.

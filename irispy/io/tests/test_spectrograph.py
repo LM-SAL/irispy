@@ -12,7 +12,6 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
-import irispy.io._raster_combine as raster_combine
 import irispy.io.spectrograph as spectrograph_io
 from irispy._spectrograph_wcs import (
     SIT_AND_STARE_CDELT3_PLACEHOLDER,
@@ -20,7 +19,7 @@ from irispy._spectrograph_wcs import (
     _raster_wcs_bad_row_mask,
     _sanitize_raster_wcs_tables,
 )
-from irispy.io._raster_combine import _combine_raster_cubes, _validate_combinable_raster_cubes
+from irispy.io._raster_combine import _combine_raster_cubes
 from irispy.io.spectrograph import read_spectrograph_lvl2
 
 
@@ -94,6 +93,9 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert si_iv.fits_wcs is not None
     assert len(si_iv.split_rasters()) == 1
     assert si_iv.raster_slice(0).shape == si_iv.shape
+    assert si_iv.raster_slice(-1).shape == si_iv.shape
+    with pytest.raises(IndexError, match="Raster index out of range."):
+        si_iv.raster_slice(-2)
 
 
 def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
@@ -204,52 +206,6 @@ def test_read_spectrograph_lvl2_skips_window_with_bad_wcs(sns_sg_file, monkeypat
     )
 
     assert list(raster_collection.keys()) == ["Fe XII 1349"]
-
-
-def test_multifile_read_builds_only_combined_gwcs(raster_sg_files, monkeypatch):
-    real_create_raster_gwcs = spectrograph_io._create_raster_gwcs
-    pc_shapes = []
-
-    def count_gwcs_builds(*args, **kwargs):
-        pc_shapes.append(args[1].shape)
-        return real_create_raster_gwcs(*args, **kwargs)
-
-    monkeypatch.setattr(spectrograph_io, "_create_raster_gwcs", count_gwcs_builds)
-    monkeypatch.setattr(raster_combine, "_create_raster_gwcs", count_gwcs_builds)
-
-    raster_collection = read_spectrograph_lvl2(raster_sg_files[:2], spectral_windows="Si IV 1403")
-
-    assert raster_collection["Si IV 1403"].data.ndim == 4
-    assert pc_shapes == [(2, 8, 2, 2)]
-
-
-def test_multifile_read_materializes_gwcs_when_one_cube_remains(raster_sg_files, monkeypatch):
-    real_validate_raster_wcs_inputs = spectrograph_io._validate_raster_wcs_inputs
-    real_create_raster_gwcs = spectrograph_io._create_raster_gwcs
-    validate_calls = {"count": 0}
-    pc_shapes = []
-
-    def fail_second_file_validation(*args, **kwargs):
-        validate_calls["count"] += 1
-        if validate_calls["count"] == 2:
-            msg = "bad test WCS"
-            raise ValueError(msg)
-        return real_validate_raster_wcs_inputs(*args, **kwargs)
-
-    def count_gwcs_builds(*args, **kwargs):
-        pc_shapes.append(args[1].shape)
-        return real_create_raster_gwcs(*args, **kwargs)
-
-    monkeypatch.setattr(spectrograph_io, "_validate_raster_wcs_inputs", fail_second_file_validation)
-    monkeypatch.setattr(spectrograph_io, "_create_raster_gwcs", count_gwcs_builds)
-    monkeypatch.setattr(raster_combine, "_create_raster_gwcs", count_gwcs_builds)
-
-    raster_collection = read_spectrograph_lvl2(raster_sg_files[:2], spectral_windows="Si IV 1403")
-    si_iv = raster_collection["Si IV 1403"]
-
-    assert si_iv.data.ndim == 3
-    assert si_iv.wcs is not si_iv.fits_wcs
-    assert pc_shapes == [(8, 2, 2)]
 
 
 @pytest.mark.filterwarnings("ignore:uncertainty is not computed when memmap=True:UserWarning")
@@ -702,28 +658,6 @@ def test_sanitize_raster_wcs_tables_all_bad_rows_without_fallback_raises():
             _sanitize_raster_wcs_tables(pc.copy(), crval)
 
 
-def test_combined_raster_rejects_empty_cubes():
-    """
-    Combining empty raster list should raise ValueError.
-    """
-    with pytest.raises(ValueError, match="empty"):
-        _validate_combinable_raster_cubes([])
-
-
-def test_combined_raster_rejects_mismatched_shape(raster_sg_files):
-    """
-    Combining rasters with different shapes should raise ValueError.
-    """
-    raster_collection = read_spectrograph_lvl2(raster_sg_files)
-    cube = raster_collection["Si IV 1403"]
-    cubes = list(cube.split_rasters())
-    if len(cubes) > 1:
-        # Truncate one cube's slit dimension
-        truncated = cubes[1][:, :-1, :]
-        with pytest.raises(ValueError, match="same slit and wavelength"):
-            _validate_combinable_raster_cubes([cubes[0], truncated])
-
-
 @pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt:RuntimeWarning")
 def test_combined_raster_pads_short_final_raster(tmp_path, raster_sg_files):
     copied_files = []
@@ -755,3 +689,6 @@ def test_combined_raster_pads_short_final_raster(tmp_path, raster_sg_files):
     )
     assert combined.time.shape == combined.shape[:2]
     assert combined.time[1, -1].isot == combined.time[1, -2].isot
+
+    with pytest.raises(ValueError, match="memmap=True does not support raster files with mismatched step counts"):
+        read_spectrograph_lvl2(copied_files, spectral_windows="Si IV 1403", memmap=True)

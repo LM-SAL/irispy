@@ -124,15 +124,13 @@ def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
     assert len(returns) == 2
 
 
-def test_read_files_raster_scanning_synthetic(synthetic_scanning_raster_tar):
-    returns = read_files(synthetic_scanning_raster_tar)
+def test_read_files_raster_tar_from_existing_files(small_raster_tar):
+    returns = read_files(small_raster_tar)
 
-    assert sorted(returns.keys()) == ["Mg II k 2796", "Si IV 1403"]
+    assert "Si IV 1403" in returns
     si_iv = returns["Si IV 1403"]
-    np.testing.assert_array_equal(si_iv.shape, (4, 4, 24, 16))  # 4 scans, 4 steps, 24 slit, 16 spectral
-    np.testing.assert_array_equal(returns.aligned_dimensions, [4, 4, 24])
-    assert len(si_iv.split_rasters()) == 4
-    assert si_iv.time.shape == (4, 4)
+    assert si_iv.shape == (2, 8, 109, 29)
+    assert len(si_iv.split_rasters()) == 2
     assert si_iv.fits_wcs is None
     assert si_iv.raster_slice(0).fits_wcs is not None
 

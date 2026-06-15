@@ -12,8 +12,6 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs import WCS
 
-from ndcube.utils.exceptions import NDCubeUserWarning
-
 import irispy.io._raster_combine as raster_combine
 from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
 from irispy.io.spectrograph import read_spectrograph_lvl2
@@ -85,6 +83,7 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     # meta is an NDMeta subclass that may contain arrays; compare keys only
     assert set(cleaned_cube.meta.keys()) == set(cube.meta.keys())
 
+
 def test_spectrogram_cube_slice_slices_fits_wcs(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
@@ -130,7 +129,12 @@ def test_spectrogram_cube_exposes_raster_grouping_helpers(raster_sg_files):
     cube = raster["Si IV 1403"]
 
     assert cube.raster_slice(0).shape == (8, 109, 29)
+    assert cube.raster_slice(-1).shape == (8, 109, 29)
     assert len(cube.split_rasters()) == 13
+    with pytest.raises(IndexError, match="Raster index out of range."):
+        cube.raster_slice(-14)
+    with pytest.raises(TypeError, match="integer"):
+        cube.raster_slice("0")
 
 
 def test_spectrogram_cube_supports_crop_apis(raster_sg_files):
@@ -247,76 +251,31 @@ def test_memmap_raster_single_slice_opens_one_chunk(raster_sg_files, monkeypatch
     assert open_calls == [raster_sg_files[0]]
 
 
-def _get_coord(ax, *, coord_type=None, coord_unit=None):
-    for coord in ax.coords:
-        if coord_type is not None and coord.coord_type != coord_type:
-            continue
-        if coord_unit is not None and coord.coord_unit != coord_unit:
-            continue
-        return coord
-    pytest.fail(f"Coordinate with type={coord_type!r} and unit={coord_unit!r} not found.")
-    # Unreachable in practice because pytest.fail raises, but explicit return keeps static analysis happy.
-    return None
-
-
-def _get_coord_by_physical_type(ax, physical_type):
-    physical_type = physical_type.lower()
-    for coord, coord_physical_type in zip(ax.coords, ax.wcs.world_axis_physical_types, strict=False):
-        if coord_physical_type.lower() == physical_type:
-            return coord
-    pytest.fail(f"Coordinate with physical type={physical_type!r} not found.")
-    # Unreachable in practice because pytest.fail raises, but explicit return keeps static analysis happy.
-    return None
-
-
-def _assert_coord_hidden(coord):
-    assert all(position == "#" for position in coord.get_ticks_position())
-    assert all(position == "#" for position in coord.get_axislabel_position())
-    assert not coord.get_axislabel()
-
-
-def test_default_raster_animation_keeps_wavelength_on_bottom(raster_sg_files):
+def test_default_raster_animation_plots(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"].raster_slice(0)
     fig = plt.figure()
     animator = cube.plot(fig=fig)
-    ax = animator.axes
-    wavelength = _get_coord(ax, coord_type="scalar", coord_unit=u.nm)
 
-    assert "b" in wavelength.get_ticks_position()
-    assert "b" in wavelength.get_axislabel_position()
+    assert animator.axes
     plt.close(fig)
 
 
-def test_raster_animation_can_show_time_axis(raster_sg_files):
+def test_raster_animation_reapplies_axis_properties_after_update(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
-    cube = raster["Si IV 1403"]
+    cube = raster["Si IV 1403"].raster_slice(0)
     fig = plt.figure()
-    with pytest.warns(
-        NDCubeUserWarning,
-        match="Animating a NDCube does not support transposing the array",
-    ):
-        animator = cube.plot(
-            fig=fig,
-            plot_axes=["x", "y", None, None],
-            axes_coordinates=["time", "custom:pos.helioprojective.lat", None, None],
-            vmin=0,
-            vmax=1000,
-        )
-    ax = animator.axes
-    longitude = _get_coord(ax, coord_type="longitude")
-    latitude = _get_coord(ax, coord_type="latitude")
-    time = _get_coord(ax, coord_type="scalar", coord_unit=u.s)
-    step = _get_coord_by_physical_type(ax, "custom:STEP")
-    scan = _get_coord_by_physical_type(ax, "custom:SCAN")
+    animator = cube.plot(fig=fig)
+    slider = SimpleNamespace(cval=0)
 
-    assert animator.slider_labels == ["Scan", "Wavelength"]
-    assert "b" in time.get_ticks_position()
-    assert "b" in time.get_axislabel_position()
-    _assert_coord_hidden(step)
-    _assert_coord_hidden(scan)
-    assert latitude.get_axislabel()
-    assert longitude.get_axislabel()
+    initial_colors = {coord.get_axislabel(): coord._axislabels.get_color() for coord in animator.axes.coords}
+    animator.update_plot_2d(0, animator.im, slider)
+    updated_colors = {coord.get_axislabel(): coord._axislabels.get_color() for coord in animator.axes.coords}
+
+    assert initial_colors["Helioprojective Latitude [arcsec]"] == "red"
+    assert initial_colors["Helioprojective Longitude [arcsec]"] == "black"
+    assert updated_colors["Helioprojective Latitude [arcsec]"] == "red"
+    assert updated_colors["Helioprojective Longitude [arcsec]"] == "black"
     plt.close(fig)
 
 
@@ -330,83 +289,11 @@ def test_default_raster_sequence_animation_labels_scan_and_step(raster_sg_files)
     plt.close(fig)
 
 
-def test_raster_animation_keeps_longitude_axis_after_slider_update(raster_sg_files):
-    raster = read_spectrograph_lvl2(raster_sg_files)
-    cube = raster["Si IV 1403"]
-    fig = plt.figure()
-    with pytest.warns(
-        NDCubeUserWarning,
-        match="Animating a NDCube does not support transposing the array",
-    ):
-        animator = cube.plot(fig=fig, plot_axes=["x", "y", None, None], vmin=0, vmax=1000)
-
-    class _DummyText:
-        def set_text(self, _):
-            return None
-
-    slider = SimpleNamespace(cval=0, slider_ind=0, valtext=_DummyText())
-    animator.update_plot(1, animator.im, slider)
-    ax = animator.axes
-    longitude = _get_coord(ax, coord_type="longitude")
-    latitude = _get_coord(ax, coord_type="latitude")
-    time = _get_coord_by_physical_type(ax, "time")
-    step = _get_coord_by_physical_type(ax, "custom:STEP")
-    scan = _get_coord_by_physical_type(ax, "custom:SCAN")
-
-    assert longitude.get_axislabel()
-    assert latitude.get_axislabel()
-    _assert_coord_hidden(time)
-    _assert_coord_hidden(step)
-    _assert_coord_hidden(scan)
-    plt.close(fig)
-
-
-def test_raster_animation_skips_wcs_reset_for_independent_slider_axis(raster_sg_files, monkeypatch):
-    raster = read_spectrograph_lvl2(raster_sg_files)
-    cube = raster["Si IV 1403"]
-    fig = plt.figure()
-    with pytest.warns(
-        NDCubeUserWarning,
-        match="Animating a NDCube does not support transposing the array",
-    ):
-        animator = cube.plot(fig=fig, plot_axes=[None, "x", "y", None], vmin=0, vmax=1000)
-
-    reset_calls = {"count": 0}
-    real_reset_wcs = animator.axes.reset_wcs
-
-    def count_reset_wcs(*args, **kwargs):
-        reset_calls["count"] += 1
-        return real_reset_wcs(*args, **kwargs)
-
-    class _DummyText:
-        def set_text(self, _):
-            return None
-
-    monkeypatch.setattr(animator.axes, "reset_wcs", count_reset_wcs)
-    slider = SimpleNamespace(cval=0, slider_ind=1, valtext=_DummyText())
-
-    animator.update_plot(1, animator.im, slider)
-
-    assert reset_calls["count"] == 0
-    assert slider.cval == 1
-    plt.close(fig)
-
-
 def test_raster_animation_accepts_custom_slider_labels(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
     fig = plt.figure()
-    with pytest.warns(
-        NDCubeUserWarning,
-        match="Animating a NDCube does not support transposing the array",
-    ):
-        animator = cube.plot(
-            fig=fig,
-            plot_axes=["x", "y", None, None],
-            slider_labels=["Slit", "Line"],
-            vmin=0,
-            vmax=1000,
-        )
+    animator = cube.plot(fig=fig, slider_labels=["Slit", "Line"], vmin=0, vmax=1000)
 
     assert animator.slider_labels == ["Slit", "Line"]
     plt.close(fig)

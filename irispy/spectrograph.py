@@ -175,15 +175,27 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         """
         Return the subcube corresponding to one original raster.
         """
+        if not isinstance(index, Integral):
+            msg = "Raster index must be an integer."
+            raise TypeError(msg)
+
         if self._separate_raster_axis:
-            if isinstance(index, Integral) and index < 0:
-                index += self.shape[0]
-            return self[index]
-        if self._raster_boundaries is None:
-            if index == 0:
-                return self
+            n_rasters = self.shape[0]
+        elif self._raster_boundaries is None:
+            n_rasters = 1
+        else:
+            n_rasters = len(self._raster_boundaries)
+
+        if index < 0:
+            index += n_rasters
+        if index < 0 or index >= n_rasters:
             msg = "Raster index out of range."
             raise IndexError(msg)
+
+        if self._separate_raster_axis:
+            return self[index]
+        if self._raster_boundaries is None:
+            return self
         return self[slice(*self._raster_boundaries[index])]
 
     def split_rasters(self):

@@ -52,6 +52,18 @@ def test_sgmeta_detector_band_sji():
     assert meta.detector_band == "SJI"
 
 
+def test_sgmeta_observer_uses_campaign_start_when_date_obs_is_blank():
+    header = _make_sg_header()
+    header["DATE_OBS"] = ""
+    header["STARTOBS"] = "2014-03-29T14:09:38.830"
+    header["XCEN"] = 0.0
+    header["YCEN"] = 0.0
+    meta = SGMeta(header, "Si IV 1403")
+
+    assert meta.date_reference is None
+    assert meta.observer.obstime.isot == "2014-03-29T14:09:38.830"
+
+
 def test_sgmeta_temporal_cadence():
     header = _make_sg_header()
     header["CADEX_AV"] = 9.264

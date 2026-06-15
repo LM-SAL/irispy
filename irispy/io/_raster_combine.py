@@ -229,7 +229,14 @@ def _combine_raster_cubes(cubes, *, memmap=False):
     if len(cubes) == 1:
         return cubes[0]
     target_steps = max(cube.shape[0] for cube in cubes)
+    ragged = any(cube.shape[0] != target_steps for cube in cubes)
     if memmap:
+        if ragged:
+            msg = (
+                "memmap=True does not support raster files with mismatched step counts; "
+                "use memmap=False to pad shorter rasters."
+            )
+            raise ValueError(msg)
         data = _build_lazy_raster_data(cubes, target_steps)
         return _build_combined_raster_cube(cubes, data, mask=None)
 

@@ -1,1 +1,0 @@
-``SpectrogramCubeSequence`` has been removed.

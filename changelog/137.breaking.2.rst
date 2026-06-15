@@ -1,3 +1,0 @@
-Spectrograph cubes read with ``memmap=True`` now have ``mask=None`` instead of a lazily computed mask of bad-pixel sentinel values.
-This applies to both single-file and combined multi-file reads and avoids re-reading every file a second time when the mask is computed.
-If you need the old mask, derive it from the unscaled data yourself, for example ``cube.data == irispy.utils.constants.BAD_PIXEL_VALUE_UNSCALED``.
