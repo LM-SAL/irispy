@@ -45,7 +45,7 @@ def _shorten_slider_label(label):
     if lowered_label_parts.intersection(TIME_LABEL_PRIORITY):
         return "Time"
     if lowered_label_parts and lowered_label_parts.issubset(set(LON_LABELS + LAT_LABELS)):
-        return "Scan"
+        return "Spatial pixel"
     return label
 
 

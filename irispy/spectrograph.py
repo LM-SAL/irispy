@@ -75,11 +75,12 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
 
     def to_nddata(self, *args, nddata_type=None, **kwargs):
         """
-        Preserve irispy-specific raster metadata when cloning to another SpectrogramCube.
+        Preserve irispy-specific raster metadata when cloning to another
+        SpectrogramCube.
 
         `ndcube.NDCube.to_nddata` can copy custom attributes when callers pass
-        ``attr="copy"``. This override centralizes the irispy raster/WCS attrs
-        so every data-transforming helper does not need to list them manually.
+        ``attr="copy"``. This override centralizes the irispy raster/WCS attrs so every
+        data-transforming helper does not need to list them manually.
         """
         if nddata_type is None:
             return super().to_nddata(*args, **kwargs)
@@ -164,8 +165,10 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
             else:
                 cmap = "viridis"
         kwargs["cmap"] = cmap
+        kwargs.setdefault("interpolation", "nearest")
         if len(self.shape) == 1:
             kwargs.pop("cmap")
+            kwargs.pop("interpolation")
         return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
 
     celestial_frame = property(_celestial_frame_from_cube)

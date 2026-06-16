@@ -136,6 +136,7 @@ class SJICube(SpectrogramCube):
                 logger.debug(e)
                 cmap = "viridis"
         kwargs["cmap"] = cmap
+        kwargs.setdefault("interpolation", "nearest")
         return finalize_iris_plot(IRISPlotter(ndcube=self).plot(*args, **kwargs), kwargs.get("axes_coordinates"))
 
     def apply_dust_mask(self, *, undo=False):

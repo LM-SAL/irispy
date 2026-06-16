@@ -326,6 +326,24 @@ def test_raster_animation_time_axis_label_does_not_repeat_unit(raster_sg_files):
     plt.close(fig)
 
 
+def test_fixed_wavelength_raster_spatial_slider_label(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")
+    cube = raster["Mg II k 2796"]
+    wavelength = cube.spectral_axis[len(cube.spectral_axis) // 2]
+    fixed_wavelength = cube.crop(
+        [SpectralCoord(wavelength), None, None, None, None],
+        [SpectralCoord(wavelength), None, None, None, None],
+    )
+    fig = plt.figure()
+    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
+        animator = fixed_wavelength.plot(plot_axes=["x", "y", None], aspect="auto", fig=fig)
+
+    assert animator.slider_axes == [2]
+    assert animator.slider_ranges == [[0, fixed_wavelength.shape[2]]]
+    assert animator.slider_labels == ["Spatial pixel"]
+    plt.close(fig)
+
+
 def test_default_raster_sequence_animation_labels_scan_and_step(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     cube = raster["Si IV 1403"]
