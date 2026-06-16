@@ -153,7 +153,7 @@ def _build_combined_raster_cube(cubes, data, *, mask):
         ),
         uncertainty=_stack_uncertainty(cubes, target_steps),
         unit=cubes[0].unit,
-        meta=cubes[0].meta.combine([cube.meta for cube in cubes], data.shape),
+        meta=type(cubes[0].meta)._combine_raster_sequence([cube.meta for cube in cubes], data.shape),
         mask=mask,
         _fits_wcs_segments=[(index, index + 1, cube.fits_wcs) for index, cube in enumerate(cubes)],
         _raster_wcs_header=raster_wcs_header,

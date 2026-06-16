@@ -84,7 +84,7 @@ def read_spectrograph_lvl2(
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
-    combine_files = len(filenames) > 1
+    defer_raster_gwcs = len(filenames) > 1
     if uncertainty and memmap:
         warnings.warn(
             "uncertainty is not computed when memmap=True; uncertainty will be None.",
@@ -236,7 +236,7 @@ def read_spectrograph_lvl2(
                     # transformed to/from cube.celestial_frame.
                     fits_wcs.wcs.dateobs = observer.obstime.utc.isot
                     _validate_raster_wcs_inputs(prepared_wcs_header, pc_sanitized, crval, dt)
-                    if combine_files:
+                    if defer_raster_gwcs:
                         cube_wcs = fits_wcs
                     else:
                         cube_wcs = _create_raster_gwcs(
@@ -284,7 +284,7 @@ def read_spectrograph_lvl2(
                     _raster_pc_table=pc_sanitized,
                     _raster_crval_table=crval,
                 )
-                cube._defer_raster_gwcs = combine_files
+                cube._defer_raster_gwcs = defer_raster_gwcs
                 cube.extra_coords.add("time", 0, times, physical_types="time")
                 data_dict[window_name].append(cube)
     window_data_pairs = []

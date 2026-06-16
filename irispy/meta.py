@@ -651,7 +651,7 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
         return self.get(f"TSPIKE{self._iwin}")
 
     @classmethod
-    def combine(cls, metas, combined_shape):
+    def _combine_raster_sequence(cls, metas, combined_shape):
         metas = tuple(metas)
         if not metas:
             msg = "Cannot combine an empty SGMeta sequence."
