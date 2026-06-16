@@ -52,8 +52,8 @@ raster = read_files(raster_filename)
 # Then we will just plot a spectral line selected at random in space.
 
 # To keep the example light enough for the online documentation build, we take
-# the first raster step only.
-mg_ii_k_2796 = raster["Mg II k 2796"][0]
+# the first raster only.
+mg_ii_k_2796 = raster["Mg II k 2796"].raster_slice(0)
 del raster
 
 ###############################################################################

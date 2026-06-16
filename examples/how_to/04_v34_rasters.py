@@ -57,6 +57,13 @@ first_raster_unflipped = mg_ii_k_unflipped.raster_slice(0)
 print(mg_ii_k)
 
 ###############################################################################
+# Use ``raster_slice`` when you want one known raster scan. Use ``split_rasters``
+# when you want to iterate over every raster scan in the observation.
+
+for raster_scan in mg_ii_k.split_rasters():
+    print(raster_scan.shape)
+
+###############################################################################
 # To see the effect of the v34 handling, we will plot a spectroheliogram
 # for the Mg II k core wavelength.
 #
