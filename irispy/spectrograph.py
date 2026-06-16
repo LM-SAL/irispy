@@ -74,6 +74,13 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         return super()._new_instance(**kwargs)
 
     def to_nddata(self, *args, nddata_type=None, **kwargs):
+        """
+        Preserve irispy-specific raster metadata when cloning to another SpectrogramCube.
+
+        `ndcube.NDCube.to_nddata` can copy custom attributes when callers pass
+        ``attr="copy"``. This override centralizes the irispy raster/WCS attrs
+        so every data-transforming helper does not need to list them manually.
+        """
         if nddata_type is None:
             return super().to_nddata(*args, **kwargs)
         try:
