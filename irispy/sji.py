@@ -1,5 +1,6 @@
 import textwrap
 import warnings
+from functools import cached_property
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -84,13 +85,6 @@ class SJICube(SpectrogramCube):
         )
         if scaled is not None:
             self.meta["scaled"] = scaled
-
-    @property
-    def scaled(self):
-        """
-        Whether the data has had FITS scaling applied.
-        """
-        return self.meta.get("scaled") if self.meta is not None else None
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -251,7 +245,7 @@ class SJICube(SpectrogramCube):
 
     celestial_frame = property(_celestial_frame_from_cube)
 
-    @property
+    @cached_property
     def fits_wcs(self):
         """
         Returns a standard WCS instead of gWCS.

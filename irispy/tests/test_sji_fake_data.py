@@ -217,9 +217,12 @@ def test_sjicube_apply_dust_mask_initializes_missing_mask(dust_cube):
     ],
 )
 def test_sjicube_slice_preserves_fits_wcs(sns_sjicube_1330, item, expected_len):
+    assert sns_sjicube_1330.fits_wcs is sns_sjicube_1330.fits_wcs
+
     subset = sns_sjicube_1330[item]
 
     assert subset.fits_wcs is not None
+    assert subset.fits_wcs is subset.fits_wcs
     if expected_len is None:
         assert isinstance(subset.fits_wcs, WCS)
     else:
@@ -269,7 +272,6 @@ def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
             data=cube.data + 1,
             mask="copy",
             nddata_type=type(cube),
-            scaled="copy",
             extra_coords="copy",
             global_coords="copy",
         )
@@ -287,7 +289,7 @@ def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
     assert isinstance(cleaned_cube, SJICube)
     np.testing.assert_array_equal(cleaned_cube.data, cube_2d.data + 1)
     np.testing.assert_array_equal(cleaned_cube.mask, cube_2d.mask)
-    assert cleaned_cube.scaled == cube_2d.scaled
+    assert cleaned_cube.meta["scaled"] == cube_2d.meta["scaled"]
     assert cleaned_cube.dust_masked == cube_2d.dust_masked
     assert list(cleaned_cube.extra_coords.keys()) == list(cube_2d.extra_coords.keys())
     assert captured["method"] == "astroscrappy"
