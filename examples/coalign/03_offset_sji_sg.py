@@ -3,8 +3,8 @@
 Compare SJI and SG slit coordinates
 ===================================
 
-This example compares the slit location recorded with an IRIS 2796 SJI exposure
-with the slit coordinates from the matching NUV SG raster step.
+This example compares the slit location recorded with an IRIS 2796 slit-jaw imager (SJI)
+with the slit coordinates from matching NUV and FUV spectrograph (SG) raster steps.
 """
 
 import matplotlib.pyplot as plt
@@ -51,6 +51,7 @@ sji_2796 = read_files(sji_filename)
 # The pointing correction is detector-specific, so compare the NUV SJI with an
 # NUV spectrograph window rather than, for example, the FUV C II window.
 mg_ii = raster["Mg II k 2796"][0]
+c_ii = raster["C II 1336"][0]
 
 times_SG = mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords)
 (time_2796,) = sji_2796.axis_world_coords("time")
@@ -76,20 +77,29 @@ with fits.open(sji_filename) as sji_hdulist:
 # The POFFY* auxiliary values are offsets in spatial pixels. If they need to be
 # converted manually, multiply each value by CDELT2 from the same data product.
 # CDELT2 includes spatial summing; the physical slit width does not. ``irispy``
-# already applies the detector-specific SG correction when reading the raster,
+# already applies the detector-specific spectograph correction when reading the raster,
 # so applying an auxiliary offset again here would double-correct the WCS.
 
 ###############################################################################
-# We can now get the slit location from the raster FITS WCS.
+# We can now get the slit locations from the raster FITS WCSes.
 
 sji_2796_closest = sji_2796[time_idx_2796]
 sji_2796_frame = wcs_to_celestial_frame(sji_2796_closest.basic_wcs)
 
-raster_lon_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
-raster_lat_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
+nuv_lon_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
+nuv_lat_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
+fuv_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
+fuv_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
 
-# Now we will get the raster location from its WCS and overlay that on the SJI below.
-slit = SkyCoord(Tx=raster_lon_coords, Ty=raster_lat_coords, frame=sji_2796_frame)
+###############################################################################
+# The FUV and NUV spectrographs share one physical slit, but use separate
+# detectors whose fiducial positions and pointing corrections are tracked
+# independently. Their WCS slit coordinates have a detector-dependent offset
+# in this observation.
+
+nuv_slit = SkyCoord(Tx=nuv_lon_coords, Ty=nuv_lat_coords, frame=sji_2796_frame)
+fuv_slit = SkyCoord(Tx=fuv_lon_coords, Ty=fuv_lat_coords, frame=sji_2796_frame)
+nuv_fuv_slit_separation = np.nanmedian(np.abs(nuv_slit.Tx - fuv_slit.Tx)).to(u.arcsec)
 
 ###############################################################################
 # Now we can compare the locations and make sure they match.
@@ -104,8 +114,10 @@ slit_location_from_sji_aux = sji_2796[time_idx_2796].wcs.pixel_to_world(
 )
 ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="SJI auxiliary slit")
 
-# This is the matching NUV raster slit from its FITS WCS.
-ax.plot_coord(slit, color="red", linestyle="-", linewidth=1, label="NUV raster slit")
+# These are the matching NUV and FUV raster slit coordinates from their FITS WCSes.
+ax.plot_coord(nuv_slit, color="red", linestyle="-", linewidth=1, label="NUV raster slit")
+ax.plot_coord(fuv_slit, color="cyan", linestyle="--", linewidth=1, label="FUV raster slit")
+ax.set_title(f"Median NUV-FUV slit offset in Tx: {nuv_fuv_slit_separation:.2f}")
 ax.legend()
 
 # "Crop" the image without touching the actual data.
