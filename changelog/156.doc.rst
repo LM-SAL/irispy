@@ -1,0 +1,1 @@
+Correct and expand the SJI and spectrograph slit-coordinate comparison to show NUV and FUV detector offsets.
