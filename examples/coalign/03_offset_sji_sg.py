@@ -1,16 +1,10 @@
 """
-========================================
-Potential Offset between SJI and SG data
-========================================
+===================================
+Compare SJI and SG slit coordinates
+===================================
 
-In this example, we are showcase a potential offset in WCS coordinates between IRIS SJI and IRIS SG data.
-The offset varies between observations and is not fixed.
-
-The cause is unknown at this time and this has not been cross-checked with SSWIDL.
-So it is possible this is just a bug in the Python library.
-
-Comment from author:
-Running this locally gives a different outcome than from the final version online and I have been unable to figure out why.
+This example compares the slit location recorded with an IRIS 2796 SJI exposure
+with the slit coordinates from the matching NUV SG raster step.
 """
 
 import matplotlib.pyplot as plt
@@ -34,7 +28,7 @@ time_support()
 # but using your browser will also work.
 #
 # Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_182935_4000005156_2013-09-02T18%3A29%3A352013-09-02T18%3A29%3A35.xml
-# we are after the 2796 Slit-Jaw and the raster sequence.
+# we are after the 2796 slit-jaw images and the raster sequence.
 
 raster_filename = pooch.retrieve(
     "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz",
@@ -54,9 +48,11 @@ sji_2796 = read_files(sji_filename)
 ###############################################################################
 # Now we will find the closest SJI time to the 56th raster step.
 
-c_ii = raster["C II 1336"][0]
+# The pointing correction is detector-specific, so compare the NUV SJI with an
+# NUV spectrograph window rather than, for example, the FUV C II window.
+mg_ii = raster["Mg II k 2796"][0]
 
-times_SG = c_ii.axis_world_coords("time", wcs=c_ii.extra_coords)
+times_SG = mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords)
 (time_2796,) = sji_2796.axis_world_coords("time")
 # We picked randomly.
 raster_idx = 55
@@ -67,57 +63,49 @@ time_stamp_2796 = time_2796[time_idx_2796].isot
 print(time_stamp_2796, "\n", time_target, "\n", time_idx_2796)
 
 ###############################################################################
-# We will require the auxiliary data from both files later on.
+# We will require the slit location from the SJI auxiliary data later on.
 
-# The raster file is extracted to the cache directory via pooch, so we need to do some magic to get it:
-raster_aux_data = fits.getdata(
-    next(iter(pooch.os_cache("pooch").expanduser().glob("*iris_l2_20130902_182935_4000005156_raster/*fits"))), ext=-2
-)
-sji_aux_data = fits.getdata(sji_filename, ext=-2)
-
-# If you check the headers, you will find an index for POFFXSJI and POFFYSJI:
-# SJI X (spectral direction) shift in pixels
-# SJI Y (spatial direction) shift in pixels
-sji_offset = sji_aux_data[time_idx_2796, 29] * 0.167 * u.arcsec
-sg_offset = raster_aux_data[raster_idx, 45] * 0.167 * u.arcsec
-
-# Also in the SJI AUX data is the pixel location of the slit
-# We will need to get the world location later on.
-sji_slit_location_pixel_x = sji_aux_data[time_idx_2796, 4]
-sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, 5]
+with fits.open(sji_filename) as sji_hdulist:
+    sji_aux_header = sji_hdulist[-2].header
+    sji_aux_data = sji_hdulist[-2].data
+    # Use the header-provided column indices instead of relying on fixed array columns.
+    sji_slit_location_pixel_x = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX1IX"]]
+    sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX2IX"]]
 
 ###############################################################################
-# We can now get the slit location from the SG cube and apply the offsets to the location.
+# The POFFY* auxiliary values are offsets in spatial pixels. If they need to be
+# converted manually, multiply each value by CDELT2 from the same data product.
+# CDELT2 includes spatial summing; the physical slit width does not. ``irispy``
+# already applies the detector-specific SG correction when reading the raster,
+# so applying an auxiliary offset again here would double-correct the WCS.
+
+###############################################################################
+# We can now get the slit location from the raster FITS WCS.
 
 sji_2796_closest = sji_2796[time_idx_2796]
 sji_2796_frame = wcs_to_celestial_frame(sji_2796_closest.basic_wcs)
 
-raster_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
-raster_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
+raster_lon_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
+raster_lat_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
 
 # Now we will get the raster location from its WCS and overlay that on the SJI below.
 slit = SkyCoord(Tx=raster_lon_coords, Ty=raster_lat_coords, frame=sji_2796_frame)
-# In this case, the offsets are negative, so we add them instead.
-slit_with_sg_offset = SkyCoord(Tx=raster_lon_coords + (-1 * sg_offset), Ty=raster_lat_coords, frame=sji_2796_frame)
-slit_with_sji_offset = SkyCoord(Tx=raster_lon_coords + (-1 * sji_offset), Ty=raster_lat_coords, frame=sji_2796_frame)
 
 ###############################################################################
-# Now we can visualize the difference.
+# Now we can compare the locations and make sure they match.
 
 fig = plt.figure(figsize=(9, 9))
 ax = fig.add_subplot(projection=sji_2796_closest)
 sji_2796_closest.plot(ax)
 
-# This is the pixel location of the slit in the SJI data based on the axillary data
+# This is the pixel location of the slit in the SJI data based on the auxiliary data.
 slit_location_from_sji_aux = sji_2796[time_idx_2796].wcs.pixel_to_world(
     sji_slit_location_pixel_x, sji_slit_location_pixel_y
 )
-ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="Slit Pixel Location")
+ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="SJI auxiliary slit")
 
-# Now these are the slit locations (with the last two modified by offset values in the axillary data)
-ax.plot_coord(slit, color="white", linestyle="--", linewidth=1, label="Slit WCS")
-ax.plot_coord(slit_with_sg_offset, color="red", linestyle="-", linewidth=1, label="Slit WCS + SG Offset")
-ax.plot_coord(slit_with_sji_offset, color="green", linestyle="-", linewidth=1, label="Slit WCS + SJI Offset")
+# This is the matching NUV raster slit from its FITS WCS.
+ax.plot_coord(slit, color="red", linestyle="-", linewidth=1, label="NUV raster slit")
 ax.legend()
 
 # "Crop" the image without touching the actual data.
