@@ -17,12 +17,9 @@ import numpy as np
 import pooch
 
 import astropy.units as u
-from astropy.visualization import time_support
 
 from irispy.io import read_files
 from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
-
-time_support()
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20210429_110908_3660259102_2021-04-29T11%3A09%3A082021-04-29T11%3A09%3A08.xml>`__.

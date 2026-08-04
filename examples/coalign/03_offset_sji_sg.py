@@ -14,12 +14,9 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.visualization import time_support
 from astropy.wcs.utils import wcs_to_celestial_frame
 
 from irispy.io import read_files
-
-time_support()
 
 ###############################################################################
 # We will start by getting some data from the IRIS archive.

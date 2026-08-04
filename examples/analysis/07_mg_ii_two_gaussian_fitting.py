@@ -25,14 +25,11 @@ from astropy import constants
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
-from astropy.visualization import time_support
 from astropy.wcs.utils import wcs_to_celestial_frame
 
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
-
-time_support()
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.

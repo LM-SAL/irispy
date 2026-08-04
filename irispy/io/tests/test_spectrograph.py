@@ -9,7 +9,7 @@ from astropy.wcs import WCS
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.io.spectrograph import _detector_times_from_source_filenames, read_spectrograph_lvl2
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -185,3 +185,23 @@ def test_read_spectrograph_lvl2_uses_level2_coordinates(raster_sg_file):
 def test_read_spectrograph_lvl2_reports_missing_spectral_window(sns_sg_file):
     with pytest.raises(ValueError, match=r"Spectral windows \['NOPE'\] not in file"):
         read_spectrograph_lvl2(sns_sg_file, spectral_windows=["C II 1336", "NOPE"])
+
+
+def test_detector_times_reject_invalid_source_filename(raster_sg_file):
+    with fits.open(raster_sg_file) as hdulist:
+        source_data = hdulist[-1].data.copy()
+    source_data["FUVfilename"][0] = ""
+
+    with pytest.raises(ValueError, match="Invalid timestamp in FUV source filenames"):
+        _detector_times_from_source_filenames(source_data, "FUV")
+
+
+def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_path):
+    filename = tmp_path / "missing_source_row.fits"
+    with fits.open(raster_sg_file, memmap=False) as hdulist:
+        hdulist[-1].header["TFIELDS"] = 9
+        hdulist[-1].data = hdulist[-1].data[:-1]
+        hdulist.writeto(filename)
+
+    with pytest.raises(ValueError, match=r"Expected 8 source filename rows.*found 7"):
+        read_spectrograph_lvl2(filename, spectral_windows="C II 1336")

@@ -4,6 +4,8 @@ Short script I used to create the test FITS files in this folder.
 WARNING: This overrides the original files.
 """
 
+import numpy as np
+
 if __name__ == "__main__":
 
     def compress(files: list) -> None:
@@ -19,7 +21,15 @@ if __name__ == "__main__":
             for hdu in hdus:
                 aux = "PZTX" in hdu.header
                 hdu.verify("fix")
-                if isinstance(hdu, fits.hdu.table.TableHDU) or hdu.data is None:
+                if isinstance(hdu, fits.hdu.table.TableHDU):
+                    if sg and sns:
+                        if "TTYPE9" in hdu.header:
+                            hdu.header["TFIELDS"] = 9
+                        target_length = len(hdus[-2].data)
+                        indices = np.rint(np.linspace(0, len(hdu.data) - 1, target_length)).astype(int)
+                        hdu.data = hdu.data[indices]
+                    continue
+                if hdu.data is None:
                     continue
                 if aux:
                     # Only resize the sit and stare data as its 3D

@@ -1,0 +1,1 @@
+Preserve the Level 2 spectrograph slit WCS instead of applying detector pointing offsets a second time, use detector-specific source-file timestamps for raster exposures, and expose the AUX-derived times in the cube metadata.

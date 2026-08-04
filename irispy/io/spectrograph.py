@@ -27,11 +27,13 @@ def _pc_matrix(lam, angle_1, angle_2):
     return angle_1, -1 * lam * angle_2, 1 / lam * angle_2, angle_1
 
 
-def _source_times(source_data, detector, fallback):
-    if source_data is None or len(source_data) != len(fallback):
-        return fallback
+def _detector_times_from_source_filenames(source_data, detector):
     timestamps = [Path(filename).name[4:21] for filename in source_data[f"{detector}filename"]]
-    return Time.strptime(timestamps, "%Y%m%d_%H%M%S%f")
+    try:
+        return Time.strptime(timestamps, "%Y%m%d_%H%M%S%f")
+    except ValueError as error:
+        msg = f"Invalid timestamp in {detector} source filenames"
+        raise ValueError(msg) from error
 
 
 def read_spectrograph_lvl2(
@@ -117,8 +119,13 @@ def read_spectrograph_lvl2(
                 hdulist[-2].data[:, hdulist[-2].header["TIME"]],
                 format="sec",
             )
-            times_fuv = _source_times(hdulist[-1].data, "FUV", aux_times)
-            times_nuv = _source_times(hdulist[-1].data, "NUV", aux_times)
+            source_data = hdulist[-1].data
+            if source_data is None or len(source_data) != len(aux_times):
+                found = 0 if source_data is None else len(source_data)
+                msg = f"Expected {len(aux_times)} source filename rows in {filename}, found {found}"
+                raise ValueError(msg)
+            times_fuv = _detector_times_from_source_filenames(source_data, "FUV")
+            times_nuv = _detector_times_from_source_filenames(source_data, "NUV")
             fov_center = SkyCoord(
                 Tx=hdulist[-2].data[:, hdulist[-2].header["XCENIX"]],
                 Ty=hdulist[-2].data[:, hdulist[-2].header["YCENIX"]],
