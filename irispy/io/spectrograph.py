@@ -22,17 +22,22 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOIS
 __all__ = ["read_spectrograph_lvl2"]
 
 
-def _detector_times_from_source_filenames(source_data, detector):
-    timestamps = [Path(filename).name[4:21] for filename in source_data[f"{detector}filename"]]
+def _detector_midpoint_times_from_source_filenames(source_data, detector):
+    """
+    Return level 1 ``T_OBS`` times encoded in level 2 source filenames.
+    """
     try:
+        timestamps = [Path(filename).name[4:21] for filename in source_data[f"{detector}filename"]]
         return Time.strptime(timestamps, "%Y%m%d_%H%M%S%f")
-    except ValueError as error:
+    except (KeyError, TypeError, ValueError) as error:
         msg = f"Invalid timestamp in {detector} source filenames"
         raise ValueError(msg) from error
 
 
 def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
-    """Create a FITS-TAB WCS from the per-step pointing in the auxiliary table."""
+    """
+    Create a FITS-TAB WCS from the per-step pointing in the auxiliary table.
+    """
     header = copy(header)
     auxiliary_data = auxiliary_hdu.data[::-1] if flip else auxiliary_hdu.data
     spatial_pixels = np.array([1, header["NAXIS2"]], dtype=float)
@@ -164,8 +169,8 @@ def read_spectrograph_lvl2(
                 found = 0 if source_data is None else len(source_data)
                 msg = f"Expected {len(aux_times)} source filename rows in {filename}, found {found}"
                 raise ValueError(msg)
-            times_fuv = _detector_times_from_source_filenames(source_data, "FUV")
-            times_nuv = _detector_times_from_source_filenames(source_data, "NUV")
+            midpoint_times_fuv = _detector_midpoint_times_from_source_filenames(source_data, "FUV")
+            midpoint_times_nuv = _detector_midpoint_times_from_source_filenames(source_data, "NUV")
             fov_center = SkyCoord(
                 Tx=hdulist[-2].data[:, hdulist[-2].header["XCENIX"]],
                 Ty=hdulist[-2].data[:, hdulist[-2].header["YCENIX"]],
@@ -186,13 +191,18 @@ def read_spectrograph_lvl2(
                 exposure_times = exposure_times_nuv
                 dn_unit = DN_UNIT["NUV"]
                 readout_noise = READOUT_NOISE["NUV"]
-                times = times_nuv
+                midpoint_times = midpoint_times_nuv
                 if "FUV" in meta.detector:
                     exposure_times = exposure_times_fuv
                     dn_unit = DN_UNIT["FUV"]
                     readout_noise = READOUT_NOISE["FUV"]
-                    times = times_fuv
+                    midpoint_times = midpoint_times_fuv
+                if np.any(exposure_times <= 0 * u.s):
+                    msg = f"Invalid {meta.detector} exposure time in {filename}"
+                    raise ValueError(msg)
+                exposure_start_times = aux_times if "FUV" in meta.detector else midpoint_times - exposure_times / 2
                 meta.add("exposure time", exposure_times, None, 0)
+                meta.add("exposure midpoint", midpoint_times, None, 0)
                 meta.add("exposure FOV center", fov_center, None, 0)
                 meta.add("observer radial velocity", obs_vrix, None, 0)
                 meta.add("orbital phase", ophaseix, None, 0)
@@ -223,9 +233,10 @@ def read_spectrograph_lvl2(
                         dn_unit,
                     )
                 if v34 and not revert_v34:
-                    times = times[::-1]
+                    times = exposure_start_times[::-1]
                     data = np.flip(hdulist[window_fits_indices[i]].data, axis=0)
                 else:
+                    times = exposure_start_times
                     data = hdulist[window_fits_indices[i]].data
                 _set_wcs_aux_obs_coord(wcs, observer)
                 cube = SpectrogramCube(

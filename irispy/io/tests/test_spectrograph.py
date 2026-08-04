@@ -8,7 +8,7 @@ from astropy.tests.helper import assert_quantity_allclose
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import _detector_times_from_source_filenames, read_spectrograph_lvl2
+from irispy.io.spectrograph import _detector_midpoint_times_from_source_filenames, read_spectrograph_lvl2
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -53,7 +53,7 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 13)  # History is missing
+    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 12)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -127,7 +127,7 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 526
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 12)  # History is missing
+    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 11)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -188,9 +188,11 @@ def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
 
     fuv_time = raster[windows[0]][0].axis_world_coords("time", wcs=raster[windows[0]][0].extra_coords)[0]
     nuv_time = raster[windows[1]][0].axis_world_coords("time", wcs=raster[windows[1]][0].extra_coords)[0]
-    assert fuv_time[0].isot == "2014-03-29T14:09:43.000"
-    assert nuv_time[0].isot == "2014-03-29T14:09:42.940"
+    assert fuv_time[0].isot == "2014-03-29T14:09:39.000"
+    assert nuv_time[0].isot == "2014-03-29T14:09:38.940"
     assert raster[windows[0]][0].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
+    assert raster[windows[0]][0].meta["exposure midpoint"][0].isot == "2014-03-29T14:09:43.000"
+    assert raster[windows[1]][0].meta["exposure midpoint"][0].isot == "2014-03-29T14:09:42.940"
 
 
 def test_read_spectrograph_lvl2_reports_missing_spectral_window(sns_sg_file):
@@ -204,7 +206,7 @@ def test_detector_times_reject_invalid_source_filename(raster_sg_file):
     source_data["FUVfilename"][0] = ""
 
     with pytest.raises(ValueError, match="Invalid timestamp in FUV source filenames"):
-        _detector_times_from_source_filenames(source_data, "FUV")
+        _detector_midpoint_times_from_source_filenames(source_data, "FUV")
 
 
 def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_path):
@@ -216,3 +218,13 @@ def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_
 
     with pytest.raises(ValueError, match=r"Expected 8 source filename rows.*found 7"):
         read_spectrograph_lvl2(filename, spectral_windows="C II 1336")
+
+
+def test_read_spectrograph_rejects_invalid_exposure_time(raster_sg_file, tmp_path):
+    filename = tmp_path / "invalid_exposure_time.fits"
+    with fits.open(raster_sg_file, memmap=False) as hdulist:
+        hdulist[-2].data[0, hdulist[-2].header["EXPTIMEN"]] = 0
+        hdulist.writeto(filename)
+
+    with pytest.raises(ValueError, match="Invalid NUV exposure time"):
+        read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")

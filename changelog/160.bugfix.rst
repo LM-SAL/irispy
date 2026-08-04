@@ -1,0 +1,1 @@
+Use exposure start times for SJI and spectrograph time coordinates, and expose the level 1 source-filename midpoints in metadata.
