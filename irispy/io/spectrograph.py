@@ -18,13 +18,22 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE, SLIT_WIDTH
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE
 
 __all__ = ["read_spectrograph_lvl2"]
 
 
 def _pc_matrix(lam, angle_1, angle_2):
     return angle_1, -1 * lam * angle_2, 1 / lam * angle_2, angle_1
+
+
+def _detector_times_from_source_filenames(source_data, detector):
+    timestamps = [Path(filename).name[4:21] for filename in source_data[f"{detector}filename"]]
+    try:
+        return Time.strptime(timestamps, "%Y%m%d_%H%M%S%f")
+    except ValueError as error:
+        msg = f"Invalid timestamp in {detector} source filenames"
+        raise ValueError(msg) from error
 
 
 def read_spectrograph_lvl2(
@@ -106,10 +115,17 @@ def read_spectrograph_lvl2(
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
             hdulist.verify("silentfix")
             # Extract axis-aligned metadata.
-            times = Time(hdulist[0].header["STARTOBS"]) + TimeDelta(
+            aux_times = Time(hdulist[0].header["STARTOBS"]) + TimeDelta(
                 hdulist[-2].data[:, hdulist[-2].header["TIME"]],
                 format="sec",
             )
+            source_data = hdulist[-1].data
+            if source_data is None or len(source_data) != len(aux_times):
+                found = 0 if source_data is None else len(source_data)
+                msg = f"Expected {len(aux_times)} source filename rows in {filename}, found {found}"
+                raise ValueError(msg)
+            times_fuv = _detector_times_from_source_filenames(source_data, "FUV")
+            times_nuv = _detector_times_from_source_filenames(source_data, "NUV")
             fov_center = SkyCoord(
                 Tx=hdulist[-2].data[:, hdulist[-2].header["XCENIX"]],
                 Ty=hdulist[-2].data[:, hdulist[-2].header["YCENIX"]],
@@ -126,13 +142,16 @@ def read_spectrograph_lvl2(
                     window_name,
                     data_shape=hdulist[window_fits_indices[i]].data.shape,
                 )
+                meta.add("auxiliary times", aux_times, None, 0)
                 exposure_times = exposure_times_nuv
                 dn_unit = DN_UNIT["NUV"]
                 readout_noise = READOUT_NOISE["NUV"]
+                times = times_nuv
                 if "FUV" in meta.detector:
                     exposure_times = exposure_times_fuv
                     dn_unit = DN_UNIT["FUV"]
                     readout_noise = READOUT_NOISE["FUV"]
+                    times = times_fuv
                 meta.add("exposure time", exposure_times, None, 0)
                 meta.add("exposure FOV center", fov_center, None, 0)
                 meta.add("observer radial velocity", obs_vrix, None, 0)
@@ -140,9 +159,6 @@ def read_spectrograph_lvl2(
                 # Sit-and-stare have a CDELT of 0 which causes issues in WCS.
                 # In this case, set CDELT to a small number.
                 header = copy(hdulist[window_fits_indices[i]].header)
-                # Account for a slit offset (POFFYNUV (45) or POFFYFUV (34))
-                idx = 34 if meta.spectral_band == "FUV" else 45
-                header["CRVAL3"] -= hdulist[-2].data[:, idx].mean() * (SLIT_WIDTH.value / 2)
                 if header["CDELT3"] == 0:
                     header["CDELT3"] = 1e-10
                     ang1, ang2, ang3, ang4 = _pc_matrix(

@@ -14,12 +14,9 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.visualization import time_support
 from astropy.wcs.utils import wcs_to_celestial_frame
 
 from irispy.io import read_files
-
-time_support()
 
 ###############################################################################
 # We will start by getting some data from the IRIS archive.
@@ -47,9 +44,8 @@ sji_2796 = read_files(sji_filename)
 
 ###############################################################################
 # Now we will find the closest SJI time to the 56th raster step.
-
-# The pointing correction is detector-specific, so compare the NUV SJI with an
-# NUV spectrograph window rather than, for example, the FUV C II window.
+# The goal is to compare an NUV and an FUV spectrograph window, using the
+# NUV time to find the closest 2796 SJI exposure.
 mg_ii = raster["Mg II k 2796"][0]
 c_ii = raster["C II 1336"][0]
 
@@ -69,16 +65,8 @@ print(time_stamp_2796, "\n", time_target, "\n", time_idx_2796)
 with fits.open(sji_filename) as sji_hdulist:
     sji_aux_header = sji_hdulist[-2].header
     sji_aux_data = sji_hdulist[-2].data
-    # Use the header-provided column indices instead of relying on fixed array columns.
     sji_slit_location_pixel_x = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX1IX"]]
     sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX2IX"]]
-
-###############################################################################
-# The POFFY* auxiliary values are offsets in spatial pixels. If they need to be
-# converted manually, multiply each value by CDELT2 from the same data product.
-# CDELT2 includes spatial summing; the physical slit width does not. ``irispy``
-# already applies the detector-specific spectograph correction when reading the raster,
-# so applying an auxiliary offset again here would double-correct the WCS.
 
 ###############################################################################
 # We can now get the slit locations from the raster FITS WCSes.
@@ -92,17 +80,16 @@ fuv_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")
 fuv_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
 
 ###############################################################################
-# The FUV and NUV spectrographs share one physical slit, but use separate
-# detectors whose fiducial positions and pointing corrections are tracked
-# independently. Their WCS slit coordinates have a detector-dependent offset
-# in this observation.
+# The Level 2 FITS WCS describes the shared physical slit, so the NUV and FUV
+# coordinates should coincide. Residual per-step pointing deviations are not
+# represented by the linear FITS WCS. The remaining SJI-SG slit offset in this
+# exposure is small, about one spatial pixel.
 
 nuv_slit = SkyCoord(Tx=nuv_lon_coords, Ty=nuv_lat_coords, frame=sji_2796_frame)
 fuv_slit = SkyCoord(Tx=fuv_lon_coords, Ty=fuv_lat_coords, frame=sji_2796_frame)
-nuv_fuv_slit_separation = np.nanmedian(np.abs(nuv_slit.Tx - fuv_slit.Tx)).to(u.arcsec)
 
 ###############################################################################
-# Now we can compare the locations and make sure they match.
+# Finally, we can compare the locations to see how it all lines up.
 
 fig = plt.figure(figsize=(9, 9))
 ax = fig.add_subplot(projection=sji_2796_closest)
@@ -117,10 +104,9 @@ ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="SJI auxilia
 # These are the matching NUV and FUV raster slit coordinates from their FITS WCSes.
 ax.plot_coord(nuv_slit, color="red", linestyle="-", linewidth=1, label="NUV raster slit")
 ax.plot_coord(fuv_slit, color="cyan", linestyle="--", linewidth=1, label="FUV raster slit")
-ax.set_title(f"Median NUV-FUV slit offset in Tx: {nuv_fuv_slit_separation:.2f}")
 ax.legend()
 
-# "Crop" the image without touching the actual data.
+# We just zoom in now around the slit.
 bbox = SkyCoord([140, 180] * u.arcsec, [50, 90] * u.arcsec, frame=sji_2796_frame)
 x_limit, y_limit = sji_2796_closest.wcs.world_to_pixel(bbox)
 ax.set_xlim(int(x_limit[0]), int(x_limit[1]))
