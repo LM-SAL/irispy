@@ -5,7 +5,6 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
-from astropy.wcs import WCS
 
 from sunpy.coordinates import Helioprojective
 
@@ -165,15 +164,27 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(raster_sg_files)
 
 
-def test_read_spectrograph_lvl2_uses_level2_coordinates(raster_sg_file):
+def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
     windows = ["C II 1336", "Mg II k 2796"]
     raster = read_spectrograph_lvl2(raster_sg_file, spectral_windows=windows)
 
     with fits.open(raster_sg_file) as hdulist:
         window_indices = {hdulist[0].header[f"TDESC{i}"]: i for i in range(1, hdulist[0].header["NWIN"] + 1)}
+        auxiliary_hdu = hdulist[-2]
+        expected_longitude = auxiliary_hdu.data[:, auxiliary_hdu.header["XCENIX"]] / 3600
+        expected_latitude = auxiliary_hdu.data[:, auxiliary_hdu.header["YCENIX"]] / 3600
         for window in windows:
-            expected = WCS(hdulist[window_indices[window]].header).wcs.crval[2]
-            assert raster[window][0]._fits_wcs.crval[2] == expected
+            header = hdulist[window_indices[window]].header
+            step_pixels = np.arange(header["NAXIS3"])
+            _, latitude, longitude = raster[window][0].wcs.pixel_to_world_values(
+                np.full_like(step_pixels, header["CRPIX1"] - 1, dtype=float),
+                np.full_like(step_pixels, header["CRPIX2"] - 1, dtype=float),
+                step_pixels,
+            )
+            assert list(raster[window][0]._fits_wcs.ctype)[1:] == ["HPLT-TAB", "HPLN-TAB"]
+            assert raster[window][0]._fits_wcs.aux.dsun_obs > 1e11
+            np.testing.assert_allclose(latitude, expected_latitude)
+            np.testing.assert_allclose(longitude, expected_longitude)
 
     fuv_time = raster[windows[0]][0].axis_world_coords("time", wcs=raster[windows[0]][0].extra_coords)[0]
     nuv_time = raster[windows[1]][0].axis_world_coords("time", wcs=raster[windows[1]][0].extra_coords)[0]

@@ -11,8 +11,7 @@ from astropy.wcs import WCS
 
 from sunpy import log as logger
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
-from sunpy.coordinates.frames import HeliographicStonyhurst, Helioprojective
-from sunpy.coordinates.screens import SphericalScreen
+from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
 from irispy.meta import SGMeta
@@ -23,10 +22,6 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOIS
 __all__ = ["read_spectrograph_lvl2"]
 
 
-def _pc_matrix(lam, angle_1, angle_2):
-    return angle_1, -1 * lam * angle_2, 1 / lam * angle_2, angle_1
-
-
 def _detector_times_from_source_filenames(source_data, detector):
     timestamps = [Path(filename).name[4:21] for filename in source_data[f"{detector}filename"]]
     try:
@@ -34,6 +29,60 @@ def _detector_times_from_source_filenames(source_data, detector):
     except ValueError as error:
         msg = f"Invalid timestamp in {detector} source filenames"
         raise ValueError(msg) from error
+
+
+def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
+    """Create a FITS-TAB WCS from the per-step pointing in the auxiliary table."""
+    header = copy(header)
+    auxiliary_data = auxiliary_hdu.data[::-1] if flip else auxiliary_hdu.data
+    spatial_pixels = np.array([1, header["NAXIS2"]], dtype=float)
+    spatial_offsets = spatial_pixels - header["CRPIX2"]
+    longitude_scale = header["CDELT3"] or header["CDELT2"]
+
+    longitude = auxiliary_data[:, auxiliary_hdu.header["XCENIX"], None] + longitude_scale * (
+        auxiliary_data[:, auxiliary_hdu.header["PC3_2IX"], None] * spatial_offsets
+    )
+    latitude = auxiliary_data[:, auxiliary_hdu.header["YCENIX"], None] + header["CDELT2"] * (
+        auxiliary_data[:, auxiliary_hdu.header["PC2_2IX"], None] * spatial_offsets
+    )
+    coordinates = np.stack((latitude, longitude), axis=-1) / 3600
+
+    spatial_index = (header["CRVAL2"] + header["CDELT2"] * (spatial_pixels - header["CRPIX2"])) / 3600
+    raster_index = np.arange(1, header["NAXIS3"] + 1, dtype=float)
+    table_data = np.array(
+        [(coordinates, spatial_index, raster_index)],
+        dtype=[
+            ("COORDS", float, coordinates.shape),
+            ("SPATIAL", float, spatial_index.shape),
+            ("RASTER", float, raster_index.shape),
+        ],
+    )
+    table = fits.BinTableHDU(table_data, name="WCS-TABLE")
+    table.header["TUNIT1"] = "deg"
+    table.header["TUNIT2"] = "deg"
+    table.header["TUNIT3"] = "deg"
+
+    header["CTYPE2"] = "HPLT-TAB"
+    header["CTYPE3"] = "HPLN-TAB"
+    header["CUNIT2"] = "deg"
+    header["CUNIT3"] = "deg"
+    header["DATE-OBS"] = date_obs
+    header["MJD-OBS"] = Time(date_obs).mjd
+    header["CRVAL2"] /= 3600
+    header["CDELT2"] /= 3600
+    header["CRPIX3"] = 1
+    header["CRVAL3"] = 1
+    header["CDELT3"] = 1
+    for row in range(1, 4):
+        for column in range(1, 4):
+            header[f"PC{row}_{column}"] = float(row == column)
+    for axis, index_column in ((2, "SPATIAL"), (3, "RASTER")):
+        header[f"PS{axis}_0"] = table.name
+        header[f"PS{axis}_1"] = "COORDS"
+        header[f"PS{axis}_2"] = index_column
+        header[f"PV{axis}_3"] = axis - 1
+
+    return WCS(header, fits.HDUList([fits.PrimaryHDU(), table]))
 
 
 def read_spectrograph_lvl2(
@@ -100,17 +149,8 @@ def read_spectrograph_lvl2(
                 raise ValueError(msg)
             window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
         data_dict = {window_name: [] for window_name in spectral_windows_req}
-        # No observer information in the header, so we just assume its at Earth.
         base_time = Time(hdulist[0].header["DATE_OBS"])
-        location = get_body_heliographic_stonyhurst("Earth", (base_time).isot)
-        observer = Helioprojective(
-            hdulist[0].header["XCEN"] * u.arcsec,
-            hdulist[0].header["YCEN"] * u.arcsec,
-            observer=location,
-            obstime=base_time,
-        )
-        with SphericalScreen(observer.observer):
-            observer = observer.transform_to(HeliographicStonyhurst(obstime=base_time))
+        observer = get_body_heliographic_stonyhurst("Earth", base_time)
     for filename in filenames:
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
             hdulist.verify("silentfix")
@@ -156,22 +196,14 @@ def read_spectrograph_lvl2(
                 meta.add("exposure FOV center", fov_center, None, 0)
                 meta.add("observer radial velocity", obs_vrix, None, 0)
                 meta.add("orbital phase", ophaseix, None, 0)
-                # Sit-and-stare have a CDELT of 0 which causes issues in WCS.
-                # In this case, set CDELT to a small number.
-                header = copy(hdulist[window_fits_indices[i]].header)
-                if header["CDELT3"] == 0:
-                    header["CDELT3"] = 1e-10
-                    ang1, ang2, ang3, ang4 = _pc_matrix(
-                        header["CDELT3"] / header["CDELT2"],
-                        hdulist[-2].data[:, 20].mean(),
-                        hdulist[-2].data[:, 22].mean(),
-                    )
-                    header["PC2_2"] = ang1
-                    header["PC2_3"] = ang2
-                    header["PC3_2"] = ang3
-                    header["PC3_3"] = ang4
+                header = hdulist[window_fits_indices[i]].header
                 try:
-                    wcs = WCS(header)
+                    wcs = _create_tabular_wcs(
+                        header,
+                        hdulist[-2],
+                        date_obs=base_time.utc.isot,
+                        flip=v34 and not revert_v34,
+                    )
                 except Exception as e:  # NOQA: BLE001
                     msg = (
                         f"WCS failed to load while reading one step of the raster due to {e}"
@@ -193,12 +225,6 @@ def read_spectrograph_lvl2(
                 if v34 and not revert_v34:
                     times = times[::-1]
                     data = np.flip(hdulist[window_fits_indices[i]].data, axis=0)
-                    header["PC1_3"] = 0
-                    header["PC2_3"] = -header["PC2_3"]
-                    header["PC3_2"] = -header["PC3_2"]
-                    header["CDELT3"] = -header["CDELT3"]
-                    header["CRPIX3"] = header["NAXIS3"] - header["CRPIX3"] + 1
-                    wcs = WCS(header)
                 else:
                     data = hdulist[window_fits_indices[i]].data
                 _set_wcs_aux_obs_coord(wcs, observer)
