@@ -3,7 +3,9 @@ import pytest
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.wcs import WCS
 
 from sunpy.coordinates import Helioprojective
 
@@ -52,7 +54,7 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 14)  # History is missing
+    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 13)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -126,7 +128,7 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 526
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 13)  # History is missing
+    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 12)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -161,6 +163,23 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(sns_sg_file)
     read_spectrograph_lvl2(raster_sg_file)
     read_spectrograph_lvl2(raster_sg_files)
+
+
+def test_read_spectrograph_lvl2_uses_level2_coordinates(raster_sg_file):
+    windows = ["C II 1336", "Mg II k 2796"]
+    raster = read_spectrograph_lvl2(raster_sg_file, spectral_windows=windows)
+
+    with fits.open(raster_sg_file) as hdulist:
+        window_indices = {hdulist[0].header[f"TDESC{i}"]: i for i in range(1, hdulist[0].header["NWIN"] + 1)}
+        for window in windows:
+            expected = WCS(hdulist[window_indices[window]].header).wcs.crval[2]
+            assert raster[window][0]._fits_wcs.crval[2] == expected
+
+    fuv_time = raster[windows[0]][0].axis_world_coords("time", wcs=raster[windows[0]][0].extra_coords)[0]
+    nuv_time = raster[windows[1]][0].axis_world_coords("time", wcs=raster[windows[1]][0].extra_coords)[0]
+    assert fuv_time[0].isot == "2014-03-29T14:09:43.000"
+    assert nuv_time[0].isot == "2014-03-29T14:09:42.940"
+    assert raster[windows[0]][0].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
 
 
 def test_read_spectrograph_lvl2_reports_missing_spectral_window(sns_sg_file):
