@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -8,7 +7,7 @@ from astropy.tests.helper import assert_quantity_allclose
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.sji import _sji_midpoint_times, read_sji_lvl2
+from irispy.io.sji import read_sji_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
@@ -33,7 +32,7 @@ def test_sns_read_sji_lvl2(sns_sji_2832_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 13)  # History is missing
+    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 14)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -84,7 +83,7 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.0011105057794114 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 13)  # History is missing
+    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 14)  # History is missing
     assert meta["XCEN"] == -2.73951
     assert meta["YCEN"] == 945.279
     assert_quantity_allclose(meta.fov_center.Tx, -2.73951 * u.arcsec)
@@ -99,17 +98,6 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     observation_times = sji_1400_cube.axis_world_coords("time")[0]
     assert observation_times.isot.tolist() == ["2023-04-08T11:09:57.690", "2023-04-08T11:42:01.050"]
     assert [wcs.wcs.dateobs for wcs in sji_1400_cube.basic_wcs] == observation_times.isot.tolist()
-    assert sji_1400_cube.meta["exposure midpoint"].isot.tolist() == [
-        "2023-04-08T11:10:12.690",
-        "2023-04-08T11:42:16.050",
-    ]
-
-
-def test_sji_midpoint_times_reject_invalid_source_filename(raster_sji_1400_file):
-    with fits.open(raster_sji_1400_file) as hdulist:
-        hdulist[-1].data["SJIfilename"][0] = ""
-        with pytest.raises(ValueError, match="Invalid timestamp in SJI source filenames"):
-            _sji_midpoint_times(hdulist)
 
 
 def test_read_sji_lvl2_masks_scaled_float_bad_pixels(sns_sji_1330_file):

@@ -9,7 +9,6 @@ from astropy.time import Time
 
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 
-from irispy.io.spectrograph import _detector_midpoint_times_from_source_filenames
 from irispy.meta import SJIMeta
 from irispy.sji import AIACube, SJICube
 from irispy.utils import calculate_uncertainty
@@ -31,21 +30,6 @@ def _exposure_start_times(hdulist):
     return Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc") + (
         hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
     )
-
-
-def _sji_midpoint_times(hdulist):
-    """
-    Return the SJI level 1 ``T_OBS`` times encoded in source filenames.
-    """
-    frame_count = len(hdulist[0].data)
-    source_data = hdulist[-1].data
-    if source_data is None or not source_data.dtype.names or "SJIfilename" not in source_data.dtype.names:
-        msg = "SJI source filenames are missing"
-        raise ValueError(msg)
-    if len(source_data) != frame_count:
-        msg = f"Expected {frame_count} SJI source filename rows, found {len(source_data)}"
-        raise ValueError(msg)
-    return _detector_midpoint_times_from_source_filenames(source_data, "SJI")
 
 
 def _create_gwcs(hdulist: fits.HDUList, exposure_start_times) -> gwcs.WCS:
@@ -253,15 +237,12 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             if uncertainty and instrume in ["IRIS", "SJI"]:
                 out_uncertainty = calculate_uncertainty(data, READOUT_NOISE["SJI"], DN_UNIT["SJI"])
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
-        meta = SJIMeta(hdulist[0].header)
-        if cube_class is SJICube:
-            meta.add("exposure midpoint", _sji_midpoint_times(hdulist), None, 0)
         map_cube = cube_class(
             data_nan_masked,
             _create_gwcs(hdulist, exposure_start_times),
             uncertainty=out_uncertainty,
             unit=unit,
-            meta=meta,
+            meta=SJIMeta(hdulist[0].header),
             mask=mask,
             scaled=scaled,
             _basic_wcs=_create_headers_wcs(hdulist, exposure_start_times),
