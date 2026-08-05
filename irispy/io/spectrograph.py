@@ -47,6 +47,8 @@ def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
     """
     header = copy(header)
     auxiliary_data = auxiliary_hdu.data[::-1] if flip else auxiliary_hdu.data
+    # FITS-TAB does not convert table units, and celestial WCS values must be degrees.
+    arcsec_to_deg = u.arcsec.to(u.deg)
     spatial_pixels = np.array([1, header["NAXIS2"]], dtype=float)
     spatial_offsets = spatial_pixels - header["CRPIX2"]
     longitude_scale = header["CDELT3"] or header["CDELT2"]
@@ -57,9 +59,9 @@ def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
     latitude = auxiliary_data[:, auxiliary_hdu.header["YCENIX"], None] + header["CDELT2"] * (
         auxiliary_data[:, auxiliary_hdu.header["PC2_2IX"], None] * spatial_offsets
     )
-    coordinates = np.stack((latitude, longitude), axis=-1) / 3600
+    coordinates = np.stack((latitude, longitude), axis=-1) * arcsec_to_deg
 
-    spatial_index = (header["CRVAL2"] + header["CDELT2"] * (spatial_pixels - header["CRPIX2"])) / 3600
+    spatial_index = (header["CRVAL2"] + header["CDELT2"] * (spatial_pixels - header["CRPIX2"])) * arcsec_to_deg
     raster_index = np.arange(1, header["NAXIS3"] + 1, dtype=float)
     table_data = np.array(
         [(coordinates, spatial_index, raster_index)],
@@ -80,8 +82,8 @@ def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
     header["CUNIT3"] = "deg"
     header["DATE-OBS"] = date_obs
     header["MJD-OBS"] = Time(date_obs).mjd
-    header["CRVAL2"] /= 3600
-    header["CDELT2"] /= 3600
+    header["CRVAL2"] *= arcsec_to_deg
+    header["CDELT2"] *= arcsec_to_deg
     header["CRPIX3"] = 1
     header["CRVAL3"] = 1
     header["CDELT3"] = 1
