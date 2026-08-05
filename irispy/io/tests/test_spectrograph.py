@@ -5,11 +5,10 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
-from astropy.wcs import WCS
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import _detector_times_from_source_filenames, read_spectrograph_lvl2
+from irispy.io.spectrograph import _nuv_exposure_start_times_from_source_filenames, read_spectrograph_lvl2
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -165,20 +164,32 @@ def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_fil
     read_spectrograph_lvl2(raster_sg_files)
 
 
-def test_read_spectrograph_lvl2_uses_level2_coordinates(raster_sg_file):
+def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
     windows = ["C II 1336", "Mg II k 2796"]
     raster = read_spectrograph_lvl2(raster_sg_file, spectral_windows=windows)
 
     with fits.open(raster_sg_file) as hdulist:
         window_indices = {hdulist[0].header[f"TDESC{i}"]: i for i in range(1, hdulist[0].header["NWIN"] + 1)}
+        auxiliary_hdu = hdulist[-2]
+        expected_longitude = auxiliary_hdu.data[:, auxiliary_hdu.header["XCENIX"]] / 3600
+        expected_latitude = auxiliary_hdu.data[:, auxiliary_hdu.header["YCENIX"]] / 3600
         for window in windows:
-            expected = WCS(hdulist[window_indices[window]].header).wcs.crval[2]
-            assert raster[window][0]._fits_wcs.crval[2] == expected
+            header = hdulist[window_indices[window]].header
+            step_pixels = np.arange(header["NAXIS3"])
+            _, latitude, longitude = raster[window][0].wcs.pixel_to_world_values(
+                np.full_like(step_pixels, header["CRPIX1"] - 1, dtype=float),
+                np.full_like(step_pixels, header["CRPIX2"] - 1, dtype=float),
+                step_pixels,
+            )
+            assert list(raster[window][0]._fits_wcs.ctype)[1:] == ["HPLT-TAB", "HPLN-TAB"]
+            assert raster[window][0]._fits_wcs.aux.dsun_obs > 1e11
+            np.testing.assert_allclose(latitude, expected_latitude)
+            np.testing.assert_allclose(longitude, expected_longitude)
 
     fuv_time = raster[windows[0]][0].axis_world_coords("time", wcs=raster[windows[0]][0].extra_coords)[0]
     nuv_time = raster[windows[1]][0].axis_world_coords("time", wcs=raster[windows[1]][0].extra_coords)[0]
-    assert fuv_time[0].isot == "2014-03-29T14:09:43.000"
-    assert nuv_time[0].isot == "2014-03-29T14:09:42.940"
+    assert fuv_time[0].isot == "2014-03-29T14:09:39.000"
+    assert nuv_time[0].isot == "2014-03-29T14:09:38.940"
     assert raster[windows[0]][0].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
 
 
@@ -187,13 +198,14 @@ def test_read_spectrograph_lvl2_reports_missing_spectral_window(sns_sg_file):
         read_spectrograph_lvl2(sns_sg_file, spectral_windows=["C II 1336", "NOPE"])
 
 
-def test_detector_times_reject_invalid_source_filename(raster_sg_file):
+def test_nuv_times_reject_invalid_source_filename(raster_sg_file):
     with fits.open(raster_sg_file) as hdulist:
         source_data = hdulist[-1].data.copy()
-    source_data["FUVfilename"][0] = ""
+        exposure_times = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEN"]] * u.s
+    source_data["NUVfilename"][0] = ""
 
-    with pytest.raises(ValueError, match="Invalid timestamp in FUV source filenames"):
-        _detector_times_from_source_filenames(source_data, "FUV")
+    with pytest.raises(ValueError, match="Invalid timestamp in NUV source filenames"):
+        _nuv_exposure_start_times_from_source_filenames(source_data, exposure_times)
 
 
 def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_path):
@@ -203,5 +215,15 @@ def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_
         hdulist[-1].data = hdulist[-1].data[:-1]
         hdulist.writeto(filename)
 
-    with pytest.raises(ValueError, match=r"Expected 8 source filename rows.*found 7"):
-        read_spectrograph_lvl2(filename, spectral_windows="C II 1336")
+    with pytest.raises(ValueError, match=r"Expected 8 NUV source filename rows.*found 7"):
+        read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")
+
+
+def test_read_spectrograph_rejects_invalid_exposure_time(raster_sg_file, tmp_path):
+    filename = tmp_path / "invalid_exposure_time.fits"
+    with fits.open(raster_sg_file, memmap=False) as hdulist:
+        hdulist[-2].data[0, hdulist[-2].header["EXPTIMEN"]] = 0
+        hdulist.writeto(filename)
+
+    with pytest.raises(ValueError, match="Invalid NUV exposure time"):
+        read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")

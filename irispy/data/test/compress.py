@@ -18,11 +18,19 @@ if __name__ == "__main__":
             hdus = fits.open(file)
             sg = "SPEC" in hdus[0].header["INSTRUME"]
             sns = hdus[0].header["NRASTERP"] == 1
+            time_indices = None
+            if not sg:
+                source_filenames = hdus[-1].data["SJIfilename"]
+                valid_indices = np.flatnonzero(np.char.str_len(np.char.strip(source_filenames.astype(str))))
+                target_length = round(len(hdus[0].data) * 0.1)
+                time_indices = valid_indices[np.rint(np.linspace(0, len(valid_indices) - 1, target_length)).astype(int)]
             for hdu in hdus:
                 aux = "PZTX" in hdu.header
                 hdu.verify("fix")
                 if isinstance(hdu, fits.hdu.table.TableHDU):
-                    if sg and sns:
+                    if not sg:
+                        hdu.data = hdu.data[time_indices]
+                    elif sns:
                         if "TTYPE9" in hdu.header:
                             hdu.header["TFIELDS"] = 9
                         target_length = len(hdus[-2].data)
@@ -32,9 +40,10 @@ if __name__ == "__main__":
                 if hdu.data is None:
                     continue
                 if aux:
-                    # Only resize the sit and stare data as its 3D
-                    # The raster image has steps and I want to keep them
-                    if sns:
+                    if not sg:
+                        hdu.data = hdu.data[time_indices]
+                    # Only resize spectrograph sit-and-stare AUX data.
+                    elif sns:
                         factor = (0.1, 1)
                         hdu.data = zoom(hdu.data, factor)
                 elif hdu.data.ndim == 1:
@@ -50,7 +59,9 @@ if __name__ == "__main__":
                     hdu.header["CRPIX1"] = hdu.header["CRPIX1"] * factor[1]
                     hdu.header["CRPIX2"] = hdu.header["CRPIX2"] * factor[0]
                 elif hdu.data.ndim == 3:
-                    factor = (1, 0.1, 0.1) if sg and not sns else (0.1, 0.1, 0.1)
+                    if not sg:
+                        hdu.data = hdu.data[time_indices]
+                    factor = (1, 0.1, 0.1) if not sg or not sns else (0.1, 0.1, 0.1)
                     hdu.data = zoom(hdu.data, factor)
                     hdu.header["NAXIS1"] = hdu.data.shape[2]
                     hdu.header["NAXIS2"] = hdu.data.shape[1]

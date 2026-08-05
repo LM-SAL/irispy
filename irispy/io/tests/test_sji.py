@@ -32,7 +32,7 @@ def test_sns_read_sji_lvl2(sns_sji_2832_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 164 == (len(meta.keys()) + 16)  # History is missing
+    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 14)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -68,7 +68,7 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert str(sji_1400_cube)
     assert sji_1400_cube.meta is not None
     meta = sji_1400_cube.meta
-    assert sji_1400_cube.data.shape == (54, 109, 110)  # (time, y, x)
+    assert sji_1400_cube.data.shape == (2, 109, 178)  # (time, y, x)
     assert np.all(sji_1400_cube.data.shape == meta.data_shape)
     # Meta is both a dict with the fits header keys but also provides
     # helper functions for specific values
@@ -77,22 +77,27 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert meta.detector == "SJI"
     assert meta.spectral_band == "FUV"
     assert meta.automatic_exposure_control_enabled is True
-    assert meta.date_end.isot == "2014-03-29T17:54:08.106"
-    assert meta.date_reference.isot == "2014-03-29T14:09:38.930"
-    assert meta.date_start.isot == "2014-03-29T14:09:38.930"
-    assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
-    assert meta.exposure_control_triggers_in_observation == 526
-    assert meta.exposure_control_triggers_in_raster == 475
-    assert len(meta.fits_header) == 163 == (len(meta.keys()) + 15)  # History is missing
-    assert meta["XCEN"] == 505.392 == meta.fov_center.Tx.to_value(u.arcsec)
-    assert meta["YCEN"] == 279.88 == meta.fov_center.Ty.to_value(u.arcsec)
+    assert meta.date_end.isot == "2023-04-08T11:42:01.050"
+    assert meta.date_reference.isot == "2023-04-08T11:09:57.690"
+    assert meta.date_start.isot == "2023-04-08T11:09:57.690"
+    assert_quantity_allclose(meta.distance_to_sun, 1.0011105057794114 * u.AU)
+    assert meta.exposure_control_triggers_in_observation == 0
+    assert meta.exposure_control_triggers_in_raster == 0
+    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 14)  # History is missing
+    assert meta["XCEN"] == -2.73951
+    assert meta["YCEN"] == 945.279
+    assert_quantity_allclose(meta.fov_center.Tx, -2.73951 * u.arcsec)
+    assert_quantity_allclose(meta.fov_center.Ty, 945.279 * u.arcsec)
     assert meta.key_comments == {}
-    assert meta.number_of_unique_raster_positions == 3
+    assert meta.number_of_unique_raster_positions == 16
     assert meta.number_of_raster_positions == 1
     assert meta.observation_includes_saa is True
     assert meta.observatory_at_high_latitude is False
-    assert meta.observing_campaign_start.isot == "2014-03-29T14:09:38.830"
-    assert meta.observing_mode_description == "Very large coarse 8-step raster 14x175 8s  Si IV   Mg II h/k   Mg II"
+    assert meta.observing_campaign_start.isot == "2023-04-08T11:08:21.730"
+    assert meta.observing_mode_description == "Very large coarse 64-step raster 126x175 64s   Deep x 30"
+    observation_times = sji_1400_cube.axis_world_coords("time")[0]
+    assert observation_times.isot.tolist() == ["2023-04-08T11:09:57.690", "2023-04-08T11:42:01.050"]
+    assert [wcs.wcs.dateobs for wcs in sji_1400_cube.basic_wcs] == observation_times.isot.tolist()
 
 
 def test_read_sji_lvl2_masks_scaled_float_bad_pixels(sns_sji_1330_file):

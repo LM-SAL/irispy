@@ -78,6 +78,13 @@ For example, ``TIME`` has the value 0, meaning that ``data[:, 0]`` will give an 
 The technical metadata in the last extension are usually not useful for the end-user.
 Their content is only useful for reproducing the exact steps of the data calibration, and contain details such as FRM, FDB, and CRS IDs, names of level 1 files used.
 
+Exposure timestamps
+-------------------
+
+For slit-jaw data, ``STARTOBS`` plus the auxiliary ``TIME`` value is the exposure start.
+For spectrograph data, the shared auxiliary ``TIME`` follows the FUV exposure start and is retained as ``meta["auxiliary times"]``.
+The NUV exposure starts at a different time and is calculated from its source-filename midpoint minus half its NUV exposure duration.
+
 Reading Level 2 Data
 ====================
 
