@@ -24,7 +24,11 @@ __all__ = ["read_spectrograph_lvl2"]
 
 def _nuv_t_obs_from_source_filenames(source_data, exposure_times, auxiliary_times, *, filename):
     """
-    Return NUV exposure midpoints (T_OBS) from level 1 midpoint filenames.
+    Return NUV exposure midpoints (T_OBS).
+
+    The midpoints are parsed from the level 1 source filenames, which encode the
+    exposure midpoint. Rows with an exposure time of 0 s have no usable source filename,
+    so they fall back to their planned ``auxiliary_times``.
     """
     if source_data is None or len(source_data) != len(exposure_times):
         found = 0 if source_data is None else len(source_data)

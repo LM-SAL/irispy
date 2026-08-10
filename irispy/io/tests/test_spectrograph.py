@@ -241,4 +241,5 @@ def test_read_spectrograph_retains_missing_nuv_exposure(raster_sg_file, tmp_path
     assert "EXPTIMEN is 0 s at row(s) [0]" in caplog.text
     assert cube.meta["exposure time"][0] == 0 * u.s
     assert np.all(cube.mask[0])
+    assert not np.all(cube.mask[1])
     assert abs((times[0] - cube.meta["auxiliary times"][0]).to_value(u.s)) < 1e-6
