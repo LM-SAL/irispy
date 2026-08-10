@@ -22,7 +22,7 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOIS
 __all__ = ["read_spectrograph_lvl2"]
 
 
-def _nuv_exposure_start_times_from_source_filenames(source_data, exposure_times):
+def _nuv_exposure_start_times_from_source_filenames(source_data, exposure_times, auxiliary_times, *, filename):
     """
     Return NUV exposure starts from level 1 midpoint filenames.
     """
@@ -30,15 +30,25 @@ def _nuv_exposure_start_times_from_source_filenames(source_data, exposure_times)
         found = 0 if source_data is None else len(source_data)
         msg = f"Expected {len(exposure_times)} NUV source filename rows, found {found}"
         raise ValueError(msg)
-    if np.any(exposure_times <= 0 * u.s):
-        msg = "Invalid NUV exposure time"
-        raise ValueError(msg)
-    try:
-        timestamps = [Path(filename).name[4:21] for filename in source_data["NUVfilename"]]
-        return Time.strptime(timestamps, "%Y%m%d_%H%M%S%f") - exposure_times / 2
-    except (KeyError, TypeError, ValueError) as error:
-        msg = "Invalid timestamp in NUV source filenames"
-        raise ValueError(msg) from error
+    valid_rows = exposure_times > 0 * u.s
+    exposure_start_times = auxiliary_times.copy()
+    if np.any(valid_rows):
+        try:
+            timestamps = [
+                Path(source_filename).name[4:21] for source_filename in source_data["NUVfilename"][valid_rows]
+            ]
+            exposure_start_times[valid_rows] = (
+                Time.strptime(timestamps, "%Y%m%d_%H%M%S%f") - exposure_times[valid_rows] / 2
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            msg = "Invalid timestamp in NUV source filenames"
+            raise ValueError(msg) from error
+    missing_rows = np.flatnonzero(~valid_rows)
+    if missing_rows.size:
+        logger.warning(
+            f"EXPTIMEN is 0 s at row(s) {missing_rows.tolist()} in {filename}; frames retained with auxiliary times."
+        )
+    return exposure_start_times
 
 
 def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
@@ -184,6 +194,7 @@ def read_spectrograph_lvl2(
             ophaseix = hdulist[-2].data[:, hdulist[-2].header["OPHASEIX"]]
             exposure_times_fuv = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEF"]] * u.s
             exposure_times_nuv = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEN"]] * u.s
+            exposure_start_times_nuv = None
             for i, window_name in enumerate(spectral_windows_req):
                 meta = SGMeta(
                     hdulist[0].header,
@@ -200,10 +211,14 @@ def read_spectrograph_lvl2(
                     exposure_times = exposure_times_nuv
                     dn_unit = DN_UNIT["NUV"]
                     readout_noise = READOUT_NOISE["NUV"]
-                    exposure_start_times = _nuv_exposure_start_times_from_source_filenames(
-                        source_data,
-                        exposure_times,
-                    )
+                    if exposure_start_times_nuv is None:
+                        exposure_start_times_nuv = _nuv_exposure_start_times_from_source_filenames(
+                            source_data,
+                            exposure_times,
+                            aux_times,
+                            filename=filename,
+                        )
+                    exposure_start_times = exposure_start_times_nuv
                 meta.add("exposure time", exposure_times, None, 0)
                 meta.add("exposure FOV center", fov_center, None, 0)
                 meta.add("observer radial velocity", obs_vrix, None, 0)
