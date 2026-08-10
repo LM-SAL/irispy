@@ -9,7 +9,7 @@ from astropy.time import Time
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import _nuv_exposure_start_times_from_source_filenames, read_spectrograph_lvl2
+from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
@@ -190,8 +190,8 @@ def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
 
     fuv_time = raster[windows[0]][0].axis_world_coords("time", wcs=raster[windows[0]][0].extra_coords)[0]
     nuv_time = raster[windows[1]][0].axis_world_coords("time", wcs=raster[windows[1]][0].extra_coords)[0]
-    assert fuv_time[0].isot == "2014-03-29T14:09:39.000"
-    assert nuv_time[0].isot == "2014-03-29T14:09:38.940"
+    assert fuv_time[0].isot == "2014-03-29T14:09:43.000"
+    assert nuv_time[0].isot == "2014-03-29T14:09:42.940"
     assert raster[windows[0]][0].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
 
 
@@ -208,9 +208,7 @@ def test_nuv_times_reject_invalid_source_filename(raster_sg_file):
     source_data["NUVfilename"][0] = ""
 
     with pytest.raises(ValueError, match="Invalid timestamp in NUV source filenames"):
-        _nuv_exposure_start_times_from_source_filenames(
-            source_data, exposure_times, auxiliary_times, filename=raster_sg_file
-        )
+        _nuv_t_obs_from_source_filenames(source_data, exposure_times, auxiliary_times, filename=raster_sg_file)
 
 
 def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_path):
