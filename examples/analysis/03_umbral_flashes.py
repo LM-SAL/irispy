@@ -43,7 +43,7 @@ sji_filename = pooch.retrieve(
 # Since this is a large dataset, we will use memory mapping to read the data values
 # directly from the FITS files without loading them into memory.
 
-raster = read_files(raster_filename, memmap=True)
+raster = read_files(raster_filename, memmap=True, spectral_windows=["Mg II k 2796", "C II 1336"])
 sji_1400 = read_files(sji_filename, memmap=True)
 
 ###############################################################################

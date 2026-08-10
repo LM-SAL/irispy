@@ -191,7 +191,7 @@ We use the same command to read and load the data from a SJI level 2 file:
     Observatory:           IRIS
     Instrument:            SJI
     Bandpass:              1330.0
-    Obs Date:              2021-10-01T06:09:25.020 -- 2021-10-01T06:11:37.580
+    Obs Date:              2021-10-01T06:09:25.270 -- 2021-10-01T06:11:37.830
     Total Frames in Obs:   None
     Obs ID:                3683602040
     Obs Description:       Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2

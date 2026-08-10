@@ -43,7 +43,7 @@ iris_raster_tar = pooch.retrieve(
 # Since this is a large dataset, we will use memory mapping to read the data values
 # directly from the FITS files without loading them into memory.
 
-raster = read_files(iris_raster_tar, memmap=True)
+raster = read_files(iris_raster_tar, memmap=True, spectral_windows="Mg II k 2796")
 
 ###############################################################################
 # We are after the Mg II k window, which we can select using a key.
