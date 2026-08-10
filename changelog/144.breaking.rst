@@ -1,4 +1,0 @@
-Simplified `irispy.utils.red_blue.calculate_red_blue_asymmetry` by removing low-level tuning arguments that are now handled internally.
-The function now always centers profiles on the line peak, uses uncertainty from the input cube when available, and derives its interpolation window from ``velocity_range``.
-The function now takes ``degree`` instead of ``interpolation_kind``, and removes ``mask_negative`` (now always applied), ``uncertainty``, ``center_on_peak``, ``velocity_window``, and ``fit_window``.
-The output now contains only the red-blue asymmetry map, quality map, optional uncertainty map, and optional profile cubes.

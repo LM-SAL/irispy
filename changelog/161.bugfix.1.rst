@@ -1,1 +1,0 @@
-The time coordinates for SJI and spectrograph data are now the exposure midpoints (``T_OBS``, i.e., start time plus half the exposure time) instead of the exposure start times.

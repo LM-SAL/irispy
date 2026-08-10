@@ -1,3 +1,39 @@
+0.8.0 (2026-08-10)
+==================
+
+Breaking Changes
+----------------
+
+- Simplified `irispy.utils.red_blue.calculate_red_blue_asymmetry` by removing low-level tuning arguments that are now handled internally.
+  The function now always centers profiles on the line peak, uses uncertainty from the input cube when available, and derives its interpolation window from ``velocity_range``.
+  The function now takes ``degree`` instead of ``interpolation_kind``, and removes ``mask_negative`` (now always applied), ``uncertainty``, ``center_on_peak``, ``velocity_window``, and ``fit_window``.
+  The output now contains only the red-blue asymmetry map, quality map, optional uncertainty map, and optional profile cubes. (`#144 <https://github.com/LM-SAL/irispy/pull/144>`__)
+
+
+New Features
+------------
+
+- Add ``spectral_dispersion`` and ``solid_angle`` properties to ``SpectrogramCube``. (`#141 <https://github.com/LM-SAL/irispy/pull/141>`__)
+- Exposed much more FITS metadata to the user via the ``meta``. (`#142 <https://github.com/LM-SAL/irispy/pull/142>`__)
+
+
+Bug Fixes
+---------
+
+- Preserve the Level 2 spectrograph slit WCS instead of applying detector pointing offsets a second time, use detector-specific source-file timestamps for raster exposures, and expose the AUX-derived times in the cube metadata. (`#158 <https://github.com/LM-SAL/irispy/pull/158>`__)
+- Use the per-step AUX pointing values in a FITS-TAB WCS for spectrograph rasters and sit-and-stare observations, and
+  correct the observer coordinate and observation time stored in the WCS. (`#159 <https://github.com/LM-SAL/irispy/pull/159>`__)
+- The time coordinates for SJI and spectrograph data are now the exposure midpoints (``T_OBS``, i.e., start time plus half the exposure time) instead of the exposure start times. (`#161 <https://github.com/LM-SAL/irispy/pull/161>`__)
+- Spectrograph files with missing NUV exposures (``EXPTIMEN`` of 0 s) are now read instead of raising an error. (`#161 <https://github.com/LM-SAL/irispy/pull/161>`__)
+
+
+Documentation
+-------------
+
+- Revamped both cosmic ray removal examples to split focus between SG and SJI data. (`#139 <https://github.com/LM-SAL/irispy/pull/139>`__)
+- Correct and expand the SJI and spectrograph slit-coordinate comparison to show NUV and FUV detector offsets. (`#156 <https://github.com/LM-SAL/irispy/pull/156>`__)
+
+
 0.7.0 (2026-05-07)
 ==================
 

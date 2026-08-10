@@ -1,2 +1,0 @@
-Use the per-step AUX pointing values in a FITS-TAB WCS for spectrograph rasters and sit-and-stare observations, and
-correct the observer coordinate and observation time stored in the WCS.

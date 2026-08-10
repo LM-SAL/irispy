@@ -1,1 +1,0 @@
-Add ``spectral_dispersion`` and ``solid_angle`` properties to ``SpectrogramCube``.

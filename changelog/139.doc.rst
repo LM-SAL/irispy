@@ -1,1 +1,0 @@
-Revamped both cosmic ray removal examples to split focus between SG and SJI data.
