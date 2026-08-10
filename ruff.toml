@@ -11,6 +11,7 @@ lint.extend-select = [
     "ALL",
 ]
 lint.extend-ignore = [
+    "CPY001", # Missing copyright notice at top of file
     "I", # Ignore isort
     "ANN001", # Missing type annotation for function argument
     "ANN002", # Missing type annotation for variable
@@ -41,6 +42,7 @@ lint.extend-ignore = [
     "PLR0912", # Too many branches (31 > 12)
     "PLR0913", # Too many arguments in function definition
     "PLR0915", # Too many statements (91 > 50)
+    "PLR0917", # Too many positional arguments
     "PLR2004", # Magic value used in comparison
     "SLF001", # Private member accessed
     "TD001", # Invalid TODO tag: `FIXME`
