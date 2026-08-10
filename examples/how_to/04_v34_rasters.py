@@ -42,8 +42,6 @@ raster_filename = pooch.retrieve(
 #
 # By default, irispy will read the v34 data, flipping the data so that it
 # is in the same orientation as normal IRIS data and adjust the WCS accordingly.
-#
-# We only load the spectral window used in this example, to keep the memory usage low.
 
 raster = read_files(raster_filename, spectral_windows="Mg II k 2796")
 # We will also undo the v34 handling and read the data as is.
