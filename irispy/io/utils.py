@@ -208,7 +208,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                 group_key = _get_spec_group_key(filename)
                 spec_groups.setdefault(group_key, []).append(filename)
             else:
-                log.warning(f"INSTRUME: {instrume} was not recognized and not loaded")
+                log.warning(f"File {filename} has unrecognized INSTRUME={instrume!r} and was not loaded")
         except Exception as e:
             if allow_errors:
                 log.warning(f"File {filename} failed to load with {e}")

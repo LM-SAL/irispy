@@ -45,7 +45,7 @@ raster_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-raster = read_files(raster_filename)
+raster = read_files(raster_filename, spectral_windows="Mg II k 2796")
 
 ###############################################################################
 # We will just focus on the Mg II k 2796 line which we can select using a key.

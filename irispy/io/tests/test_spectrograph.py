@@ -5,10 +5,12 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.time import Time
 
 from sunpy.coordinates import Helioprojective
 
-from irispy.io.spectrograph import _nuv_exposure_start_times_from_source_filenames, read_spectrograph_lvl2
+from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -188,8 +190,8 @@ def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
 
     fuv_time = raster[windows[0]][0].axis_world_coords("time", wcs=raster[windows[0]][0].extra_coords)[0]
     nuv_time = raster[windows[1]][0].axis_world_coords("time", wcs=raster[windows[1]][0].extra_coords)[0]
-    assert fuv_time[0].isot == "2014-03-29T14:09:39.000"
-    assert nuv_time[0].isot == "2014-03-29T14:09:38.940"
+    assert fuv_time[0].isot == "2014-03-29T14:09:43.000"
+    assert nuv_time[0].isot == "2014-03-29T14:09:42.940"
     assert raster[windows[0]][0].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
 
 
@@ -202,10 +204,11 @@ def test_nuv_times_reject_invalid_source_filename(raster_sg_file):
     with fits.open(raster_sg_file) as hdulist:
         source_data = hdulist[-1].data.copy()
         exposure_times = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEN"]] * u.s
+        auxiliary_times = Time(np.arange(len(exposure_times)), format="unix")
     source_data["NUVfilename"][0] = ""
 
     with pytest.raises(ValueError, match="Invalid timestamp in NUV source filenames"):
-        _nuv_exposure_start_times_from_source_filenames(source_data, exposure_times)
+        _nuv_t_obs_from_source_filenames(source_data, exposure_times, auxiliary_times, filename=raster_sg_file)
 
 
 def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_path):
@@ -219,11 +222,24 @@ def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_
         read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")
 
 
-def test_read_spectrograph_rejects_invalid_exposure_time(raster_sg_file, tmp_path):
-    filename = tmp_path / "invalid_exposure_time.fits"
+def test_read_spectrograph_retains_missing_nuv_exposure(raster_sg_file, tmp_path, caplog):
+    filename = tmp_path / "missing_nuv_exposure.fits"
     with fits.open(raster_sg_file, memmap=False) as hdulist:
         hdulist[-2].data[0, hdulist[-2].header["EXPTIMEN"]] = 0
+        window_index = next(
+            i for i in range(1, hdulist[0].header["NWIN"] + 1) if hdulist[0].header[f"TDESC{i}"] == "Mg II k 2796"
+        )
+        hdulist[window_index].data[0] = BAD_PIXEL_VALUE_SCALED
         hdulist.writeto(filename)
 
-    with pytest.raises(ValueError, match="Invalid NUV exposure time"):
-        read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")
+    with caplog.at_level("WARNING", logger="sunpy"):
+        raster = read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")
+
+    cube = raster["Mg II k 2796"][0]
+    times = cube.axis_world_coords("time", wcs=cube.extra_coords)[0]
+    assert str(filename) in caplog.text
+    assert "EXPTIMEN is 0 s at row(s) [0]" in caplog.text
+    assert cube.meta["exposure time"][0] == 0 * u.s
+    assert np.all(cube.mask[0])
+    assert not np.all(cube.mask[1])
+    assert abs((times[0] - cube.meta["auxiliary times"][0]).to_value(u.s)) < 1e-6

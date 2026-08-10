@@ -24,11 +24,7 @@ if on_rtd:
     os.environ["HOME"] = "/home/docs/"
     os.environ["LANG"] = "C"
     os.environ["LC_ALL"] = "C"
-    os.environ["PARFIVE_HIDE_PROGRESS"] = "True"
-
-# Enable extra Sphinx-Gallery runtime and memory reporting only for the
-# GitHub Actions gallery tox job. Do not enable this on Read the Docs.
-profile_gallery = os.environ.get("IRISPY_GALLERY_PROFILE") == "1" and not on_rtd
+os.environ["PARFIVE_HIDE_PROGRESS"] = "True"
 
 # -- Project information ------------------------------------------------------
 
@@ -204,6 +200,10 @@ autoclass_content = "both"
 # Configuration for sphinx-gallery
 from sunpy_sphinx_theme import PNG_ICON
 from sphinx_gallery.sorting import ExplicitOrder
+
+# Enable extra Sphinx-Gallery runtime and memory reporting only for the
+# GitHub Actions gallery tox job. Do not enable this on Read the Docs.
+profile_gallery = os.environ.get("IRISPY_GALLERY_PROFILE") == "1" and not on_rtd
 
 sphinx_gallery_conf = {
     "backreferences_dir": str(Path("generated") / "modules"),

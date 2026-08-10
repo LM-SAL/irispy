@@ -1,0 +1,1 @@
+Spectrograph files with missing NUV exposures (``EXPTIMEN`` of 0 s) are now read instead of raising an error.

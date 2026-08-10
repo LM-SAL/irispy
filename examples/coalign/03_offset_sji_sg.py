@@ -39,7 +39,7 @@ sji_filename = pooch.retrieve(
 ###############################################################################
 # Now to open the files using ``irispy``.
 
-raster = read_files(raster_filename)
+raster = read_files(raster_filename, spectral_windows=["Mg II k 2796", "C II 1336"])
 sji_2796 = read_files(sji_filename)
 
 ###############################################################################

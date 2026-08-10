@@ -96,7 +96,7 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert meta.observing_campaign_start.isot == "2023-04-08T11:08:21.730"
     assert meta.observing_mode_description == "Very large coarse 64-step raster 126x175 64s   Deep x 30"
     observation_times = sji_1400_cube.axis_world_coords("time")[0]
-    assert observation_times.isot.tolist() == ["2023-04-08T11:09:57.690", "2023-04-08T11:42:01.050"]
+    assert observation_times.isot.tolist() == ["2023-04-08T11:10:12.690", "2023-04-08T11:42:16.050"]
     assert [wcs.wcs.dateobs for wcs in sji_1400_cube.basic_wcs] == observation_times.isot.tolist()
 
 

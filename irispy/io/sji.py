@@ -17,9 +17,9 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUE_UNSCA
 __all__ = ["read_sji_lvl2"]
 
 
-def _exposure_start_times(hdulist):
+def _t_obs(hdulist):
     """
-    Return the SJI exposure starts stored as ``STARTOBS + AUX TIME``.
+    Return the SJI exposure midpoints (T_OBS): ``STARTOBS + AUX TIME + EXPTIMES / 2``.
     """
     frame_count = len(hdulist[0].data)
     auxiliary_count = len(hdulist[1].data)
@@ -28,11 +28,11 @@ def _exposure_start_times(hdulist):
         raise ValueError(msg)
 
     return Time(hdulist[0].header["STARTOBS"], format="isot", scale="utc") + (
-        hdulist[1].data[:, hdulist[1].header["TIME"]] * u.s
+        (hdulist[1].data[:, hdulist[1].header["TIME"]] + hdulist[1].data[:, hdulist[1].header["EXPTIMES"]] / 2) * u.s
     )
 
 
-def _create_gwcs(hdulist: fits.HDUList, exposure_start_times) -> gwcs.WCS:
+def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     """
     Creates the GWCS object for the SJI file.
 
@@ -58,8 +58,8 @@ def _create_gwcs(hdulist: fits.HDUList, exposure_start_times) -> gwcs.WCS:
         crval_table=crval_table * u.arcsec,
         crpix_table=crpix_table * u.pixel,
     )
-    start_time = exposure_start_times[0]
-    cadence = (exposure_start_times - start_time).to_value(u.s) * u.s
+    start_time = t_obs[0]
+    cadence = (t_obs - start_time).to_value(u.s) * u.s
     temporal = m.Tabular1D(
         np.arange(hdulist[1].data.shape[0]) * u.pix,
         lookup_table=cadence,
@@ -89,7 +89,7 @@ def _create_gwcs(hdulist: fits.HDUList, exposure_start_times) -> gwcs.WCS:
     return gwcs.WCS(forward_transform, input_frame=input_frame, output_frame=output_frame)
 
 
-def _create_headers_wcs(hdulist, exposure_start_times):
+def _create_headers_wcs(hdulist, t_obs):
     """
     This is required as occasionally we need a normal WCS instead of a gWCS due to
     compatibility issues.
@@ -131,12 +131,12 @@ def _create_headers_wcs(hdulist, exposure_start_times):
             nonzero_vals = array[nonzero_idx]
             array[zero_idx] = np.interp(zero_idx, nonzero_idx, nonzero_vals)
     for i in range(hdulist[0].header["NAXIS3"]):
-        location = get_body_heliographic_stonyhurst("Earth", exposure_start_times[i].isot)
+        location = get_body_heliographic_stonyhurst("Earth", t_obs[i].isot)
         observer = Helioprojective(
             xcenix_values[i] * u.arcsec,
             ycenix_values[i] * u.arcsec,
             observer=location,
-            obstime=exposure_start_times[i],
+            obstime=t_obs[i],
         )
         rotation_matrix = np.asanyarray(
             [
@@ -187,7 +187,7 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
     with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
         hdulist.verify("silentfix")
         instrume = hdulist[0].header["INSTRUME"]
-        exposure_start_times = _exposure_start_times(hdulist)
+        t_obs = _t_obs(hdulist)
         extra_coords = [
             (
                 "exposure time",
@@ -239,13 +239,13 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
         map_cube = cube_class(
             data_nan_masked,
-            _create_gwcs(hdulist, exposure_start_times),
+            _create_gwcs(hdulist, t_obs),
             uncertainty=out_uncertainty,
             unit=unit,
             meta=SJIMeta(hdulist[0].header),
             mask=mask,
             scaled=scaled,
-            _basic_wcs=_create_headers_wcs(hdulist, exposure_start_times),
+            _basic_wcs=_create_headers_wcs(hdulist, t_obs),
         )
         [map_cube.extra_coords.add(*extra_coord) for extra_coord in extra_coords]
     return map_cube
