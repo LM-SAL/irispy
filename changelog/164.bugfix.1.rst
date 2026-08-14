@@ -1,3 +1,0 @@
-`~irispy.utils.spectrograph.radiometric_calibration` no longer returns infinite or
-wildly amplified values for wavelengths outside the spectral ranges covered by the
-response file (e.g., the blue end of a full-CCD Si IV window).

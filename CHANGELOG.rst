@@ -1,3 +1,25 @@
+0.8.1 (2026-08-14)
+==================
+
+Bug Fixes
+---------
+
+- `~irispy.utils.spectrograph.radiometric_calibration` no longer returns infinite or
+  wildly amplified values for wavelengths outside the spectral ranges covered by the
+  response file (e.g., the blue end of a full-CCD Si IV window). (`#164 <https://github.com/LM-SAL/irispy/pull/164>`__)
+- Fixed `~irispy.io.spectrograph.read_spectrograph_lvl2` (used by `~irispy.io.read_files`)
+  assigning data to the wrong spectral window when ``spectral_windows`` was passed
+  in an order different from the order of the windows in the file. (`#164 <https://github.com/LM-SAL/irispy/pull/164>`__)
+
+
+Documentation
+-------------
+
+- The example gallery now executes examples in parallel (inheriting sphinx's ``-j``),
+  significantly reducing documentation build times. Setting ``IRISPY_GALLERY_PROFILE=1``
+  falls back to serial execution since memory profiling requires it. (`#164 <https://github.com/LM-SAL/irispy/pull/164>`__)
+
+
 0.8.0 (2026-08-10)
 ==================
 

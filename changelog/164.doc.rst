@@ -1,3 +1,0 @@
-The example gallery now executes examples in parallel (inheriting sphinx's ``-j``),
-significantly reducing documentation build times. Setting ``IRISPY_GALLERY_PROFILE=1``
-falls back to serial execution since memory profiling requires it.

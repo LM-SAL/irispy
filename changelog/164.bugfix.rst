@@ -1,3 +1,0 @@
-Fixed `~irispy.io.spectrograph.read_spectrograph_lvl2` (used by `~irispy.io.read_files`)
-assigning data to the wrong spectral window when ``spectral_windows`` was passed
-in an order different from the order of the windows in the file.
