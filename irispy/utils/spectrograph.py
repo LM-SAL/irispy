@@ -53,6 +53,14 @@ def radiometric_calibration(
     The major difference being that the output here is accounting for the wavelength, which is why the units
     here are :math:`erg s^{-1} sr^{-1} cm^{-2} Å^{-1}` and not :math:`erg s^{-1} sr^{-1} cm^{-2}`.
     Notice the extra :math:`Å^{-1}` in the units.
+
+    The response file only defines the effective area within the nominal spectral
+    ranges of each band, while some observations read out wider spectral windows
+    (e.g., a full-CCD Si IV window reaching blueward of ~1389 Å). The upstream IDL
+    code divides by the zero effective area there and silently returns infinities;
+    here those wavelengths are instead set to NaN in the output data. The mask is
+    left untouched (it is copied from the input cube) so nothing is hidden beyond
+    what was already flagged as bad in the level 2 data.
     """
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])

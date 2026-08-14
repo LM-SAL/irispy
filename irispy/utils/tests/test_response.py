@@ -258,6 +258,27 @@ def test_plot_idl_vs_python_sji_4(idl_response):
     return fig
 
 
+def test_get_interpolated_effective_area_uncovered_wavelengths_are_nan():
+    # Wavelengths outside the spectral ranges covered by the response file
+    # (including the gap between the two FUV CCDs) must come back as NaN
+    # instead of zero/near-zero values that blow up the calibration.
+    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    # 1385 A is in the FUV1/FUV2 gap, 1394 A and 2796 A are covered.
+    fuv_area = get_interpolated_effective_area(
+        iris_response,
+        detector_type="FUV",
+        obs_wavelength=[1385, 1394] * u.Angstrom,
+    )
+    assert np.isnan(fuv_area[0])
+    assert fuv_area[1] > 0 * u.cm**2
+    nuv_area = get_interpolated_effective_area(
+        iris_response,
+        detector_type="NUV",
+        obs_wavelength=[2796] * u.Angstrom,
+    )
+    assert nuv_area[0] > 0 * u.cm**2
+
+
 @figure_test
 def test_plot_get_interpolated_effective_area():
     # The idea is that this plot should look the same as the plot for test_plot_idl_vs_python_fuv_sg
