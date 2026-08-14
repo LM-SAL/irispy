@@ -228,6 +228,8 @@ sphinx_gallery_conf = {
     "matplotlib_animations": True,
     "write_computation_times": profile_gallery,
     "show_memory": profile_gallery,
+    # Inherits sphinx's -j; memory profiling only works with serial execution.
+    "parallel": not profile_gallery,
 }
 
 
