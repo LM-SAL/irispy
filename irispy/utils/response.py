@@ -350,8 +350,22 @@ def get_interpolated_effective_area(iris_response, detector_type, obs_wavelength
 
     Returns
     -------
-    `numpy.array`
+    `astropy.units.Quantity`
         The effective area(s) determined by interpolation with a spline fit.
+        Wavelengths outside the spectral ranges covered by the response file
+        are returned as NaN.
+
+    Notes
+    -----
+    The response file only defines the effective area within the nominal
+    spectral ranges of each band (e.g., ~1388-1408 Å for FUV2); outside of
+    these, the upstream IDL code (``iris_get_response.pro``) sets it to zero.
+    Some observations read out spectral windows wider than these nominal
+    ranges, and dividing by a zero (or partially interpolated near-zero)
+    effective area there produces infinite or wildly amplified values, as the
+    IDL code (``iris_calib_spectrum.pro``) silently does. Instead, this
+    function returns NaN for such wavelengths, making it explicit in the data
+    that no calibration is available there.
     """
     if detector_type.startswith("FUV"):
         detector_type_index = 0
@@ -369,4 +383,11 @@ def get_interpolated_effective_area(iris_response, detector_type, obs_wavelength
         eff_area,
         k=1,
     )
-    return tck(obs_wavelength) * u.cm**2
+    eff_area_interp = tck(obs_wavelength)
+    # The response file sets the effective area to 0 outside the nominal spectral
+    # ranges. Only wavelengths bracketed by two nonzero response points are
+    # covered; interpolating the support indicator keeps the gap between the two
+    # FUV CCDs excluded as well.
+    supported = make_interp_spline(response_wavelength, (eff_area > 0).astype(float), k=1)(obs_wavelength) > 0.999
+    eff_area_interp[~supported] = np.nan
+    return eff_area_interp * u.cm**2

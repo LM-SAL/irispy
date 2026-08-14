@@ -173,7 +173,11 @@ def read_spectrograph_lvl2(
                 missing_windows = spectral_windows_req[~window_is_in_obs]
                 msg = f"Spectral windows {missing_windows.tolist()} not in file {filenames[0]}"
                 raise ValueError(msg)
-            window_fits_indices = np.nonzero(np.isin(windows_in_obs, spectral_windows))[0] + 1
+            # Indices must follow the order of the requested windows, not the file order,
+            # since they are zipped with ``spectral_windows_req`` below.
+            window_fits_indices = [
+                int(np.nonzero(windows_in_obs == window)[0][0]) + 1 for window in spectral_windows_req
+            ]
         data_dict = {window_name: [] for window_name in spectral_windows_req}
         base_time = Time(hdulist[0].header["DATE_OBS"])
         observer = get_body_heliographic_stonyhurst("Earth", base_time)

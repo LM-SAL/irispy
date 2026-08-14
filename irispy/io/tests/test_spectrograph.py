@@ -13,6 +13,14 @@ from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectr
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
+def test_spectral_windows_order_read_spectrograph_lvl2(sns_sg_file):
+    # Requesting windows in an order different from the file order must not swap the data.
+    all_windows = read_spectrograph_lvl2(sns_sg_file)
+    subset = read_spectrograph_lvl2(sns_sg_file, spectral_windows=["Mg II k 2796", "Si IV 1394"])
+    for key in subset:
+        np.testing.assert_array_equal(subset[key][0].data, all_windows[key][0].data)
+
+
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
     raster_collection = read_spectrograph_lvl2(sns_sg_file)
     assert list(raster_collection.keys()) == [

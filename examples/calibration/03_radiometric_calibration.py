@@ -21,6 +21,7 @@ Please refer to
 """
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pooch
 
 import astropy.units as u
@@ -45,16 +46,19 @@ raster_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-raster = read_files(raster_filename, spectral_windows="Mg II k 2796")
+raster = read_files(raster_filename, spectral_windows=["Mg II k 2796", "Si IV 1394"])
 
 ###############################################################################
-# We will just focus on the Mg II k 2796 line which we can select using a key.
-# Then we will just plot a spectral line selected at random in space.
+# We will focus on the Mg II k 2796 (NUV) and Si IV 1394 (FUV) lines which we
+# can select using a key. Then we will just plot a spectral line selected at
+# random in space.
 
 # There is only one complete scan, so we index that away.
 # We also only take the first scan of the sequence to reduce memory usage for
 # the online documentation build.
 mg_ii_k_2796 = raster["Mg II k 2796"][0][0]
+si_iv_1394 = raster["Si IV 1394"][0][0]
+
 del raster
 
 ###############################################################################
@@ -76,35 +80,53 @@ del raster
 # Within `irispy`, there is a function called `irispy.utils.spectrograph.radiometric_calibration` that handles this process.
 
 calibrated_mg_ii_k_2796 = radiometric_calibration(mg_ii_k_2796)
+calibrated_si_iv_1394 = radiometric_calibration(si_iv_1394)
 
 ###############################################################################
 # We will now plot both the before and after spectrums at a single spatial
 # pixel to see the difference.
+#
+# We will apply the cube's mask when plotting, which removes bad pixels.
 
-fig, ax = plt.subplots()
-color = "tab:red"
-ax.set_xlabel("Wavelength (Å)")
-ax.set_ylabel("Counts (DN)", color=color)
-ax.plot(
-    mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
-    mg_ii_k_2796.data[100, 10:-20],
-    color=color,
-    linestyle="dashed",
-)
-ax.tick_params(axis="y", labelcolor=color)
 
-ax2 = ax.twinx()
+def plot_before_after(cube, calibrated_cube, title, spectral_slice=slice(None)):
+    fig, ax = plt.subplots()
+    color = "tab:red"
+    ax.set_xlabel("Wavelength (Å)")
+    ax.set_ylabel("Counts (DN)", color=color)
+    ax.plot(
+        cube.spectral_axis[spectral_slice].to(u.angstrom),
+        np.ma.masked_where(cube.mask, cube.data)[100, spectral_slice],
+        color=color,
+        linestyle="dashed",
+    )
+    ax.tick_params(axis="y", labelcolor=color)
+    ax2 = ax.twinx()
+    color = "tab:blue"
+    ax2.plot(
+        calibrated_cube.spectral_axis[spectral_slice].to(u.angstrom),
+        np.ma.masked_where(calibrated_cube.mask, calibrated_cube.data)[100, spectral_slice],
+        color=color,
+    )
+    ax2.set_ylabel("Calibrated Intensity (erg s$^{-1}$ cm$^{-2}$ sr$^{-1}$ Å$^{-1}$)", color=color)
+    ax2.tick_params(axis="y", labelcolor=color)
+    ax.set_title(title)
+    fig.tight_layout()
+    return fig
 
-color = "tab:blue"
-ax2.plot(
-    calibrated_mg_ii_k_2796.spectral_axis[10:-20].to(u.angstrom),
-    calibrated_mg_ii_k_2796.data[100, 10:-20],
-    color=color,
-)
-ax2.set_ylabel("Calibrated Intensity (erg s$^{-1}$ cm$^{-2}$ sr$^{-1}$ Å$^{-1}$)", color=color)
-ax2.tick_params(axis="y", labelcolor=color)
 
-ax.set_title("Mg II k 2796 Spectrum")
-fig.tight_layout()
+plot_before_after(mg_ii_k_2796, calibrated_mg_ii_k_2796, "Mg II k 2796 Spectrum", spectral_slice=slice(10, -20))
+
+###############################################################################
+# Now the same spatial pixel for the Si IV 1394 (FUV) window.
+#
+# This spectral window extends blueward of the nominal FUV spectral range
+# (~1389-1408 Å) within which the response file defines the effective area.
+#
+# `irispy` returns NaN for those wavelengths,
+# which is why the calibrated (blue) curve stops at ~1389 Å while the uncalibrated
+# counts (red) continue to the edge of the window.
+
+plot_before_after(si_iv_1394, calibrated_si_iv_1394, "Si IV 1394 Spectrum")
 
 plt.show()
