@@ -146,7 +146,7 @@ def read_spectrograph_lvl2(
 
     Returns
     -------
-    `RasterCollection`
+    `irispy.spectrograph.RasterCollection`
     """
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
