@@ -42,13 +42,7 @@ jobs:
         apt:
           - ffmpeg
       envs: |
-<<<<<<<
         - linux: py314
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-=======
-        - linux: py313
->>>>>>>
 
   sdist_verify:
     runs-on: ubuntu-latest
@@ -114,7 +108,7 @@ jobs:
     with:
       default_python: '3.13'
       submodules: false
-      coverage: codecov
+      coverage: codecov-oidc
       toxdeps: tox-pypi-filter
       libraries: |
         apt:
@@ -130,8 +124,6 @@ jobs:
             .tox/sample_data/
           cache-key: docs-${{ github.run_id }}
         - linux: py313-online
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   build_dists:
     # Build wheels on PRs only when labelled. Releases will only be published if tagged ^v.*
