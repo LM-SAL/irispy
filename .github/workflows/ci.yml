@@ -32,17 +32,17 @@ permissions: {}
 jobs:
   core:
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@8c8bb6c6c962542921f993d47d26df38dccd50b1  # v3.0.2
+    permissions:
+      id-token: write
     with:
       submodules: false
-      coverage: codecov
+      coverage: codecov-oidc
       toxdeps: tox-pypi-filter
       libraries: |
         apt:
           - ffmpeg
       envs: |
         - linux: py314
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   sdist_verify:
     runs-on: ubuntu-latest
@@ -61,9 +61,11 @@ jobs:
   test:
     needs: [core, sdist_verify]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@8c8bb6c6c962542921f993d47d26df38dccd50b1  # v3.0.2
+    permissions:
+      id-token: write
     with:
       submodules: false
-      coverage: codecov
+      coverage: codecov-oidc
       toxdeps: tox-pypi-filter
       libraries: |
         choco:
@@ -77,8 +79,6 @@ jobs:
         - macos: py313
         - linux: py312-oldestdeps
         - linux: py314-devdeps
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   docs:
     needs: [core]
@@ -105,10 +105,12 @@ jobs:
     if: "!startsWith(github.event.ref, 'refs/tags/v')"
     needs: [docs]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
+    permissions:
+      id-token: write
     with:
       default_python: '3.13'
       submodules: false
-      coverage: codecov
+      coverage: codecov-oidc
       toxdeps: tox-pypi-filter
       libraries: |
         apt:
@@ -124,8 +126,6 @@ jobs:
             .tox/sample_data/
           cache-key: docs-${{ github.run_id }}
         - linux: py313-online
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   build_dists:
     # Build wheels on PRs only when labelled. Releases will only be published if tagged ^v.*
