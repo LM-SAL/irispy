@@ -87,6 +87,26 @@ initial_model = m.Const1D(amplitude=2 * si_iv_1403.unit) + m.Gaussian1D(
 )
 
 ################################################################################
+# This example uses the non-radiometric calibrated data to fit a model to
+# the IRIS Si IV spectral line.
+#
+# There can be cases when the radiometric calibrated data gives
+# spurious values for regions that are not directly relevant around the
+# main spectral line.
+#
+# One way to address this is to do the following:
+
+si_iv_core_window = np.abs(wavelength_coords - si_iv_core) < 0.15 * u.nm  # Adjusting to half-width of the line width
+# We then use this window to define the initial model and change the amplitude to the 10th
+# percentile of the non-core window. This will give a better initial guess for the amplitude if
+# the core window contains spurious values.
+initial_model = m.Const1D(
+    amplitude=np.nanpercentile(spatial_mean.data[~si_iv_core_window], 10) * si_iv_1403.unit
+) + m.Gaussian1D(
+    amplitude=np.nanmax(spatial_mean.data[si_iv_core_window]) * si_iv_1403.unit, mean=si_iv_core, stddev=0.005 * u.nm
+)
+
+################################################################################
 # To improve our initial conditions we now fit the initial model to the spatially averaged spectra.
 # To do this we use the `ndcube.NDCube.axis_world_coords` method of NDCube which returns all,
 # or a subset of the world coordinates along however many array axes they are
