@@ -19,7 +19,6 @@ repos:
       - id: docformatter
         args: ["--black", "--pre-summary-newline", "--pre-summary-space", "--make-summary-multi-line", "--close-quotes-on-newline", "--in-place"]
         types: [python]
-<<<<<<<
         exclude: examples/
   - repo: https://github.com/PyCQA/isort
     rev: 9.0.0a3
@@ -27,10 +26,6 @@ repos:
       - id: isort
         types: [python]
         exclude: *exclude_dirs
-=======
-        # Define here once and then reference using YAML anchor
-        exclude: &exclude_dirs ^irispy/(data|extern)/
->>>>>>>
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
