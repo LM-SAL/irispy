@@ -130,6 +130,42 @@ def test_plot_rgb(si_iv_cube):
     plt.close(fig)
 
 
+def test_plot_rgb_creates_its_own_figure(si_iv_cube):
+    """
+    The commonest call passes no axes at all.
+    """
+    ax = plot_rgb(si_iv_cube)
+    assert ax.get_figure().get_layout_engine() is not None
+    assert ax.collections
+    plt.close(ax.get_figure())
+
+
+def test_plot_rgb_with_axes_outside_a_grid(si_iv_cube):
+    """
+    Axes from `matplotlib.figure.Figure.add_axes` have no grid cell to split, so the
+    colorbar falls back to stealing the space directly.
+    """
+    fig = plt.figure()
+    ax = fig.add_axes((0.1, 0.1, 0.6, 0.8))
+    assert ax.get_subplotspec() is None
+    plot_rgb(si_iv_cube, ax=ax)
+    cax = next(a for a in fig.axes if a.get_ylabel().startswith("Wavelength"))
+    assert cax.collections
+    plt.close(fig)
+
+
+def test_plot_rgb_without_a_rest_wavelength_in_the_metadata(si_iv_cube):
+    """
+    A window with no ``TWAVE`` keyword gets no velocity axis rather than an error.
+    """
+    # This window is index 5, not 1; SGMeta reads TWAVE<iwin>.
+    si_iv_cube.meta.pop(f"TWAVE{si_iv_cube.meta._iwin}")
+    fig, ax = plt.subplots()
+    plot_rgb(si_iv_cube, ax=ax)
+    assert _velocity_axis(fig) is None
+    plt.close(fig)
+
+
 def test_plot_rgb_method_matches_the_function(si_iv_cube):
     fig, (ax_method, ax_function) = plt.subplots(ncols=2)
     si_iv_cube.plot_rgb(ax=ax_method)
