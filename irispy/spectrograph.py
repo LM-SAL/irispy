@@ -12,6 +12,7 @@ from sunraster import SpectrogramSequence as SpecSeq
 
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.cosmic_rays import remove_cosmic_rays
+from irispy.utils.rgb import plot_rgb
 from irispy.visualization import IRISPlotter, IRISSequencePlotter
 
 __all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
@@ -100,6 +101,25 @@ class SpectrogramCube(SpecCube):
 
     def plot(self, *args, **kwargs):
         return self.plotter.plot(*args, **kwargs)
+
+    def plot_rgb(self, **kwargs):
+        """
+        Plot this cube as a false-color image, coloring each pixel by its spectrum.
+
+        This is a convenience wrapper around `irispy.utils.rgb.plot_rgb`, and
+        requires the optional ``colorsynth`` dependency.
+
+        Parameters
+        ----------
+        **kwargs
+            Keyword arguments passed to `irispy.utils.rgb.plot_rgb`.
+
+        Returns
+        -------
+        `matplotlib.axes.Axes`
+            The axes the image was drawn on.
+        """
+        return plot_rgb(self, **kwargs)
 
     def remove_cosmic_rays(
         self,
