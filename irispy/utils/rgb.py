@@ -84,7 +84,11 @@ def _midpoints(a, axis):
     Extend an axis of cell centers by one, placing the new samples between the old.
     """
     if a.shape[axis] < 2:
-        msg = "Both spatial axes need at least two pixels to draw a false-color image"
+        msg = (
+            f"Axis {axis} of the image has only one pixel, so the width of its cells cannot be "
+            "measured from the spacing between them. Use `calculate_rgb` to get the colors "
+            "without a plot."
+        )
         raise ValueError(msg)
     lower = np.take(a, np.arange(a.shape[axis] - 1), axis=axis)
     upper = np.take(a, np.arange(1, a.shape[axis]), axis=axis)
@@ -236,6 +240,9 @@ def calculate_rgb(
     if vmin is None:
         vmin = 0
     if vmax is None:
+        if not np.any(np.isfinite(data)):
+            msg = "Every sample in the cube is masked or non-finite, so there is no intensity range to map"
+            raise ValueError(msg)
         vmax = np.nanpercentile(data, percentile)
     rgb, colorbar = colorsynth.rgb_and_colorbar(
         spd=data,

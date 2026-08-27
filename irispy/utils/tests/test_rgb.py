@@ -87,6 +87,40 @@ def test_calculate_rgb_rejects_a_cube_that_is_not_three_dimensional(si_iv_cube):
         calculate_rgb(si_iv_cube[0])
 
 
+def test_calculate_rgb_rejects_an_entirely_masked_cube():
+    """
+    Without a usable sample there is no percentile to scale by, and the image would
+    otherwise come out uniformly black behind an "All-NaN slice" warning.
+    """
+    wavelengths = 1402.77 * u.AA + np.linspace(-2, 2, 41) * u.AA
+    cube = make_test_spectrogram_cube(np.full((4, 4, wavelengths.size), np.nan), wavelengths)
+    with pytest.raises(ValueError, match="no intensity range to map"):
+        calculate_rgb(cube)
+
+
+def test_calculate_rgb_accepts_an_entirely_masked_cube_with_an_explicit_vmax():
+    wavelengths = 1402.77 * u.AA + np.linspace(-2, 2, 41) * u.AA
+    cube = make_test_spectrogram_cube(np.full((4, 4, wavelengths.size), np.nan), wavelengths)
+    rgb, _ = calculate_rgb(cube, vmax=1)
+    assert np.all(rgb == 0)
+
+
+@pytest.mark.parametrize("shape", [(1, 5), (5, 1)])
+def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
+    """
+    One pixel across leaves no spacing to measure a cell width from, so refuse to invent
+    one and point at the function that works without a plot.
+    """
+    wavelengths = 1402.77 * u.AA + np.linspace(-2, 2, 41) * u.AA
+    data = np.random.default_rng(0).uniform(1, 100, size=(*shape, wavelengths.size))
+    cube = make_test_spectrogram_cube(data, wavelengths)
+    # The colors themselves are still well defined, only the cell edges are not.
+    rgb, _ = calculate_rgb(cube)
+    assert rgb.shape == (*shape, 3)
+    with pytest.raises(ValueError, match=r"only one pixel.*calculate_rgb"):
+        plot_rgb(cube)
+
+
 def test_plot_rgb(si_iv_cube):
     fig, ax = plt.subplots()
     result = plot_rgb(si_iv_cube, ax=ax)
