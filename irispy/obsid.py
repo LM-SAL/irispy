@@ -143,7 +143,7 @@ class ObsID(dict):
             ],
         )
         # field indices, start from largest and subtract
-        for start, end in zip(field_ranges[-2::-1], field_ranges[:0:-1], strict=False):
+        for start, end in zip(field_ranges[-2::-1], field_ranges[:0:-1], strict=True):
             table = table2.iloc[start:end]
             for i in np.arange(start, end)[::-1]:
                 index = i
@@ -157,10 +157,10 @@ class ObsID(dict):
                 attr_name = field_keys[desc.iloc[0]]
                 if attr_name == "exptime":
                     opt = (self._exptime_to_quant(a) for a in list(desc.values))
-                    opt = dict(zip(opt, table["OBS ID"], strict=False))
+                    opt = dict(zip(opt, table["OBS ID"], strict=True))
                     attr_value = self._exptime_to_quant(desc.loc[index])
                 else:
-                    opt = dict(zip(desc, table["OBS ID"], strict=False))
+                    opt = dict(zip(desc, table["OBS ID"], strict=True))
                     attr_value = desc.loc[index].strip()
                 data[attr_name] = attr_value
                 options[attr_name] = opt

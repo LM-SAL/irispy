@@ -56,7 +56,7 @@ def __getattr__(name):
                 zip(
                     _SAMPLE_DATA.keys(),
                     _get_sample_files(_SAMPLE_DATA.values(), no_download=True),
-                    strict=False,
+                    strict=True,
                 )
             )
         )

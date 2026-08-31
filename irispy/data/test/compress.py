@@ -1,25 +1,21 @@
 """
 Shrink real IRIS level 2 FITS files into small test files.
 
-Each ``<name>.fits(.gz)`` input produces a ``<name>_test.fits(.gz)`` file next
-to it - the originals are never modified, so the script can be re-run on the
-same folder freely.
-
 The outputs keep the structure of real files, and the test suite relies on
 these invariants:
 
 - Exposures (the time axis) are decimated by index selection; the data, the
-  auxiliary table, the source-filename table and the NEXP keyword all
-  describe the same selected exposures.
+    auxiliary table, the source-filename table and the NEXP keyword all
+    describe the same selected exposures.
 - Spatial and spectral axes are decimated with a stride, keeping real pixel
-  values only (bad-pixel and saturation sentinels survive exactly), and
-  CDELT/CRPIX are updated so world coordinates still span the original
-  observation.
+    values only (bad-pixel and saturation sentinels survive exactly), and
+    CDELT/CRPIX are updated so world coordinates still span the original
+    observation.
 - The auxiliary table stays second-to-last and the level 1 source-filename
-  table last, as in real files.
+    table last, as in real files.
 - Real spectrograph files understate TFIELDS in the source-filename table
-  header (7 declared for 9 TTYPEn cards); this is repaired before the table
-  is first parsed, since astropy caches the parse.
+    header (7 declared for 9 TTYPEn cards); this is repaired before the table
+    is first parsed, since astropy caches the parse.
 """
 
 import argparse

@@ -36,14 +36,11 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
     """
     Fill the auxiliary pointing columns of dropped exposures, in place.
 
-    A dropped exposure zeroes its entire pointing row (XCENIX, YCENIX and the
-    PC matrix). Individual zeros are valid values - the PC off-diagonals of an
-    unrotated observation are exactly 0, and so is XCENIX/YCENIX when pointing
-    at disk centre - so only rows where every pointing value is zero are
-    treated as gaps. Gaps are filled with the average of the nearest valid
-    neighbour on each side (clamped at the ends), so filled values never
-    leave the neighbours' range and an unrotated (identity) PC matrix stays
-    exactly identity.
+    A dropped exposure zeroes its entire pointing row (XCENIX, YCENIX and the PC
+    matrix). Only rows where every pointing value is zero are treated as gaps. Gaps are
+    filled with the average of the nearest valid neighbor on each side (clamped at the
+    ends), so filled values never leave the neighbors' range and an unrotated PC matrix
+    stays exactly identity.
     """
     columns = [
         hdulist[1].header["XCENIX"],
@@ -143,7 +140,6 @@ def _create_headers_wcs(hdulist, t_obs):
     pc1_2ix = hdulist[1].header["PC1_2IX"]
     pc2_1ix = hdulist[1].header["PC2_1IX"]
     pc2_2ix = hdulist[1].header["PC2_2IX"]
-    # Dropped exposures were interpolated over by _fill_dropped_pointing_rows
     xcenix_values = hdulist[1].data[:, xcenix_idx]
     ycenix_values = hdulist[1].data[:, ycenix_idx]
     pc1_1ix_values = hdulist[1].data[:, pc1_1ix]

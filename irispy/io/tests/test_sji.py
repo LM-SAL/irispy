@@ -143,9 +143,6 @@ def test_smoke_read_sji_lvl2(
 
 
 def test_read_sji_lvl2_unrotated_pointing(tmp_path, sns_sji_1330_file):
-    # Zero PC off-diagonals are valid values (an unrotated observation), not
-    # gaps to interpolate over - reading used to crash when a whole pointing
-    # column was zero.
     filename = tmp_path / "unrotated.fits"
     with fits.open(sns_sji_1330_file, memmap=False) as hdulist:
         for key in ("PC1_2IX", "PC2_1IX"):
@@ -165,9 +162,7 @@ def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file):
     filename = tmp_path / "dropped_row.fits"
     with fits.open(sns_sji_1330_file, memmap=False) as hdulist:
         columns = [hdulist[1].header[key] for key in keys]
-        expected = {
-            key: hdulist[1].data[[0, 2], column].mean() for key, column in zip(keys, columns)
-        }
+        expected = {key: hdulist[1].data[[0, 2], column].mean() for key, column in zip(keys, columns, strict=True)}
         hdulist[1].data[1, columns] = 0.0
         hdulist.writeto(filename)
 
