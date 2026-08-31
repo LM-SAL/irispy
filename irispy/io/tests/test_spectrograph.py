@@ -16,17 +16,19 @@ from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectr
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
-def test_bundled_spectrograph_files_are_self_consistent():
-    # Every bundled level 2 spectrograph file must have one source-filename
-    # table row per exposure and a matching NEXP, like real files do - this
-    # guards against test files regenerated inconsistently by compress.py.
-    filenames = sorted(Path(ROOTDIR).glob("**/iris_l2_*_raster_*.fits"))
+def test_bundled_files_are_self_consistent():
+    # Every bundled level 2 file must have one source-filename table row and
+    # one auxiliary row per exposure and a matching NEXP, like real files do -
+    # this guards against test files regenerated inconsistently by compress.py.
+    filenames = sorted(Path(ROOTDIR).glob("**/iris_l2_*_test.fits"))
     assert filenames
     for filename in filenames:
         with fits.open(filename) as hdulist:
             n_exposures = len(hdulist[-2].data)
             assert len(hdulist[-1].data) == n_exposures, filename.name
             assert hdulist[0].header["NEXP"] == n_exposures, filename.name
+            if hdulist[0].data is not None:  # SJI: the cube is in the primary HDU
+                assert hdulist[0].data.shape[0] == n_exposures, filename.name
 
 
 def test_spectral_windows_order_read_spectrograph_lvl2(sns_sg_file):
