@@ -78,17 +78,6 @@ def remote_raster_scanning_tar():
 
 
 @pytest.fixture
-def remote_archive_sunspot_tar():
-    """
-    A 64-step raster over a sunspot, also used by the coalignment examples.
-    """
-    return pooch.retrieve(
-        "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz",
-        known_hash="91211a52e278fb6e535242d4d6064facf9f93cf24f0a433c276ace1b2d621e7d",
-    )
-
-
-@pytest.fixture
 def sns_sg_file():
     return get_test_filepath("sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits")
 

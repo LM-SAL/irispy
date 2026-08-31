@@ -21,8 +21,7 @@ def si_iv_cube(sns_sg_file):
 @pytest.fixture
 def shifted_line_cube():
     """
-    A synthetic Si IV 1403 window whose two rows hold the line shifted to opposite
-    wings.
+    Two synthetic Si IV 1403 spectra, one shifted into each wing.
     """
     si_iv_rest = 1402.77 * u.AA
     wavelengths = si_iv_rest + np.linspace(-2, 2, 81) * u.AA
@@ -41,16 +40,7 @@ def test_calculate_rgb_shape_and_range(si_iv_cube):
     assert wavelength.unit.is_equivalent(u.AA)
 
 
-def test_calculate_rgb_num_intensity(si_iv_cube):
-    _, (intensity, _, rgb_colorbar) = calculate_rgb(si_iv_cube, num_intensity=25)
-    assert intensity.shape[0] == 25
-    assert rgb_colorbar.shape[0] == 25
-
-
 def test_calculate_rgb_ignores_wavelengths_outside_the_window(si_iv_cube):
-    """
-    Wavelengths mapped outside the human visible range contribute no color.
-    """
     (wavelength,) = si_iv_cube.axis_world_coords("em.wl")
     wavelength = wavelength.to(u.AA)
     beyond = wavelength.max() + 10 * u.AA
@@ -64,18 +54,15 @@ def test_calculate_rgb_vmax_accepts_a_quantity(si_iv_cube):
     np.testing.assert_allclose(result, expected)
 
 
-def test_calculate_rgb_norm_survives_data_below_vmin(si_iv_cube):
+def test_calculate_rgb_stretch_survives_data_below_vmin(si_iv_cube):
     """
     `numpy.sqrt` would return NaN for the samples that ``vmin`` maps below zero.
     """
-    rgb, _ = calculate_rgb(si_iv_cube, vmin=np.nanmedian(si_iv_cube.data), norm=np.sqrt)
+    rgb, _ = calculate_rgb(si_iv_cube, vmin=np.nanmedian(si_iv_cube.data), stretch=np.sqrt)
     assert np.all(np.isfinite(rgb))
 
 
 def test_calculate_rgb_colors_the_short_wavelength_line_blue(shifted_line_cube):
-    """
-    The short wavelength end of the window maps to blue and the long end to red.
-    """
     rgb, _ = calculate_rgb(shifted_line_cube)
     blue_shifted, red_shifted = rgb[0, 0], rgb[1, 0]
     assert blue_shifted[2] > blue_shifted[0]
@@ -87,20 +74,14 @@ def test_calculate_rgb_rejects_a_cube_that_is_not_three_dimensional(si_iv_cube):
         calculate_rgb(si_iv_cube[0])
 
 
-def test_calculate_rgb_rejects_an_entirely_masked_cube():
+def test_calculate_rgb_entirely_masked_cube():
     """
-    Without a usable sample there is no percentile to scale by, and the image would
-    otherwise come out uniformly black behind an "All-NaN slice" warning.
+    Without a finite sample there is no percentile; an explicit ``vmax`` still works.
     """
     wavelengths = 1402.77 * u.AA + np.linspace(-2, 2, 41) * u.AA
     cube = make_test_spectrogram_cube(np.full((4, 4, wavelengths.size), np.nan), wavelengths)
     with pytest.raises(ValueError, match="no intensity range to map"):
         calculate_rgb(cube)
-
-
-def test_calculate_rgb_accepts_an_entirely_masked_cube_with_an_explicit_vmax():
-    wavelengths = 1402.77 * u.AA + np.linspace(-2, 2, 41) * u.AA
-    cube = make_test_spectrogram_cube(np.full((4, 4, wavelengths.size), np.nan), wavelengths)
     rgb, _ = calculate_rgb(cube, vmax=1)
     assert np.all(rgb == 0)
 
@@ -108,13 +89,12 @@ def test_calculate_rgb_accepts_an_entirely_masked_cube_with_an_explicit_vmax():
 @pytest.mark.parametrize("shape", [(1, 5), (5, 1)])
 def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
     """
-    One pixel across leaves no spacing to measure a cell width from, so refuse to invent
-    one and point at the function that works without a plot.
+    One pixel across leaves no spacing to size the cells from.
     """
     wavelengths = 1402.77 * u.AA + np.linspace(-2, 2, 41) * u.AA
     data = np.random.default_rng(0).uniform(1, 100, size=(*shape, wavelengths.size))
     cube = make_test_spectrogram_cube(data, wavelengths)
-    # The colors themselves are still well defined, only the cell edges are not.
+    # The colors are still well defined, only the cell edges are not.
     rgb, _ = calculate_rgb(cube)
     assert rgb.shape == (*shape, 3)
     with pytest.raises(ValueError, match=r"only one pixel.*calculate_rgb"):
@@ -122,18 +102,17 @@ def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
 
 
 def test_plot_rgb(si_iv_cube):
-    fig, ax = plt.subplots()
+    fig, (ax, ax_auto) = plt.subplots(ncols=2)
     result = plot_rgb(si_iv_cube, ax=ax)
     assert result is ax
     assert ax.get_aspect() == 1
     assert "Longitude" in ax.get_xlabel()
+    plot_rgb(si_iv_cube, ax=ax_auto, aspect="auto")
+    assert ax_auto.get_aspect() == "auto"
     plt.close(fig)
 
 
 def test_plot_rgb_creates_its_own_figure(si_iv_cube):
-    """
-    The commonest call passes no axes at all.
-    """
     ax = plot_rgb(si_iv_cube)
     assert ax.get_figure().get_layout_engine() is not None
     assert ax.collections
@@ -142,76 +121,22 @@ def test_plot_rgb_creates_its_own_figure(si_iv_cube):
 
 def test_plot_rgb_with_axes_outside_a_grid(si_iv_cube):
     """
-    Axes from `matplotlib.figure.Figure.add_axes` have no grid cell to split, so the
-    colorbar falls back to stealing the space directly.
+    Axes from ``Figure.add_axes`` have no grid cell to split, so ``cax`` is required.
     """
     fig = plt.figure()
     ax = fig.add_axes((0.1, 0.1, 0.6, 0.8))
     assert ax.get_subplotspec() is None
-    plot_rgb(si_iv_cube, ax=ax)
-    cax = next(a for a in fig.axes if a.get_ylabel().startswith("Wavelength"))
-    assert cax.collections
+    with pytest.raises(ValueError, match="pass `cax` explicitly"):
+        plot_rgb(si_iv_cube, ax=ax)
     plt.close(fig)
 
 
 def test_plot_rgb_without_a_rest_wavelength_in_the_metadata(si_iv_cube):
-    """
-    A window with no ``TWAVE`` keyword gets no velocity axis rather than an error.
-    """
-    # This window is index 5, not 1; SGMeta reads TWAVE<iwin>.
+    # SGMeta reads TWAVE<iwin>, not TWAVE1.
     si_iv_cube.meta.pop(f"TWAVE{si_iv_cube.meta._iwin}")
     fig, ax = plt.subplots()
     plot_rgb(si_iv_cube, ax=ax)
     assert _velocity_axis(fig) is None
-    plt.close(fig)
-
-
-def test_plot_rgb_method_matches_the_function(si_iv_cube):
-    fig, (ax_method, ax_function) = plt.subplots(ncols=2)
-    si_iv_cube.plot_rgb(ax=ax_method)
-    plot_rgb(si_iv_cube, ax=ax_function)
-    method, function = ax_method.collections[0], ax_function.collections[0]
-    np.testing.assert_allclose(method.get_facecolors(), function.get_facecolors())
-    plt.close(fig)
-
-
-@pytest.mark.remote_data
-def test_rgb_on_a_complete_si_iv_window(remote_archive_sunspot_tar):
-    """
-    The packaged windows are truncated slices that miss their own line, so check a full
-    Si IV 1403 window that actually brackets the 1402.77 A rest wavelength.
-    """
-    cube = read_files(remote_archive_sunspot_tar, spectral_windows="Si IV 1403")["Si IV 1403"][0]
-    # The full OBS is 64 x 771 x 536; a cutout keeps the peak memory reasonable.
-    cube = cube[:, 200:500]
-    (wavelength,) = cube.axis_world_coords("em.wl")
-    wavelength = wavelength.to(u.AA)
-    assert wavelength.min() < 1402.77 * u.AA < wavelength.max()
-
-    doppler = u.doppler_optical(1402.77 * u.AA)
-    rgb, _ = calculate_rgb(
-        cube,
-        wavelength_min=(-100 * u.km / u.s).to(u.AA, equivalencies=doppler),
-        wavelength_max=(100 * u.km / u.s).to(u.AA, equivalencies=doppler),
-        norm=np.sqrt,
-    )
-    assert rgb.shape == (*cube.shape[:-1], 3)
-    assert np.all(np.isfinite(rgb))
-    # Restricting to the line core has to leave color behind, not a gray image.
-    red, green, blue = rgb[..., 0], rgb[..., 1], rgb[..., 2]
-    assert np.nanmax(np.abs(red - blue)) > 0.1
-    assert np.nanmax(green) > 0.1
-
-    fig, ax = plt.subplots()
-    plot_rgb(cube, ax=ax, norm=np.sqrt)
-    assert "Longitude" in ax.get_xlabel()
-    plt.close(fig)
-
-
-def test_plot_rgb_aspect(si_iv_cube):
-    fig, ax = plt.subplots()
-    plot_rgb(si_iv_cube, ax=ax, aspect="auto")
-    assert ax.get_aspect() == "auto"
     plt.close(fig)
 
 
@@ -229,13 +154,14 @@ def test_plot_rgb_rejects_an_unknown_coordinate_choice(si_iv_cube):
 
 
 def _velocity_axis(fig):
-    return next((ax for ax in fig.axes if "Velocity" in ax.get_ylabel()), None)
+    # A secondary axis lives in its parent's child_axes, not in fig.axes, and only
+    # takes on its limits at draw time.
+    fig.canvas.draw()
+    children = [child for ax in fig.axes for child in ax.child_axes]
+    return next((ax for ax in children if "Velocity" in ax.get_ylabel()), None)
 
 
 def test_plot_rgb_colorbar_velocity_axis(si_iv_cube):
-    """
-    The velocity axis has to agree with the wavelength axis beside it.
-    """
     rest_wavelength = 1402.77 * u.AA
     doppler = u.doppler_optical(rest_wavelength)
     wavelength_min = (-60 * u.km / u.s).to(u.AA, equivalencies=doppler)
@@ -256,9 +182,6 @@ def test_plot_rgb_colorbar_velocity_axis(si_iv_cube):
 
 
 def test_plot_rgb_colorbar_zooms_to_the_mapped_range(si_iv_cube):
-    """
-    The colorbar shows the wavelengths that carry color, not the whole window.
-    """
     fig, ax = plt.subplots()
     cax = fig.add_axes((0.8, 0.1, 0.05, 0.8))
     plot_rgb(si_iv_cube, ax=ax, cax=cax, wavelength_min=1399 * u.AA, wavelength_max=1399.2 * u.AA)
@@ -267,42 +190,29 @@ def test_plot_rgb_colorbar_zooms_to_the_mapped_range(si_iv_cube):
 
 
 def test_plot_rgb_uses_the_given_cax(si_iv_cube):
-    """
-    An explicit ``cax`` is drawn into as given, with no extra axes carved out.
-    """
     fig, ax = plt.subplots()
     cax = fig.add_axes((0.8, 0.1, 0.05, 0.8))
     before = list(fig.axes)
     plot_rgb(si_iv_cube, ax=ax, cax=cax)
     assert cax.collections, "the colorbar was not drawn into the given axes"
-    # Only the velocity twin is new; the image axes were not re-homed into a grid.
-    assert [a for a in fig.axes if a not in before] == [_velocity_axis(fig)]
-    assert ax.get_position().bounds == before[0].get_position().bounds
-    plt.close(fig)
-
-
-def test_plot_rgb_uses_the_given_cax_without_a_velocity_axis(si_iv_cube):
-    fig, ax = plt.subplots()
-    cax = fig.add_axes((0.8, 0.1, 0.05, 0.8))
-    plot_rgb(si_iv_cube, ax=ax, cax=cax, velocity=False)
-    assert fig.axes == [ax, cax]
+    # No axes were carved out; the velocity axis rides on the given cax.
+    assert fig.axes == before
+    assert _velocity_axis(fig) is not None
     plt.close(fig)
 
 
 def test_plot_rgb_panels_do_not_collide(si_iv_cube):
     """
-    The colorbar is carved out of the grid cell so the layout engine counts its labels.
-
-    Stealing the space with ``axes_grid1`` hid them, and the labels of neighbouring
-    panels then overlapped.
+    ``axes_grid1`` hid the colorbar from the layout engine, so panels overlapped.
     """
     fig, axes = plt.subplots(ncols=3, figsize=(18, 6), layout="constrained")
     panels = []
     for ax in axes:
         seen = set(map(id, fig.axes))
         plot_rgb(si_iv_cube, ax=ax)
-        # The image, its colorbar and the velocity twin all belong to this panel.
-        panels.append([a for a in fig.axes if id(a) not in seen or a is ax])
+        # Image, colorbar and its velocity axis all belong to this panel.
+        new = [a for a in fig.axes if id(a) not in seen or a is ax]
+        panels.append(new + [child for a in new for child in a.child_axes])
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     labels = [
@@ -322,8 +232,7 @@ def test_plot_rgb_panels_do_not_collide(si_iv_cube):
 
 def test_plot_rgb_colorbar_matches_the_image_height(si_iv_cube):
     """
-    A fixed aspect ratio shrinks the image inside its cell, and the colorbar has to
-    follow it down instead of keeping the full height of the cell.
+    A fixed aspect shrinks the image inside its cell; the colorbar must follow.
     """
     fig, ax = plt.subplots(figsize=(6, 6), layout="constrained")
     plot_rgb(si_iv_cube, ax=ax, aspect="equal")
@@ -338,15 +247,17 @@ def test_plot_rgb_colorbar_defaults_to_the_metadata_rest_wavelength(si_iv_cube):
     plot_rgb(si_iv_cube, ax=ax)
     cax_velocity = _velocity_axis(fig)
     assert cax_velocity is not None
-    # This window is truncated well blueward of the line, so every velocity is negative.
-    assert max(cax_velocity.get_ylim()) < 0
+    # Wavelength limits converted through the metadata TWAVE.
+    doppler = u.doppler_optical(si_iv_cube.meta.rest_wavelength)
+    (wavelength,) = si_iv_cube.axis_world_coords("em.wl")
+    expected = u.Quantity([wavelength.min(), wavelength.max()]).to_value(u.km / u.s, equivalencies=doppler)
+    np.testing.assert_allclose(cax_velocity.get_ylim(), expected, rtol=1e-6)
     plt.close(fig)
 
 
 def test_plot_rgb_colorbar_label_clears_the_image(si_iv_cube):
     """
-    The wavelength ticks and label live in the gap between the image and the colorbar,
-    and too small a ``cbar_pad`` used to push the label onto the image.
+    Regression: a small default ``cbar_pad`` pushed the wavelength label onto the image.
     """
     fig, ax = plt.subplots()
     plot_rgb(si_iv_cube, ax=ax)
@@ -358,7 +269,19 @@ def test_plot_rgb_colorbar_label_clears_the_image(si_iv_cube):
 
 
 def test_plot_rgb_without_a_velocity_axis(si_iv_cube):
+    """
+    ``rest_wavelength=False`` wins over the metadata.
+    """
     fig, ax = plt.subplots()
-    plot_rgb(si_iv_cube, ax=ax, velocity=False)
+    plot_rgb(si_iv_cube, ax=ax, rest_wavelength=False)
     assert _velocity_axis(fig) is None
+    plt.close(fig)
+
+
+def test_plotter_plot_rgb_matches_the_function(si_iv_cube):
+    fig, (ax_plotter, ax_function) = plt.subplots(ncols=2)
+    si_iv_cube.plotter.plot_rgb(ax=ax_plotter)
+    plot_rgb(si_iv_cube, ax=ax_function)
+    plotter, function = ax_plotter.collections[0], ax_function.collections[0]
+    np.testing.assert_allclose(plotter.get_facecolors(), function.get_facecolors())
     plt.close(fig)

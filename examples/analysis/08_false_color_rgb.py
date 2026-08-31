@@ -3,9 +3,8 @@
 Make a False-Color RGB Raster
 =============================
 
-This example shows how to render an IRIS raster as a false-color image, where
-each spatial pixel is colored by the shape of its spectrum instead of by a
-single number.
+This example demonstrates how to render an IRIS raster as a false-color image,
+where each spatial pixel is colored by the shape of its spectrum.
 
 The spectrum in a pixel is treated as a spectral power distribution and
 converted to a single sRGB color, so brightness is the total intensity of the
@@ -14,8 +13,10 @@ is blue-shifted and appears bluer, plasma moving away appears redder, and a
 line with asymmetric wings picks up a color the same line would not have if it
 were symmetric.
 
-This needs the optional ``colorsynth`` dependency, which you can install with
-``pip install 'irispy-lmsal[rgb]'``.
+.. warning::
+
+    This needs the optional ``colorsynth`` dependency, which you can install with
+    ``pip install 'irispy-lmsal[rgb]'``.
 """
 
 import matplotlib.pyplot as plt
@@ -46,13 +47,14 @@ si_iv = raster["Si IV 1403"][0]
 print(si_iv)
 
 ###############################################################################
-# The simplest thing we can do is ask the cube to plot itself in false color.
+# The simplest thing we can do is ask the cube's plotter to draw it in false
+# color.
 #
 # Every wavelength in the window is spread across the human visible range, so
 # the far wings, which are mostly continuum and noise, get as much of the color
 # range as the line itself.
 
-si_iv.plot_rgb()
+si_iv.plotter.plot_rgb()
 
 plt.show()
 
@@ -72,10 +74,10 @@ velocity = 100 * u.km / u.s
 wavelength_min = (-velocity).to(u.AA, equivalencies=doppler)
 wavelength_max = velocity.to(u.AA, equivalencies=doppler)
 
-si_iv.plot_rgb(
+si_iv.plotter.plot_rgb(
     wavelength_min=wavelength_min,
     wavelength_max=wavelength_max,
-    norm=np.sqrt,
+    stretch=np.sqrt,
 )
 
 plt.show()
@@ -93,11 +95,11 @@ sns_filename = pooch.retrieve(
 )
 sit_and_stare = read_files(sns_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
 
-sit_and_stare.plot_rgb(
+sit_and_stare.plotter.plot_rgb(
     coordinates="time",
     wavelength_min=wavelength_min,
     wavelength_max=wavelength_max,
-    norm=np.sqrt,
+    stretch=np.sqrt,
 )
 
 plt.show()
@@ -111,6 +113,6 @@ rgb, (intensity, wavelength, rgb_colorbar) = calculate_rgb(
     si_iv,
     wavelength_min=wavelength_min,
     wavelength_max=wavelength_max,
-    norm=np.sqrt,
+    stretch=np.sqrt,
 )
 print(rgb.shape, rgb.min(), rgb.max())
