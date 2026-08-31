@@ -140,3 +140,38 @@ def test_smoke_read_sji_lvl2(
     read_sji_lvl2(raster_sji_1400_file)
     read_sji_lvl2(raster_sji_2796_file)
     read_sji_lvl2(raster_sji_2832_file)
+
+
+def test_read_sji_lvl2_unrotated_pointing(tmp_path, sns_sji_1330_file):
+    # Zero PC off-diagonals are valid values (an unrotated observation), not
+    # gaps to interpolate over - reading used to crash when a whole pointing
+    # column was zero.
+    filename = tmp_path / "unrotated.fits"
+    with fits.open(sns_sji_1330_file, memmap=False) as hdulist:
+        for key in ("PC1_2IX", "PC2_1IX"):
+            hdulist[1].data[:, hdulist[1].header[key]] = 0.0
+        hdulist.writeto(filename)
+
+    cube = read_sji_lvl2(filename)
+    for key in ("PC1_2IX", "PC2_1IX"):
+        for header in cube._basic_wcs:
+            assert header[f"PC{key[2]}_{key[4]}"] == 0.0
+
+
+def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file):
+    # A dropped exposure zeroes its whole pointing row; those rows are filled
+    # with the average of the neighbouring exposures.
+    keys = ("XCENIX", "YCENIX", "PC1_1IX", "PC1_2IX", "PC2_1IX", "PC2_2IX")
+    filename = tmp_path / "dropped_row.fits"
+    with fits.open(sns_sji_1330_file, memmap=False) as hdulist:
+        columns = [hdulist[1].header[key] for key in keys]
+        expected = {
+            key: hdulist[1].data[[0, 2], column].mean() for key, column in zip(keys, columns)
+        }
+        hdulist[1].data[1, columns] = 0.0
+        hdulist.writeto(filename)
+
+    cube = read_sji_lvl2(filename)
+    header = cube._basic_wcs[1]
+    np.testing.assert_allclose(header["CRVAL1"], expected["XCENIX"])
+    np.testing.assert_allclose(header["CRVAL2"], expected["YCENIX"])
