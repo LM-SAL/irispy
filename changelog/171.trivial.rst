@@ -1,0 +1,1 @@
+Repaired the WCS of the bundled test FITS files.

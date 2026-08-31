@@ -1,6 +1,6 @@
-*.fits binary
-*.fit binary
-*.fts binary
-*.fit.gz binary
-*.fits.gz binary
-*.fts.gz binary
+*.fits binary linguist-generated
+*.fit binary linguist-generated
+*.fts binary linguist-generated
+*.fit.gz binary linguist-generated
+*.fits.gz binary linguist-generated
+*.fts.gz binary linguist-generated
