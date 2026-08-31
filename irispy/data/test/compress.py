@@ -36,6 +36,9 @@ if __name__ == "__main__":
                         target_length = len(hdus[-2].data)
                         indices = np.rint(np.linspace(0, len(hdu.data) - 1, target_length)).astype(int)
                         hdu.data = hdu.data[indices]
+                        # Keep the truncated file self-consistent - readers
+                        # validate the table length against the exposures.
+                        hdus[0].header["NEXP"] = target_length
                     continue
                 if hdu.data is None:
                     continue
