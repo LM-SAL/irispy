@@ -106,9 +106,10 @@ class _IRISPlotMixin:
         """
         Plot the cube with IRIS defaults.
 
-        If no ``cmap`` is given, a default IRIS colormap is derived from the cube
-        metadata (falling back to viridis), and IRIS axis styling is applied to the
-        result. All arguments are passed to the parent plotter's ``plot``.
+        If ``cmap`` is falsey, it is replaced with a default IRIS colormap derived from
+        the cube metadata (falling back to viridis). For one-dimensional cubes ``cmap``
+        is dropped entirely, even when given. IRIS axis styling is applied to the
+        result; all other arguments are passed to the parent plotter's ``plot``.
         """
         cmap = kwargs.get("cmap")
         if not cmap:
