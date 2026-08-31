@@ -58,6 +58,11 @@ def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_out
     # Python factor assumes data is in photons / s
     factor = factor * 4 * (u.photon / u.s)
     factor_in_idl_units = factor.to(idl_unit)
+    # The bundled test file is a 10-pixel stride of the native data along both the
+    # spectral and slit axes, so its CDELTs (dispersion and platescale) are 10x the
+    # native values the IDL calibration assumed; the per-DN factor is therefore
+    # 1/100 of the IDL one.
+    factor_in_idl_units = factor_in_idl_units * 100
     # It is not very accurate, hence a large absolute tolerance is used.
     assert_quantity_allclose(factor_in_idl_units, idl_factor, atol=200 * idl_unit)
 
@@ -130,4 +135,9 @@ def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
     # so we change our result to match his.
     idl_unit = u.erg / (u.cm**2 * u.s * u.sr)
     intensity = intensity.to(idl_unit)
+    # The bundled test file is a 10-pixel stride along the slit, so its slit-axis
+    # platescale (and hence solid angle) is 10x native, while the IDL run above
+    # assumed Y-binning of 1; scale back to compare against the native value.
+    # (The spectral dispersion cancels out because it is multiplied back in above.)
+    intensity = intensity * 10
     assert_quantity_allclose(intensity, 43.6270027 * idl_unit, rtol=0.0003)

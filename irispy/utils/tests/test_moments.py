@@ -19,8 +19,11 @@ def test_calculate_moments_basic(sns_sg_file):
     """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
-    rest_wvl = 1332.9 * u.Angstrom
-    moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=0.1 * u.Angstrom)
+    # TWAVE1: the C II line, which the window brackets. The bundled test data is a
+    # 10-pixel stride of the native data (~0.26 A/pixel), so wings must span
+    # several of those coarse pixels.
+    rest_wvl = 1335.71 * u.Angstrom
+    moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=1.0 * u.Angstrom)
     assert isinstance(moments, RasterCollection)
     assert set(moments.keys()) == {"intensity", "centroid", "width", "velocity", "velocity_width"}
     intensity = moments["intensity"]
@@ -46,8 +49,8 @@ def test_calculate_moments_basic(sns_sg_file):
     assert velocity_width.unit == u.km / u.s
     finite_mask = np.isfinite(centroid.data)
     assert np.all(
-        (centroid.data[finite_mask] * centroid.unit >= rest_wvl - 0.1 * u.Angstrom)
-        & (centroid.data[finite_mask] * centroid.unit <= rest_wvl + 0.1 * u.Angstrom)
+        (centroid.data[finite_mask] * centroid.unit >= rest_wvl - 1.0 * u.Angstrom)
+        & (centroid.data[finite_mask] * centroid.unit <= rest_wvl + 1.0 * u.Angstrom)
     )
     assert np.all(width.data[finite_mask] >= 0)
     assert np.all(intensity.data >= 0)
@@ -78,15 +81,16 @@ def test_calculate_moments_asymmetric_wings(sns_sg_file):
     """
     raster_collection = read_files(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
-    rest_wvl = 1332.9 * u.Angstrom
-    moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=(0.05, 0.15) * u.Angstrom)
+    # TWAVE1 (C II); wings sized for the ~0.26 A/pixel strided test data.
+    rest_wvl = 1335.71 * u.Angstrom
+    moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=(0.5, 1.5) * u.Angstrom)
     assert set(moments.keys()) == {"intensity", "centroid", "width", "velocity", "velocity_width"}
     assert moments["intensity"].shape == cube.shape[:-1]
     centroid = moments["centroid"]
     finite_mask = np.isfinite(centroid.data)
     assert np.all(
-        (centroid.data[finite_mask] * centroid.unit >= rest_wvl - 0.05 * u.Angstrom)
-        & (centroid.data[finite_mask] * centroid.unit <= rest_wvl + 0.15 * u.Angstrom)
+        (centroid.data[finite_mask] * centroid.unit >= rest_wvl - 0.5 * u.Angstrom)
+        & (centroid.data[finite_mask] * centroid.unit <= rest_wvl + 1.5 * u.Angstrom)
     )
 
 
