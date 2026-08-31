@@ -1,5 +1,6 @@
 import copy
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -193,3 +194,20 @@ def test_solid_angle_real_data(sns_sg_file):
     angle = cube.solid_angle
     assert angle.unit.is_equivalent(u.sr)
     assert angle.value > 0
+
+
+def test_spectrogram_cube_plot_defaults(sns_sg_file):
+    cube = read_files(sns_sg_file)["Si IV 1403"][0][0]
+    ax = cube.plot()
+    # FUV detectors have no irissji colormap, so the default falls back to viridis.
+    assert ax.images[0].get_cmap().name == "viridis"
+    plt.close(ax.figure)
+
+
+@pytest.mark.filterwarnings("ignore:Attempting to set identical low and high xlims")
+def test_spectrogram_sequence_plot_uses_iris_slider_labels(sns_sg_file):
+    sequence = read_files(sns_sg_file)["Si IV 1403"]
+    fig = plt.figure()
+    animator = sequence.plot(fig=fig)
+    assert animator.slider_labels == ["Raster step", "Scan number"]
+    plt.close(fig)

@@ -2,12 +2,11 @@ import textwrap
 import warnings
 from numbers import Integral
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy.wcs import WCS
 
-from sunpy import log as logger
+from ndcube.visualization import PlotterDescriptor
 from sunpy.map import Map
 from sunpy.util import MetaDict
 from sunpy.util.exceptions import SunpyMetadataWarning
@@ -16,7 +15,7 @@ from sunraster import SpectrogramCube
 from irispy.utils import calculate_dust_mask
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import remove_dust as _remove_dust
-from irispy.visualization import IRISPlotter, set_axis_properties
+from irispy.visualization import SJIPlotter
 
 __all__ = ["AIACube", "SJICube"]
 
@@ -83,6 +82,8 @@ class SJICube(SpectrogramCube):
     scaled : `bool`, optional
         Indicates if the data has been scaled.
     """
+
+    plotter = PlotterDescriptor(default_type=SJIPlotter)
 
     def __init__(
         self,
@@ -166,17 +167,7 @@ class SJICube(SpectrogramCube):
         return sliced_self
 
     def plot(self, *args, **kwargs):
-        cmap = kwargs.get("cmap")
-        if not cmap:
-            try:
-                cmap = plt.get_cmap(name=f"irissji{int(self.meta['TWAVE1'])}")
-            except Exception as e:  # NOQA: BLE001
-                logger.debug(e)
-                cmap = "viridis"
-        kwargs["cmap"] = cmap
-        ax = IRISPlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return self.plotter.plot(*args, **kwargs)
 
     def apply_dust_mask(self, *, undo=False):
         """

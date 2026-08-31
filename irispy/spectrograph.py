@@ -1,19 +1,18 @@
 import textwrap
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 import astropy.units as u
 
 from ndcube import NDCollection
+from ndcube.visualization import PlotterDescriptor
 from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
-from sunpy import log as logger
 from sunraster import SpectrogramCube as SpecCube
 from sunraster import SpectrogramSequence as SpecSeq
 
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.cosmic_rays import remove_cosmic_rays
-from irispy.visualization import IRISPlotter, IRISSequencePlotter, set_axis_properties
+from irispy.visualization import IRISPlotter, IRISSequencePlotter
 
 __all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
 
@@ -55,6 +54,8 @@ class SpectrogramCube(SpecCube):
         Note however that it is not always possible to save the input as reference.
         Default is False.
     """
+
+    plotter = PlotterDescriptor(default_type=IRISPlotter)
 
     def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
@@ -98,19 +99,7 @@ class SpectrogramCube(SpecCube):
         )
 
     def plot(self, *args, **kwargs):
-        cmap = kwargs.get("cmap")
-        if not cmap:
-            try:
-                cmap = plt.get_cmap(name=f"irissji{int(self.meta.detector[:3])}")
-            except Exception as e:  # NOQA: BLE001
-                logger.debug(e)
-                cmap = "viridis"
-        kwargs["cmap"] = cmap
-        if len(self.shape) == 1:
-            kwargs.pop("cmap")
-        ax = IRISPlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return self.plotter.plot(*args, **kwargs)
 
     def remove_cosmic_rays(
         self,
@@ -217,6 +206,8 @@ class SpectrogramCubeSequence(SpecSeq):
         The axis of the NDCubes corresponding to time.
     """
 
+    plotter = PlotterDescriptor(default_type=IRISSequencePlotter)
+
     def __init__(self, data_list, meta=None, common_axis=0, **kwargs) -> None:
         # Check that all spectrograms are from same spectral window and OBS ID.
         if len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
@@ -229,19 +220,7 @@ class SpectrogramCubeSequence(SpecSeq):
         return super().__str__()
 
     def plot(self, *args, **kwargs):
-        cmap = kwargs.get("cmap")
-        if not cmap:
-            try:
-                cmap = plt.get_cmap(name=f"irissji{int(self.meta.detector[:3])}")
-            except Exception as e:  # NOQA: BLE001
-                logger.debug(e)
-                cmap = "viridis"
-        kwargs["cmap"] = cmap
-        if len(self.shape) == 1:
-            kwargs.pop("cmap")
-        ax = IRISSequencePlotter(ndcube=self).plot(*args, **kwargs)
-        set_axis_properties(ax)
-        return ax
+        return self.plotter.plot(*args, **kwargs)
 
 
 class RasterCollection(NDCollection):

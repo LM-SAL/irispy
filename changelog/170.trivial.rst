@@ -1,0 +1,1 @@
+IRIS plotters are now registered through ndcube's plotter framework, so ``cube.plotter`` is an IRIS plotter and extra plotter methods are reachable as ``cube.plotter.<method>()``; ``cube.plot()`` behaves as before.
