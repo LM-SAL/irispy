@@ -1,0 +1,6 @@
+Reading an SJI file no longer crashes when a pointing column is entirely zero
+(e.g. the PC off-diagonals of an unrotated observation), and valid zeros are
+no longer interpolated over. Only fully-zeroed pointing rows (dropped
+exposures) are treated as gaps, they are now handled consistently for both
+the gWCS and the header-based WCS, and are filled with the average of the
+neighbouring exposures.
