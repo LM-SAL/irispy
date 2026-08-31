@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 from mpl_animators import ArrayAnimatorWCS
 
 import astropy.units as u
@@ -5,8 +6,9 @@ import astropy.units as u
 import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
 from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
+from sunpy import log as logger
 
-__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter"]
+__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter", "SJIPlotter"]
 
 
 LAT_LABELS = [
@@ -92,7 +94,38 @@ class IRISSequenceAnimator(Plot2DMixin, SequenceAnimator):
         super().__init__(*args, **kwargs)
 
 
-class IRISPlotter(MatplotlibPlotter):
+class _IRISPlotMixin:
+    """
+    Shared IRIS plot behavior for cube and sequence plotters.
+    """
+
+    def _default_cmap_name(self):
+        return f"irissji{int(self._ndcube.meta.detector[:3])}"
+
+    def plot(self, *args, **kwargs):
+        """
+        Plot the cube with IRIS defaults.
+
+        If no ``cmap`` is given, a default IRIS colormap is derived from the cube
+        metadata (falling back to viridis), and IRIS axis styling is applied to the
+        result. All arguments are passed to the parent plotter's ``plot``.
+        """
+        cmap = kwargs.get("cmap")
+        if not cmap:
+            try:
+                cmap = plt.get_cmap(name=self._default_cmap_name())
+            except Exception as e:  # NOQA: BLE001
+                logger.debug(e)
+                cmap = "viridis"
+        kwargs["cmap"] = cmap
+        if len(self._ndcube.shape) == 1:
+            kwargs.pop("cmap")
+        ax = super().plot(*args, **kwargs)
+        set_axis_properties(ax)
+        return ax
+
+
+class IRISPlotter(_IRISPlotMixin, MatplotlibPlotter):
     def _animate_cube(
         self,
         wcs,
@@ -117,7 +150,12 @@ class IRISPlotter(MatplotlibPlotter):
         return ax
 
 
-class IRISSequencePlotter(MatplotlibSequencePlotter):
+class SJIPlotter(IRISPlotter):
+    def _default_cmap_name(self):
+        return f"irissji{int(self._ndcube.meta['TWAVE1'])}"
+
+
+class IRISSequencePlotter(_IRISPlotMixin, MatplotlibSequencePlotter):
     def animate(self, sequence_axis_coords=None, sequence_axis_unit=None, **kwargs):
         """
         Animate the `~ndcube.NDCubeSequence` with the sequence axis as a slider.

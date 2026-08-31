@@ -1,0 +1,1 @@
+Fixed a crash when plotting a 1D slice of an SJI cube: the default colormap is no longer passed to the 1D line plot.
