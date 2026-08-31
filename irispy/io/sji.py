@@ -32,6 +32,36 @@ def _t_obs(hdulist):
     )
 
 
+def _fill_dropped_pointing_rows(hdulist) -> None:
+    """
+    Fill the auxiliary pointing columns of dropped exposures, in place.
+
+    A dropped exposure zeroes its entire pointing row (XCENIX, YCENIX and the PC
+    matrix). Only rows where every pointing value is zero are treated as gaps. Gaps are
+    filled with the average of the nearest valid neighbor on each side (clamped at the
+    ends), so filled values never leave the neighbors' range and an unrotated PC matrix
+    stays exactly identity.
+    """
+    columns = [
+        hdulist[1].header["XCENIX"],
+        hdulist[1].header["YCENIX"],
+        hdulist[1].header["PC1_1IX"],
+        hdulist[1].header["PC1_2IX"],
+        hdulist[1].header["PC2_1IX"],
+        hdulist[1].header["PC2_2IX"],
+    ]
+    pointing = hdulist[1].data[:, columns]
+    dropped_rows = np.flatnonzero(np.all(pointing == 0, axis=1))
+    valid_rows = np.flatnonzero(np.any(pointing != 0, axis=1))
+    if dropped_rows.size == 0 or valid_rows.size == 0:
+        return
+    right = np.clip(np.searchsorted(valid_rows, dropped_rows), 0, valid_rows.size - 1)
+    left = np.clip(right - 1, 0, valid_rows.size - 1)
+    for column in columns:
+        values = hdulist[1].data[:, column]
+        values[dropped_rows] = (values[valid_rows[left]] + values[valid_rows[right]]) / 2
+
+
 def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     """
     Creates the GWCS object for the SJI file.
@@ -110,26 +140,12 @@ def _create_headers_wcs(hdulist, t_obs):
     pc1_2ix = hdulist[1].header["PC1_2IX"]
     pc2_1ix = hdulist[1].header["PC2_1IX"]
     pc2_2ix = hdulist[1].header["PC2_2IX"]
-    # Handle if there are 0's in the aux array for XCENIX, YCENIX and the PC_IJ arrays
     xcenix_values = hdulist[1].data[:, xcenix_idx]
     ycenix_values = hdulist[1].data[:, ycenix_idx]
     pc1_1ix_values = hdulist[1].data[:, pc1_1ix]
     pc1_2ix_values = hdulist[1].data[:, pc1_2ix]
     pc2_1ix_values = hdulist[1].data[:, pc2_1ix]
     pc2_2ix_values = hdulist[1].data[:, pc2_2ix]
-    for array in [
-        xcenix_values,
-        ycenix_values,
-        pc1_1ix_values,
-        pc1_2ix_values,
-        pc2_1ix_values,
-        pc2_2ix_values,
-    ]:
-        zero_idx = np.where(array == 0)[0]
-        if zero_idx.size > 0:
-            nonzero_idx = np.where(array != 0)[0]
-            nonzero_vals = array[nonzero_idx]
-            array[zero_idx] = np.interp(zero_idx, nonzero_idx, nonzero_vals)
     for i in range(hdulist[0].header["NAXIS3"]):
         location = get_body_heliographic_stonyhurst("Earth", t_obs[i].isot)
         observer = Helioprojective(
@@ -188,6 +204,7 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         hdulist.verify("silentfix")
         instrume = hdulist[0].header["INSTRUME"]
         t_obs = _t_obs(hdulist)
+        _fill_dropped_pointing_rows(hdulist)
         extra_coords = [
             (
                 "exposure time",

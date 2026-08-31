@@ -122,7 +122,7 @@ def _get_sample_files(filename_list, *, no_download=False, force_download=False)
     if no_download:
         fullpaths = [fp if fp.exists() else None for fp in fullpaths]
     else:
-        to_download = zip(filename_list, fullpaths, strict=False)
+        to_download = zip(filename_list, fullpaths, strict=True)
         if not force_download:
             to_download = [(fn, fp) for fn, fp in to_download if not fp.exists()]
         if to_download:

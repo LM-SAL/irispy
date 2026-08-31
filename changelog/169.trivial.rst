@@ -1,0 +1,6 @@
+The test-data generator ``compress.py`` was reworked: it now writes
+``*_test.fits`` copies instead of overwriting its inputs, decimates by
+strided selection so bad-pixel and saturation sentinels survive exactly,
+keeps world coordinate spans and the exposure bookkeeping (auxiliary table,
+source-filename table, ``NEXP``) consistent, and the bundled test files were
+renamed to the ``_test`` convention and repaired accordingly.
