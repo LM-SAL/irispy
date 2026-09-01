@@ -12,7 +12,7 @@ from sunraster import SpectrogramSequence as SpecSeq
 
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.cosmic_rays import remove_cosmic_rays
-from irispy.visualization import IRISPlotter, IRISSequencePlotter
+from irispy.visualization import IRISSequencePlotter, SpectrogramPlotter
 
 __all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
 
@@ -55,7 +55,7 @@ class SpectrogramCube(SpecCube):
         Default is False.
     """
 
-    plotter = PlotterDescriptor(default_type=IRISPlotter)
+    plotter = PlotterDescriptor(default_type=SpectrogramPlotter)
 
     def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)

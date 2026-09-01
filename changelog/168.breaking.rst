@@ -1,0 +1,1 @@
+Renamed ``irispy.visualization.IRISPlotter`` to ``irispy.visualization.SpectrogramPlotter``.

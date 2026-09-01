@@ -8,7 +8,7 @@ from ndcube.visualization.mpl_plotter import MatplotlibPlotter
 from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
 from sunpy import log as logger
 
-__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter", "SJIPlotter"]
+__all__ = ["IRISArrayAnimatorWCS", "IRISSequencePlotter", "SJIPlotter", "SpectrogramPlotter"]
 
 
 LAT_LABELS = [
@@ -30,6 +30,8 @@ LON_LABELS = [
 TIME_LABELS = ["time (utc)", "time"]
 WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
 SCAN_LABELS = set(LON_LABELS + LAT_LABELS)
+LON_AXIS_LABEL = "Helioprojective Longitude [arcsec]"
+LAT_AXIS_LABEL = "Helioprojective Latitude [arcsec]"
 
 
 def _shorten_slider_label(label):
@@ -55,9 +57,9 @@ def set_axis_properties(ax):
             axis.set_major_formatter("x.x")
             axis.set_axislabel("Wavelength [$\\mathrm{nm}$]")
         elif axis.default_label.lower() in LAT_LABELS:
-            _set_axis_properties(axis, "Helioprojective Latitude [arcsec]", "red")
+            _set_axis_properties(axis, LAT_AXIS_LABEL, "red")
         elif axis.default_label.lower() in LON_LABELS:
-            _set_axis_properties(axis, "Helioprojective Longitude [arcsec]", "black")
+            _set_axis_properties(axis, LON_AXIS_LABEL, "black")
 
 
 def _set_axis_properties(axis, label, color):
@@ -126,7 +128,7 @@ class _IRISPlotMixin:
         return ax
 
 
-class IRISPlotter(_IRISPlotMixin, MatplotlibPlotter):
+class _IRISCubePlotter(_IRISPlotMixin, MatplotlibPlotter):
     def _animate_cube(
         self,
         wcs,
@@ -151,7 +153,20 @@ class IRISPlotter(_IRISPlotMixin, MatplotlibPlotter):
         return ax
 
 
-class SJIPlotter(IRISPlotter):
+class SpectrogramPlotter(_IRISCubePlotter):
+    def plot_rgb(self, **kwargs):
+        """
+        Plot the cube as a false-color image, coloring each pixel by its spectrum.
+
+        Keyword arguments and the return value are those of `irispy.utils.rgb.plot_rgb`,
+        which needs the optional ``colorsynth`` dependency.
+        """
+        from irispy.utils.rgb import plot_rgb  # NOQA: PLC0415
+
+        return plot_rgb(self._ndcube, **kwargs)
+
+
+class SJIPlotter(_IRISCubePlotter):
     def _default_cmap_name(self):
         return f"irissji{int(self._ndcube.meta['TWAVE1'])}"
 

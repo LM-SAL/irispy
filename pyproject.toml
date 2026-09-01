@@ -45,7 +45,7 @@ dependencies = [
 ]
 
 optional-dependencies.all = [
-  "irispy-lmsal[cosmic-rays,density]",
+  "irispy-lmsal[cosmic-rays,density,rgb]",
 ]
 optional-dependencies.cosmic-rays = [
   "astroscrappy>=1.3.0",
@@ -53,6 +53,9 @@ optional-dependencies.cosmic-rays = [
 ]
 optional-dependencies.density = [
   "fiasco>=0.3.0",
+]
+optional-dependencies.rgb = [
+  "colorsynth>=1.1.0",
 ]
 optional-dependencies.dev = [
   "irispy-lmsal[all,docs,tests]",

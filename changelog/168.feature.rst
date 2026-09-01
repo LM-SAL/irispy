@@ -1,0 +1,7 @@
+Added `irispy.utils.rgb.calculate_rgb` and `irispy.utils.rgb.plot_rgb`, also reachable as
+``cube.plotter.plot_rgb()``, which render a `~irispy.spectrograph.SpectrogramCube` as a false-color
+image: brightness is the intensity of the spectral window and hue is the wavelength within it, so
+Doppler shifts show up as color.
+The image can be drawn against helioprojective longitude or against time, and the colorbar is
+labelled in both wavelength and Doppler velocity.
+This needs the optional ``colorsynth`` dependency, installable with ``pip install 'irispy-lmsal[rgb]'``.

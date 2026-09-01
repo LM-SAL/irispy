@@ -98,10 +98,7 @@ def calculate_moments(
     * `Færder et al. (2024), ApJ, Appendix C <https://iopscience.iop.org/article/10.3847/1538-4357/ac4223>`__
     """
     if rest_wavelength is None:
-        try:
-            rest_wavelength = cube.meta.rest_wavelength
-        except (AttributeError, TypeError):
-            rest_wavelength = None
+        rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
     wavelength_axis = cube.wavelength_axis
     wavelengths = cube.axis_world_coords(wavelength_axis)[0]
     if not isinstance(wavelengths, u.Quantity):

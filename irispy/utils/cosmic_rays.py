@@ -3,25 +3,14 @@ Utilities for removing cosmic rays from IRIS data.
 """
 
 from typing import Any
-from importlib import import_module
 from collections.abc import Mapping
 
 import dask.array as da
 import numpy as np
 
+from irispy.utils.utils import _import_optional
+
 __all__ = ["remove_cosmic_rays"]
-
-
-def _import_optional_backend(module_name: str, *, method: str):
-    try:
-        return import_module(module_name)
-    except ImportError as exc:
-        msg = (
-            f"{module_name} is an optional dependency required for method='{method}'. "
-            f"Install it with `pip install {module_name}` or "
-            "`pip install 'irispy-lmsal[cosmic-rays]'`."
-        )
-        raise ImportError(msg) from exc
 
 
 def _remove_cosmic_rays_rsliding(
@@ -32,7 +21,9 @@ def _remove_cosmic_rays_rsliding(
     max_iters: int | None,
     method_kwargs: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
-    slidingsigmaclipping = _import_optional_backend("rsliding", method="rsliding").SlidingSigmaClipping
+    slidingsigmaclipping = _import_optional(
+        "rsliding", reason="method='rsliding'", extra="cosmic-rays"
+    ).SlidingSigmaClipping
     method_kwargs = dict(method_kwargs)
     if sigma is not None:
         method_kwargs["sigma"] = sigma
@@ -66,7 +57,7 @@ def _remove_cosmic_rays_astroscrappy(
     max_iters: int | None,
     method_kwargs: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
-    astroscrappy = _import_optional_backend("astroscrappy", method="astroscrappy")
+    astroscrappy = _import_optional("astroscrappy", reason="method='astroscrappy'", extra="cosmic-rays")
     method_kwargs = dict(method_kwargs)
     method_kwargs.setdefault("verbose", False)
     if sigma is not None:

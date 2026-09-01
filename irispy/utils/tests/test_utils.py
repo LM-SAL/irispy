@@ -45,3 +45,18 @@ def test_calculate_dust_mask_2d():
     data[1, 1] = 0
 
     np_test.assert_array_equal(utils.calculate_dust_mask(data), np.ones((3, 3), dtype=bool))
+
+
+def test_import_optional_missing_module_names_the_extra():
+    with pytest.raises(ImportError, match=r"pip install 'irispy-lmsal\[rgb\]'"):
+        utils.utils._import_optional("definitely_not_a_module", reason="testing", extra="rgb")
+
+
+def test_import_optional_preserves_transitive_import_error(monkeypatch):
+    def import_module(_):
+        msg = "No module named 'transitive_dependency'"
+        raise ModuleNotFoundError(msg, name="transitive_dependency")
+
+    monkeypatch.setattr(utils.utils, "import_module", import_module)
+    with pytest.raises(ModuleNotFoundError, match="transitive_dependency"):
+        utils.utils._import_optional("optional_module", reason="testing", extra="tests")

@@ -43,6 +43,10 @@ def test_world_axis_physical_types_sjicube_1330(sns_sjicube_1330):
     assert sns_sjicube_1330.array_axis_physical_types == AXIS
 
 
+def test_sji_plotter_does_not_expose_plot_rgb(sns_sjicube_1400):
+    assert not hasattr(sns_sjicube_1400.plotter, "plot_rgb")
+
+
 def test_to_map(sns_sjicube_1330):
     # Basic smoke tests
     output = sns_sjicube_1330.to_maps(0)
