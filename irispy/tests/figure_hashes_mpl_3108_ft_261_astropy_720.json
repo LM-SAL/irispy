@@ -9,5 +9,5 @@
   "irispy.utils.tests.test_response.test_plot_idl_vs_python_sji_3": "f426ec7a6a876584c15c9e94b69a3e151c7667a43ca9fb12bd74a6c5b61450bb",
   "irispy.utils.tests.test_response.test_plot_idl_vs_python_sji_4": "4f3a35489c9a0f70e216f2d67cf2de2f2b2457d802c80b24b8df8a91d842e81b",
   "irispy.utils.tests.test_response.test_plot_get_interpolated_effective_area": "779d6f9bdd4bd2e928301b78f0916f87786ed768ba1b31504359190f7bbafd43",
-  "irispy.utils.tests.test_rgb.test_plot_rgb_figure": "6c84c8108c1a22613f0da854e505bfaf98f2139b3a0d8652b5c34f11c5755cf5",
+  "irispy.utils.tests.test_rgb.test_plot_rgb_figure": "6c84c8108c1a22613f0da854e505bfaf98f2139b3a0d8652b5c34f11c5755cf5"
 }
