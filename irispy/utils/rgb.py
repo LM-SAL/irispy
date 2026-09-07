@@ -2,8 +2,8 @@
 False-color (RGB) rendering of IRIS spectrogram cubes.
 
 Each spectrum is treated as a spectral power distribution and converted to one sRGB
-color, so brightness is the intensity of the window and hue is where in the window it
-sits: Doppler shifts and line asymmetries show up as color.
+color. Brightness and hue depend on both intensity and spectral shape, so Doppler shifts
+and line asymmetries show up as color.
 """
 
 import warnings
@@ -57,11 +57,37 @@ def _match_heights(ax, cax, aspect, fraction):
     cax.set_box_aspect(box_aspect * (1 - fraction) / fraction)
 
 
+def _wavelength_defaults(wavelength, rest_wavelength, wavelength_min, wavelength_max, wavelength_norm):
+    lower, upper = wavelength.min(), wavelength.max()
+    doppler = None
+    if (
+        rest_wavelength is not None
+        and np.isfinite(rest_wavelength)
+        and rest_wavelength > 0 * u.AA
+        and lower <= rest_wavelength <= upper
+    ):
+        doppler = u.doppler_optical(rest_wavelength)
+        lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=doppler)
+    if isinstance(wavelength_norm, str):
+        if wavelength_norm != "auto":
+            msg = "`wavelength_norm` must be 'auto', None, or a callable"
+            raise ValueError(msg)
+        wavelength_norm = (
+            None if doppler is None else lambda w: np.arcsinh(w.to_value(u.km / u.s, equivalencies=doppler) / 25)
+        )
+    return (
+        lower if wavelength_min is None else wavelength_min,
+        upper if wavelength_max is None else wavelength_max,
+        wavelength_norm,
+    )
+
+
 def calculate_rgb(
     cube,
     *,
     wavelength_min=None,
     wavelength_max=None,
+    wavelength_norm="auto",
     vmin=None,
     vmax=None,
     stretch=None,
@@ -74,8 +100,16 @@ def calculate_rgb(
     cube : `irispy.spectrograph.SpectrogramCube`
         A three dimensional cube with one spectral axis.
     wavelength_min, wavelength_max : `astropy.units.Quantity`, optional
-        Wavelengths mapped to the blue and red ends of the visible range. Default to
-        the ends of the cube's wavelength range; wavelengths outside contribute no color.
+        Wavelengths mapped to the blue and red ends of the visible range. Omitted
+        limits default to +/-100 km/s around ``cube.meta.rest_wavelength`` when it
+        is positive, finite, and within the cube's wavelength range. Otherwise,
+        they default to the ends of that range. Wavelengths outside contribute no color.
+    wavelength_norm : ``"auto"``, `None`, or `callable`, optional
+        The default ``"auto"`` applies ``arcsinh(v / 25 km/s)`` around the usable
+        metadata rest wavelength, or a linear mapping without one. `None` always
+        selects a linear mapping. A callable must be monotonically increasing and
+        accept wavelength quantities (arrays and scalars); it transforms wavelengths
+        and their limits before they are mapped to the visible range.
     vmin : `float` or `astropy.units.Quantity`, optional
         Intensity mapped to black. Defaults to zero.
     vmax : `float` or `astropy.units.Quantity`, optional
@@ -91,7 +125,9 @@ def calculate_rgb(
         Shape ``(*spatial_shape, 3)``, values in [0, 1], spatial axes in cube order.
     colorbar : `tuple`
         ``(intensity, wavelength, rgb)`` for the two dimensional colorbar, ready for
-        `matplotlib.pyplot.pcolormesh`.
+        `matplotlib.pyplot.pcolormesh`. Each entry represents a spectrum with signal
+        in one wavelength bin. Finite-width lines can have different colors at the
+        same peak intensity; this is not a calibration of line intensity or velocity.
     """
     colorsynth = _import_optional("colorsynth", reason="false-color RGB images", extra="rgb")
     if len(cube.shape) != 3:
@@ -105,6 +141,9 @@ def calculate_rgb(
     if wavelength.ndim != 1:
         msg = f"The wavelength coordinate must be one dimensional, got shape {wavelength.shape}"
         raise ValueError(msg)
+    wavelength_min, wavelength_max, wavelength_norm = _wavelength_defaults(
+        wavelength, getattr(cube.meta, "rest_wavelength", None), wavelength_min, wavelength_max, wavelength_norm
+    )
     shape = [1] * data.ndim
     shape[axis_wavelength] = wavelength.size
     wavelength = wavelength.reshape(shape)
@@ -129,6 +168,7 @@ def calculate_rgb(
         spd_norm=None if stretch is None else (lambda x: stretch(np.clip(x, 0, None))),
         wavelength_min=wavelength_min,
         wavelength_max=wavelength_max,
+        wavelength_norm=wavelength_norm,
     )
     return np.moveaxis(rgb, axis_wavelength, -1), colorbar
 
@@ -140,6 +180,7 @@ def plot_rgb(
     cax=None,
     wavelength_min=None,
     wavelength_max=None,
+    wavelength_norm="auto",
     vmin=None,
     vmax=None,
     stretch=None,
@@ -163,7 +204,12 @@ def plot_rgb(
         Axes for the two dimensional colorbar. If not given, it is split off ``ax``,
         which must then sit in a gridspec cell, as axes from `matplotlib.pyplot.subplots` do.
     wavelength_min, wavelength_max : `astropy.units.Quantity`, optional
-        Wavelengths mapped to the blue and red ends of the visible range.
+        Wavelengths mapped to the blue and red ends of the visible range. Default
+        to +/-100 km/s around a usable rest wavelength, as in `calculate_rgb`.
+    wavelength_norm : ``"auto"``, `None`, or `callable`, optional
+        Wavelength transform, as in `calculate_rgb`. Defaults to an asinh velocity
+        mapping when a usable rest wavelength is available; `None` selects linear.
+        Wavelength and velocity labels retain their physical units.
     vmin, vmax : `float` or `astropy.units.Quantity`, optional
         Intensities mapped to black and to full brightness.
     stretch : `callable`, optional
@@ -175,9 +221,10 @@ def plot_rgb(
         Aspect ratio of the image axes. Defaults to ``"equal"`` for helioprojective
         coordinates and ``"auto"`` for time; use ``"auto"`` for a raster with few steps too.
     rest_wavelength : `astropy.units.Quantity` or `False`, optional
-        Rest wavelength of the optical Doppler velocity axis drawn right of the colorbar.
-        Defaults to ``TWAVE`` from the metadata; `False`, or no ``TWAVE``, draws no
-        velocity axis.
+        Rest wavelength for the default color mapping and optical Doppler velocity
+        axis. Defaults to ``TWAVE`` from the metadata. `False` hides the velocity axis
+        while retaining the metadata color defaults. A missing, non-finite, or
+        non-positive rest wavelength also draws no velocity axis.
     cbar_fraction : `float`, optional
         Fraction of ``ax`` given to the colorbar when ``cax`` is not given.
     cbar_pad : `float`, optional
@@ -190,14 +237,29 @@ def plot_rgb(
     -------
     `matplotlib.axes.Axes`
         The axes the image was drawn on.
+
+    Notes
+    -----
+    The colorbar shows spectra with signal in a single wavelength bin. The image
+    combines signal across the line profile, so its color also depends on line width
+    and asymmetry. The colorbar cannot uniquely determine a line's intensity or velocity.
     """
     if coordinates not in {"helioprojective", "time"}:
         msg = f"`coordinates` must be 'helioprojective' or 'time', got {coordinates!r}"
         raise ValueError(msg)
+    mapping_rest = (
+        getattr(cube.meta, "rest_wavelength", None)
+        if rest_wavelength is None or rest_wavelength is False
+        else rest_wavelength
+    )
+    wavelength_min, wavelength_max, wavelength_norm = _wavelength_defaults(
+        cube.spectral_axis, mapping_rest, wavelength_min, wavelength_max, wavelength_norm
+    )
     rgb, (intensity, wavelength, rgb_colorbar) = calculate_rgb(
         cube,
         wavelength_min=wavelength_min,
         wavelength_max=wavelength_max,
+        wavelength_norm=wavelength_norm,
         vmin=vmin,
         vmax=vmax,
         stretch=stretch,
@@ -237,21 +299,17 @@ def plot_rgb(
     ax.set_ylabel(LAT_AXIS_LABEL)
     cax.pcolormesh(intensity, wavelength.to_value(u.AA), rgb_colorbar)
     # Only the mapped range carries color.
-    limits = u.Quantity(
-        [
-            wavelength.min() if wavelength_min is None else wavelength_min,
-            wavelength.max() if wavelength_max is None else wavelength_max,
-        ]
-    )
-    cax.set_ylim(*limits.to_value(u.AA))
+    cax.set_ylim(wavelength_min.to_value(u.AA), wavelength_max.to_value(u.AA))
     cax.ticklabel_format(useOffset=False)
-    cax.set_xlabel(f"Intensity [{cube.unit:latex_inline}]" if cube.unit is not None else "Intensity")
+    cax.set_xlabel(
+        f"Single-bin\nintensity [{cube.unit:latex_inline}]" if cube.unit is not None else "Single-bin\nintensity"
+    )
     cax.set_ylabel(r"Wavelength [$\mathrm{\AA}$]")
     if rest_wavelength is False:
         rest_wavelength = None
     elif rest_wavelength is None:
         rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
-    if rest_wavelength is None:
+    if rest_wavelength is None or not np.isfinite(rest_wavelength) or rest_wavelength <= 0 * u.AA:
         # No velocity axis, so the wavelength labels take the right-hand side.
         cax.yaxis.set_label_position("right")
         cax.yaxis.tick_right()

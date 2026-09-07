@@ -7,7 +7,7 @@ import pytest
 import astropy.units as u
 
 from irispy.io.utils import read_files
-from irispy.tests.helpers import make_test_spectrogram_cube
+from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
 from irispy.utils.rgb import calculate_rgb, plot_rgb
 
 colorsynth = pytest.importorskip("colorsynth")
@@ -27,7 +27,9 @@ def shifted_line_cube():
     wavelengths = si_iv_rest + np.linspace(-2, 2, 81) * u.AA
     centers = si_iv_rest + [-0.5, 0.5] * u.AA
     data = np.exp(-(((wavelengths - centers[:, np.newaxis]) / (0.15 * u.AA)) ** 2)).value
-    return make_test_spectrogram_cube(100 * data[:, np.newaxis, :], wavelengths)
+    cube = make_test_spectrogram_cube(100 * data[:, np.newaxis, :], wavelengths)
+    cube.meta["TWAVE1"] = si_iv_rest.to_value(u.AA)
+    return cube
 
 
 def test_calculate_rgb_shape_and_range(si_iv_cube):
@@ -38,6 +40,26 @@ def test_calculate_rgb_shape_and_range(si_iv_cube):
     assert rgb_colorbar.shape == (intensity.shape[0], si_iv_cube.shape[-1], 3)
     assert wavelength.shape == intensity.shape
     assert wavelength.unit.is_equivalent(u.AA)
+
+
+def test_calculate_rgb_metadata_defaults(si_iv_cube):
+    doppler = u.doppler_optical(si_iv_cube.meta.rest_wavelength)
+    lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=doppler)
+
+    def norm(wavelength):
+        return np.arcsinh(wavelength.to_value(u.km / u.s, equivalencies=doppler) / 25)
+
+    expected, (_, _, expected_colorbar) = calculate_rgb(
+        si_iv_cube, wavelength_min=lower, wavelength_max=upper, wavelength_norm=norm
+    )
+    actual, (_, _, colorbar) = calculate_rgb(si_iv_cube)
+    np.testing.assert_allclose(actual, expected)
+    np.testing.assert_allclose(colorbar, expected_colorbar)
+
+
+def test_calculate_rgb_rejects_unknown_normalization(si_iv_cube):
+    with pytest.raises(ValueError, match="must be 'auto', None, or a callable"):
+        calculate_rgb(si_iv_cube, wavelength_norm="log")
 
 
 def test_calculate_rgb_ignores_wavelengths_outside_the_window(si_iv_cube):
@@ -103,12 +125,30 @@ def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
 
 def test_plot_rgb(si_iv_cube):
     fig, (ax, ax_auto) = plt.subplots(ncols=2)
-    result = plot_rgb(si_iv_cube, ax=ax)
+    result = si_iv_cube.plotter.plot_rgb(ax=ax)
     assert result is ax
     assert ax.get_aspect() == 1
     assert "Longitude" in ax.get_xlabel()
     plot_rgb(si_iv_cube, ax=ax_auto, aspect="auto")
     assert ax_auto.get_aspect() == "auto"
+    plt.close(fig)
+
+
+def test_plot_rgb_wavelength_norm_updates_image_and_colorbar(si_iv_cube):
+    center = si_iv_cube.spectral_axis.mean()
+
+    def wavelength_norm(wavelength):
+        return np.arcsinh((wavelength - center).to_value(u.AA) / 0.1)
+
+    rgb, (_, _, colorbar) = calculate_rgb(si_iv_cube, vmax=100, wavelength_norm=wavelength_norm)
+    linear_rgb, (_, _, linear_colorbar) = calculate_rgb(si_iv_cube, vmax=100, wavelength_norm=None)
+    assert not np.allclose(rgb, linear_rgb)
+    assert not np.allclose(colorbar, linear_colorbar)
+
+    fig, (ax, cax) = plt.subplots(ncols=2)
+    si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, vmax=100, wavelength_norm=wavelength_norm)
+    np.testing.assert_allclose(ax.collections[0].get_array(), rgb)
+    np.testing.assert_allclose(cax.collections[0].get_array(), colorbar)
     plt.close(fig)
 
 
@@ -137,6 +177,22 @@ def test_plot_rgb_without_a_rest_wavelength_in_the_metadata(si_iv_cube):
     fig, ax = plt.subplots()
     plot_rgb(si_iv_cube, ax=ax)
     assert _velocity_axis(fig) is None
+    plt.close(fig)
+
+
+def test_plot_rgb_sliced_window_excludes_rest_wavelength(si_iv_cube):
+    si_iv_cube = si_iv_cube[:, :, :3]
+    wavelength = si_iv_cube.spectral_axis.to(u.AA)
+    assert si_iv_cube.meta.rest_wavelength > wavelength.max()
+    expected, _ = calculate_rgb(
+        si_iv_cube, wavelength_min=wavelength.min(), wavelength_max=wavelength.max(), wavelength_norm=None
+    )
+    fig, ax = plt.subplots()
+    plot_rgb(si_iv_cube, ax=ax)
+    np.testing.assert_allclose(ax.collections[0].get_array(), expected)
+    cax = next(a for a in fig.axes if a.get_ylabel().startswith("Wavelength"))
+    np.testing.assert_allclose(cax.get_ylim(), (wavelength.value.min(), wavelength.value.max()))
+    assert _velocity_axis(fig) is not None
     plt.close(fig)
 
 
@@ -181,19 +237,12 @@ def test_plot_rgb_colorbar_velocity_axis(si_iv_cube):
     plt.close(fig)
 
 
-def test_plot_rgb_colorbar_zooms_to_the_mapped_range(si_iv_cube):
-    fig, ax = plt.subplots()
-    cax = fig.add_axes((0.8, 0.1, 0.05, 0.8))
-    plot_rgb(si_iv_cube, ax=ax, cax=cax, wavelength_min=1399 * u.AA, wavelength_max=1399.2 * u.AA)
-    np.testing.assert_allclose(cax.get_ylim(), (1399, 1399.2))
-    plt.close(fig)
-
-
 def test_plot_rgb_uses_the_given_cax(si_iv_cube):
     fig, ax = plt.subplots()
     cax = fig.add_axes((0.8, 0.1, 0.05, 0.8))
     before = list(fig.axes)
-    plot_rgb(si_iv_cube, ax=ax, cax=cax)
+    plot_rgb(si_iv_cube, ax=ax, cax=cax, wavelength_min=1399 * u.AA, wavelength_max=1399.2 * u.AA)
+    np.testing.assert_allclose(cax.get_ylim(), (1399, 1399.2))
     assert cax.collections, "the colorbar was not drawn into the given axes"
     # No axes were carved out; the velocity axis rides on the given cax.
     assert fig.axes == before
@@ -247,11 +296,14 @@ def test_plot_rgb_colorbar_defaults_to_the_metadata_rest_wavelength(si_iv_cube):
     plot_rgb(si_iv_cube, ax=ax)
     cax_velocity = _velocity_axis(fig)
     assert cax_velocity is not None
-    # Wavelength limits converted through the metadata TWAVE.
+    np.testing.assert_allclose(cax_velocity.get_ylim(), (-100, 100))
+    plt.close(fig)
+
+    # A single explicit bound wins while the other keeps its metadata default.
     doppler = u.doppler_optical(si_iv_cube.meta.rest_wavelength)
-    (wavelength,) = si_iv_cube.axis_world_coords("em.wl")
-    expected = u.Quantity([wavelength.min(), wavelength.max()]).to_value(u.km / u.s, equivalencies=doppler)
-    np.testing.assert_allclose(cax_velocity.get_ylim(), expected, rtol=1e-6)
+    fig, ax = plt.subplots()
+    plot_rgb(si_iv_cube, ax=ax, wavelength_min=(-50 * u.km / u.s).to(u.AA, equivalencies=doppler))
+    np.testing.assert_allclose(_velocity_axis(fig).get_ylim(), (-50, 100))
     plt.close(fig)
 
 
@@ -278,10 +330,19 @@ def test_plot_rgb_without_a_velocity_axis(si_iv_cube):
     plt.close(fig)
 
 
-def test_plotter_plot_rgb_matches_the_function(si_iv_cube):
-    fig, (ax_plotter, ax_function) = plt.subplots(ncols=2)
-    si_iv_cube.plotter.plot_rgb(ax=ax_plotter)
-    plot_rgb(si_iv_cube, ax=ax_function)
-    plotter, function = ax_plotter.collections[0], ax_function.collections[0]
-    np.testing.assert_allclose(plotter.get_facecolors(), function.get_facecolors())
-    plt.close(fig)
+@figure_test
+def test_plot_rgb_figure():
+    wavelengths = 1402.77 * u.AA + np.linspace(-1, 1, 81) * u.AA
+    centers = 1402.77 + np.linspace(-0.5, 0.5, 21)
+    intensity = np.linspace(5, 100, 16)
+    profiles = np.exp(-(((wavelengths.to_value(u.AA)[None, :] - centers[:, None]) / 0.15) ** 2))
+    cube = make_test_spectrogram_cube(intensity[None, :, None] * profiles[:, None, :], wavelengths)
+    cube.meta["TWAVE1"] = 1402.77
+
+    fig, axes = plt.subplots(ncols=2, figsize=(14, 5), layout="constrained")
+    for ax, norm, title in zip(
+        axes, (None, "auto"), ("Linear wavelength mapping", "Default: asinh velocity (25 km/s)"), strict=True
+    ):
+        plot_rgb(cube, ax=ax, vmax=100, stretch=np.sqrt, wavelength_norm=norm)
+        ax.set_title(title)
+    return fig

@@ -1,7 +1,10 @@
 Added `irispy.utils.rgb.calculate_rgb` and `irispy.utils.rgb.plot_rgb`, also reachable as
 ``cube.plotter.plot_rgb()``, which render a `~irispy.spectrograph.SpectrogramCube` as a false-color
-image: brightness is the intensity of the spectral window and hue is the wavelength within it, so
-Doppler shifts show up as color.
+image whose brightness and hue depend on intensity and spectral shape, so Doppler shifts show up as color.
+When the metadata supplies a positive, finite rest wavelength within the cube's range, the defaults
+map +/-100 km/s with an asinh velocity scale of 25 km/s; otherwise, the full window is mapped linearly.
+Explicit wavelength bounds and ``wavelength_norm`` override these defaults, with ``None`` selecting linear mapping.
 The image can be drawn against helioprojective longitude or against time, and the colorbar is
-labelled in both wavelength and Doppler velocity.
+labelled in both wavelength and Doppler velocity. The colorbar represents single-bin spectra;
+finite-width lines can have different colors at the same peak intensity.
 This needs the optional ``colorsynth`` dependency, installable with ``pip install 'irispy-lmsal[rgb]'``.

@@ -8,7 +8,7 @@ from ndcube.visualization.mpl_plotter import MatplotlibPlotter
 from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
 from sunpy import log as logger
 
-__all__ = ["IRISArrayAnimatorWCS", "IRISSequencePlotter", "SJIPlotter", "SpectrogramPlotter"]
+__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter", "SJIPlotter", "SpectrogramPlotter"]
 
 
 LAT_LABELS = [
@@ -128,7 +128,7 @@ class _IRISPlotMixin:
         return ax
 
 
-class _IRISCubePlotter(_IRISPlotMixin, MatplotlibPlotter):
+class IRISPlotter(_IRISPlotMixin, MatplotlibPlotter):
     def _animate_cube(
         self,
         wcs,
@@ -153,7 +153,7 @@ class _IRISCubePlotter(_IRISPlotMixin, MatplotlibPlotter):
         return ax
 
 
-class SpectrogramPlotter(_IRISCubePlotter):
+class SpectrogramPlotter(IRISPlotter):
     def plot_rgb(self, **kwargs):
         """
         Plot the cube as a false-color image, coloring each pixel by its spectrum.
@@ -166,7 +166,7 @@ class SpectrogramPlotter(_IRISCubePlotter):
         return plot_rgb(self._ndcube, **kwargs)
 
 
-class SJIPlotter(_IRISCubePlotter):
+class SJIPlotter(IRISPlotter):
     def _default_cmap_name(self):
         return f"irissji{int(self._ndcube.meta['TWAVE1'])}"
 
