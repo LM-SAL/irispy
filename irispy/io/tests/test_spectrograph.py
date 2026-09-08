@@ -10,6 +10,7 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs.utils import wcs_to_celestial_frame
 
+from ndcube import NDCube
 from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
 import irispy.io.spectrograph as spectrograph_io
@@ -331,6 +332,47 @@ def test_gwcs_crop_supports_full_world_component_api(raster_sg_files):
         units=(u.nm, u.arcsec, u.arcsec, u.s, u.pix, u.pix),
     )
     assert spectrum_by_values.data.ndim == 1
+
+
+@pytest.mark.parametrize("combined", [False, True], ids=["single", "combined"])
+@pytest.mark.parametrize("coordinate", ["sky", "time", "step"])
+@pytest.mark.xfail(
+    strict=True,
+    raises=ValueError,
+    reason="Partial GWCS crop inputs still require coupled world objects",
+)
+def test_gwcs_partial_crop(coordinate, combined):
+    shape = (2, 6, 4, 5) if combined else (6, 4, 5)
+    table_shape = shape[:-2]
+    header = {
+        "CUNIT1": "nm",
+        "CDELT1": 0.1,
+        "CRVAL1": 140,
+        "CRPIX1": 1,
+        "CDELT2": 1,
+        "CDELT3": 1,
+        "CRPIX2": 1,
+        "CRPIX3": 1,
+    }
+    pc = np.broadcast_to(np.eye(2), (*table_shape, 2, 2)) * u.pix
+    crval = np.zeros((*table_shape, 2)) * u.arcsec
+    # Uneven cadence rules out a two-sample linear inverse.
+    dt = np.arange(np.prod(table_shape)).reshape(table_shape) ** 2 * u.s
+    observer = HeliographicStonyhurst(0 * u.deg, 0 * u.deg, 1 * u.AU, obstime="2020-01-01")
+    wcs = _create_raster_gwcs(header, pc, crval, dt, "2020-01-01", observer, sit_and_stare=False)
+    data = np.arange(np.prod(shape)).reshape(shape)
+    cube = NDCube(data, wcs=wcs)
+    index = {"sky": 1, "time": 2, "step": 3}[coordinate]
+    prefix = (0,) if combined else ()
+    points = []
+    for array_index in ((*prefix, 1, 1, 0), (*prefix, 3, 2, 4)):
+        world = wcs.array_index_to_world(*array_index)
+        assert wcs.world_to_array_index(*world) == array_index
+        points.append([value if i == index else None for i, value in enumerate(world)])
+    expected = data[..., 1:4, 1:3, :] if coordinate == "sky" else data[..., 1:4, :, :]
+    if combined and coordinate == "time":
+        expected = expected[0]
+    np.testing.assert_array_equal(cube.crop(*points).data, expected)
 
 
 def test_gwcs_crop_rejects_removed_two_component_shorthand(raster_sg_files):
