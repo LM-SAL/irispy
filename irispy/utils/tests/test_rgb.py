@@ -41,23 +41,30 @@ def test_calculate_rgb_shape_and_range(si_iv_cube):
 
 
 def test_calculate_rgb_metadata_defaults(si_iv_cube):
-    doppler = u.doppler_optical(si_iv_cube.meta.rest_wavelength)
-    lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=doppler)
-
-    def norm(wavelength):
-        return np.arcsinh(wavelength.to_value(u.km / u.s, equivalencies=doppler) / 25)
-
+    rest_wavelength = si_iv_cube.meta.rest_wavelength
+    lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(rest_wavelength))
     expected, (_, _, expected_colorbar) = calculate_rgb(
-        si_iv_cube, wavelength_min=lower, wavelength_max=upper, wavelength_norm=norm
+        si_iv_cube, wavelength_min=lower, wavelength_max=upper, rest_wavelength=rest_wavelength
     )
     actual, (_, _, colorbar) = calculate_rgb(si_iv_cube)
     np.testing.assert_allclose(actual, expected)
     np.testing.assert_allclose(colorbar, expected_colorbar)
 
 
-def test_calculate_rgb_rejects_unknown_normalization(si_iv_cube):
-    with pytest.raises(ValueError, match="must be 'auto', None, or a callable"):
-        calculate_rgb(si_iv_cube, wavelength_norm="log")
+@pytest.mark.parametrize("render", [calculate_rgb, plot_rgb])
+def test_rgb_requires_rest_wavelength_without_metadata(si_iv_cube, render):
+    si_iv_cube.meta.pop(f"TWAVE{si_iv_cube.meta._iwin}")
+    with pytest.raises(ValueError, match="Pass rest_wavelength explicitly"):
+        render(si_iv_cube)
+
+
+@pytest.mark.parametrize("render", [calculate_rgb, plot_rgb])
+def test_rgb_explicit_rest_wavelength_without_metadata(si_iv_cube, render):
+    rest_wavelength = si_iv_cube.meta.pop(f"TWAVE{si_iv_cube.meta._iwin}") * u.AA
+    try:
+        render(si_iv_cube, rest_wavelength=rest_wavelength)
+    finally:
+        plt.close("all")
 
 
 def test_calculate_rgb_ignores_wavelengths_outside_the_window(si_iv_cube):
@@ -128,30 +135,40 @@ def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
         plot_rgb(cube)
 
 
-def test_plot_rgb_wavelength_norm_updates_image_and_colorbar(si_iv_cube):
-    center = si_iv_cube.spectral_axis.mean()
-
-    def wavelength_norm(wavelength):
-        return np.arcsinh((wavelength - center).to_value(u.AA) / 0.1)
-
-    rgb, (_, _, colorbar) = calculate_rgb(si_iv_cube, vmax=100, wavelength_norm=wavelength_norm)
-    linear_rgb, (_, _, linear_colorbar) = calculate_rgb(si_iv_cube, vmax=100, wavelength_norm=None)
-    assert not np.allclose(rgb, linear_rgb)
-    assert not np.allclose(colorbar, linear_colorbar)
+def test_plot_rgb_rest_wavelength_updates_image_and_colorbar(si_iv_cube):
+    """
+    The same window colored around a shifted rest wavelength moves the asinh knee, in
+    the image and in the colorbar alike.
+    """
+    rest_wavelength = si_iv_cube.meta.rest_wavelength
+    lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(rest_wavelength))
+    shifted = rest_wavelength + 0.3 * u.AA
+    window = {"vmax": 100, "wavelength_min": lower, "wavelength_max": upper}
+    rgb, (_, _, colorbar) = calculate_rgb(si_iv_cube, rest_wavelength=shifted, **window)
+    default_rgb, (_, _, default_colorbar) = calculate_rgb(si_iv_cube, **window)
+    assert not np.allclose(rgb, default_rgb)
+    assert not np.allclose(colorbar, default_colorbar)
 
     fig, (ax, cax) = plt.subplots(ncols=2)
-    si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, vmax=100, wavelength_norm=wavelength_norm)
+    si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, rest_wavelength=shifted, **window)
     np.testing.assert_allclose(ax.collections[0].get_array(), rgb)
     np.testing.assert_allclose(cax.collections[0].get_array(), colorbar)
     plt.close(fig)
 
 
-def test_plot_rgb_without_a_rest_wavelength_in_the_metadata(si_iv_cube):
-    # SGMeta reads TWAVE<iwin>, not TWAVE1.
-    si_iv_cube.meta.pop(f"TWAVE{si_iv_cube.meta._iwin}")
-    fig, ax = plt.subplots()
-    plot_rgb(si_iv_cube, ax=ax)
-    assert _velocity_axis(fig) is None
+def test_plot_rgb_velocity_norm_updates_image_and_colorbar(si_iv_cube):
+    def linear(velocity):
+        return velocity.to_value(u.km / u.s)
+
+    rgb, (_, _, colorbar) = calculate_rgb(si_iv_cube, vmax=100, velocity_norm=linear)
+    default_rgb, (_, _, default_colorbar) = calculate_rgb(si_iv_cube, vmax=100)
+    assert not np.allclose(rgb, default_rgb)
+    assert not np.allclose(colorbar, default_colorbar)
+
+    fig, (ax, cax) = plt.subplots(ncols=2)
+    si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, vmax=100, velocity_norm=linear)
+    np.testing.assert_allclose(ax.collections[0].get_array(), rgb)
+    np.testing.assert_allclose(cax.collections[0].get_array(), colorbar)
     plt.close(fig)
 
 
@@ -159,9 +176,7 @@ def test_plot_rgb_sliced_window_excludes_rest_wavelength(si_iv_cube):
     si_iv_cube = si_iv_cube[:, :, :3]
     wavelength = si_iv_cube.spectral_axis.to(u.AA)
     assert si_iv_cube.meta.rest_wavelength > wavelength.max()
-    expected, _ = calculate_rgb(
-        si_iv_cube, wavelength_min=wavelength.min(), wavelength_max=wavelength.max(), wavelength_norm=None
-    )
+    expected, _ = calculate_rgb(si_iv_cube, wavelength_min=wavelength.min(), wavelength_max=wavelength.max())
     fig, ax = plt.subplots()
     plot_rgb(si_iv_cube, ax=ax)
     np.testing.assert_allclose(ax.collections[0].get_array(), expected)
@@ -259,9 +274,10 @@ def test_plot_rgb_figure():
     cube.meta["TWAVE1"] = 1402.77
 
     fig, axes = plt.subplots(ncols=2, figsize=(14, 5), layout="constrained")
-    for ax, norm, title in zip(
-        axes, (None, "auto"), ("Linear wavelength mapping", "Default: asinh velocity (25 km/s)"), strict=True
-    ):
-        plot_rgb(cube, ax=ax, vmax=100, stretch=np.sqrt, wavelength_norm=norm)
-        ax.set_title(title)
+    plot_rgb(cube, ax=axes[0], vmax=100)
+    axes[0].set_title("Default: +/-100 km/s, asinh velocity (25 km/s)")
+    doppler = u.doppler_optical(1402.77 * u.AA)
+    wavelength_min, wavelength_max = ([-50, 50] * u.km / u.s).to(u.AA, equivalencies=doppler)
+    plot_rgb(cube, ax=axes[1], vmax=100, stretch=np.sqrt, wavelength_min=wavelength_min, wavelength_max=wavelength_max)
+    axes[1].set_title("+/-50 km/s, sqrt stretch")
     return fig

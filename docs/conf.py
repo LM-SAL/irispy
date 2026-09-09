@@ -194,6 +194,8 @@ graphviz_dot_args = [
 # the docs. For more options, see:
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html#confval-autoclass_content
 autoclass_content = "both"
+# Render callable defaults by name, e.g. ``velocity_norm=asinh_velocity``, not by memory address.
+autodoc_preserve_defaults = True
 
 # -- Other options ------------------------------------------------------------
 

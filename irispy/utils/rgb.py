@@ -17,7 +17,7 @@ import astropy.units as u
 from irispy.utils.utils import _import_optional
 from irispy.visualization import LAT_AXIS_LABEL, LON_AXIS_LABEL
 
-__all__ = ["calculate_rgb", "plot_rgb"]
+__all__ = ["asinh_velocity", "calculate_rgb", "plot_rgb"]
 
 
 def _colorbar_axes(ax, fraction, pad):
@@ -57,29 +57,27 @@ def _match_heights(ax, cax, aspect, fraction):
     cax.set_box_aspect(box_aspect * (1 - fraction) / fraction)
 
 
-def _wavelength_defaults(wavelength, rest_wavelength, wavelength_min, wavelength_max, wavelength_norm):
+def asinh_velocity(velocity):
+    """
+    ``arcsinh(v / 25 km/s)``: linear near rest, compressing the wings.
+
+    The default ``velocity_norm`` of `calculate_rgb`.
+    """
+    return np.arcsinh(velocity.to_value(u.km / u.s) / 25)
+
+
+def _wavelength_limits(wavelength, rest_wavelength, wavelength_min, wavelength_max):
+    """
+    Default missing limits to +/-100 km/s around a rest wavelength inside
+    ``wavelength``.
+    """
+    if rest_wavelength is None:
+        msg = "The cube metadata has no usable TWAVE value. Pass rest_wavelength explicitly."
+        raise ValueError(msg)
     lower, upper = wavelength.min(), wavelength.max()
-    doppler = None
-    if (
-        rest_wavelength is not None
-        and np.isfinite(rest_wavelength)
-        and rest_wavelength > 0 * u.AA
-        and lower <= rest_wavelength <= upper
-    ):
-        doppler = u.doppler_optical(rest_wavelength)
-        lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=doppler)
-    if isinstance(wavelength_norm, str):
-        if wavelength_norm != "auto":
-            msg = "`wavelength_norm` must be 'auto', None, or a callable"
-            raise ValueError(msg)
-        wavelength_norm = (
-            None if doppler is None else lambda w: np.arcsinh(w.to_value(u.km / u.s, equivalencies=doppler) / 25)
-        )
-    return (
-        lower if wavelength_min is None else wavelength_min,
-        upper if wavelength_max is None else wavelength_max,
-        wavelength_norm,
-    )
+    if lower <= rest_wavelength <= upper:
+        lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(rest_wavelength))
+    return lower if wavelength_min is None else wavelength_min, upper if wavelength_max is None else wavelength_max
 
 
 @u.quantity_input
@@ -88,7 +86,8 @@ def calculate_rgb(
     *,
     wavelength_min: u.AA = None,
     wavelength_max: u.AA = None,
-    wavelength_norm="auto",
+    rest_wavelength: u.AA = None,
+    velocity_norm=asinh_velocity,
     vmin=None,
     vmax=None,
     stretch=None,
@@ -96,21 +95,26 @@ def calculate_rgb(
     """
     Convert the spectra in a spectrogram cube into a false-color RGB image.
 
+    Wavelengths are converted to optical Doppler velocities from the rest wavelength
+    and transformed by ``velocity_norm`` before they are mapped to the visible range.
+
     Parameters
     ----------
     cube : `irispy.spectrograph.SpectrogramCube`
         A three dimensional cube with one spectral axis.
     wavelength_min, wavelength_max : `astropy.units.Quantity`, optional
         Wavelengths mapped to the blue and red ends of the visible range. Omitted
-        limits default to +/-100 km/s around ``cube.meta.rest_wavelength`` when it
-        is positive, finite, and within the cube's wavelength range. Otherwise,
-        they default to the ends of that range. Wavelengths outside contribute no color.
-    wavelength_norm : ``"auto"``, `None`, or `callable`, optional
-        The default ``"auto"`` applies ``arcsinh(v / 25 km/s)`` around the usable
-        metadata rest wavelength, or a linear mapping without one. `None` always
-        selects a linear mapping. A callable must be monotonically increasing and
-        accept wavelength quantities (arrays and scalars); it transforms wavelengths
-        and their limits before they are mapped to the visible range.
+        limits default to +/-100 km/s around the rest wavelength when it is within
+        the cube's wavelength range. Otherwise, they default to the ends of that
+        range. Wavelengths outside contribute no color.
+    rest_wavelength : `astropy.units.Quantity`, optional
+        Rest wavelength the Doppler velocities are measured from. Defaults to
+        ``cube.meta.rest_wavelength``. Required if the metadata has no usable ``TWAVE`` value.
+    velocity_norm : `callable`, optional
+        Monotonically increasing transform applied to velocity quantities, arrays and
+        scalars alike, returning plain numbers. Defaults to `asinh_velocity`,
+        ``arcsinh(v / 25 km/s)``, which makes small shifts stand out while compressing
+        the wings; ``lambda v: v.value`` maps linearly.
     vmin : `float` or `astropy.units.Quantity`, optional
         Intensity mapped to black. Defaults to zero.
     vmax : `float` or `astropy.units.Quantity`, optional
@@ -142,9 +146,15 @@ def calculate_rgb(
     if wavelength.ndim != 1:
         msg = f"The wavelength coordinate must be one dimensional, got shape {wavelength.shape}"
         raise ValueError(msg)
-    wavelength_min, wavelength_max, wavelength_norm = _wavelength_defaults(
-        wavelength, getattr(cube.meta, "rest_wavelength", None), wavelength_min, wavelength_max, wavelength_norm
-    )
+    if rest_wavelength is None:
+        rest_wavelength = cube.meta.rest_wavelength
+    wavelength_min, wavelength_max = _wavelength_limits(wavelength, rest_wavelength, wavelength_min, wavelength_max)
+    doppler = u.doppler_optical(rest_wavelength)
+
+    def wavelength_norm(w):
+        # A SpectralCoord will not convert to velocity without its own Doppler settings.
+        return velocity_norm(u.Quantity(w).to(u.km / u.s, equivalencies=doppler))
+
     shape = [1] * data.ndim
     shape[axis_wavelength] = wavelength.size
     wavelength = wavelength.reshape(shape)
@@ -181,7 +191,7 @@ def plot_rgb(
     cax=None,
     wavelength_min=None,
     wavelength_max=None,
-    wavelength_norm="auto",
+    velocity_norm=asinh_velocity,
     vmin=None,
     vmax=None,
     stretch=None,
@@ -206,11 +216,9 @@ def plot_rgb(
         which must then sit in a gridspec cell, as axes from `matplotlib.pyplot.subplots` do.
     wavelength_min, wavelength_max : `astropy.units.Quantity`, optional
         Wavelengths mapped to the blue and red ends of the visible range. Default
-        to +/-100 km/s around a usable rest wavelength, as in `calculate_rgb`.
-    wavelength_norm : ``"auto"``, `None`, or `callable`, optional
-        Wavelength transform, as in `calculate_rgb`. Defaults to an asinh velocity
-        mapping when a usable rest wavelength is available; `None` selects linear.
-        Wavelength and velocity labels retain their physical units.
+        to +/-100 km/s around the rest wavelength, as in `calculate_rgb`.
+    velocity_norm : `callable`, optional
+        Transform of the Doppler velocity, as in `calculate_rgb`.
     vmin, vmax : `float` or `astropy.units.Quantity`, optional
         Intensities mapped to black and to full brightness.
     stretch : `callable`, optional
@@ -222,10 +230,9 @@ def plot_rgb(
         Aspect ratio of the image axes. Defaults to ``"equal"`` for helioprojective
         coordinates and ``"auto"`` for time; use ``"auto"`` for a raster with few steps too.
     rest_wavelength : `astropy.units.Quantity` or `False`, optional
-        Rest wavelength for the default color mapping and optical Doppler velocity
-        axis. Defaults to ``TWAVE`` from the metadata. `False` hides the velocity axis
-        while retaining the metadata color defaults. A missing, non-finite, or
-        non-positive rest wavelength also draws no velocity axis.
+        Rest wavelength for the color mapping and the optical Doppler velocity axis,
+        as in `calculate_rgb`. Defaults to ``TWAVE`` from the metadata. `False` hides
+        the velocity axis while retaining the metadata color mapping.
     cbar_fraction : `float`, optional
         Fraction of ``ax`` given to the colorbar when ``cax`` is not given.
     cbar_pad : `float`, optional
@@ -248,19 +255,16 @@ def plot_rgb(
     if coordinates not in {"helioprojective", "time"}:
         msg = f"`coordinates` must be 'helioprojective' or 'time', got {coordinates!r}"
         raise ValueError(msg)
-    mapping_rest = (
-        getattr(cube.meta, "rest_wavelength", None)
-        if rest_wavelength is None or rest_wavelength is False
-        else rest_wavelength
-    )
-    wavelength_min, wavelength_max, wavelength_norm = _wavelength_defaults(
-        cube.spectral_axis, mapping_rest, wavelength_min, wavelength_max, wavelength_norm
+    mapping_rest = cube.meta.rest_wavelength if rest_wavelength is None or rest_wavelength is False else rest_wavelength
+    wavelength_min, wavelength_max = _wavelength_limits(
+        cube.spectral_axis, mapping_rest, wavelength_min, wavelength_max
     )
     rgb, (intensity, wavelength, rgb_colorbar) = calculate_rgb(
         cube,
         wavelength_min=wavelength_min,
         wavelength_max=wavelength_max,
-        wavelength_norm=wavelength_norm,
+        rest_wavelength=mapping_rest,
+        velocity_norm=velocity_norm,
         vmin=vmin,
         vmax=vmax,
         stretch=stretch,
@@ -307,15 +311,11 @@ def plot_rgb(
     )
     cax.set_ylabel(r"Wavelength [$\mathrm{\AA}$]")
     if rest_wavelength is False:
-        rest_wavelength = None
-    elif rest_wavelength is None:
-        rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
-    if rest_wavelength is None or not np.isfinite(rest_wavelength) or rest_wavelength <= 0 * u.AA:
         # No velocity axis, so the wavelength labels take the right-hand side.
         cax.yaxis.set_label_position("right")
         cax.yaxis.tick_right()
         return ax
-    doppler = u.doppler_optical(u.Quantity(rest_wavelength))
+    doppler = u.doppler_optical(mapping_rest)
     cax_velocity = cax.secondary_yaxis(
         "right",
         functions=(

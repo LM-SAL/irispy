@@ -52,14 +52,18 @@ si_iv = read_files(raster_filename, spectral_windows="Si IV 1403")["Si IV 1403"]
 si_iv.plotter.plot_rgb()
 
 ###############################################################################
-# If you want to override the range and use linear wavelength mapping,
-# you can use a square-root intensity stretch which brightens faint signal
-# and  wavelengths outside the limits contribute no color.
+# If you want to override the range, pass the wavelength limits, here +/-200 km/s.
+# ``velocity_norm`` replaces the asinh transform, here with a linear velocity mapping.
+# A square-root intensity stretch brightens faint signal, and wavelengths outside
+# the limits contribute no color.
 
 doppler = u.doppler_optical(si_iv.meta.rest_wavelength)
 wavelength_min, wavelength_max = ([-200, 200] * u.km / u.s).to(u.AA, equivalencies=doppler)
 si_iv.plotter.plot_rgb(
-    wavelength_min=wavelength_min, wavelength_max=wavelength_max, wavelength_norm=None, stretch=np.sqrt
+    wavelength_min=wavelength_min,
+    wavelength_max=wavelength_max,
+    velocity_norm=lambda velocity: velocity.value,
+    stretch=np.sqrt,
 )
 
 ###############################################################################
