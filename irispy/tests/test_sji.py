@@ -85,3 +85,11 @@ def test_sji_plot_accepts_custom_slider_label(sns_sjicube_1330):
 
     assert animator.slider_labels == ["Frame"]
     plt.close(fig)
+
+
+def test_slice_preserves_dust_masked(sns_sjicube_1330):
+    cube = sns_sjicube_1330
+    cube.dust_masked = True
+    sliced = cube[1:4, ...][1]
+    assert sliced.dust_masked is True
+    np.testing.assert_array_equal(sliced.data, cube.data[2])

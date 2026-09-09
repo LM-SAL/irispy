@@ -63,36 +63,12 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
         Default is False.
     """
 
+    _extra_attrs_to_copy = _SPECTROGRAM_CUBE_METADATA_KWARGS
+
     def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
         for attr in _SPECTROGRAM_CUBE_METADATA_KWARGS:
             setattr(self, attr, kwargs.pop(attr, _SPECTROGRAM_CUBE_METADATA_DEFAULTS.get(attr)))
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
-
-    def _new_instance(self, **kwargs):
-        for attr in _SPECTROGRAM_CUBE_METADATA_KWARGS:
-            kwargs.setdefault(attr, getattr(self, attr, _SPECTROGRAM_CUBE_METADATA_DEFAULTS.get(attr)))
-        return super()._new_instance(**kwargs)
-
-    def to_nddata(self, *args, nddata_type=None, **kwargs):
-        """
-        Preserve irispy-specific raster metadata when cloning to another
-        SpectrogramCube.
-
-        `ndcube.NDCube.to_nddata` can copy custom attributes when callers pass
-        ``attr="copy"``. This override centralizes the irispy raster/WCS attrs so every
-        data-transforming helper does not need to list them manually.
-        """
-        if nddata_type is None:
-            return super().to_nddata(*args, **kwargs)
-        try:
-            copies_metadata = issubclass(nddata_type, SpectrogramCube)
-        except TypeError:
-            copies_metadata = False
-        if copies_metadata:
-            for attr in _SPECTROGRAM_CUBE_METADATA_KWARGS:
-                if hasattr(self, attr):
-                    kwargs.setdefault(attr, "copy")
-        return super().to_nddata(*args, nddata_type=nddata_type, **kwargs)
 
     @property
     def time(self):
@@ -101,14 +77,10 @@ class SpectrogramCube(_SpectrogramCubeWCSMixin, SpecCube):
             time.format = "isot"
         return time
 
-    def __getitem__(self, item):
-        normalized_item = self._normalize_fits_wcs_item(item)
-        item_for_super = normalized_item if normalized_item is not None else item
-        sliced_self = super().__getitem__(item_for_super)
-        if isinstance(sliced_self, SpectrogramCube):
-            sliced_self._fits_wcs = self._slice_fits_wcs(item_for_super)
-            self._slice_raster_metadata(item_for_super, sliced_self)
-        return sliced_self
+    def _slice_custom_state(self, sliced_cube, item):
+        super()._slice_custom_state(sliced_cube, item)
+        sliced_cube._fits_wcs = self._slice_fits_wcs(item)
+        self._slice_raster_metadata(item, sliced_cube)
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"

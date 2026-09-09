@@ -8,7 +8,7 @@ import astropy.modeling.models as m
 import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
-from astropy.wcs.wcsapi import HighLevelWCSWrapper, SlicedLowLevelWCS, high_level_objects_to_values
+from astropy.wcs.wcsapi import HighLevelWCSWrapper, SlicedLowLevelWCS
 from astropy.wcs.wcsapi.wrappers.sliced_wcs import sanitize_slices
 
 from dkist.wcs.models import (
@@ -17,7 +17,6 @@ from dkist.wcs.models import (
     CoupledCompoundModel,
     VaryingCelestialTransform,
 )
-from ndcube.utils.cube import sanitize_crop_inputs
 from sunpy import log as logger
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.time import parse_time
@@ -92,37 +91,15 @@ class _SpectrogramCubeWCSMixin:
     Mixin for raster cropping and ``fits_wcs`` and metadata slicing.
     """
 
-    def _get_crop_item(self, *points, wcs=None, keepdims=False):
-        item = _raster_crop_item(self, points, wcs, keepdims, high_level=True)
-        if item is NotImplemented:
-            return super()._get_crop_item(*points, wcs=wcs, keepdims=keepdims)
-        return item
-
-    def _get_crop_by_values_item(self, *points, units=None, wcs=None, keepdims=False):
-        item = _raster_crop_item(self, points, wcs, keepdims, high_level=False, units=units)
-        if item is NotImplemented:
-            return super()._get_crop_by_values_item(*points, units=units, wcs=wcs, keepdims=keepdims)
-        return item
-
-    def _normalize_fits_wcs_item(self, item):
-        """
-        Normalize index to tuple of length ndim with only int/slice entries.
-        """
-        try:
-            normalized = tuple(sanitize_slices(item, self.data.ndim))
-        except (IndexError, TypeError, ValueError):
-            return None
-        if not all(isinstance(s, (Integral, slice)) for s in normalized):
-            return None
-        return normalized
+    def _get_crop_bounds(self, points, *, wcs):
+        bounds = _raster_crop_bounds(self, points, wcs)
+        if bounds is NotImplemented:
+            return super()._get_crop_bounds(points, wcs=wcs)
+        return bounds
 
     def _slice_fits_wcs(self, item):  # NOQA: PLR0911
-        normalized_item = self._normalize_fits_wcs_item(item)
-        if normalized_item is None:
-            return None
-
         if self._fits_wcs is not None:
-            sliced = _safe_slice_wcs(self._fits_wcs, normalized_item, "SpectrogramCube fits_wcs")
+            sliced = _safe_slice_wcs(self._fits_wcs, item, "SpectrogramCube fits_wcs")
             if sliced is not None:
                 return sliced
 
@@ -130,24 +107,24 @@ class _SpectrogramCubeWCSMixin:
             return None
 
         if self._separate_raster_axis:
-            scan_item = normalized_item[0]
+            scan_item = item[0]
             if isinstance(scan_item, Integral):
                 scan_index = scan_item if scan_item >= 0 else self.shape[0] + scan_item
                 segment = self._fits_wcs_segment_for_index(scan_index)
                 if segment is not None:
                     return _safe_slice_wcs(
                         segment[2],
-                        normalized_item[1:],
+                        item[1:],
                         "SpectrogramCube segment fits_wcs",
                     )
             return None
 
-        scan_item = normalized_item[0]
+        scan_item = item[0]
         if isinstance(scan_item, Integral):
             scan_index = scan_item if scan_item >= 0 else self.shape[0] + scan_item
             segment = self._fits_wcs_segment_for_index(scan_index)
             if segment is not None:
-                relative = (scan_index - segment[0], *normalized_item[1:])
+                relative = (scan_index - segment[0], *item[1:])
                 return _safe_slice_wcs(segment[2], relative, "SpectrogramCube segment fits_wcs")
             return None
 
@@ -156,7 +133,7 @@ class _SpectrogramCubeWCSMixin:
             return None
         segment = self._fits_wcs_segment_for_slice(scan_start, scan_stop)
         if segment is not None:
-            relative = (slice(scan_start - segment[0], scan_stop - segment[0]), *normalized_item[1:])
+            relative = (slice(scan_start - segment[0], scan_stop - segment[0]), *item[1:])
             return _safe_slice_wcs(segment[2], relative, "SpectrogramCube segment fits_wcs")
         return None
 
@@ -232,19 +209,12 @@ class _SpectrogramCubeWCSMixin:
         return sliced_header
 
     def _slice_raster_metadata(self, item, sliced_self):
-        normalized_item = self._normalize_fits_wcs_item(item)
-        if normalized_item is None:
-            sliced_self._fits_wcs_segments = None
-            sliced_self._raster_boundaries = None
-            sliced_self._separate_raster_axis = False
-            return
-
-        scan_item = normalized_item[0]
+        scan_item = item[0]
 
         sliced_self._separate_raster_axis = getattr(self, "_separate_raster_axis", False)
 
         if self._separate_raster_axis:
-            step_item = normalized_item[1]
+            step_item = item[1]
             sliced_self._raster_wcs_header = self._slice_raster_wcs_header_for_step_slice(step_item, self.shape[1])
             for attr in ("_raster_pc_table", "_raster_crval_table"):
                 value = getattr(self, attr, None)
@@ -292,68 +262,21 @@ class _SpectrogramCubeWCSMixin:
         sliced_self._raster_boundaries = self._slice_raster_boundaries_for_slice(scan_item)
 
 
-def _raster_crop_item(cube, points, wcs, keepdims, *, high_level, units=None):  # NOQA: PLR0911
+def _raster_crop_bounds(cube, points, wcs):
     """
     Bound partial raster coordinates using the measured time and pointing tables.
 
-    Each exposure contributes its own sky bounds. Repeated matches are retained
-    in one bounding slice, which can also contain intervening unmatched data.
+    Each exposure contributes its own sky bounds. Repeated matches are retained in one
+    bounding slice, which can also contain intervening unmatched data.
     """
-    if wcs is not None and wcs is not cube.wcs:
+    if wcs is not cube.wcs.low_level_wcs:
         return NotImplemented
     low = cube.wcs.low_level_wcs
     root = low._wcs if isinstance(low, SlicedLowLevelWCS) else low
     if not isinstance(root, gwcs.WCS) or "raster_step" not in root.world_axis_names:
         return NotImplemented
-    no_op, points, _ = sanitize_crop_inputs(points, cube.wcs)
-    if no_op or not any(value is None for point in points for value in point):
+    if not any(value is None for point in points for value in point):
         return NotImplemented
-
-    if high_level:
-        keys = list(dict.fromkeys(component[0] for component in low.world_axis_object_components))
-        classes = low.world_axis_object_classes
-        if any(len(point) != len(keys) for point in points) or any(
-            value is not None and not isinstance(value, classes[key][0])
-            for point in points
-            for key, value in zip(keys, point, strict=True)
-        ):
-            return NotImplemented
-        defaults = cube.wcs.pixel_to_world(*np.zeros(low.pixel_n_dim))
-        if len(keys) == 1:
-            defaults = (defaults,)
-        converted = []
-        for point in points:
-            # Defaults are only used to extract units and frames, never to invert the WCS.
-            values = high_level_objects_to_values(
-                *(default if value is None else value for default, value in zip(defaults, point, strict=True)),
-                low_level_wcs=low,
-            )
-            converted.append(
-                [
-                    None if point[keys.index(key)] is None else value
-                    for (key, *_), value in zip(low.world_axis_object_components, values, strict=True)
-                ]
-            )
-        points = converted
-    else:
-        if any(len(point) != low.world_n_dim for point in points):
-            return NotImplemented
-        units = [None] * low.world_n_dim if units is None else units
-        if len(units) != low.world_n_dim or any(
-            value is not None and not isinstance(value, u.Quantity) and unit is None
-            for point in points
-            for value, unit in zip(point, units, strict=True)
-        ):
-            return NotImplemented
-        points = [
-            [
-                None
-                if value is None
-                else (value if isinstance(value, u.Quantity) else u.Quantity(value, unit)).to_value(world_unit)
-                for value, unit, world_unit in zip(point, units, low.world_axis_units, strict=True)
-            ]
-            for point in points
-        ]
 
     world_keep = low._world_keep if isinstance(low, SlicedLowLevelWCS) else range(root.world_n_dim)
     bounds = [None] * root.world_n_dim
@@ -434,22 +357,21 @@ def _raster_crop_item(cube, points, wcs, keepdims, *, high_level, units=None):  
     item = []
     for axis in pixel_keep:
         if not constrained[axis]:
-            item.append(slice(None))
+            item.append(None)
             continue
         start = max(starts[axis] - pixel_ranges[axis][0], 0)
         stop = min(stops[axis] - pixel_ranges[axis][0], len(pixel_ranges[axis]))
         if start >= stop:
             msg = "No raster pixels match the crop coordinates."
             raise ValueError(msg)
-        item.append(int(start) if stop == start + 1 and not keepdims else slice(int(start), int(stop)))
-    if all(isinstance(axis, int) for axis in item):
-        msg = "The crop would return a scalar; use keepdims=True."
-        raise ValueError(msg)
+        item.append((int(start), int(stop) - 1))
     return tuple(item[::-1])
 
 
 def _raster_crop_pixel_bounds(values):
-    """Round pixel bounds with the same pixel-edge convention as NDCube.crop."""
+    """
+    Round pixel bounds with the same pixel-edge convention as NDCube.crop.
+    """
     start = int(np.floor(np.min(values) + 0.5))
     stop = int(np.ceil(np.max(values) - 0.5)) + 1
     return start, max(start + 1, stop)

@@ -128,3 +128,18 @@ For multi-file rasters, ``memmap=True`` keeps data lazy only when all files have
 the same number of raster steps.
 If the files are ragged, use ``memmap=False`` so shorter rasters can be padded
 with masked NaNs.
+
+Partial crop bounds extension
+----------------------------
+
+Partial raster cropping uses NDCube's protected ``_get_crop_bounds`` extension
+point and requires an NDCube version providing that hook. NDCube normalizes
+world coordinates and constructs the final slice; irispy retains the measured
+time, pointing, and finite slit-width selection. Unsupported requests return
+``NotImplemented`` to retain NDCube's inverse-based behavior. Masked crop
+coordinates are rejected by NDCube.
+
+Raster attribute propagation and slicing also use NDCube's
+``_extra_attrs_to_copy`` and ``_slice_custom_state`` hooks. Raster attributes
+are propagated by reference during arithmetic and same-type conversion;
+axis-dependent state is updated using the normalized slice supplied by NDCube.

@@ -113,10 +113,9 @@ class SJICube(SpectrogramCube):
             """,
         )
 
-    def __getitem__(self, item):
-        sliced_self = super().__getitem__(item)
-        sliced_self.dust_masked = self.dust_masked
-        return sliced_self
+    def _slice_custom_state(self, sliced_cube, item):
+        super()._slice_custom_state(sliced_cube, item)
+        sliced_cube.dust_masked = self.dust_masked
 
     def plot(self, *args, **kwargs):
         """

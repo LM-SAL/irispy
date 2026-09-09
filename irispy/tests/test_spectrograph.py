@@ -364,22 +364,10 @@ def test_raster_animation_accepts_custom_slider_labels(raster_sg_files):
     plt.close(fig)
 
 
-def test_spectrogram_cube_fancy_indexing_strips_raster_metadata(raster_sg_files):
-    """
-    Non-standard indices (arrays, booleans) cannot preserve per-raster WCS bridges.
-    """
-    raster = read_spectrograph_lvl2(raster_sg_files)
-    cube = raster["Si IV 1403"]
-
-    # _normalize_fits_wcs_item returns None for non-standard indices
-    fancy_item = (np.array([0, 2, 4]), slice(None), slice(None), slice(None))
-    assert cube._normalize_fits_wcs_item(fancy_item) is None
-
-    # Verify _slice_raster_metadata strips metadata when normalization fails
-    sliced = cube[0:1]
-    cube._slice_raster_metadata(fancy_item, sliced)
-    assert sliced._fits_wcs_segments is None
-    assert sliced._raster_boundaries is None
+def test_spectrogram_cube_rejects_fancy_indexing(raster_sg_files):
+    cube = read_spectrograph_lvl2(raster_sg_files)["Si IV 1403"]
+    with pytest.raises((IndexError, TypeError, ValueError)):
+        cube[np.array([0, 2, 4])]
 
 
 def test_spectrogram_cube_slice_preserves_coordinates(raster_sg_files):
