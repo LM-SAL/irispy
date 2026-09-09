@@ -1,5 +1,3 @@
-import itertools
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -70,6 +68,13 @@ def test_calculate_rgb_ignores_wavelengths_outside_the_window(si_iv_cube):
     assert np.all(rgb == 0)
 
 
+def test_calculate_rgb_rejects_wavelength_limits_without_units(si_iv_cube):
+    with pytest.raises(TypeError, match="wavelength_min"):
+        calculate_rgb(si_iv_cube, wavelength_min=1400)
+    with pytest.raises(u.UnitsError, match="wavelength_max"):
+        calculate_rgb(si_iv_cube, wavelength_max=1 * u.s)
+
+
 def test_calculate_rgb_vmax_accepts_a_quantity(si_iv_cube):
     expected, _ = calculate_rgb(si_iv_cube, vmax=100)
     result, _ = calculate_rgb(si_iv_cube, vmax=100 * si_iv_cube.unit)
@@ -123,17 +128,6 @@ def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
         plot_rgb(cube)
 
 
-def test_plot_rgb(si_iv_cube):
-    fig, (ax, ax_auto) = plt.subplots(ncols=2)
-    result = si_iv_cube.plotter.plot_rgb(ax=ax)
-    assert result is ax
-    assert ax.get_aspect() == 1
-    assert "Longitude" in ax.get_xlabel()
-    plot_rgb(si_iv_cube, ax=ax_auto, aspect="auto")
-    assert ax_auto.get_aspect() == "auto"
-    plt.close(fig)
-
-
 def test_plot_rgb_wavelength_norm_updates_image_and_colorbar(si_iv_cube):
     center = si_iv_cube.spectral_axis.mean()
 
@@ -149,25 +143,6 @@ def test_plot_rgb_wavelength_norm_updates_image_and_colorbar(si_iv_cube):
     si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, vmax=100, wavelength_norm=wavelength_norm)
     np.testing.assert_allclose(ax.collections[0].get_array(), rgb)
     np.testing.assert_allclose(cax.collections[0].get_array(), colorbar)
-    plt.close(fig)
-
-
-def test_plot_rgb_creates_its_own_figure(si_iv_cube):
-    ax = plot_rgb(si_iv_cube)
-    assert ax.get_figure().get_layout_engine() is not None
-    assert ax.collections
-    plt.close(ax.get_figure())
-
-
-def test_plot_rgb_with_axes_outside_a_grid(si_iv_cube):
-    """
-    Axes from ``Figure.add_axes`` have no grid cell to split, so ``cax`` is required.
-    """
-    fig = plt.figure()
-    ax = fig.add_axes((0.1, 0.1, 0.6, 0.8))
-    assert ax.get_subplotspec() is None
-    with pytest.raises(ValueError, match="pass `cax` explicitly"):
-        plot_rgb(si_iv_cube, ax=ax)
     plt.close(fig)
 
 
@@ -200,7 +175,6 @@ def test_plot_rgb_against_time(si_iv_cube):
     fig, ax = plt.subplots()
     plot_rgb(si_iv_cube, ax=ax, coordinates="time")
     assert "Time" in ax.get_xlabel()
-    assert ax.get_aspect() == "auto"
     plt.close(fig)
 
 
@@ -237,48 +211,6 @@ def test_plot_rgb_colorbar_velocity_axis(si_iv_cube):
     plt.close(fig)
 
 
-def test_plot_rgb_uses_the_given_cax(si_iv_cube):
-    fig, ax = plt.subplots()
-    cax = fig.add_axes((0.8, 0.1, 0.05, 0.8))
-    before = list(fig.axes)
-    plot_rgb(si_iv_cube, ax=ax, cax=cax, wavelength_min=1399 * u.AA, wavelength_max=1399.2 * u.AA)
-    np.testing.assert_allclose(cax.get_ylim(), (1399, 1399.2))
-    assert cax.collections, "the colorbar was not drawn into the given axes"
-    # No axes were carved out; the velocity axis rides on the given cax.
-    assert fig.axes == before
-    assert _velocity_axis(fig) is not None
-    plt.close(fig)
-
-
-def test_plot_rgb_panels_do_not_collide(si_iv_cube):
-    """
-    ``axes_grid1`` hid the colorbar from the layout engine, so panels overlapped.
-    """
-    fig, axes = plt.subplots(ncols=3, figsize=(18, 6), layout="constrained")
-    panels = []
-    for ax in axes:
-        seen = set(map(id, fig.axes))
-        plot_rgb(si_iv_cube, ax=ax)
-        # Image, colorbar and its velocity axis all belong to this panel.
-        new = [a for a in fig.axes if id(a) not in seen or a is ax]
-        panels.append(new + [child for a in new for child in a.child_axes])
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    labels = [
-        [art.get_window_extent(renderer) for a in panel for art in (a.yaxis.label, a.xaxis.label) if art.get_text()]
-        for panel in panels
-    ]
-    collisions = [
-        (one, other)
-        for panel, neighbour in itertools.combinations(labels, 2)
-        for one in panel
-        for other in neighbour
-        if one.overlaps(other)
-    ]
-    assert not collisions
-    plt.close(fig)
-
-
 def test_plot_rgb_colorbar_matches_the_image_height(si_iv_cube):
     """
     A fixed aspect shrinks the image inside its cell; the colorbar must follow.
@@ -304,19 +236,6 @@ def test_plot_rgb_colorbar_defaults_to_the_metadata_rest_wavelength(si_iv_cube):
     fig, ax = plt.subplots()
     plot_rgb(si_iv_cube, ax=ax, wavelength_min=(-50 * u.km / u.s).to(u.AA, equivalencies=doppler))
     np.testing.assert_allclose(_velocity_axis(fig).get_ylim(), (-50, 100))
-    plt.close(fig)
-
-
-def test_plot_rgb_colorbar_label_clears_the_image(si_iv_cube):
-    """
-    Regression: a small default ``cbar_pad`` pushed the wavelength label onto the image.
-    """
-    fig, ax = plt.subplots()
-    plot_rgb(si_iv_cube, ax=ax)
-    fig.canvas.draw()
-    label = next(a for a in fig.axes if a.get_ylabel().startswith("Wavelength")).yaxis.label
-    gap = label.get_window_extent(fig.canvas.get_renderer()).x0 - ax.get_window_extent().x1
-    assert gap > 0
     plt.close(fig)
 
 

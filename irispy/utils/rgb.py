@@ -82,11 +82,12 @@ def _wavelength_defaults(wavelength, rest_wavelength, wavelength_min, wavelength
     )
 
 
+@u.quantity_input
 def calculate_rgb(
     cube,
     *,
-    wavelength_min=None,
-    wavelength_max=None,
+    wavelength_min: u.AA = None,
+    wavelength_max: u.AA = None,
     wavelength_norm="auto",
     vmin=None,
     vmax=None,
