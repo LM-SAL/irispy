@@ -10,7 +10,6 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs.utils import wcs_to_celestial_frame
 
-from ndcube import NDCube
 from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
 import irispy.io.spectrograph as spectrograph_io
@@ -22,6 +21,7 @@ from irispy._spectrograph_wcs import (
 )
 from irispy.io._raster_combine import _combine_raster_cubes
 from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.spectrograph import SpectrogramCube
 
 
 def test_sns_read_spectrograph_lvl2(sns_sg_file):
@@ -334,14 +334,9 @@ def test_gwcs_crop_supports_full_world_component_api(raster_sg_files):
     assert spectrum_by_values.data.ndim == 1
 
 
-@pytest.mark.parametrize("combined", [False, True], ids=["single", "combined"])
-@pytest.mark.parametrize("coordinate", ["sky", "time", "step"])
-@pytest.mark.xfail(
-    strict=True,
-    raises=ValueError,
-    reason="Partial GWCS crop inputs still require coupled world objects",
-)
-def test_gwcs_partial_crop(coordinate, combined):
+@pytest.fixture(params=[False, True], ids=["single", "combined"])
+def partial_raster_cube(request):
+    combined = request.param
     shape = (2, 6, 4, 5) if combined else (6, 4, 5)
     table_shape = shape[:-2]
     header = {
@@ -361,18 +356,136 @@ def test_gwcs_partial_crop(coordinate, combined):
     observer = HeliographicStonyhurst(0 * u.deg, 0 * u.deg, 1 * u.AU, obstime="2020-01-01")
     wcs = _create_raster_gwcs(header, pc, crval, dt, "2020-01-01", observer, sit_and_stare=False)
     data = np.arange(np.prod(shape)).reshape(shape)
-    cube = NDCube(data, wcs=wcs)
-    index = {"sky": 1, "time": 2, "step": 3}[coordinate]
+    return SpectrogramCube(data, wcs=wcs, uncertainty=None, unit=u.DN, meta={}, _separate_raster_axis=combined)
+
+
+@pytest.mark.parametrize("coordinate", ["sky", "time", "step", "sky_step", "spectral_step"])
+def test_gwcs_partial_crop(partial_raster_cube, coordinate):
+    cube = partial_raster_cube
+    wcs = cube.wcs
+    combined = cube.data.ndim == 4
+    objects, axes = {
+        "sky": ((1,), (1, 2)),
+        "time": ((2,), (3,)),
+        "step": ((3,), (4,)),
+        "sky_step": ((1, 3), (1, 2, 4)),
+        "spectral_step": ((0, 3), (0, 4)),
+    }[coordinate]
     prefix = (0,) if combined else ()
     points = []
-    for array_index in ((*prefix, 1, 1, 0), (*prefix, 3, 2, 4)):
+    values = []
+    wavelength_bounds = (1, 3) if coordinate == "spectral_step" else (0, 4)
+    for array_index in ((*prefix, 1, 1, wavelength_bounds[0]), (*prefix, 3, 2, wavelength_bounds[1])):
         world = wcs.array_index_to_world(*array_index)
         assert wcs.world_to_array_index(*world) == array_index
-        points.append([value if i == index else None for i, value in enumerate(world)])
-    expected = data[..., 1:4, 1:3, :] if coordinate == "sky" else data[..., 1:4, :, :]
+        points.append([value if i in objects else None for i, value in enumerate(world)])
+        values.append(
+            [value if i in axes else None for i, value in enumerate(wcs.array_index_to_world_values(*array_index))]
+        )
+    expected = cube.data[..., 1:4, 1:3, :] if "sky" in coordinate else cube.data[..., 1:4, :, :]
     if combined and coordinate == "time":
         expected = expected[0]
+    if coordinate == "spectral_step":
+        expected = expected[..., 1:4]
+    cropped = cube.crop(*points)
+    np.testing.assert_array_equal(cropped.data, expected)
+    np.testing.assert_array_equal(cube.crop_by_values(*values, units=wcs.world_axis_units).data, expected)
+    origin = (0,) * cropped.data.ndim
+    assert cropped.wcs.world_to_array_index(*cropped.wcs.array_index_to_world(*origin)) == origin
+
+
+def test_gwcs_partial_time_crop_keeps_repeated_matches(partial_raster_cube):
+    cube = partial_raster_cube
+    temporal = cube.wcs.forward_transform["Time"]
+    # Both rasters have the same nonmonotonic timestamps; step 2 lies between matches.
+    times = np.array([0, 1, 4, 1, 0, 9]) * u.s
+    temporal.lookup_table = times[:, None] * np.ones((1, 2)) if cube.data.ndim == 4 else times
+    point = [None] * len(cube.wcs.world_axis_object_classes)
+    point[2] = cube.wcs.array_index_to_world(*((0,) if cube.data.ndim == 4 else ()), 1, 0, 0)[2]
+    np.testing.assert_array_equal(cube.crop(point).data, cube.data[..., 1:4, :, :])
+
+
+def test_gwcs_partial_sky_crop_uses_each_pointing(partial_raster_cube):
+    cube = partial_raster_cube
+    celestial = next(model for model in cube.wcs.forward_transform if hasattr(model, "transform_at_index"))
+    if cube.data.ndim == 4:
+        # Only the second raster covers the target sky position.
+        celestial.crval_table[:, 1, 0] += 100 * u.arcsec
+    else:
+        # Only steps 1 and 3 cover it; include the intervening step in the bounding slice.
+        celestial.crval_table[:, 0] += 100 * u.arcsec
+        celestial.crval_table[[1, 3], 0] -= 100 * u.arcsec
+    prefix = (1,) if cube.data.ndim == 4 else ()
+    world = cube.wcs.array_index_to_world(*prefix, 1, 1, 0)
+    other = cube.wcs.array_index_to_world(*prefix, 3, 2, 0)
+    points = [[value if i == 1 else None for i, value in enumerate(point)] for point in (world, other)]
+    expected = cube.data[1, 1:4, 1:3, :] if prefix else cube.data[1:4, 1:3, :]
     np.testing.assert_array_equal(cube.crop(*points).data, expected)
+
+
+@pytest.mark.parametrize("coordinate", ["sky", "time", "step"])
+def test_gwcs_partial_crop_after_slicing(partial_raster_cube, coordinate):
+    cube = partial_raster_cube[..., 1:5, 1:4, 1:]
+    index = {"sky": 1, "time": 2, "step": 3}[coordinate]
+    prefix = (0,) if cube.data.ndim == 4 else ()
+    world = cube.wcs.array_index_to_world(*prefix, 1, 1, 0)
+    point = [value if i == index else None for i, value in enumerate(world)]
+    expected = cube.data[..., 1:2, 1:2, :] if coordinate == "sky" else cube.data[..., 1:2, :, :]
+    if prefix and coordinate == "time":
+        expected = expected[:1]
+    np.testing.assert_array_equal(cube.crop(point, keepdims=True).data, expected)
+
+
+def test_gwcs_partial_sky_crop_with_rotation(partial_raster_cube):
+    cube = partial_raster_cube
+    celestial = next(model for model in cube.wcs.forward_transform if hasattr(model, "transform_at_index"))
+    angle = 0.4
+    celestial.pc_table[:] = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]) * u.pix
+    prefix = (0,) if cube.data.ndim == 4 else ()
+    world = cube.wcs.array_index_to_world(*prefix, 2, 1, 0)
+    point = [value if i == 1 else None for i, value in enumerate(world)]
+    np.testing.assert_array_equal(cube.crop(point).data, cube.data[..., 2, 1, :])
+
+
+def test_gwcs_partial_crop_outside_data(partial_raster_cube):
+    cube = partial_raster_cube
+    point = [None] * len(cube.wcs.world_axis_object_classes)
+    point[3] = 100 * u.pix
+    with pytest.raises(ValueError, match="No raster pixels"):
+        cube.crop(point)
+
+
+@pytest.mark.parametrize("partial_raster_cube", [True], indirect=True, ids=["combined"])
+def test_gwcs_partial_crop_with_scan_selection(partial_raster_cube):
+    cube = partial_raster_cube
+    world = cube.wcs.array_index_to_world(1, 2, 1, 0)
+    point = [value if i in (1, 4) else None for i, value in enumerate(world)]
+    np.testing.assert_array_equal(cube.crop(point).data, cube.data[1, 2, 1, :])
+
+
+@pytest.mark.parametrize("coordinate", ["sky", "time", "step"])
+@pytest.mark.parametrize("source", ["raster_sg_files", "sns_sg_file"])
+def test_gwcs_partial_crop_real_rasters(request, source, coordinate):
+    files = request.getfixturevalue(source)
+    cube = read_spectrograph_lvl2(files[:2] if isinstance(files, list) else files, spectral_windows="Si IV 1403")[
+        "Si IV 1403"
+    ]
+    selected = {"sky": 1, "time": 2, "step": 3}[coordinate]
+    prefix = (0,) if cube.data.ndim == 4 else ()
+    indices = [(*prefix, step, 20, 10) for step in (3, 4)]
+    world = [cube.wcs.array_index_to_world(*index) for index in indices]
+    points = [[value if i == selected else None for i, value in enumerate(point)] for point in world]
+    cropped = cube.crop(*points, keepdims=True)
+    for index, point in zip(indices, world, strict=True):
+        cropped_index = cropped.wcs.world_to_array_index(*point)
+        assert all(0 <= i < size for i, size in zip(cropped_index, cropped.shape, strict=True))
+        assert cropped.data[cropped_index] == cube.data[index]
+    if coordinate == "time":
+        np.testing.assert_array_equal(cropped.data, cube.data[:1, 3:5] if prefix else cube.data[3:5])
+    elif coordinate == "step":
+        np.testing.assert_array_equal(cropped.data, cube.data[..., 3:5, :, :])
+    else:
+        assert cropped.shape[-2] < cube.shape[-2]
 
 
 def test_gwcs_crop_rejects_removed_two_component_shorthand(raster_sg_files):

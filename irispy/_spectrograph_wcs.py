@@ -8,7 +8,7 @@ import astropy.modeling.models as m
 import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
-from astropy.wcs.wcsapi import HighLevelWCSWrapper, SlicedLowLevelWCS
+from astropy.wcs.wcsapi import HighLevelWCSWrapper, SlicedLowLevelWCS, high_level_objects_to_values
 from astropy.wcs.wcsapi.wrappers.sliced_wcs import sanitize_slices
 
 from dkist.wcs.models import (
@@ -17,6 +17,7 @@ from dkist.wcs.models import (
     CoupledCompoundModel,
     VaryingCelestialTransform,
 )
+from ndcube.utils.cube import sanitize_crop_inputs
 from sunpy import log as logger
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.time import parse_time
@@ -88,8 +89,20 @@ def _safe_slice_wcs(wcs, item, context):
 
 class _SpectrogramCubeWCSMixin:
     """
-    Mixin that handles ``fits_wcs`` and raster-metadata slicing for `SpectrogramCube`.
+    Mixin for raster cropping and ``fits_wcs`` and metadata slicing.
     """
+
+    def _get_crop_item(self, *points, wcs=None, keepdims=False):
+        item = _raster_crop_item(self, points, wcs, keepdims, high_level=True)
+        if item is NotImplemented:
+            return super()._get_crop_item(*points, wcs=wcs, keepdims=keepdims)
+        return item
+
+    def _get_crop_by_values_item(self, *points, units=None, wcs=None, keepdims=False):
+        item = _raster_crop_item(self, points, wcs, keepdims, high_level=False, units=units)
+        if item is NotImplemented:
+            return super()._get_crop_by_values_item(*points, units=units, wcs=wcs, keepdims=keepdims)
+        return item
 
     def _normalize_fits_wcs_item(self, item):
         """
@@ -277,6 +290,169 @@ class _SpectrogramCubeWCSMixin:
 
         sliced_self._fits_wcs_segments = self._slice_fits_wcs_segments_for_slice(scan_item)
         sliced_self._raster_boundaries = self._slice_raster_boundaries_for_slice(scan_item)
+
+
+def _raster_crop_item(cube, points, wcs, keepdims, *, high_level, units=None):  # NOQA: PLR0911
+    """
+    Bound partial raster coordinates using the measured time and pointing tables.
+
+    Each exposure contributes its own sky bounds. Repeated matches are retained
+    in one bounding slice, which can also contain intervening unmatched data.
+    """
+    if wcs is not None and wcs is not cube.wcs:
+        return NotImplemented
+    low = cube.wcs.low_level_wcs
+    root = low._wcs if isinstance(low, SlicedLowLevelWCS) else low
+    if not isinstance(root, gwcs.WCS) or "raster_step" not in root.world_axis_names:
+        return NotImplemented
+    no_op, points, _ = sanitize_crop_inputs(points, cube.wcs)
+    if no_op or not any(value is None for point in points for value in point):
+        return NotImplemented
+
+    if high_level:
+        keys = list(dict.fromkeys(component[0] for component in low.world_axis_object_components))
+        classes = low.world_axis_object_classes
+        if any(len(point) != len(keys) for point in points) or any(
+            value is not None and not isinstance(value, classes[key][0])
+            for point in points
+            for key, value in zip(keys, point, strict=True)
+        ):
+            return NotImplemented
+        defaults = cube.wcs.pixel_to_world(*np.zeros(low.pixel_n_dim))
+        if len(keys) == 1:
+            defaults = (defaults,)
+        converted = []
+        for point in points:
+            # Defaults are only used to extract units and frames, never to invert the WCS.
+            values = high_level_objects_to_values(
+                *(default if value is None else value for default, value in zip(defaults, point, strict=True)),
+                low_level_wcs=low,
+            )
+            converted.append(
+                [
+                    None if point[keys.index(key)] is None else value
+                    for (key, *_), value in zip(low.world_axis_object_components, values, strict=True)
+                ]
+            )
+        points = converted
+    else:
+        if any(len(point) != low.world_n_dim for point in points):
+            return NotImplemented
+        units = [None] * low.world_n_dim if units is None else units
+        if len(units) != low.world_n_dim or any(
+            value is not None and not isinstance(value, u.Quantity) and unit is None
+            for point in points
+            for value, unit in zip(point, units, strict=True)
+        ):
+            return NotImplemented
+        points = [
+            [
+                None
+                if value is None
+                else (value if isinstance(value, u.Quantity) else u.Quantity(value, unit)).to_value(world_unit)
+                for value, unit, world_unit in zip(point, units, low.world_axis_units, strict=True)
+            ]
+            for point in points
+        ]
+
+    world_keep = low._world_keep if isinstance(low, SlicedLowLevelWCS) else range(root.world_n_dim)
+    bounds = [None] * root.world_n_dim
+    for index, column in zip(world_keep, zip(*points, strict=True), strict=True):
+        values = np.array([value for value in column if value is not None])
+        if values.size:
+            if values.ndim != 1 or not np.all(np.isfinite(values)):
+                msg = "Crop coordinates must be finite scalars."
+                raise ValueError(msg)
+            bounds[index] = values.min(), values.max()
+    if all(bound is None for bound in bounds[1:]):
+        return NotImplemented
+    if (bounds[1] is None) != (bounds[2] is None):
+        msg = "Both celestial components are required for a sky crop."
+        raise ValueError(msg)
+
+    slices = low._slices_pixel if isinstance(low, SlicedLowLevelWCS) else [slice(None)] * root.pixel_n_dim
+    pixel_ranges = []
+    pixel_keep = []
+    for axis, item in enumerate(slices):
+        if isinstance(item, slice):
+            pixel_keep.append(axis)
+            pixel_ranges.append(np.arange(cube.shape[::-1][len(pixel_keep) - 1]) + (item.start or 0))
+        else:
+            pixel_ranges.append(np.array([item]))
+    wavelength, slit, steps = pixel_ranges[:3]
+    scans = pixel_ranges[3] if root.pixel_n_dim == 4 else np.array([0])
+    step_grid, scan_grid = np.meshgrid(steps, scans)
+    selected = np.ones(step_grid.shape, dtype=bool)
+    for index, grid in ((4, step_grid), (5, scan_grid)):
+        if index < len(bounds) and bounds[index] is not None:
+            start, stop = _raster_crop_pixel_bounds(bounds[index])
+            selected &= (grid >= start) & (grid < stop)
+    if bounds[3] is not None:
+        temporal_inputs = (step_grid * u.pix, scan_grid * u.pix)[: root.pixel_n_dim - 2]
+        times = root.forward_transform["Time"](*temporal_inputs).to_value(u.s)
+        # Time conversion can introduce sub-microsecond floating-point differences.
+        selected &= (times >= bounds[3][0] - 1e-7) & (times <= bounds[3][1] + 1e-7)
+
+    wavelength_bounds = wavelength[0], wavelength[-1] + 1
+    if bounds[0] is not None:
+        spectral = root.forward_transform["Wavelength"]
+        wavelength_bounds = _raster_crop_pixel_bounds(
+            spectral.inverse(np.array(bounds[0]) * u.Unit(root.world_axis_units[0])).to_value(u.pix)
+        )
+    matches = []
+    if bounds[1] is not None:
+        celestial = next(model for model in root.forward_transform if isinstance(model, BaseVaryingCelestialTransform))
+        # A sit-and-stare scan uses a tiny placeholder scale, but the slit has finite width.
+        step_scale = abs(celestial.cdelt.quantity[0].to_value(u.arcsec / u.pix))
+        step_padding = max(SLIT_WIDTH.to_value(u.arcsec) / step_scale - 1, 0) / 2
+        lon, lat = np.meshgrid(bounds[1], bounds[2])
+        lon = (lon.ravel() * u.Unit(root.world_axis_units[1])).to_value(u.deg)
+        lat = (lat.ravel() * u.Unit(root.world_axis_units[2])).to_value(u.deg)
+    # ponytail: visit each exposure; batch the transforms if large rasters make this slow.
+    for step, scan in zip(step_grid[selected], scan_grid[selected], strict=True):
+        slit_bounds = slit[0], slit[-1] + 1
+        if bounds[1] is not None:
+            lookup = (step, scan)[: root.pixel_n_dim - 2]
+            x, y = celestial.transform_at_index(lookup).inverse(lon, lat)
+            if not np.all(np.isfinite([x, y])):
+                continue
+            start, stop = _raster_crop_pixel_bounds([x.min() - step_padding, x.max() + step_padding])
+            if not start <= step < stop:
+                continue
+            start, stop = _raster_crop_pixel_bounds(y)
+            slit_bounds = max(start, slit[0]), min(stop, slit[-1] + 1)
+            if slit_bounds[0] >= slit_bounds[1]:
+                continue
+        matches.append((slit_bounds[0], slit_bounds[1], step, scan))
+    if not matches:
+        msg = "No raster pixels match the crop coordinates."
+        raise ValueError(msg)
+    matches = np.array(matches)
+    starts = [wavelength_bounds[0], matches[:, 0].min(), matches[:, 2].min(), matches[:, 3].min()]
+    stops = [wavelength_bounds[1], matches[:, 1].max(), matches[:, 2].max() + 1, matches[:, 3].max() + 1]
+    constrained = root.axis_correlation_matrix[[bound is not None for bound in bounds]].any(axis=0)
+    item = []
+    for axis in pixel_keep:
+        if not constrained[axis]:
+            item.append(slice(None))
+            continue
+        start = max(starts[axis] - pixel_ranges[axis][0], 0)
+        stop = min(stops[axis] - pixel_ranges[axis][0], len(pixel_ranges[axis]))
+        if start >= stop:
+            msg = "No raster pixels match the crop coordinates."
+            raise ValueError(msg)
+        item.append(int(start) if stop == start + 1 and not keepdims else slice(int(start), int(stop)))
+    if all(isinstance(axis, int) for axis in item):
+        msg = "The crop would return a scalar; use keepdims=True."
+        raise ValueError(msg)
+    return tuple(item[::-1])
+
+
+def _raster_crop_pixel_bounds(values):
+    """Round pixel bounds with the same pixel-edge convention as NDCube.crop."""
+    start = int(np.floor(np.min(values) + 0.5))
+    stop = int(np.ceil(np.max(values) - 0.5)) + 1
+    return start, max(start + 1, stop)
 
 
 def _raster_wcs_bad_row_mask(pc, crval, *, pc_only=False):

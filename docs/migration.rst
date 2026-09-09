@@ -87,16 +87,31 @@ Old two-element calls raise a ``ValueError`` from ndcube:
     cube.crop([SpectralCoord(280, unit=u.nm), None, None, None],
               [SpectralCoord(280, unit=u.nm), None, None, None])
 
-When cropping around a sky position, the simplest robust pattern is to build
-complete world tuples from pixel indices:
+Sky, time, and step coordinates can also be supplied on their own. For example,
+to crop a single raster to a sky region or a time interval:
 
 .. code-block:: python
 
-    step, slit_pixel, _ = cube.fits_wcs.world_to_array_index(wavelength, target)
-    spectrum = cube.crop(
-        cube.wcs.array_index_to_world(step, slit_pixel, 0),
-        cube.wcs.array_index_to_world(step, slit_pixel, cube.data.shape[-1] - 1),
-    )
+    region = cube.crop([None, bottom_left, None, None],
+                       [None, top_right, None, None])
+    interval = cube.crop([None, None, start_time, None],
+                         [None, None, end_time, None])
+
+For combined rasters, append a fifth entry for the scan coordinate. Leaving it
+as ``None`` includes every matching raster. Supplying a scan coordinate selects
+that raster. The same partial-coordinate behavior is available through
+``crop_by_values``; supply both numeric celestial components for a sky crop.
+
+Partial time crops select exposures whose timestamps fall within the inclusive
+time interval, including repeated or nonmonotonic timestamps. Sky crops use the
+pointing transform of each exposure to bound the supplied sky region in pixels.
+The finite slit width is respected, including for sit-and-stare observations.
+All coordinate constraints are applied together.
+
+The result is one rectangular slice containing the matches, so it can include
+intervening pixels or rasters that do not themselves match. A crop with no
+matching pixels raises ``ValueError``. Use ``keepdims=True`` to retain axes of
+length one.
 
 Memmap reads
 ============
