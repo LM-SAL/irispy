@@ -25,6 +25,7 @@ import pooch
 import astropy.units as u
 
 from irispy.io import read_files
+from irispy.utils.rgb import asinh_velocity
 
 ###############################################################################
 # We will start by getting some data from the IRIS archive.
@@ -45,24 +46,25 @@ raster_filename = pooch.retrieve(
 si_iv = read_files(raster_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
 
 ###############################################################################
-# By default, the metadata stored in the cube will be used and that means,
-# it will use the rest wavelength, the default maps +/-100 km/s to color
-# and uses an asinh transform with a 25 km/s scale to emphasize small shifts.
+# By default, the metadata stored in the cube will be used: the rest
+# wavelength and a mapping of +/-100 km/s to color, with the Doppler velocity
+# mapped linearly.
 
 si_iv.plotter.plot_rgb()
 
 ###############################################################################
 # If you want to override the range, pass the wavelength limits, here +/-200 km/s.
-# ``velocity_norm`` replaces the asinh transform, here with a linear velocity mapping.
-# A square-root intensity stretch brightens faint signal, and wavelengths outside
-# the limits contribute no color.
+# ``velocity_norm`` replaces the default linear mapping, here with
+# `~irispy.utils.rgb.asinh_velocity` (``arcsinh(v / 25 km/s)``), which emphasizes
+# small shifts. A square-root intensity stretch brightens faint signal, and
+# wavelengths outside the limits contribute no color.
 
 doppler = u.doppler_optical(si_iv.meta.rest_wavelength)
 wavelength_min, wavelength_max = ([-200, 200] * u.km / u.s).to(u.AA, equivalencies=doppler)
 si_iv.plotter.plot_rgb(
     wavelength_min=wavelength_min,
     wavelength_max=wavelength_max,
-    velocity_norm=lambda velocity: velocity.value,
+    velocity_norm=asinh_velocity,
     stretch=np.sqrt,
 )
 

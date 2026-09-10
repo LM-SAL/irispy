@@ -6,7 +6,7 @@ import astropy.units as u
 
 from irispy.io.utils import read_files
 from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
-from irispy.utils.rgb import calculate_rgb, plot_rgb
+from irispy.utils.rgb import asinh_velocity, calculate_rgb, plot_rgb
 
 colorsynth = pytest.importorskip("colorsynth")
 
@@ -137,7 +137,7 @@ def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
     "overrides",
     [
         lambda cube: {"rest_wavelength": cube.meta.rest_wavelength + 0.3 * u.AA},
-        lambda _: {"velocity_norm": lambda velocity: velocity.to_value(u.km / u.s)},
+        lambda _: {"velocity_norm": asinh_velocity},
     ],
     ids=["rest_wavelength", "velocity_norm"],
 )
@@ -281,7 +281,7 @@ def test_plot_rgb_figure():
 
     fig, axes = plt.subplots(ncols=2, figsize=(14, 5), layout="constrained")
     plot_rgb(cube, ax=axes[0], vmax=100)
-    axes[0].set_title("Default: +/-100 km/s, asinh velocity (25 km/s)")
+    axes[0].set_title("Default: +/-100 km/s, linear velocity")
     doppler = u.doppler_optical(1402.77 * u.AA)
     wavelength_min, wavelength_max = ([-50, 50] * u.km / u.s).to(u.AA, equivalencies=doppler)
     plot_rgb(cube, ax=axes[1], vmax=100, stretch=np.sqrt, wavelength_min=wavelength_min, wavelength_max=wavelength_max)
