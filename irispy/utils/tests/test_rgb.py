@@ -61,10 +61,8 @@ def test_rgb_requires_rest_wavelength_without_metadata(si_iv_cube, render):
 @pytest.mark.parametrize("render", [calculate_rgb, plot_rgb])
 def test_rgb_explicit_rest_wavelength_without_metadata(si_iv_cube, render):
     rest_wavelength = si_iv_cube.meta.pop(f"TWAVE{si_iv_cube.meta._iwin}") * u.AA
-    try:
-        render(si_iv_cube, rest_wavelength=rest_wavelength)
-    finally:
-        plt.close("all")
+    render(si_iv_cube, rest_wavelength=rest_wavelength)
+    plt.close("all")
 
 
 def test_calculate_rgb_ignores_wavelengths_outside_the_window(si_iv_cube):
@@ -135,38 +133,23 @@ def test_plot_rgb_rejects_a_singleton_spatial_axis(shape):
         plot_rgb(cube)
 
 
-def test_plot_rgb_rest_wavelength_updates_image_and_colorbar(si_iv_cube):
-    """
-    The same window colored around a shifted rest wavelength moves the asinh knee, in
-    the image and in the colorbar alike.
-    """
-    rest_wavelength = si_iv_cube.meta.rest_wavelength
-    lower, upper = ([-100, 100] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(rest_wavelength))
-    shifted = rest_wavelength + 0.3 * u.AA
-    window = {"vmax": 100, "wavelength_min": lower, "wavelength_max": upper}
-    rgb, (_, _, colorbar) = calculate_rgb(si_iv_cube, rest_wavelength=shifted, **window)
-    default_rgb, (_, _, default_colorbar) = calculate_rgb(si_iv_cube, **window)
-    assert not np.allclose(rgb, default_rgb)
-    assert not np.allclose(colorbar, default_colorbar)
-
-    fig, (ax, cax) = plt.subplots(ncols=2)
-    si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, rest_wavelength=shifted, **window)
-    np.testing.assert_allclose(ax.collections[0].get_array(), rgb)
-    np.testing.assert_allclose(cax.collections[0].get_array(), colorbar)
-    plt.close(fig)
-
-
-def test_plot_rgb_velocity_norm_updates_image_and_colorbar(si_iv_cube):
-    def linear(velocity):
-        return velocity.to_value(u.km / u.s)
-
-    rgb, (_, _, colorbar) = calculate_rgb(si_iv_cube, vmax=100, velocity_norm=linear)
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        lambda cube: {"rest_wavelength": cube.meta.rest_wavelength + 0.3 * u.AA},
+        lambda _: {"velocity_norm": lambda velocity: velocity.to_value(u.km / u.s)},
+    ],
+    ids=["rest_wavelength", "velocity_norm"],
+)
+def test_plot_rgb_options_update_image_and_colorbar(si_iv_cube, overrides):
+    kwargs = {"vmax": 100, **overrides(si_iv_cube)}
+    rgb, (_, _, colorbar) = calculate_rgb(si_iv_cube, **kwargs)
     default_rgb, (_, _, default_colorbar) = calculate_rgb(si_iv_cube, vmax=100)
     assert not np.allclose(rgb, default_rgb)
     assert not np.allclose(colorbar, default_colorbar)
 
     fig, (ax, cax) = plt.subplots(ncols=2)
-    si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, vmax=100, velocity_norm=linear)
+    si_iv_cube.plotter.plot_rgb(ax=ax, cax=cax, **kwargs)
     np.testing.assert_allclose(ax.collections[0].get_array(), rgb)
     np.testing.assert_allclose(cax.collections[0].get_array(), colorbar)
     plt.close(fig)
@@ -236,6 +219,29 @@ def test_plot_rgb_colorbar_matches_the_image_height(si_iv_cube):
     cax = next(a for a in fig.axes if a.get_ylabel().startswith("Wavelength"))
     np.testing.assert_allclose(cax.get_window_extent().height, ax.get_window_extent().height)
     plt.close(fig)
+
+
+def _colorbar_geometry(cube, **kwargs):
+    fig, ax = plt.subplots(figsize=(6, 4))
+    plot_rgb(cube, ax=ax, vmax=100, **kwargs)
+    fig.canvas.draw()
+    cax = next(a for a in fig.axes if a.get_ylabel().startswith("Wavelength"))
+    width = cax.get_window_extent().width
+    gap = cax.get_window_extent().x0 - ax.get_window_extent().x1
+    plt.close(fig)
+    return width, gap
+
+
+def test_plot_rgb_colorbar_fraction_and_pad(si_iv_cube):
+    """
+    `cbar_fraction` widens the colorbar, `cbar_pad` the gap before it.
+    """
+    narrow, _ = _colorbar_geometry(si_iv_cube, cbar_fraction=0.1)
+    wide, _ = _colorbar_geometry(si_iv_cube, cbar_fraction=0.3)
+    assert narrow < wide
+    _, tight = _colorbar_geometry(si_iv_cube, cbar_pad=0.05)
+    _, loose = _colorbar_geometry(si_iv_cube, cbar_pad=0.5)
+    assert tight < loose
 
 
 def test_plot_rgb_colorbar_defaults_to_the_metadata_rest_wavelength(si_iv_cube):

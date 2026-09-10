@@ -41,22 +41,6 @@ def _colorbar_axes(ax, fraction, pad):
     return figure.add_subplot(gridspec[1])
 
 
-def _match_heights(ax, cax, aspect, fraction):
-    """
-    Pin both box aspects so the colorbar keeps the image's height.
-
-    An axes locator would do the same but is replaced when the layout engine runs.
-    """
-    if aspect == "auto":
-        return
-    scale = 1.0 if aspect == "equal" else float(aspect)
-    width = abs(np.subtract(*ax.get_xlim()))
-    height = abs(np.subtract(*ax.get_ylim()))
-    box_aspect = scale * height / width
-    ax.set_box_aspect(box_aspect)
-    cax.set_box_aspect(box_aspect * (1 - fraction) / fraction)
-
-
 def asinh_velocity(velocity):
     """
     ``arcsinh(v / 25 km/s)``: linear near rest, compressing the wings.
@@ -296,8 +280,15 @@ def plot_rgb(
     if aspect is None:
         aspect = "equal" if coordinates == "helioprojective" else "auto"
     ax.set_aspect(aspect)
-    if managed:
-        _match_heights(ax, cax, aspect, cbar_fraction)
+    if managed and aspect != "auto":
+        # Pin both box aspects so the colorbar keeps the image's height; an axes
+        # locator would do the same but is replaced when the layout engine runs.
+        scale = 1.0 if aspect == "equal" else float(aspect)
+        width = abs(np.subtract(*ax.get_xlim()))
+        height = abs(np.subtract(*ax.get_ylim()))
+        box_aspect = scale * height / width
+        ax.set_box_aspect(box_aspect)
+        cax.set_box_aspect(box_aspect * (1 - cbar_fraction) / cbar_fraction)
     if coordinates == "time":
         ax.xaxis_date()
     ax.set_xlabel(label)
