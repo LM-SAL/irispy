@@ -1,3 +1,47 @@
+0.9.0 (2026-09-10)
+==================
+
+New Features
+------------
+
+- Added `irispy.utils.rgb.calculate_rgb` and `irispy.utils.rgb.plot_rgb`, also reachable as
+  ``cube.plotter.plot_rgb()``, which render a `~irispy.spectrograph.SpectrogramCube` as a false-color
+  image whose brightness and hue depend on intensity and spectral shape, so Doppler shifts show up as color.
+  Wavelengths are converted to Doppler velocities around the rest wavelength, which defaults to the
+  metadata ``TWAVE`` (an explicit rest wavelength is required when it is missing), and mapped to color through ``velocity_norm``, by default the Doppler velocity itself; ``asinh_velocity`` offers an arcsinh scale of 25 km/s to bring out small shifts.
+  The mapped range defaults to +/-100 km/s when the rest wavelength lies within the cube's range,
+  otherwise to the full window; explicit wavelength bounds override it.
+  The image can be drawn against helioprojective longitude or against time, and the colorbar is
+  labelled in both wavelength and Doppler velocity. The colorbar represents single-bin spectra;
+  finite-width lines can have different colors at the same peak intensity.
+  This needs the optional ``colorsynth`` dependency, installable with ``pip install 'irispy-lmsal[rgb]'``. (`#168 <https://github.com/LM-SAL/irispy/pull/168>`__)
+
+
+Bug Fixes
+---------
+
+- Reading an SJI file no longer crashes when a pointing column is entirely zero
+  (e.g. the PC off-diagonals of an unrotated observation), and valid zeros are
+  no longer interpolated over. Only fully-zeroed pointing rows (dropped
+  exposures) are treated as gaps, they are now handled consistently for both
+  the gWCS and the header-based WCS, and are filled with the average of the
+  neighbouring exposures. (`#169 <https://github.com/LM-SAL/irispy/pull/169>`__)
+- Fixed a crash when plotting a 1D slice of an SJI cube: the default colormap is no longer passed to the 1D line plot. (`#170 <https://github.com/LM-SAL/irispy/pull/170>`__)
+
+
+Internal Changes
+----------------
+
+- The test-data generator ``compress.py`` was reworked: it now writes
+  ``*_test.fits`` copies instead of overwriting its inputs, decimates by
+  strided selection so bad-pixel and saturation sentinels survive exactly,
+  keeps world coordinate spans and the exposure bookkeeping (auxiliary table,
+  source-filename table, ``NEXP``) consistent, and the bundled test files were
+  renamed to the ``_test`` convention and repaired accordingly. (`#169 <https://github.com/LM-SAL/irispy/pull/169>`__)
+- IRIS plotters are now registered through ndcube's plotter framework, so ``cube.plotter`` is an IRIS plotter and extra plotter methods are reachable as ``cube.plotter.<method>()``; ``cube.plot()`` behaves as before. (`#170 <https://github.com/LM-SAL/irispy/pull/170>`__)
+- Repaired the WCS of the bundled test FITS files. (`#171 <https://github.com/LM-SAL/irispy/pull/171>`__)
+
+
 0.8.1 (2026-08-14)
 ==================
 
