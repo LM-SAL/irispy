@@ -194,8 +194,14 @@ class BaseMeta(NDMeta):
     def rest_wavelength(self):
         """
         Rest wavelength of the spectral line for this window.
+
+        `None` when the window has no usable ``TWAVE`` keyword.
         """
-        return (float(self.get(f"TWAVE{self._iwin}")) * u.AA).to(u.nm)
+        twave = self.get(f"TWAVE{self._iwin}")
+        try:
+            return (float(twave) * u.AA).to(u.nm)
+        except (TypeError, ValueError):
+            return None
 
     @property
     def raster_fov_width_y(self):

@@ -2,12 +2,12 @@
 Helpers for IRIS density diagnostics.
 """
 
-from importlib import import_module
-
 import numpy as np
 from scipy.interpolate import make_interp_spline
 
 import astropy.units as u
+
+from irispy.utils.utils import _import_optional
 
 __all__ = ["density_diagnostic", "map_ratio_to_quantity"]
 
@@ -145,11 +145,7 @@ def density_diagnostic(
         msg = "ion, numerator, and denominator are required."
         raise ValueError(msg)
 
-    try:
-        fiasco = import_module("fiasco")
-    except ImportError as exc:
-        msg = "IRIS density diagnostics require the optional dependency 'fiasco'."
-        raise ImportError(msg) from exc
+    fiasco = _import_optional("fiasco", reason="IRIS density diagnostics", extra="density")
 
     if line_ratio_kwargs is None:
         line_ratio_kwargs = {}

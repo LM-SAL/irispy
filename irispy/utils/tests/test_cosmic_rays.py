@@ -19,23 +19,24 @@ class FakeCube:
 @pytest.fixture
 def mock_cosmic_ray_backend(monkeypatch):
     """
-    Return a helper that patches ``_import_optional_backend`` to a fake module.
+    Return a helper that patches ``_import_optional`` to a fake module.
     """
 
     def _patch(fake_module):
-        def fake_import_optional_backend(_module_name, *, method):
-            _ = method
+        def fake_import_optional(_module_name, *, reason, extra):
+            _ = reason, extra
             return fake_module
 
         monkeypatch.setattr(
-            "irispy.utils.cosmic_rays._import_optional_backend",
-            fake_import_optional_backend,
+            "irispy.utils.cosmic_rays._import_optional",
+            fake_import_optional,
         )
 
     return _patch
 
 
 def test_remove_cosmic_rays_rsliding(sns_sjicube_1330):
+    pytest.importorskip("rsliding")
     cube = sns_sjicube_1330[0, :3, :3]
     data = np.array([[1.0, 2.0, 3.0], [4.0, 100.0, 6.0], [7.0, 8.0, 9.0]])
     mask = np.array([[False, False, False], [False, False, False], [True, False, False]])
@@ -56,6 +57,7 @@ def test_remove_cosmic_rays_rsliding(sns_sjicube_1330):
 
 
 def test_remove_cosmic_rays_astroscrappy(sns_sjicube_1330):
+    pytest.importorskip("astroscrappy")
     cube = sns_sjicube_1330[0, :10, :10]
     data = np.full((10, 10), 10.0, dtype=float)
     data[5, 5] = 500.0
@@ -274,15 +276,15 @@ def test_remove_cosmic_rays_rsliding_rejects_dask_cube():
 
 @pytest.mark.parametrize("method", ["rsliding", "astroscrappy"])
 def test_remove_cosmic_rays_missing_optional_dependency(sns_sjicube_1330, monkeypatch, method):
-    def fake_import_optional_backend(module_name, *, method):
+    def fake_import_optional(module_name, *, reason, extra):
         msg = (
-            f"{module_name} is an optional dependency required for method='{method}'. "
+            f"{module_name} is an optional dependency required for {reason}. "
             f"Install it with `pip install {module_name}` or "
-            "`pip install 'irispy-lmsal[cosmic-rays]'`."
+            f"`pip install 'irispy-lmsal[{extra}]'`."
         )
         raise ImportError(msg)
 
-    monkeypatch.setattr("irispy.utils.cosmic_rays._import_optional_backend", fake_import_optional_backend)
+    monkeypatch.setattr("irispy.utils.cosmic_rays._import_optional", fake_import_optional)
 
     cube = sns_sjicube_1330[0, :3, :3]
     cube.data[...] = np.ones((3, 3), dtype=float)

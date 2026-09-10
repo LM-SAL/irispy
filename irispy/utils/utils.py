@@ -3,6 +3,7 @@ This module provides general utility functions.
 """
 
 import numbers
+from importlib import import_module
 
 import numpy as np
 from scipy import ndimage
@@ -20,6 +21,23 @@ __all__ = [
     "image_clipping",
     "record_to_dict",
 ]
+
+
+def _import_optional(module_name: str, *, reason: str, extra: str):
+    """
+    Import an optional dependency, raising a helpful error when it is missing.
+    """
+    try:
+        return import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name != module_name:
+            raise
+        msg = (
+            f"{module_name} is an optional dependency required for {reason}. "
+            f"Install it with `pip install {module_name}` or "
+            f"`pip install 'irispy-lmsal[{extra}]'`."
+        )
+        raise ImportError(msg) from exc
 
 
 def record_to_dict(arr: np.ndarray):
