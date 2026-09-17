@@ -2,12 +2,7 @@
 build-backend = 'setuptools.build_meta'
 requires = [
   "setuptools>=62.1",
-<<<<<<<
-  "setuptools-scm[toml]>=8",
-  "wheel",
-=======
   "setuptools_scm[toml]>=8.0.1",
->>>>>>>
 ]
 
 [project]
@@ -104,8 +99,6 @@ namespaces = false
 [tool.setuptools_scm]
 version_file = "irispy/_version.py"
 
-<<<<<<<
-=======
 [tool.repo-review.ignore]
 PY003 = "The LICENSE file is in licenses/"
 PY005 = "The template packages tests inside irispy/"
@@ -121,7 +114,6 @@ MY = "No SunPy projects make heavy use of types"
 
 # TODO: This should be in towncrier.toml but Giles currently only works looks in
 # pyproject.toml we should move this back when it's fixed.
->>>>>>>
 [tool.towncrier]
 package = "irispy"
 filename = "CHANGELOG.rst"
