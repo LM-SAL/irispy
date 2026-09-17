@@ -6,11 +6,7 @@ repos:
     rev: "v0.16.5"
     hooks:
       - id: ruff-check
-<<<<<<<
-        args: ["--fix", "--unsafe-fixes"]
-=======
-        args: ["--fix", "--show-fixes"]
->>>>>>>
+        args: ["--fix", "--show-fixes", "--unsafe-fixes"]
         types: [python]
         # Define here once and then reference using YAML anchor
         exclude: &exclude_dirs ^irispy/(data|extern)/
