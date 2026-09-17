@@ -10,7 +10,7 @@ extend-exclude=[
 lint.extend-select = [
     "ALL",
 ]
-lint.extend-ignore = [
+lint.ignore = [
     "CPY001", # Missing copyright notice at top of file
     "I", # Ignore isort
     "ANN001", # Missing type annotation for function argument
