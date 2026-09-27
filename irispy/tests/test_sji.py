@@ -13,8 +13,8 @@ AXIS = [
         "custom:CUSTOM",
         "custom:CUSTOM",
         "custom:CUSTOM",
-        "custom:CUSTOM",
-        "custom:CUSTOM",
+        "custom:PIXEL",  # slit x position
+        "custom:PIXEL",  # slit y position
         "custom:CUSTOM",
         "custom:CUSTOM",
     ),

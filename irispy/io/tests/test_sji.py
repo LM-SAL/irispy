@@ -4,6 +4,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.wcs import WCS
 
 from sunpy.coordinates import Helioprojective
 
@@ -170,3 +171,36 @@ def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file):
     header = cube._basic_wcs[1]
     np.testing.assert_allclose(header["CRVAL1"], expected["XCENIX"])
     np.testing.assert_allclose(header["CRVAL2"], expected["YCENIX"])
+
+
+def test_sji_gwcs_matches_the_fits_pointing(sns_sji_1400_file):
+    # CRVAL is at the 1-based FITS CRPIX, i.e. the 0-based pixel CRPIX - 1
+    cube = read_sji_lvl2(sns_sji_1400_file)
+    with fits.open(sns_sji_1400_file) as hdulist:
+        header, aux, columns = hdulist[0].header, hdulist[1].data, hdulist[1].header
+    n_frames, ny, nx = cube.data.shape
+    x = np.array([0, nx - 1, 0, nx - 1, (nx - 1) / 2])
+    y = np.array([0, 0, ny - 1, ny - 1, (ny - 1) / 2])
+    for frame in (0, n_frames - 1):
+        fits_wcs = WCS(naxis=2)
+        fits_wcs.wcs.ctype = ["HPLN-TAN", "HPLT-TAN"]
+        fits_wcs.wcs.cunit = ["arcsec", "arcsec"]
+        fits_wcs.wcs.crpix = [header["CRPIX1"], header["CRPIX2"]]
+        fits_wcs.wcs.cdelt = [header["CDELT1"], header["CDELT2"]]
+        fits_wcs.wcs.crval = [aux[frame, columns["XCENIX"]], aux[frame, columns["YCENIX"]]]
+        fits_wcs.wcs.pc = [
+            [aux[frame, columns["PC1_1IX"]], aux[frame, columns["PC1_2IX"]]],
+            [aux[frame, columns["PC2_1IX"]], aux[frame, columns["PC2_2IX"]]],
+        ]
+        longitude, latitude = (value * 3600 for value in fits_wcs.pixel_to_world_values(x, y))
+        world = cube.wcs.pixel_to_world_values(x, y, np.full_like(x, frame))
+        # the gWCS wraps longitude to [0, 360) degrees and astropy to (-180, 180]
+        np.testing.assert_allclose((world[0] - longitude + 648000) % 1296000 - 648000, 0, atol=1e-6)
+        np.testing.assert_allclose(world[1], latitude, atol=1e-6)
+
+
+def test_sji_extra_coordinate_units(sns_sji_1400_file):
+    extra_coords = read_sji_lvl2(sns_sji_1400_file).extra_coords.wcs
+    units = dict(zip(extra_coords.world_axis_names, extra_coords.world_axis_units, strict=True))
+    assert units["slit x position"] == units["slit y position"] == "pixel"
+    assert units["ophaseix"] == ""
