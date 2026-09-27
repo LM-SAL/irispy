@@ -1,0 +1,1 @@
+SJI and AIA cube coordinates are no longer one pixel off the FITS header: the gWCS now places the reference pointing at the FITS reference pixel ``CRPIX - 1`` in 0-based pixels. The ``slit x position`` and ``slit y position`` extra coordinates are now in pixels (their physical type becomes ``custom:PIXEL``) and ``ophaseix`` is dimensionless; all three were tagged arcsec.
