@@ -74,19 +74,16 @@ def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
     coordinates = np.stack((latitude, longitude), axis=-1) * arcsec_to_deg
 
     spatial_index = (header["CRVAL2"] + header["CDELT2"] * (spatial_pixels - header["CRPIX2"])) * arcsec_to_deg
-    raster_index = np.arange(1, header["NAXIS3"] + 1, dtype=float)
     table_data = np.array(
-        [(coordinates, spatial_index, raster_index)],
+        [(coordinates, spatial_index)],
         dtype=[
             ("COORDS", float, coordinates.shape),
             ("SPATIAL", float, spatial_index.shape),
-            ("RASTER", float, raster_index.shape),
         ],
     )
     table = fits.BinTableHDU(table_data, name="WCS-TABLE")
     table.header["TUNIT1"] = "deg"
     table.header["TUNIT2"] = "deg"
-    table.header["TUNIT3"] = "deg"
 
     header["CTYPE2"] = "HPLT-TAB"
     header["CTYPE3"] = "HPLN-TAB"
@@ -102,11 +99,14 @@ def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
     for row in range(1, 4):
         for column in range(1, 4):
             header[f"PC{row}_{column}"] = float(row == column)
-    for axis, index_column in ((2, "SPATIAL"), (3, "RASTER")):
+    for axis in (2, 3):
         header[f"PS{axis}_0"] = table.name
         header[f"PS{axis}_1"] = "COORDS"
-        header[f"PS{axis}_2"] = index_column
         header[f"PV{axis}_3"] = axis - 1
+    # The step axis has no index vector: FITS-TAB then indexes COORDS directly by the
+    # 1-based step. wcslib searches an index vector linearly, so an explicit 1..N index
+    # made every lookup cost O(step).
+    header["PS2_2"] = "SPATIAL"
 
     return WCS(header, fits.HDUList([fits.PrimaryHDU(), table]))
 
