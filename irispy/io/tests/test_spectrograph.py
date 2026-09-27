@@ -253,8 +253,6 @@ def test_read_spectrograph_retains_missing_nuv_exposure(raster_sg_file, tmp_path
     assert abs((times[0] - cube.meta["auxiliary times"][0]).to_value(u.s)) < 1e-6
 
 
-# calculate_uncertainty takes the square root of negative DN, such as the -200 fill
-@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt:RuntimeWarning")
 def test_read_spectrograph_flips_v34_mask_uncertainty_and_meta(raster_sg_file, tmp_path):
     # STEPS_AV < -0.01 marks a V34 raster, which is read flipped along the step axis
     filename = tmp_path / "v34.fits"
@@ -284,3 +282,14 @@ def test_read_spectrograph_flips_v34_mask_uncertainty_and_meta(raster_sg_file, t
         centre, reference_centre = cube.meta["exposure FOV center"], reference.meta["exposure FOV center"][::-1]
         np.testing.assert_array_equal(centre.Tx, reference_centre.Tx)
         np.testing.assert_array_equal(centre.Ty, reference_centre.Ty)
+
+
+def test_raster_wcs_steps_have_no_index_vector(raster_sg_file):
+    # wcslib searches a -TAB index vector linearly, so a 1..N step index made each lookup O(step)
+    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336")["C II 1336"][0]
+    assert "PS3_2" not in cube._fits_wcs.to_header()
+
+    steps = np.array([0, 0.5, 1, 6.25, 7])
+    world = cube.wcs.pixel_to_world_values(np.zeros(5), np.full(5, 50.0), steps)
+    np.testing.assert_allclose(world[2][1], (world[2][0] + world[2][2]) / 2)
+    np.testing.assert_allclose(cube.wcs.world_to_pixel_values(*world)[2], steps, atol=1e-6)
