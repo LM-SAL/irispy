@@ -184,9 +184,11 @@ def calculate_uncertainty(data: np.ndarray, readout_noise: u.Quantity, unit: u.Q
     float
         The readout noise with no unit.
     """
+    # Negative DN (dark-subtracted noise or the -200 fill) have no photon noise, only readout noise
+    photons = np.clip((data * unit).to(u.photon).value, 0, None)
     return (
         u.Quantity(
-            np.sqrt((data * unit).to(u.photon).value + readout_noise.to(u.photon).value ** 2),
+            np.sqrt(photons + readout_noise.to(u.photon).value ** 2),
             unit=u.photon,
         )
         .to(unit)
