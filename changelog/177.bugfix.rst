@@ -1,0 +1,1 @@
+Raster WCS lookups no longer slow down along the step axis: the -TAB table no longer has an explicit step index, which wcslib searched linearly, so a pixel-to-world call now costs the same at every step.
