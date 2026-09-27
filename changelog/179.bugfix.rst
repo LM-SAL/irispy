@@ -1,0 +1,1 @@
+``calculate_uncertainty``, used when reading with ``uncertainty=True``, now gives negative counts the readout noise instead of NaN and an "invalid value encountered in sqrt" warning.

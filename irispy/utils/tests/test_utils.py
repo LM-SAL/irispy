@@ -3,7 +3,7 @@ import numpy.testing as np_test
 import pytest
 
 from irispy import utils
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE
 
 data_dust = np.array(
     [
@@ -60,3 +60,12 @@ def test_import_optional_preserves_transitive_import_error(monkeypatch):
     monkeypatch.setattr(utils.utils, "import_module", import_module)
     with pytest.raises(ModuleNotFoundError, match="transitive_dependency"):
         utils.utils._import_optional("optional_module", reason="testing", extra="tests")
+
+
+def test_calculate_uncertainty_of_negative_data():
+    data = np.array([-200.0, -3.0, 0.0, 50.0, np.nan])
+    uncertainty = utils.calculate_uncertainty(data, READOUT_NOISE["FUV"], DN_UNIT["FUV"])
+    readout = READOUT_NOISE["FUV"].to(DN_UNIT["FUV"]).value
+    np_test.assert_allclose(uncertainty[:3], readout)
+    assert uncertainty[3] > readout
+    assert np.isnan(uncertainty[4])

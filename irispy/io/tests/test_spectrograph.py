@@ -253,8 +253,6 @@ def test_read_spectrograph_retains_missing_nuv_exposure(raster_sg_file, tmp_path
     assert abs((times[0] - cube.meta["auxiliary times"][0]).to_value(u.s)) < 1e-6
 
 
-# calculate_uncertainty takes the square root of negative DN, such as the -200 fill
-@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt:RuntimeWarning")
 def test_read_spectrograph_flips_v34_mask_uncertainty_and_meta(raster_sg_file, tmp_path):
     # STEPS_AV < -0.01 marks a V34 raster, which is read flipped along the step axis
     filename = tmp_path / "v34.fits"
