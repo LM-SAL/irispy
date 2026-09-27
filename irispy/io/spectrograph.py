@@ -141,7 +141,8 @@ def read_spectrograph_lvl2(
         lot less memory. However, because FITS scaling is not done on-the-fly,
         the data units will be unscaled, not the usual data numbers (DN).
     revert_v34 : `bool`, optional.
-        Will undo the data and WCS flipping made to V34 observations.
+        Will undo the flipping of the raster step axis made to V34 observations
+        (data, mask, uncertainty, WCS, times and per-step metadata).
         Defaults to `False`.
 
     Returns
@@ -156,6 +157,8 @@ def read_spectrograph_lvl2(
         # After a discussion with the IRIS team, it was decided that instead of the
         # OBSID, we will use STEPS_AV less than -0.01 to identify V34 observations.
         v34 = hdulist[0].header["STEPS_AV"] < -0.01
+        # V34 rasters are flipped along the step axis: everything indexed by step must follow.
+        steps = slice(None, None, -1) if v34 and not revert_v34 else slice(None)
         hdulist.verify("silentfix")
         windows_in_obs = np.array(
             [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)],
@@ -207,7 +210,7 @@ def read_spectrograph_lvl2(
                     window_name,
                     data_shape=hdulist[window_fits_indices[i]].data.shape,
                 )
-                meta.add("auxiliary times", aux_times, None, 0)
+                meta.add("auxiliary times", aux_times[steps], None, 0)
                 if "FUV" in meta.detector:
                     exposure_times = exposure_times_fuv
                     dn_unit = DN_UNIT["FUV"]
@@ -225,10 +228,10 @@ def read_spectrograph_lvl2(
                             filename=filename,
                         )
                     t_obs = t_obs_nuv
-                meta.add("exposure time", exposure_times, None, 0)
-                meta.add("exposure FOV center", fov_center, None, 0)
-                meta.add("observer radial velocity", obs_vrix, None, 0)
-                meta.add("orbital phase", ophaseix, None, 0)
+                meta.add("exposure time", exposure_times[steps], None, 0)
+                meta.add("exposure FOV center", fov_center[steps], None, 0)
+                meta.add("observer radial velocity", obs_vrix[steps], None, 0)
+                meta.add("orbital phase", ophaseix[steps], None, 0)
                 header = hdulist[window_fits_indices[i]].header
                 try:
                     wcs = _create_tabular_wcs(
@@ -245,22 +248,14 @@ def read_spectrograph_lvl2(
                     )
                     logger.warning(msg)
                     continue
+                data = hdulist[window_fits_indices[i]].data[steps]
+                times = t_obs[steps]
                 out_uncertainty = None
                 data_mask = None
                 if not memmap:
-                    data_mask = hdulist[window_fits_indices[i]].data == BAD_PIXEL_VALUE_SCALED
+                    data_mask = data == BAD_PIXEL_VALUE_SCALED
                 if uncertainty:
-                    out_uncertainty = calculate_uncertainty(
-                        hdulist[window_fits_indices[i]].data,
-                        readout_noise,
-                        dn_unit,
-                    )
-                if v34 and not revert_v34:
-                    times = t_obs[::-1]
-                    data = np.flip(hdulist[window_fits_indices[i]].data, axis=0)
-                else:
-                    times = t_obs
-                    data = hdulist[window_fits_indices[i]].data
+                    out_uncertainty = calculate_uncertainty(data, readout_noise, dn_unit)
                 _set_wcs_aux_obs_coord(wcs, observer)
                 cube = SpectrogramCube(
                     data,

@@ -251,3 +251,36 @@ def test_read_spectrograph_retains_missing_nuv_exposure(raster_sg_file, tmp_path
     assert np.all(cube.mask[0])
     assert not np.all(cube.mask[1])
     assert abs((times[0] - cube.meta["auxiliary times"][0]).to_value(u.s)) < 1e-6
+
+
+# calculate_uncertainty takes the square root of negative DN, such as the -200 fill
+@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt:RuntimeWarning")
+def test_read_spectrograph_flips_v34_mask_uncertainty_and_meta(raster_sg_file, tmp_path):
+    # STEPS_AV < -0.01 marks a V34 raster, which is read flipped along the step axis
+    filename = tmp_path / "v34.fits"
+    windows = ["C II 1336", "Mg II k 2796"]
+    with fits.open(raster_sg_file, memmap=False) as hdulist:
+        hdulist[0].header["STEPS_AV"] = -hdulist[0].header["STEPS_AV"]
+        names = [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)]
+        for window in windows:
+            hdulist[names.index(window) + 1].data[0] = BAD_PIXEL_VALUE_SCALED
+        hdulist.writeto(filename)
+
+    flipped = read_spectrograph_lvl2(filename, spectral_windows=windows, uncertainty=True)
+    original = read_spectrograph_lvl2(filename, spectral_windows=windows, uncertainty=True, revert_v34=True)
+    for window in windows:
+        cube, reference = flipped[window][0], original[window][0]
+        np.testing.assert_array_equal(cube.data, reference.data[::-1])
+        np.testing.assert_array_equal(cube.mask, cube.data == BAD_PIXEL_VALUE_SCALED)
+        assert np.all(cube.mask[-1])
+        assert not np.all(cube.mask[0])
+        np.testing.assert_array_equal(cube.uncertainty.array, reference.uncertainty.array[::-1])
+        times = cube.axis_world_coords("time", wcs=cube.extra_coords)[0]
+        reference_times = reference.axis_world_coords("time", wcs=reference.extra_coords)[0]
+        np.testing.assert_array_equal(times.jd, reference_times[::-1].jd)
+        np.testing.assert_array_equal(cube.meta["auxiliary times"].jd, reference.meta["auxiliary times"][::-1].jd)
+        for key in ("exposure time", "observer radial velocity", "orbital phase"):
+            np.testing.assert_array_equal(cube.meta[key], reference.meta[key][::-1])
+        centre, reference_centre = cube.meta["exposure FOV center"], reference.meta["exposure FOV center"][::-1]
+        np.testing.assert_array_equal(centre.Tx, reference_centre.Tx)
+        np.testing.assert_array_equal(centre.Ty, reference_centre.Ty)
