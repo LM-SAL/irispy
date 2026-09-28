@@ -1,0 +1,1 @@
+Documented how much memory reading data uses and how to use less.

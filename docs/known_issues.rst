@@ -43,3 +43,19 @@ This matters when transforming to frames that depend on the time, such as heliog
 A gWCS output frame cannot yet change its ``obstime`` from one pixel to the next (`#43 <https://github.com/LM-SAL/irispy/issues/43>`__).
 
 If you need a coordinate frame at the time of a given exposure, use the FITS WCS of that exposure, ``sji_cube.fits_wcs[i]`` (see `irispy.sji.SJICube.fits_wcs`), or its map, ``sji_cube.to_maps(i)`` (see `irispy.sji.SJICube.to_maps`); both use the time of that exposure.
+
+Memory use when reading data
+============================
+
+Level 2 files store 16-bit integers with a scale and offset (``BSCALE`` and ``BZERO``).
+`irispy.io.read_files` loads the scaled values into memory as 32-bit floats, so the data take twice the size of the file and the mask of fill values another half of it.
+For example, reading every spectral window of a 630 MB raster file holds about 1.6 GB of memory, and briefly about 1.9 GB while reading.
+
+To use less memory:
+
+* Read only the spectral windows you need with ``spectral_windows``; the memory goes down in proportion.
+* Leave ``uncertainty=False`` (the default); ``uncertainty=True`` adds a 64-bit array, twice the size of the data.
+* Pass ``memmap=True``, which maps the file instead of loading it and uses almost no memory.
+  The data are then the raw, unscaled integers stored in the file rather than data numbers (DN), there is no mask of fill values, and no uncertainty is computed.
+
+Loading the scaled and masked data lazily, only when they are used, is tracked in `#14 <https://github.com/LM-SAL/irispy/issues/14>`__.
