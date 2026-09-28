@@ -80,7 +80,8 @@ def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
 
     pc_table = hdulist[1].data[:, hdulist[1].header["PC1_1IX"] : hdulist[1].header["PC2_2IX"] + 1].reshape(-1, 2, 2)
     crval_table = hdulist[1].data[:, hdulist[1].header["XCENIX"] : hdulist[1].header["YCENIX"] + 1]
-    crpix_table = [hdulist[0].header["CRPIX1"], hdulist[0].header["CRPIX2"]]
+    # FITS CRPIX is 1-based and the transform takes 0-based pixels
+    crpix_table = [hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1]
     cdelt = [hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]
     celestial = VaryingCelestialTransform(
         cdelt=cdelt * u.arcsec / u.pixel,
@@ -219,19 +220,19 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             (
                 "ophaseix",
                 0,
-                hdulist[1].data[:, hdulist[1].header["OPHASEIX"]] * u.arcsec,
+                hdulist[1].data[:, hdulist[1].header["OPHASEIX"]] * u.one,
             ),
             ("pztx", 0, hdulist[1].data[:, hdulist[1].header["PZTX"]] * u.arcsec),
             ("pzty", 0, hdulist[1].data[:, hdulist[1].header["PZTY"]] * u.arcsec),
             (
                 "slit x position",
                 0,
-                hdulist[1].data[:, hdulist[1].header["SLTPX1IX"]] * u.arcsec,
+                hdulist[1].data[:, hdulist[1].header["SLTPX1IX"]] * u.pix,
             ),
             (
                 "slit y position",
                 0,
-                hdulist[1].data[:, hdulist[1].header["SLTPX2IX"]] * u.arcsec,
+                hdulist[1].data[:, hdulist[1].header["SLTPX2IX"]] * u.pix,
             ),
             ("xcenix", 0, hdulist[1].data[:, hdulist[1].header["XCENIX"]] * u.arcsec),
             ("ycenix", 0, hdulist[1].data[:, hdulist[1].header["YCENIX"]] * u.arcsec),

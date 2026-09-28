@@ -195,7 +195,7 @@ We use the same command to read and load the data from a SJI level 2 file:
     Total Frames in Obs:   None
     Obs ID:                3683602040
     Obs Description:       Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
-    Axis Types:            [('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat', 'time', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM'), ('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat'), ('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat')]
+    Axis Types:            [('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat', 'time', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:CUSTOM', 'custom:PIXEL', 'custom:PIXEL', 'custom:CUSTOM', 'custom:CUSTOM'), ('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat'), ('custom:pos.helioprojective.lon', 'custom:pos.helioprojective.lat')]
     Roll:                  0.000464606
     Cube dimensions:       (20, 548, 555)
     <BLANKLINE>
@@ -322,7 +322,7 @@ These are called extra coordinates, and they are stored in the ``extra_coords`` 
     <Quantity [0.77429509, 0.77548558, 0.77667391, 0.77786386, 0.77905941,
                0.78024989, 0.78144038, 0.78263599, 0.78382647, 0.78501666,
                0.78621155, 0.78740203, 0.78859252, 0.78978807, 0.79097688,
-               0.79216683, 0.79336196, 0.79455239, 0.79574287, 0.79693335] arcsec>,
+               0.79216683, 0.79336196, 0.79455239, 0.79574287, 0.79693335]>,
                 pztx (0) None: QuantityTableCoordinate ['pztx'] [None]:
     <Quantity [-7.97803831e+00, -3.98715830e+00,  3.72256944e-03,
                 3.99460268e+00, -7.97803831e+00, -3.98715830e+00,
@@ -341,11 +341,11 @@ These are called extra coordinates, and they are stored in the ``extra_coords`` 
                258.75      , 270.74543085, 282.74086427, 294.73629541,
                258.75      , 270.74543085, 282.74086427, 294.73629541,
                258.75      , 270.74543085, 282.74086427, 294.73629541,
-               258.75      , 270.74543085, 282.74086427, 294.73629541] arcsec>,
+               258.75      , 270.74543085, 282.74086427, 294.73629541] pix>,
                 slit y position (0) None: QuantityTableCoordinate ['slit y position'] [None]:
     <Quantity [254.75, 254.75, 254.75, 254.75, 254.75, 254.75, 254.75, 254.75,
                254.75, 254.75, 254.75, 254.75, 254.75, 254.75, 254.75, 254.75,
-               254.75, 254.75, 254.75, 254.75] arcsec>,
+               254.75, 254.75, 254.75, 254.75] pix>,
                 xcenix (0) None: QuantityTableCoordinate ['xcenix'] [None]:
     <Quantity [-321.64163621, -321.64154081, -321.64054553, -321.63951873,
                -321.5924215 , -321.59850309, -321.60135777, -321.56819773,

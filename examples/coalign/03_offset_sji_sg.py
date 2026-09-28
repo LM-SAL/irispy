@@ -61,12 +61,15 @@ print(time_stamp_2796, "\n", time_target, "\n", time_idx_2796)
 
 ###############################################################################
 # We will require the slit location from the SJI auxiliary data later on.
+# ``SLTPX1IX`` and ``SLTPX2IX`` are 1-based FITS pixel positions (the Level 2
+# pipeline copies them from the Level 1 ``CRPIX``), so we subtract 1 to get the
+# 0-based pixels that ``pixel_to_world`` expects.
 
 with fits.open(sji_filename) as sji_hdulist:
     sji_aux_header = sji_hdulist[-2].header
     sji_aux_data = sji_hdulist[-2].data
-    sji_slit_location_pixel_x = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX1IX"]]
-    sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX2IX"]]
+    sji_slit_location_pixel_x = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX1IX"]] - 1
+    sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX2IX"]] - 1
 
 ###############################################################################
 # We can now get the slit locations from the raster FITS WCSes.
@@ -80,10 +83,9 @@ fuv_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")
 fuv_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
 
 ###############################################################################
-# The Level 2 FITS WCS describes the shared physical slit, so the NUV and FUV
-# coordinates should coincide. Residual per-step pointing deviations are not
-# represented by the linear FITS WCS. The remaining SJI-SG slit offset in this
-# exposure is small, about one spatial pixel.
+# The NUV and FUV windows share the physical slit, so their coordinates coincide.
+# The slit position recorded in the SJI auxiliary data agrees with them to well
+# under a pixel.
 
 nuv_slit = SkyCoord(Tx=nuv_lon_coords, Ty=nuv_lat_coords, frame=sji_2796_frame)
 fuv_slit = SkyCoord(Tx=fuv_lon_coords, Ty=fuv_lat_coords, frame=sji_2796_frame)
