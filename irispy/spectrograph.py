@@ -241,3 +241,9 @@ class RasterCollection(NDCollection):
             Aligned physical types: {self.aligned_axis_physical_types}
             """,
         )
+
+    @property
+    def aligned_axis_physical_types(self):
+        # NDCollection builds each tuple from a set, whose order changes from run to run.
+        types = super().aligned_axis_physical_types
+        return None if types is None else [tuple(sorted(axis_types)) for axis_types in types]
