@@ -243,7 +243,9 @@ net_flux = (
     / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1]).to(u.nm)
 )
 amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
-SpectrogramCube(net_flux, si_iv_spec_crop.wcs).plot(axes=ax_dict["net_flux"], plot_axes=["x", "y"], vmin=0, vmax=amp_max)
+SpectrogramCube(net_flux, si_iv_spec_crop.wcs).plot(
+    axes=ax_dict["net_flux"], plot_axes=["x", "y"], vmin=0, vmax=amp_max
+)
 cbar = fig.colorbar(ax_dict["net_flux"].images[0], ax=ax_dict["net_flux"])
 cbar.set_label(label=f"Intensity [{net_flux.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
