@@ -228,3 +228,13 @@ def test_spectrogram_sequence_plot_uses_iris_slider_labels(sns_sg_file):
     animator = sequence.plot(fig=fig)
     assert animator.slider_labels == ["Raster step", "Scan number"]
     plt.close(fig)
+
+
+def test_spectrogram_cube_from_data_and_wcs():
+    # For example, a map of fitted line parameters with the WCS of the cube they came from.
+    wcs = WCS(naxis=2)
+    wcs.wcs.ctype = ["HPLT-TAN", "HPLN-TAN"]
+    cube = SpectrogramCube(np.ones((4, 5)) * u.km / u.s, wcs)
+    assert cube.unit == u.km / u.s
+    assert cube.uncertainty is None
+    assert str(cube)
