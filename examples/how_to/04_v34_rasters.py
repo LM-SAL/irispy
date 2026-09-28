@@ -80,14 +80,14 @@ lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 mg_spec_crop = first_raster.crop(lower_corner, lower_corner)
 mg_spec_unflipped_crop = first_raster_unflipped.crop(lower_corner, lower_corner)
 
-fig = plt.figure(figsize=(6, 12))
+fig = plt.figure(figsize=(10, 6))
 ax = fig.add_subplot(121, projection=mg_spec_crop.wcs)
 ax.set_title("v34 flipped")
-mg_spec_crop.plot(axes=ax, plot_axes=["x", "y"])
+mg_spec_crop.plot(axes=ax, plot_axes=["x", "y"], aspect="auto")
 
 ax2 = fig.add_subplot(122, projection=mg_spec_unflipped_crop.wcs)
 ax2.set_title("v34 unflipped")
-mg_spec_unflipped_crop.plot(axes=ax2, plot_axes=["x", "y"])
+mg_spec_unflipped_crop.plot(axes=ax2, plot_axes=["x", "y"], aspect="auto")
 fig.tight_layout()
 
 ###############################################################################

@@ -55,8 +55,8 @@ print(ObsID(sji_2832.meta["OBSID"]))
 # Now, we will plot the SJI. By default, **irispy** will
 # color the spatial axes.
 
-# This returns an animator with a slider through the frames; the gallery shows its first frame.
-sji_2832.plot()
+# ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
+animation = sji_2832.plot().get_animation()
 
 ###############################################################################
 # We also have the option of going directly to an individual frame.
@@ -108,3 +108,5 @@ ax = sji_cutout.plot()
 ax.coords.grid(grid_type="contours")
 
 plt.show()
+
+# sphinx_gallery_thumbnail_number = 2

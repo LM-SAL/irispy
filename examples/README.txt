@@ -1,8 +1,8 @@
 .. _irispy-example-index:
 
-****************
-Tutorial Gallery
-****************
+***************
+Example Gallery
+***************
 
 This gallery contains both short-form content of how to use ``irispy`` as well as long-form tutorial content.
 Each entry is written to be self-contained and attempts to explain each concept within its text.

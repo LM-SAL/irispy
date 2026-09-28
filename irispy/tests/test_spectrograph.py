@@ -252,8 +252,9 @@ def test_raster_image_labels_latitude_on_slit_edge_and_longitude_on_step_edge(ra
 def test_requested_time_coordinate_joins_the_celestial_layout(raster_sg_file):
     """
     A single-file cube carries a "time" extra coordinate, so with ``axes_coordinates``
-    ndcube plots through its combined WCS, whose pixel axis names it cannot join. The
-    layout must still come from the cube's own pixel axes, with time on a free edge.
+    ndcube plots through its combined WCS, whose pixel axis names it cannot join.
+
+    The layout must still come from the cube's own pixel axes, with time on a free edge.
     """
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
     wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])

@@ -53,7 +53,6 @@ print(raster.keys())
 # We can get the Mg II k window:
 
 mg_ii = raster["Mg II k 2796"]
-print(mg_ii)
 
 ###############################################################################
 # This observation contains a single raster, so the spectral window is already a
@@ -66,7 +65,8 @@ print(mg_ii)
 # Let's plot it:
 
 fig = plt.figure()
-mg_ii.plot(fig=fig)
+# ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
+raster_animation = mg_ii.plot(fig=fig).get_animation()
 
 ###############################################################################
 # If we want to "raster" over wavelength, we can do the following.
@@ -81,26 +81,12 @@ mg_ii_k_line = mg_ii.crop(
     [SpectralCoord(279.4, unit=u.nm), None, None, None], [SpectralCoord(279.9, unit=u.nm), None, None, None]
 )
 fig = plt.figure()
-mg_ii_k_line.plot(fig=fig, plot_axes=["x", "y", None], vmin=0, vmax=500)
+wavelength_animation = mg_ii_k_line.plot(fig=fig, plot_axes=["x", "y", None], vmin=0, vmax=500).get_animation()
 
 ###############################################################################
-# This object is sliceable, so we can do things like this:
-
-print(mg_ii[120, 200])
-
-###############################################################################
-# We can also plot this as well, using the WCS information to get the
-# correct axes labels and units.
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection=mg_ii[120, 200].wcs)
-# This is just the data values along the wavelength axis of the Mg II k window at pixel (120, 200)
-mg_ii[120, 200].plot(axes=ax)
-
-###############################################################################
-# We can also plot using the data directly. We can read the wavelengths of the
-# Mg window by calling `ndcube.NDCube.axis_world_coords` for "wl" (wavelength),
-# and redo the plot.
+# We can plot a spectrum at raster step 120 and slit pixel 200 using the data directly.
+# We read the wavelengths of the Mg window by calling
+# `ndcube.NDCube.axis_world_coords` for "wl" (wavelength).
 
 (mg_wave,) = mg_ii.axis_world_coords("wl")
 
@@ -143,9 +129,15 @@ lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)
 
+###############################################################################
+# By default, the plot shows only spatial coordinates. Include ``"time"`` in
+# ``axes_coordinates`` to add the exposure times to the Mg II k core spectroheliogram.
+
 fig = plt.figure()
-ax = fig.add_subplot(111, projection=mg_spec_crop.wcs)
-mg_spec_crop.plot(axes=ax)
+mg_spec_crop.plot(
+    axes_coordinates=["custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat", "time"],
+)
+fig.tight_layout()
 
 ###############################################################################
 # Imagine there's a really cool feature at (-338", 275"), how can you plot
@@ -176,3 +168,5 @@ print(mg_ii.meta)
 # For combined raster files this is indexed by raster scan and raster step.
 
 print(mg_ii.time)
+
+# sphinx_gallery_thumbnail_number = 4

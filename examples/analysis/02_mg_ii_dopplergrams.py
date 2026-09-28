@@ -64,9 +64,8 @@ plt.xlabel("Wavelength (nm)")
 # spacecraft's orbital velocity changes during the observations.
 # This means that any calibration will need to correct for those shifts.
 #
-# To better understand the orbital velocity problem, let us look at how the
-# line intensity varies for a strong Mn I line at around 280.2 nm, in
-# between the Mg II k and h lines.
+# To illustrate the correction, we will compare the intensity near the
+# Mn I line at around 280.2 nm, between the Mg II k and h lines.
 #
 # For this dataset, the line core of this line falls around 280.2 nm.
 # We crop in wavelength space.
@@ -74,18 +73,15 @@ plt.xlabel("Wavelength (nm)")
 lower_corner = [SpectralCoord(280.2, unit=u.nm), None, None, None]
 upper_corner = [SpectralCoord(280.2, unit=u.nm), None, None, None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
-# The raw values include fill values (-32768) and the dark sky above the limb, so we take
-# the colour limits from the part of the slit on the disk (roughly its first 600 pixels).
-vmin, vmax = np.percentile(mg_crop.data[:, :600], [1, 99])
-plt.figure()
-# We will "crunch" the image a bit using the aspect ratio.
-mg_crop.plot(aspect="auto", vmin=vmin, vmax=vmax)
+# Save the on-disk part of the slit (roughly its first 600 pixels) before modifying
+# the data, masking the raw fill value (-32768). We will compare this below.
+before = mg_crop.data[:, :600].astype(float)
+before[before == -32768] = np.nan
+vmin, vmax = np.nanpercentile(before, [1, 99])
 
 ###############################################################################
-# You can see a regular bright-dark pattern along the y-axis (the raster steps), an
-# indication that the intensities are not taken at the same position in
-# the line because of wavelength shifts. The shifts are caused by the
-# orbital velocity changes, which are stored in the auxiliary data
+# Orbital motion changes the wavelength sampled at each raster step.
+# The radial velocities are stored in the auxiliary data
 # extension past the "last" window in the FITS file (column ``OBS_VRIX``).
 # ``read_files`` already reads that extension and stores the values, one per
 # raster step, in the cube metadata.
@@ -118,18 +114,33 @@ for i in range(mg_ii.data.shape[0]):
     mg_ii.data[i, :, :] = np.nan_to_num(shifted_data, nan=0.0)
 
 ###############################################################################
-# Now we can plot the shifted data to see that the large scale shifts
-# have disappeared
+# In this observation the correction shifts the spectra by less than one wavelength
+# pixel, so the solar structures look very similar before and after correction.
+# We use the same intensity scale for both images and show their difference on a
+# separate scale centred on zero to make the small changes visible.
 
-plt.figure()
 # Since we changed the underlying data, we need to re-crop
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
-# We will "crunch" the image a bit using the aspect ratio, with the same colour limits as before.
-mg_crop.plot(aspect="auto", vmin=vmin, vmax=vmax)
+after = mg_crop.data[:, :600].astype(float)
+after[after == -32768] = np.nan
+difference = after - before
+limit = np.nanpercentile(np.abs(difference), 99)
+
+fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharex=True, sharey=True, layout="constrained")
+for ax, data, title in zip(axes[:2], (before, after), ("Before correction", "After correction"), strict=True):
+    ax.imshow(data, origin="lower", aspect="auto", vmin=vmin, vmax=vmax)
+    ax.set_title(title)
+
+change = axes[2].imshow(difference, origin="lower", aspect="auto", cmap="RdBu_r", vmin=-limit, vmax=limit)
+axes[2].set_title("After minus before")
+fig.colorbar(change, ax=axes[2], label="Intensity change (DN)")
+for ax in axes:
+    ax.set_xlabel("Position along the slit (pixel)")
+axes[0].set_ylabel("Raster step")
 
 ###############################################################################
-# Some residual shift remains, but we will not correct for it here. A more
-# elaborate correction can be obtained by the IDL routine
+# This correction accounts for the measured orbital velocity; other wavelength
+# shifts can remain. A more elaborate correction can be obtained by the IDL routine
 # ``iris_prep_wavecorr_l2``, but this has not yet been ported to Python
 # see the `IDL version of this
 # tutorial <http://iris.lmsal.com/itn26/tutorials.html#mg-ii-dopplergrams>`__
@@ -173,3 +184,5 @@ plt.ylabel("Position along the slit (pixel)")
 plt.tight_layout()
 
 plt.show()
+
+# sphinx_gallery_thumbnail_number = 4

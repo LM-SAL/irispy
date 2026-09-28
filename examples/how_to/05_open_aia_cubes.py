@@ -64,13 +64,12 @@ print(aia_collection["304_THIN"])
 
 ###############################################################################
 # We will now plot the AIA data in the same manner as the SJI data, with the AIA 304
-# color map. Like the SJI plot, this is an animator with a slider through the frames;
-# the gallery shows its first frame.
+# color map. ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
 #
 # You can also change the axis labels and ticks if you so desire.
 # `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
 
 fig = plt.figure()
-aia_collection["304_THIN"].plot(fig=fig, cmap="sdoaia304")
+animation = aia_collection["304_THIN"].plot(fig=fig, cmap="sdoaia304").get_animation()
 
 plt.show()
