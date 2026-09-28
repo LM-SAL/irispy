@@ -170,7 +170,9 @@ fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]"
 
 flux_max = np.nanpercentile(total_flux.value, 99.99)
 NDCube(total_flux, wcs=line_core.wcs).plot(axes=ax_dict["total_flux"], plot_axes=["x", "y"], vmin=0, vmax=flux_max)
-fig.colorbar(ax_dict["total_flux"].images[0], ax=ax_dict["total_flux"], label=f"Total flux [{total_flux.unit.to_string()}]")
+fig.colorbar(
+    ax_dict["total_flux"].images[0], ax=ax_dict["total_flux"], label=f"Total flux [{total_flux.unit.to_string()}]"
+)
 ax_dict["total_flux"].set_title("Total Gaussian Flux")
 
 asym_max = np.nanpercentile(np.abs(peak_asymmetry), 99.99)
@@ -184,7 +186,11 @@ sep_max = np.nanpercentile(np.abs(component_separation.value), 99.99)
 NDCube(component_separation, wcs=line_core.wcs).plot(
     axes=ax_dict["separation"], plot_axes=["x", "y"], vmin=0, vmax=sep_max
 )
-fig.colorbar(ax_dict["separation"].images[0], ax=ax_dict["separation"], label=f"Peak separation [{component_separation.unit.to_string()}]")
+fig.colorbar(
+    ax_dict["separation"].images[0],
+    ax=ax_dict["separation"],
+    label=f"Peak separation [{component_separation.unit.to_string()}]",
+)
 ax_dict["separation"].set_title("Gaussian Peak Separation")
 
 for ax in ax_dict.values():
