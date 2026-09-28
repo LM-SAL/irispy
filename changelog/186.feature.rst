@@ -1,1 +1,0 @@
-Added `~irispy.sji.SJICube.celestial_frame`, the `~sunpy.coordinates.frames.Helioprojective` frame of the observation.

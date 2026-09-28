@@ -1,1 +1,0 @@
-`~irispy.spectrograph.SpectrogramCube` no longer requires ``uncertainty``, ``unit`` and ``meta``; like `~ndcube.NDCube`, they default to None, so a cube can be made from just data and a WCS.

@@ -1,1 +1,0 @@
-The minimum supported versions are now astropy 8.0.0 and mpl-animators 1.2.3.

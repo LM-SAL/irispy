@@ -1,3 +1,58 @@
+0.9.1 (2026-09-27)
+==================
+
+Breaking Changes
+----------------
+
+- The minimum supported versions are now astropy 8.0.0 and mpl-animators 1.2.3. (`#184 <https://github.com/LM-SAL/irispy/pull/184>`__)
+- Removed ``SJICube.basic_wcs``; use ``SJICube.fits_wcs``, which now also describes the sliced pixels of a spatially sliced cube, and is ``None`` for a rebinned one. Removed ``SJICube.scaled`` and the ``scaled`` argument of `~irispy.sji.SJICube`; `~irispy.io.sji.read_sji_lvl2` stores it in ``cube.meta["scaled"]``. (`#186 <https://github.com/LM-SAL/irispy/pull/186>`__)
+- Slicing a spectrograph or SJI cube so that an axis has length 0, for example ``cube[3:3]``, now raises ``IndexError`` instead of returning an empty cube. (`#186 <https://github.com/LM-SAL/irispy/pull/186>`__)
+
+
+New Features
+------------
+
+- Added ``SGMeta.observer``, the IRIS observer (at Earth) at the start of the observation. (`#185 <https://github.com/LM-SAL/irispy/pull/185>`__)
+- Added `~irispy.sji.SJICube.celestial_frame`, the `~sunpy.coordinates.frames.Helioprojective` frame of the observation. (`#186 <https://github.com/LM-SAL/irispy/pull/186>`__)
+- `~irispy.io.read_files` reuses a complete earlier extraction of a tar file instead of extracting it again on every call, reading slit-jaw and AIA files builds their per-frame WCS headers much faster, and `~irispy.utils.dust.remove_dust` computes its spatial fallback only at the pixels it fills. (`#188 <https://github.com/LM-SAL/irispy/pull/188>`__)
+- `~irispy.spectrograph.SpectrogramCube` no longer requires ``uncertainty``, ``unit`` and ``meta``; like `~ndcube.NDCube`, they default to None, so a cube can be made from just data and a WCS. (`#189 <https://github.com/LM-SAL/irispy/pull/189>`__)
+
+
+Bug Fixes
+---------
+
+- Reading a V34 raster (``STEPS_AV < -0.01``) now flips its mask, uncertainty and per-step metadata (auxiliary times, exposure time, exposure FOV center, observer radial velocity and orbital phase) along with the data. Before, the mask and uncertainty came from the unflipped data, and the metadata stayed in file order. (`#176 <https://github.com/LM-SAL/irispy/pull/176>`__)
+- Raster WCS lookups no longer slow down along the step axis: the -TAB table no longer has an explicit step index, which wcslib searched linearly, so a pixel-to-world call now costs the same at every step. (`#177 <https://github.com/LM-SAL/irispy/pull/177>`__)
+- SJI and AIA cube coordinates are no longer one pixel off the FITS header: the gWCS now places the reference pointing at the FITS reference pixel ``CRPIX - 1`` in 0-based pixels. The ``slit x position`` and ``slit y position`` extra coordinates are now in pixels (their physical type becomes ``custom:PIXEL``) and ``ophaseix`` is dimensionless; all three were tagged arcsec. The slit positions keep the file's 1-based FITS values (``SLTPX1IX``/``SLTPX2IX``), so subtract 1 for 0-based pixel coordinates, as the SJI-SG slit example now does. (`#178 <https://github.com/LM-SAL/irispy/pull/178>`__)
+- ``calculate_uncertainty``, used when reading with ``uncertainty=True``, now gives negative counts the readout noise instead of NaN and an "invalid value encountered in sqrt" warning. (`#179 <https://github.com/LM-SAL/irispy/pull/179>`__)
+- Metadata properties no longer raise ``TypeError`` when the header lacks their keyword; they return `None`, like the other header properties. This fixes ``observer_radial_velocity`` on real Level 2 files (which have no ``OBS_VR``; rasters now return the per-exposure values), and ``spectral_range``, ``temporal_cadence`` and ``str(meta)`` on the IRIS-aligned AIA cutouts. ``observing_mode_id`` now reads the OBSID from the AIA cutouts' ``DATE_TIME_OBSID`` instead of turning it into one large number. (`#180 <https://github.com/LM-SAL/irispy/pull/180>`__)
+- Reading a raster with ``memmap=True`` no longer computes an uncertainty from the unscaled data, as documented; before, every sample got the readout noise alone. (`#181 <https://github.com/LM-SAL/irispy/pull/181>`__)
+- Negative indices now slice spectrograph and SJI cubes correctly: ``cube[-1]`` had NaN coordinates, ``cube[1:5][-1]`` described ``cube[0]``, and ``SJICube.to_maps(-1)`` gave the map an invalid ``DATE-OBS`` (-4713-11-24). (`#186 <https://github.com/LM-SAL/irispy/pull/186>`__)
+- The outer pixel corners of SJI cubes now have finite times. (`#186 <https://github.com/LM-SAL/irispy/pull/186>`__)
+- Printing a `~irispy.spectrograph.RasterCollection` now lists its aligned physical types in a fixed order; it changed from run to run before. (`#188 <https://github.com/LM-SAL/irispy/pull/188>`__)
+- `~irispy.sji.SJICube.to_maps` now sets the wavelength of the maps, so their names and plot titles show it. (`#190 <https://github.com/LM-SAL/irispy/pull/190>`__)
+- Uncertainties computed with ``uncertainty=True`` (and by `~irispy.utils.spectrograph.radiometric_calibration`) are now stored as `~astropy.nddata.StdDevUncertainty` instead of an unknown uncertainty type. (`#191 <https://github.com/LM-SAL/irispy/pull/191>`__)
+
+
+Documentation
+-------------
+
+- The gallery examples now download cut-down copies of their IRIS rasters, holding only the scans and spectral windows each example uses, from `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__. Each example links the full observation in the IRIS archive. (`#187 <https://github.com/LM-SAL/irispy/pull/187>`__)
+- The fitting examples average 2x2 spatial pixels before fitting, the reprojection example downloads its AIA image from `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__ instead of the VSO, and the AIA cube example uses a five-minute cutout of its observation. (`#189 <https://github.com/LM-SAL/irispy/pull/189>`__)
+- Fixed the fitted and moment maps in the spectral fitting, spectral moments and Mg II two-Gaussian gallery examples, which were plotted against the wrong coordinates, the prose of the IRIS–AIA co-alignment example, which rendered as code, and the rolled-SJI reprojection example, which matched the AIA image to a different SJI frame. (`#189 <https://github.com/LM-SAL/irispy/pull/189>`__)
+- Fixed wrong results in several gallery examples: the slit-jaw light curve and date axis in the umbral flashes example, the Mg II k core wavelength and v34 flip description in the raster how-to examples, the red-blue asymmetry windows and sign, the colour map of the double-Gaussian asymmetry map, the axis labels and colour scale of the Mg II Dopplergram, the AIA time used for co-alignment, and several units, labels and descriptions. (`#190 <https://github.com/LM-SAL/irispy/pull/190>`__)
+- Added a "Citing irispy" section to the README and documentation, pointing at the Zenodo record of every release. (`#192 <https://github.com/LM-SAL/irispy/pull/192>`__)
+- The API documentation no longer includes inheritance diagrams, so building the documentation no longer needs graphviz. (`#193 <https://github.com/LM-SAL/irispy/pull/193>`__)
+- Documented that the frame of `irispy.sji.SJICube.wcs` uses the time of the first exposure as its ``obstime``, and how to get a frame for the time of each exposure. (`#194 <https://github.com/LM-SAL/irispy/pull/194>`__)
+- Documented how much memory reading data uses and how to use less. (`#195 <https://github.com/LM-SAL/irispy/pull/195>`__)
+
+
+Internal Changes
+----------------
+
+- The documentation build and the remote-data tests now download their data from release assets on `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__ instead of Git LFS, and the documentation uses an O IV-only CHIANTI database (35 MB instead of 909 MB). (`#183 <https://github.com/LM-SAL/irispy/pull/183>`__)
+
+
 0.9.0 (2026-09-10)
 ==================
 

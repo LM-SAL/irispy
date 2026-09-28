@@ -1,1 +1,0 @@
-Reading a V34 raster (``STEPS_AV < -0.01``) now flips its mask, uncertainty and per-step metadata (auxiliary times, exposure time, exposure FOV center, observer radial velocity and orbital phase) along with the data. Before, the mask and uncertainty came from the unflipped data, and the metadata stayed in file order.

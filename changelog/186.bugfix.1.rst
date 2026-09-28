@@ -1,1 +1,0 @@
-Negative indices now slice spectrograph and SJI cubes correctly: ``cube[-1]`` had NaN coordinates, ``cube[1:5][-1]`` described ``cube[0]``, and ``SJICube.to_maps(-1)`` gave the map an invalid ``DATE-OBS`` (-4713-11-24).

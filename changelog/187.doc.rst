@@ -1,1 +1,0 @@
-The gallery examples now download cut-down copies of their IRIS rasters, holding only the scans and spectral windows each example uses, from `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__. Each example links the full observation in the IRIS archive.

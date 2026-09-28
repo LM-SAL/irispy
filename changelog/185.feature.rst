@@ -1,1 +1,0 @@
-Added ``SGMeta.observer``, the IRIS observer (at Earth) at the start of the observation.
