@@ -293,3 +293,11 @@ def test_raster_wcs_steps_have_no_index_vector(raster_sg_file):
     world = cube.wcs.pixel_to_world_values(np.zeros(5), np.full(5, 50.0), steps)
     np.testing.assert_allclose(world[2][1], (world[2][0] + world[2][2]) / 2)
     np.testing.assert_allclose(cube.wcs.world_to_pixel_values(*world)[2], steps, atol=1e-6)
+
+
+def test_read_spectrograph_memmap_has_no_uncertainty(raster_sg_file):
+    # memmap data are unscaled integers, so no uncertainty is computed from them
+    memmap = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", memmap=True, uncertainty=True)
+    assert memmap["C II 1336"][0].uncertainty is None
+    scaled = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)
+    assert scaled["C II 1336"][0].uncertainty is not None
