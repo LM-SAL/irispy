@@ -75,7 +75,7 @@ with fits.open(sji_filename) as sji_hdulist:
 # We can now get the slit locations from the raster FITS WCSes.
 
 sji_2796_closest = sji_2796[time_idx_2796]
-sji_2796_frame = wcs_to_celestial_frame(sji_2796_closest.basic_wcs)
+sji_2796_frame = wcs_to_celestial_frame(sji_2796_closest.fits_wcs)
 
 nuv_lon_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
 nuv_lat_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]

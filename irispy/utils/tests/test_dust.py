@@ -43,18 +43,18 @@ def test_remove_dust_preserves_sjicube_state(sns_sjicube_1330):
     dust_mask[1, 1, 1] = True
     cube.data[1, 1, 1] = 0.0
 
-    original_basic_wcs = cube.basic_wcs
+    original_fits_wcs = cube.fits_wcs
     original_extra_coord_keys = list(cube.extra_coords.keys())
     original_global_coord_keys = list(cube.global_coords.keys())
 
     cleaned = remove_dust(cube, dust_mask=dust_mask, temporal_window=1, exposure_normalize=False)
 
     assert type(cleaned) is type(cube)
-    assert cleaned.scaled is cube.scaled
+    assert cleaned.meta["scaled"] is cube.meta["scaled"]
     assert list(cleaned.extra_coords.keys()) == original_extra_coord_keys
     assert list(cleaned.global_coords.keys()) == original_global_coord_keys
-    assert cleaned.basic_wcs is not None
-    assert len(cleaned.basic_wcs) == len(original_basic_wcs)
+    assert cleaned.fits_wcs is not None
+    assert len(cleaned.fits_wcs) == len(original_fits_wcs)
     assert cleaned.to_maps(0).wcs is not None
 
 

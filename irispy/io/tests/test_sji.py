@@ -9,6 +9,7 @@ from astropy.wcs import WCS
 from sunpy.coordinates import Helioprojective
 
 from irispy.io.sji import read_sji_lvl2
+from irispy.sji import AIACube
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
@@ -33,7 +34,7 @@ def test_sns_read_sji_lvl2(sns_sji_2832_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 14)  # History is missing
+    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 12)  # History is missing
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -84,7 +85,7 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.0011105057794114 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 14)  # History is missing
+    assert len(meta.fits_header) == 162 == (len(meta.keys()) + 12)  # History is missing
     assert meta["XCEN"] == -2.73951
     assert meta["YCEN"] == 945.279
     assert_quantity_allclose(meta.fov_center.Tx, -2.73951 * u.arcsec)
@@ -98,7 +99,7 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert meta.observing_mode_description == "Very large coarse 64-step raster 126x175 64s   Deep x 30"
     observation_times = sji_1400_cube.axis_world_coords("time")[0]
     assert observation_times.isot.tolist() == ["2023-04-08T11:10:12.690", "2023-04-08T11:42:16.050"]
-    assert [wcs.wcs.dateobs for wcs in sji_1400_cube.basic_wcs] == observation_times.isot.tolist()
+    assert [wcs.wcs.dateobs for wcs in sji_1400_cube.fits_wcs] == observation_times.isot.tolist()
 
 
 def test_read_sji_lvl2_masks_scaled_float_bad_pixels(sns_sji_1330_file):
@@ -152,7 +153,7 @@ def test_read_sji_lvl2_unrotated_pointing(tmp_path, sns_sji_1330_file):
 
     cube = read_sji_lvl2(filename)
     for key in ("PC1_2IX", "PC2_1IX"):
-        for header in cube._basic_wcs:
+        for header in cube.meta["frame_wcs_headers"]:
             assert header[f"PC{key[2]}_{key[4]}"] == 0.0
 
 
@@ -168,7 +169,7 @@ def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file):
         hdulist.writeto(filename)
 
     cube = read_sji_lvl2(filename)
-    header = cube._basic_wcs[1]
+    header = cube.meta["frame_wcs_headers"][1]
     np.testing.assert_allclose(header["CRVAL1"], expected["XCENIX"])
     np.testing.assert_allclose(header["CRVAL2"], expected["YCENIX"])
 
@@ -204,3 +205,23 @@ def test_sji_extra_coordinate_units(sns_sji_1400_file):
     units = dict(zip(extra_coords.world_axis_names, extra_coords.world_axis_units, strict=True))
     assert units["slit x position"] == units["slit y position"] == "pixel"
     assert units["ophaseix"] == ""
+
+
+def test_read_aia_cube(tmp_path, sns_sji_1330_file):
+    filename = tmp_path / "aia.fits"
+    with fits.open(sns_sji_1330_file) as hdulist:
+        hdulist[0].header["INSTRUME"] = "AIA"
+        hdulist.writeto(filename)
+
+    aia = read_sji_lvl2(filename)
+
+    assert isinstance(aia, AIACube)
+    assert aia[-3:].shape == (3, 40, 37)
+    assert isinstance(aia[:, 10:, 20:].fits_wcs, list)
+
+
+def test_sji_first_and_last_frames_round_trip(sns_sjicube_1400):
+    cube = sns_sjicube_1400
+    assert np.isfinite(cube.axis_world_coords("time", pixel_corners=True)[0].jd).all()
+    for index in ((0, 5, 3), (cube.shape[0] - 1, 39, 36)):
+        assert cube.wcs.world_to_array_index(*cube.wcs.array_index_to_world(*index)) == index

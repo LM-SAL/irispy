@@ -1,0 +1,1 @@
+Slicing a spectrograph or SJI cube so that an axis has length 0, for example ``cube[3:3]``, now raises ``IndexError`` instead of returning an empty cube.

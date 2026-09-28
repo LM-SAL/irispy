@@ -10,6 +10,7 @@ from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 from sunraster import SpectrogramCube as SpecCube
 from sunraster import SpectrogramSequence as SpecSeq
 
+from irispy._wcs import _ResolveNegativeIndicesMixin
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.visualization import IRISSequencePlotter, SpectrogramPlotter
@@ -17,7 +18,7 @@ from irispy.visualization import IRISSequencePlotter, SpectrogramPlotter
 __all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
 
 
-class SpectrogramCube(SpecCube):
+class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
