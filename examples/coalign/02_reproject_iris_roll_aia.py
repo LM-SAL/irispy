@@ -62,9 +62,19 @@ print(sji_2832)
 print(ObsID(sji_2832.meta["OBSID"]))
 
 ###############################################################################
-# We also have the option of going directly to an individual scan.
+# We will want to align the data to AIA, so we pick one frame of the observation:
+# the one closest to 06:00 on 2014-09-19.
 
-sji_cut = sji_2832[45]
+(time_sji,) = sji_2832.axis_world_coords("time")
+time_target = Time("2014-09-19T06:00:00.0")
+time_index = np.abs(time_sji - time_target).argmin()
+time_stamp = time_sji[time_index].isot
+print(time_index, time_stamp)
+
+###############################################################################
+# We can go directly to that individual frame.
+
+sji_cut = sji_2832[time_index]
 print(sji_cut)
 
 ###############################################################################
@@ -77,7 +87,7 @@ sji_frame = wcs_to_celestial_frame(sji_cut.fits_wcs)
 # This dataset has a peculiarity: the observation has a 45 degree roll.
 # The image does not have a 45 degree rotation because plotting shows the data
 # in the way they are written in the file.
-# We will a coordinate grid to make this clear.
+# We will add a coordinate grid to make this clear.
 # You can also change the axis labels and ticks if you so desire.
 # `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
 
@@ -87,24 +97,6 @@ plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']}", pad=20)
 # You have to specify the grid type to be contours for WCSAxes to plot it correctly.
 # This is due to a quirk of how gWCS interacts with WCSAxes.
 ax.coords.grid(grid_type="contours")
-
-###############################################################################
-# We will want to align the data to AIA.
-# First we will want to pick a timestamp during the observation.
-#
-# Lets us now find the SJI observation where the time is closest to 06:00 on 2014-09-19.
-
-(time_sji,) = sji_2832.axis_world_coords("time")
-time_target = Time("2014-09-19T06:00:00.0")
-time_index = np.abs(time_sji - time_target).argmin()
-time_stamp = time_sji[time_index].isot
-print(time_index, time_stamp)
-
-###############################################################################
-# We will use this frame, and not the one above, for the rest of the example,
-# so that the IRIS and AIA images are from the same time.
-
-sji_cut = sji_2832[time_index]
 
 ###############################################################################
 # The fact that it is rolled 45 degrees makes manual alignment tricky
