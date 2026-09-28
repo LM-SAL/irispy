@@ -1,0 +1,4 @@
+# Read the Docs installs these with uv (see .readthedocs.yml).
+.[all,docs]
+# TODO: Remove when a fiasco release has fiasco.line_ratio
+git+https://github.com/wtbarnes/fiasco.git
