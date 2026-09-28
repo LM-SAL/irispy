@@ -3,6 +3,7 @@ import pytest
 from scipy.io import readsav
 
 import astropy.units as u
+from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 
 from sunpy.time import parse_time
@@ -141,3 +142,10 @@ def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
     # (The spectral dispersion cancels out because it is multiplied back in above.)
     intensity = intensity * 10
     assert_quantity_allclose(intensity, 43.6270027 * idl_unit, rtol=0.0003)
+
+
+def test_radiometric_calibration_keeps_a_standard_deviation(sns_sg_file):
+    cube = read_files(sns_sg_file, uncertainty=True)["C II 1336"][0]
+    new_cube = radiometric_calibration(cube)
+    assert isinstance(new_cube.uncertainty, StdDevUncertainty)
+    assert new_cube.uncertainty.array.shape == cube.data.shape

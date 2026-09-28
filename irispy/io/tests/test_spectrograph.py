@@ -4,6 +4,7 @@ import pytest
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.time import Time
 
@@ -301,3 +302,10 @@ def test_read_spectrograph_memmap_has_no_uncertainty(raster_sg_file):
     assert memmap["C II 1336"][0].uncertainty is None
     scaled = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)
     assert scaled["C II 1336"][0].uncertainty is not None
+
+
+def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
+    # A bare array would be stored as an UnknownUncertainty (issue #57).
+    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)["C II 1336"][0]
+    assert isinstance(cube.uncertainty, StdDevUncertainty)
+    assert cube.uncertainty.array.shape == cube.data.shape
