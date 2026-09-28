@@ -29,6 +29,13 @@ class BaseMeta(NDMeta):
             val = Time(val, format="fits", scale="utc")
         return val
 
+    def _quantity(self, key, unit):
+        """
+        The header value ``key`` as a float in ``unit``, or `None` when the header lacks it.
+        """
+        val = self.get(key)
+        return None if val is None else float(val) * unit
+
     @property
     def fits_header(self):
         return self._fits_header
@@ -51,7 +58,8 @@ class BaseMeta(NDMeta):
 
     @property
     def processing_level(self):
-        return int(self.get("DATA_LEV"))
+        level = self.get("DATA_LEV")
+        return None if level is None else int(level)
 
     @property
     def camera(self):
@@ -65,21 +73,33 @@ class BaseMeta(NDMeta):
         """
         Apparent angular radius of the Sun at the observer location.
         """
-        rsun = self.get("RSUN_OBS")
+        rsun = self._quantity("RSUN_OBS", u.arcsec)
         if rsun is not None:
-            return float(rsun) * u.arcsec
-        return (np.arctan(_R_SUN.to(u.m).value / float(self.get("DSUN_OBS"))) * u.rad).to(u.arcsec)
+            return rsun
+        dsun = self._quantity("DSUN_OBS", u.m)
+        if dsun is None:
+            return None
+        return np.arctan(_R_SUN / dsun).to(u.arcsec)
 
     @property
     def observer_radial_velocity(self):
         """
         Radial velocity of the observer relative to the Sun (m/s).
+
+        Level 2 primary headers have no ``OBS_VR``; they record the velocity per
+        exposure (``OBS_VRIX``). For rasters this returns those per-exposure values,
+        which the reader stores as ``"observer radial velocity"``. For slit-jaw
+        images it is `None`; use the ``obs_vrix`` extra coordinate instead.
         """
-        return float(self.get("OBS_VR")) * u.m / u.s
+        velocity = self._quantity("OBS_VR", u.m / u.s)
+        if velocity is None:
+            velocity = self.get("observer radial velocity")
+        return velocity
 
     @property
     def distance_to_sun(self):
-        return (self.get("DSUN_OBS") * u.m).to(u.AU)
+        dsun = self._quantity("DSUN_OBS", u.m)
+        return None if dsun is None else dsun.to(u.AU)
 
     @property
     def date_reference(self):
@@ -98,11 +118,13 @@ class BaseMeta(NDMeta):
         """
         Average time between exposures.
         """
-        return float(self.get("CADEX_AV")) * u.s
+        return self._quantity("CADEX_AV", u.s)
 
     @property
     def observing_mode_id(self):
-        return int(self.get("OBSID"))
+        obsid = self.get("OBSID")
+        # The IRIS-aligned AIA cutouts store DATE_TIME_OBSID, which int() would read as one number
+        return None if obsid is None else int(str(obsid).split("_")[-1])
 
     # ---------- IRIS-specific metadata properties ----------
     @property
@@ -135,7 +157,7 @@ class BaseMeta(NDMeta):
         """
         Satellite roll from solar north.
         """
-        return self.get("SAT_ROT") * u.deg
+        return self._quantity("SAT_ROT", u.deg)
 
     @property
     def exposure_control_triggers_in_observation(self):
@@ -170,7 +192,10 @@ class BaseMeta(NDMeta):
         """
         The spectral range of the spectral window.
         """
-        return [self.get(f"TWMIN{self._iwin}"), self.get(f"TWMAX{self._iwin}")] * u.AA
+        wmin, wmax = self.get(f"TWMIN{self._iwin}"), self.get(f"TWMAX{self._iwin}")
+        if wmin is None or wmax is None:
+            return None
+        return [wmin, wmax] * u.AA
 
     @property
     def spectral_band(self):
@@ -208,14 +233,14 @@ class BaseMeta(NDMeta):
         """
         Width of the field of view of the raster in the Y (slit) direction.
         """
-        return self.get("FOVY") * u.arcsec
+        return self._quantity("FOVY", u.arcsec)
 
     @property
     def raster_fov_width_x(self):
         """
         Width of the field of view of the raster in the X (rastering) direction.
         """
-        return self.get("FOVX") * u.arcsec
+        return self._quantity("FOVX", u.arcsec)
 
     @property
     def fov_center(self):
@@ -265,21 +290,21 @@ class BaseMeta(NDMeta):
         """
         Mean exposure duration (shutter open time).
         """
-        return float(self.get("EXPTIME")) * u.s
+        return self._quantity("EXPTIME", u.s)
 
     @property
     def exposure_time_min(self):
         """
         Minimum exposure duration in this raster/SJI.
         """
-        return float(self.get("EXPMIN")) * u.s
+        return self._quantity("EXPMIN", u.s)
 
     @property
     def exposure_time_max(self):
         """
         Maximum exposure duration in this raster/SJI.
         """
-        return float(self.get("EXPMAX")) * u.s
+        return self._quantity("EXPMAX", u.s)
 
     @property
     def data_type(self):
@@ -532,21 +557,21 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
         """
         Mean cadence of the raster as planned.
         """
-        return float(self.get("CADPL_AV")) * u.s
+        return self._quantity("CADPL_AV", u.s)
 
     @property
     def cadence_planned_stddev(self):
         """
         Standard deviation of the planned raster cadence.
         """
-        return float(self.get("CADPL_DV")) * u.s
+        return self._quantity("CADPL_DV", u.s)
 
     @property
     def cadence_executed_stddev(self):
         """
         Standard deviation of the executed raster cadence.
         """
-        return float(self.get("CADEX_DV")) * u.s
+        return self._quantity("CADEX_DV", u.s)
 
     @property
     def raster_type_index(self):
