@@ -82,6 +82,29 @@ IRIS pointing frame, you no longer need a WCS at all:
 ``celestial_frame`` works on both spectrograph and SJI cubes, on combined
 multi-file cubes, and on any slice of them.
 
+Plots and coordinate order
+==========================
+
+The gWCS lists its world coordinates as wavelength, longitude, latitude, time and
+raster step (and raster scan on a combined cube). The FITS WCS listed latitude
+before longitude, so code that picked WCSAxes coordinates by position, for
+example ``ax.coords[0]`` for latitude, now gets longitude. Pick them by name:
+
+.. code-block:: python
+
+    # Old
+    ax.coords[0].set_ticklabel(fontsize=8)  # latitude
+
+    # New
+    ax.coords["custom:pos.helioprojective.lat"].set_ticklabel(fontsize=8)
+
+``plot`` puts latitude on the edge of the slit axis and longitude on the edge of
+the raster step axis, so there is no need to set their positions yourself. The
+time and raster step coordinates are hidden unless you ask for them with
+``axes_coordinates``, for example
+``cube.plot(plot_axes=["x", "y"], axes_coordinates=["custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat", "time"])``
+puts the time on the top edge of an image with the raster steps along x.
+
 Times
 =====
 
