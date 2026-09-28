@@ -13,11 +13,8 @@ import pooch
 
 import astropy.units as u
 from astropy.coordinates import SpectralCoord
-from astropy.visualization import time_support
 
 from irispy.io import read_files
-
-time_support()
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml>`__.
@@ -34,7 +31,7 @@ raster_filename = pooch.retrieve(
     known_hash="b9e55d682f881b6cb7c48e2530bcd3718b42ec6e398cae3d7017b15de3bda6b2",
 )
 sji_filename = pooch.retrieve(
-    "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits.gz",
+    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits.gz",
     known_hash="1f424de4420b729385e81b00df4ba4d868a121486686f17cd1ecdbe7754ee78b",
     # Decompress once: astropy decompresses a .fits.gz file again every time it is opened.
     processor=pooch.Decompress(name="iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits"),
@@ -64,9 +61,14 @@ mg_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_crop.wcs)
-mg_crop.plot(axes=ax)
+# The image is much taller than it is wide, so we let it fill the axes.
+mg_crop.plot(axes=ax, aspect="auto")
 
 ###############################################################################
+# This is a sit-and-stare observation, so the slit stays in almost the same place and
+# the vertical axis is really time: the small change in longitude along it is the slit
+# following the solar rotation.
+#
 # The middle section between 60"-75" is on the umbra of a sunspot, even though
 # it is not obvious from this image. One can see very clearly the umbral oscillations,
 # with a clear regular pattern of dark/bright streaks.
@@ -80,11 +82,12 @@ plt.title("1400 SJI")
 ###############################################################################
 # The slit pixel, "220" is a location on the sunspot's umbra.
 # Let us plot the k3 intensity (spectral pixel 103 of ``mg_ii``) and the
-# core of the brightest C II line (spectral pixel 90 of ``c_ii``) vs
-# time in minutes (showing first ~10 minutes only)
+# core of the brightest C II line (spectral pixel 90 of ``c_ii``) against
+# time (showing the first ~10 minutes only).
 
-mg_ii_times = mg_ii.time[:200]
-c_ii_times = c_ii.time[:200]
+# Matplotlib's date formatting works with numpy datetimes, so we convert the times.
+mg_ii_times = mg_ii.time[:200].datetime64
+c_ii_times = c_ii.time[:200].datetime64
 
 plt.figure()
 plt.plot(mg_ii_times, mg_ii.data[:200, 220, 103], label="Mg II k3")
@@ -107,18 +110,18 @@ plt.tight_layout()
 #
 # We will take the first 50 to cut down on the size of the data for this example.
 
-times_sji = sji_1400.time[:50]
+times_sji = sji_1400.time[:50].datetime64
 
 ###############################################################################
 # Now we can plot both spectral lines and SJI for a pixel close to the slit
-# at the same Y position (pre-worked out to be at index 220).
+# at the same Y position (pre-worked out to be row 220 and column 190 of the SJI).
 
 plt.figure()
 plt.plot(mg_ii_times, mg_ii.data[:200, 220, 103], label="Mg II k3")
 plt.plot(c_ii_times, c_ii.data[:200, 220, 90], label="C II")
-(ax,) = plt.plot(times_sji, sji_1400.data[:50, 190, 220], label="1400 SJI")
+(ax,) = plt.plot(times_sji, sji_1400.data[:50, 220, 190], label="1400 SJI")
 plt.legend()
-plt.ylabel("Counts (Memory Mapped Value)")
+plt.ylabel("DN (Memory Mapped Value)")
 plt.xlabel("Time (UTC)")
 ax.axes.xaxis.set_major_formatter(mdates.ConciseDateFormatter(ax.axes.xaxis.get_major_locator()))
 # Rotates and right-aligns the x labels so they don't crowd each other.

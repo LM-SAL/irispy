@@ -4,15 +4,16 @@ Fit Spectral Models to Spectra - Double Gaussian Fitting
 ========================================================
 
 In this example, we are going to fit spectral lines from IRIS, using the raster data
-with a double Gaussian model. Then we will use the fitted values to calculate the Gaussian moments.
+with a double Gaussian model. Then we will use the fitted values to make maps of the total flux,
+the blue-red flux asymmetry and the separation of the two components.
 
 If you want to see a similar example but with a single Gaussian fit to the Si IV 1403 line,
 see :ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py`.
 This example also has more detailed comments on the fitting process, so it may be worth
 looking at that example first before this one.
 
-This is direct contrast to taking the spectral moments of the data cube, which is done in
-the following example, :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
+This is in direct contrast to taking the spectral moments of the data cube, which is done in
+:ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
 where we calculate the spectral moments of the data cube directly.
 """
 
@@ -97,8 +98,8 @@ average_fit = fitter(
     spatial_mean.data * spatial_mean.unit,
 )
 
-################################################################################
-# Now we check, the initial model and the model fitted to the average spectra.
+###############################################################################
+# Now we check the initial model and the model fitted to the average spectra.
 
 plt.figure()
 ax = spatial_mean.plot(label="Spatial average")
@@ -121,8 +122,8 @@ mg_ii_model_fit = parallel_fit_dask(
 )
 
 ###############################################################################
-# Now we will produce maps of the total fitted flux, the blue-red peak asymmetry,
-# and the peak separation.
+# Now we will produce maps of the total fitted flux, the blue-red flux asymmetry of the
+# two components, (blue - red) / total, and the separation of their peaks.
 #
 # These maps are motivated by the Mg II h/k diagnostics described by
 # `Leenaarts et al. (2013) <https://doi.org/10.1088/0004-637X/772/2/90>`__.
@@ -144,9 +145,9 @@ valid_components = (
 )
 total_flux = blue_flux + red_flux
 with np.errstate(divide="ignore", invalid="ignore"):
-    peak_asymmetry = ((blue_flux - red_flux) / total_flux).to_value(u.dimensionless_unscaled)
-peak_asymmetry = np.where(np.isfinite(peak_asymmetry) & (total_flux.value > 0), peak_asymmetry, np.nan)
-peak_asymmetry = np.where(valid_components, peak_asymmetry, np.nan)
+    flux_asymmetry = ((blue_flux - red_flux) / total_flux).to_value(u.dimensionless_unscaled)
+flux_asymmetry = np.where(np.isfinite(flux_asymmetry) & (total_flux.value > 0), flux_asymmetry, np.nan)
+flux_asymmetry = np.where(valid_components, flux_asymmetry, np.nan)
 component_separation = (
     np.abs(mg_ii_model_fit.mean_2.quantity.to(u.nm) - mg_ii_model_fit.mean_1.quantity.to(u.nm))
     / mg_ii_core
@@ -175,12 +176,13 @@ fig.colorbar(
 )
 ax_dict["total_flux"].set_title("Total Gaussian Flux")
 
-asym_max = np.nanpercentile(np.abs(peak_asymmetry), 99.99)
-SpectrogramCube(peak_asymmetry, line_core.wcs).plot(
-    axes=ax_dict["asymmetry"], plot_axes=["x", "y"], cmap="coolwarm", vmin=-asym_max, vmax=asym_max
+asym_max = np.nanpercentile(np.abs(flux_asymmetry), 99.99)
+SpectrogramCube(flux_asymmetry, line_core.wcs).plot(
+    # Reversed, so that pixels where the blue component is stronger are blue.
+    axes=ax_dict["asymmetry"], plot_axes=["x", "y"], cmap="coolwarm_r", vmin=-asym_max, vmax=asym_max
 )
-fig.colorbar(ax_dict["asymmetry"].images[0], ax=ax_dict["asymmetry"], label="Blue-red asymmetry", extend="both")
-ax_dict["asymmetry"].set_title("Peak Asymmetry")
+fig.colorbar(ax_dict["asymmetry"].images[0], ax=ax_dict["asymmetry"], label="(blue - red) / total flux", extend="both")
+ax_dict["asymmetry"].set_title("Blue-red Flux Asymmetry")
 
 sep_max = np.nanpercentile(np.abs(component_separation.value), 99.99)
 SpectrogramCube(component_separation, line_core.wcs).plot(

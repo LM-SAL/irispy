@@ -58,13 +58,12 @@ selected_pixel_index = (
     full_raster_pixel_index[1] - slit_cutout.start,
 )
 
-si_iv_rest = 140.277 * u.nm
 velocity_range = (25, 75) * u.km / u.s
 # Ignore pixels where the line peak is too weak for a useful wing comparison.
 min_intensity = 75 * si_iv.unit
 
 # rest_wavelength is auto-detected from the cube metadata (TWAVE[N] FITS keyword).
-# You can also pass it explicitly: rest_wavelength=si_iv_rest.
+# You can also pass it explicitly, for example rest_wavelength=140.277 * u.nm.
 red_blue = calculate_red_blue_asymmetry(
     si_iv,
     velocity_range=velocity_range,
@@ -77,61 +76,73 @@ quality = red_blue["quality"]
 observed_profiles = red_blue["observed_profile"]
 
 ###############################################################################
-# We add specific metadata to the fitted profiles. This is stored in the
-# ``meta`` attribute for each result.
+# The settings used for the calculation are stored in the ``meta`` of each result,
+# under keys starting with ``rba_``.
 
-print(asymmetry.meta)
+print({key: value for key, value in asymmetry.meta.items() if key.startswith("rba_")})
 
 ###############################################################################
-# Now we will select a pixel with a significant red excess (positive RBA).
+# Now we will select a pixel with a significant blue excess (negative RBA).
 
 observed_profile = observed_profiles[selected_pixel_index]
 velocities = observed_profile.axis_world_coords(0)[0].to(u.km / u.s)
 profile = observed_profile.data
 
 ###############################################################################
-# Now we will plot the RBA map for the raster and the raw profile in
-# velocity space for the selected pixel.
+# Now we will plot the RBA map and the raw profile in velocity space for the
+# selected pixel.
+#
+# This is a sit-and-stare observation: the slit stays at (almost) the same place,
+# so each row of the map is the same stretch of the Sun at a later time.
+# We therefore plot the map against the latitude along the slit and time.
 
 fig = plt.figure(figsize=(14, 5))
-axes = [
-    fig.add_subplot(1, 2, 1, projection=asymmetry.wcs),
-    fig.add_subplot(1, 2, 2),
-]
+axes = [fig.add_subplot(1, 2, 1), fig.add_subplot(1, 2, 2)]
 
-# This plot will be the RBA values over the full raster.
 ax = axes[0]
 rba_map = np.where(quality.data == int(RBAQualityFlag.OK), asymmetry.data, np.nan)
 # Colour scale: 98th percentile of absolute RBA, floored so subtle features remain visible.
 vmax = max(np.nanpercentile(np.abs(rba_map), 98), 0.15)
-im = ax.imshow(rba_map, cmap="RdBu_r", origin="lower", aspect="auto", vmin=-vmax, vmax=vmax)
+latitude = asymmetry[0].axis_world_coords()[0].Ty.to_value(u.arcsec)
+minutes = (asymmetry.time - asymmetry.time[0]).to_value(u.min)
+im = ax.imshow(
+    rba_map,
+    cmap="RdBu_r",
+    origin="lower",
+    aspect="auto",
+    vmin=-vmax,
+    vmax=vmax,
+    extent=[latitude[0], latitude[-1], minutes[0], minutes[-1]],
+)
 ax.plot(
-    selected_pixel_index[1],
-    selected_pixel_index[0],
+    latitude[selected_pixel_index[1]],
+    minutes[selected_pixel_index[0]],
     color="lime",
     marker="+",
     linestyle="none",
     markersize=16,
-    transform=ax.get_transform("pixel"),
 )
-ax.coords[0].set_axislabel("Helioprojective Latitude [arcsec]")
-ax.coords[1].set_axislabel("Helioprojective Longitude [arcsec]")
+ax.set_xlabel("Helioprojective Latitude [arcsec]")
+ax.set_ylabel(f"Minutes since {asymmetry.time[0].strftime('%H:%M:%S')} UTC")
 fig.colorbar(im, ax=ax, shrink=0.8, label="Red-Blue Asymmetry")
 
 # This plot will be the raw profile for the selected pixel.
+# The wing windows are measured from the peak of the line, not from its rest wavelength.
 ax = axes[1]
 finite = np.isfinite(velocities.value) & np.isfinite(profile)
 ax.plot(velocities.value[finite], profile[finite], color="black", marker="o", markersize=3)
-ax.axvline(0, color="grey", linestyle="dashed")
+v_peak = velocities.value[finite][np.argmax(profile[finite])]
+ax.axvline(0, color="grey", linestyle="dashed", label="Rest wavelength")
+ax.axvline(v_peak, color="grey", linestyle="dotted", label="Line peak")
 
 v_low = velocity_range[0].to_value(u.km / u.s)
 v_high = velocity_range[1].to_value(u.km / u.s)
-ax.axvspan(-v_high, -v_low, color="C0", alpha=0.1)
-ax.axvspan(v_low, v_high, color="C3", alpha=0.1)
+ax.axvspan(v_peak - v_high, v_peak - v_low, color="C0", alpha=0.1, label="Blue wing")
+ax.axvspan(v_peak + v_low, v_peak + v_high, color="C3", alpha=0.1, label="Red wing")
+ax.legend()
 
-ax.set_title(
-    f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f}   Quality = {int(quality.data[selected_pixel_index]):d}"
-)
+quality_flag = RBAQualityFlag(int(quality.data[selected_pixel_index]))
+ax.set_title(f"RBA = {float(asymmetry.data[selected_pixel_index]):.2f}   Quality: {quality_flag.name}")
 ax.set_xlabel("Velocity [km/s]")
 ax.set_ylabel(f"Intensity [{si_iv.unit.to_string()}]")
 ax.set_xlim(-150, 150)

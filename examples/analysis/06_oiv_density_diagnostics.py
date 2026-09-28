@@ -24,7 +24,7 @@ from irispy.utils.density import density_diagnostic
 
 ###############################################################################
 # We will reproduce aspects of the top row of Fig. 4 from
-# `Dudik et al. (2014) <https://doi.org/10.1088/2041-8205/780/1/L12>`__, which shows the O IV line
+# `Dudík et al. (2014) <https://doi.org/10.1088/2041-8205/780/1/L12>`__, which shows the O IV line
 # ratios as a function of electron density for three different Maxwellian temperatures.
 
 density = np.logspace(9, 12, 20) * u.cm**-3
@@ -45,8 +45,8 @@ ratio_definitions = [
 ###############################################################################
 # The exact curve values will differ somewhat from the paper because this example
 # uses the current CHIANTI database through `fiasco` rather than the CHIANTI
-# version used by Dudik et al. (2014).
-
+# version used by Dudík et al. (2014).
+#
 # `~irispy.utils.density.density_diagnostic` needs measured line intensities as
 # input because it maps an observed ratio back to density. To plot the diagnostic
 # curves, we first use unit intensities and then use one point on the returned
@@ -77,7 +77,7 @@ for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=T
             color="black",
             linestyle=line_style,
             linewidth=1.8,
-            label=label,
+            label=rf"$\log(T / \mathrm{{K}}) = {label}$",
         )
         if label == "5.15":
             sample_index = diagnostic["density_grid"].size // 2
@@ -92,18 +92,19 @@ for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=T
                 temperature=temperature,
                 line_ratio_kwargs=line_ratio_kwargs,
             )
-            ax.plot(
-                np.log10(observed["density"].to_value("cm-3")),
-                observed["ratio"].value,
-                color="tab:red",
-                marker="o",
-                linestyle="none",
-                label="synthetic observation" if ax is axes[0] else None,
-            )
-    ax.set_title("Density diagnostics")
+    # Plotted after the curves so that it comes last in the legend.
+    ax.plot(
+        np.log10(observed["density"].to_value("cm-3")),
+        observed["ratio"].value,
+        color="tab:red",
+        marker="o",
+        linestyle="none",
+        label=r"synthetic observation ($\log T = 5.15$)",
+    )
+    ax.set_title(title)
     ax.set_xlabel(r"$\log(n_e / \mathrm{cm^{-3}})$")
-    ax.set_ylabel(title)
+    ax.set_ylabel("Line intensity ratio")
 
-axes[0].legend(loc="upper left", title=r"$\log(T / \mathrm{K})$")
+axes[0].legend(loc="upper left")
 
 plt.show()
