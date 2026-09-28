@@ -28,6 +28,7 @@ from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.wcs.utils import wcs_to_celestial_frame
 
+from ndcube import NDCube
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
@@ -64,6 +65,10 @@ iris_frame = Helioprojective(observer=iris_observer)
 top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
 bottom_right = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
 si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
+# We also average 2x2 spatial pixels, after trimming both spatial axes to an even length.
+# This improves the signal-to-noise of the faint Si IV line and means 4x fewer fits.
+ny, nx = (n // 2 * 2 for n in si_iv_1403.data.shape[:2])
+si_iv_1403 = si_iv_1403[:ny, :nx].rebin((2, 2, 1))
 
 ###############################################################################
 # Let us just get the full field of view at the line core.
@@ -74,10 +79,8 @@ upper_corner = [SpectralCoord(si_iv_core), None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
 ###############################################################################
-# We will want to make two rebinned cubes from the full raster,
-# one summed along the wavelength dimension and one of the spectra averaged over all spatial pixels.
+# We will want the spectrum averaged over all spatial pixels.
 
-wl_sum = si_iv_1403.rebin((1, 1, si_iv_1403.data.shape[-1]), operation=np.sum)[0]
 spatial_mean = si_iv_1403.rebin((*si_iv_1403.data.shape[:-1], 1))[0, 0, :]
 wavelength_coords = spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)
 
@@ -205,7 +208,7 @@ iris_model_fit = parallel_fit_dask(
 #     scheduler=client,
 #
 # Now let us check if there were any errors during the fitting process.
-# In this example there were none, but if there were you would find them in the "diag" folder.
+# If there were any, you would find them in the "diag" folder.
 
 errors = [p.read_text() for p in diag_path.rglob("error.log")]
 print(f"{len(errors)} errors occurred")
@@ -221,7 +224,8 @@ if errors:
 #
 # We also need to convert the fitted parameters into physical quantities.
 
-# Note that we are transposing the data arrays so they match up with the projection which is in X,Y.
+# The fitted parameters are plain arrays, so we give them the WCS of the line-core image
+# as `~ndcube.NDCube` objects; they then plot with the same orientation and coordinates.
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "net_flux"], ["velocity", "sigma"]],
     subplot_kw={"projection": si_iv_spec_crop.wcs},
@@ -239,16 +243,18 @@ net_flux = (
     / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1]).to(u.nm)
 )
 amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
-amp = ax_dict["net_flux"].imshow(net_flux.value.T, vmin=0, vmax=amp_max, origin="lower")
-cbar = fig.colorbar(amp, ax=ax_dict["net_flux"])
+NDCube(net_flux, wcs=si_iv_spec_crop.wcs).plot(axes=ax_dict["net_flux"], plot_axes=["x", "y"], vmin=0, vmax=amp_max)
+cbar = fig.colorbar(ax_dict["net_flux"].images[0], ax=ax_dict["net_flux"])
 cbar.set_label(label=f"Intensity [{net_flux.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["net_flux"].set_title("Gaussian Net Flux")
 
 core_shift = ((iris_model_fit.mean_1.quantity.to(u.nm)) - si_iv_core) / si_iv_core * (constants.c.to(u.km / u.s))
 shift_max = np.nanpercentile(np.abs(core_shift.value), 95)
-shift = ax_dict["velocity"].imshow(core_shift.value.T, cmap="coolwarm", vmin=-shift_max, vmax=shift_max)
-cbar = fig.colorbar(shift, ax=ax_dict["velocity"], extend="both")
+NDCube(core_shift, wcs=si_iv_spec_crop.wcs).plot(
+    axes=ax_dict["velocity"], plot_axes=["x", "y"], cmap="coolwarm", vmin=-shift_max, vmax=shift_max
+)
+cbar = fig.colorbar(ax_dict["velocity"].images[0], ax=ax_dict["velocity"], extend="both")
 cbar.set_label(label=f"Doppler shift [{core_shift.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["velocity"].set_title("Velocity from Gaussian shift")
@@ -257,17 +263,20 @@ sigma = (iris_model_fit.stddev_1.quantity.to(u.nm)) / si_iv_core * (constants.c.
 # We make any negative values nan for the purpose of the color scale.
 sigma = np.where(sigma < 0, np.nan, sigma)
 line_max = np.nanpercentile(np.abs(sigma.value), 95)
-line = ax_dict["sigma"].imshow(sigma.value.T, vmax=line_max)
-cbar = fig.colorbar(line, ax=ax_dict["sigma"])
+NDCube(sigma, wcs=si_iv_spec_crop.wcs).plot(axes=ax_dict["sigma"], plot_axes=["x", "y"], vmax=line_max)
+cbar = fig.colorbar(ax_dict["sigma"].images[0], ax=ax_dict["sigma"])
 cbar.set_label(label=f"Line Width [{sigma.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["sigma"].set_title("Gaussian Sigma")
 
 for ax in ax_dict.values():
-    ax.coords[0].set_ticklabel(exclude_overlapping=True, fontsize=8)
-    ax.coords[0].set_axislabel("Helioprojective Longitude", fontsize=8)
-    ax.coords[1].set_ticklabel(exclude_overlapping=True, fontsize=8)
-    ax.coords[1].set_axislabel("Helioprojective Latitude", fontsize=8)
+    # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
+    for coord, name, side in ((ax.coords[0], "Latitude", "l"), (ax.coords[1], "Longitude", "b")):
+        coord.set_axislabel(f"Helioprojective {name}", fontsize=8)
+        coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
+        coord.set_ticks_position(side)
+        coord.set_ticklabel_position(side)
+        coord.set_axislabel_position(side)
 fig.tight_layout()
 
 plt.show()

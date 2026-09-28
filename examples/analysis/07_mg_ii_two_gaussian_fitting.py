@@ -27,6 +27,7 @@ from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.wcs.utils import wcs_to_celestial_frame
 
+from ndcube import NDCube
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
@@ -69,6 +70,10 @@ mg_ii_k = mg_ii_k.crop(top_left, bottom_right)
 lower_corner = [SpectralCoord(279.40, unit=u.nm), None]
 upper_corner = [SpectralCoord(279.80, unit=u.nm), None]
 mg_ii_k = mg_ii_k.crop(lower_corner, upper_corner)
+# We also average 2x2 spatial pixels, after trimming both spatial axes to an even length,
+# which means 4x fewer spectra to fit.
+ny, nx = (n // 2 * 2 for n in mg_ii_k.data.shape[:2])
+mg_ii_k = mg_ii_k[:ny, :nx].rebin((2, 2, 1))
 
 ###############################################################################
 # We use the spatially averaged profile to tune the initial double Gaussian model.
@@ -150,6 +155,8 @@ component_separation = (
 component_separation = np.where(valid_components, component_separation, np.nan * component_separation.unit)
 total_flux = np.where(valid_components, total_flux, np.nan * total_flux.unit)
 
+# The fitted parameters are plain arrays, so we give them the WCS of the line-core image
+# as `~ndcube.NDCube` objects; they then plot with the same orientation and coordinates.
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "total_flux"], ["asymmetry", "separation"]],
     subplot_kw={"projection": line_core.wcs},
@@ -162,31 +169,32 @@ ax_dict["fov"].set_title("Mg II k core")
 fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]", shrink=0.8)
 
 flux_max = np.nanpercentile(total_flux.value, 99.99)
-flux = ax_dict["total_flux"].imshow(total_flux.value.T, origin="lower", vmin=0, vmax=flux_max)
-fig.colorbar(flux, ax=ax_dict["total_flux"], label=f"Total flux [{total_flux.unit.to_string()}]")
+NDCube(total_flux, wcs=line_core.wcs).plot(axes=ax_dict["total_flux"], plot_axes=["x", "y"], vmin=0, vmax=flux_max)
+fig.colorbar(ax_dict["total_flux"].images[0], ax=ax_dict["total_flux"], label=f"Total flux [{total_flux.unit.to_string()}]")
 ax_dict["total_flux"].set_title("Total Gaussian Flux")
 
 asym_max = np.nanpercentile(np.abs(peak_asymmetry), 99.99)
-asymmetry = ax_dict["asymmetry"].imshow(
-    peak_asymmetry.T,
-    cmap="coolwarm",
-    origin="lower",
-    vmin=-asym_max,
-    vmax=asym_max,
+NDCube(peak_asymmetry, wcs=line_core.wcs).plot(
+    axes=ax_dict["asymmetry"], plot_axes=["x", "y"], cmap="coolwarm", vmin=-asym_max, vmax=asym_max
 )
-fig.colorbar(asymmetry, ax=ax_dict["asymmetry"], label="Blue-red asymmetry", extend="both")
+fig.colorbar(ax_dict["asymmetry"].images[0], ax=ax_dict["asymmetry"], label="Blue-red asymmetry", extend="both")
 ax_dict["asymmetry"].set_title("Peak Asymmetry")
 
 sep_max = np.nanpercentile(np.abs(component_separation.value), 99.99)
-sep = ax_dict["separation"].imshow(component_separation.value.T, origin="lower", vmin=0, vmax=sep_max)
-fig.colorbar(sep, ax=ax_dict["separation"], label=f"Peak separation [{component_separation.unit.to_string()}]")
+NDCube(component_separation, wcs=line_core.wcs).plot(
+    axes=ax_dict["separation"], plot_axes=["x", "y"], vmin=0, vmax=sep_max
+)
+fig.colorbar(ax_dict["separation"].images[0], ax=ax_dict["separation"], label=f"Peak separation [{component_separation.unit.to_string()}]")
 ax_dict["separation"].set_title("Gaussian Peak Separation")
 
 for ax in ax_dict.values():
-    ax.coords[0].set_ticklabel(exclude_overlapping=True, fontsize=8)
-    ax.coords[0].set_axislabel("Helioprojective Longitude", fontsize=8)
-    ax.coords[1].set_ticklabel(exclude_overlapping=True, fontsize=8)
-    ax.coords[1].set_axislabel("Helioprojective Latitude", fontsize=8)
+    # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
+    for coord, name, side in ((ax.coords[0], "Latitude", "l"), (ax.coords[1], "Longitude", "b")):
+        coord.set_axislabel(f"Helioprojective {name}", fontsize=8)
+        coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
+        coord.set_ticks_position(side)
+        coord.set_ticklabel_position(side)
+        coord.set_axislabel_position(side)
 fig.tight_layout()
 
 plt.show()

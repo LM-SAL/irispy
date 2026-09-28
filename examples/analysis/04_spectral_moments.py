@@ -102,8 +102,6 @@ velocity_width = moments["velocity_width"]
 # `~irispy.spectrograph.RasterCollection` which contains 2D
 # `~irispy.spectrograph.SpectrogramCube` objects with the spatial WCS preserved
 # from the input cube.
-#
-# Note that we are transposing the data arrays so they match up with the projection which is in X,Y.
 
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "intensity"], ["velocity", "width"]],
@@ -117,33 +115,36 @@ fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]"
 
 # 0th moment: Total intensity
 amp_max = np.nanpercentile(np.abs(intensity.data), 99)
-amp = ax_dict["intensity"].imshow(intensity.data.T, vmin=0, vmax=amp_max, origin="lower")
-cbar = fig.colorbar(amp, ax=ax_dict["intensity"])
+intensity.plot(axes=ax_dict["intensity"], plot_axes=["x", "y"], vmin=0, vmax=amp_max)
+cbar = fig.colorbar(ax_dict["intensity"].images[0], ax=ax_dict["intensity"])
 cbar.set_label(label=f"Intensity [{intensity.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["intensity"].set_title("Total Intensity (0th Moment)")
 
 # 1st moment: Doppler velocity from centroid shift
 shift_max = np.nanpercentile(np.abs(velocity.data), 95)
-shift = ax_dict["velocity"].imshow(velocity.data.T, cmap="coolwarm", vmin=-shift_max, vmax=shift_max, origin="lower")
-cbar = fig.colorbar(shift, ax=ax_dict["velocity"], extend="both")
+velocity.plot(axes=ax_dict["velocity"], plot_axes=["x", "y"], cmap="coolwarm", vmin=-shift_max, vmax=shift_max)
+cbar = fig.colorbar(ax_dict["velocity"].images[0], ax=ax_dict["velocity"], extend="both")
 cbar.set_label(label=f"Doppler shift [{velocity.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["velocity"].set_title("Velocity from Centroid")
 
 # 2nd moment: Line width
 wmax = np.nanpercentile(width.data, 95)
-wdisp = ax_dict["width"].imshow(width.data.T, vmax=wmax, origin="lower")
-cbar = fig.colorbar(wdisp, ax=ax_dict["width"])
+width.plot(axes=ax_dict["width"], plot_axes=["x", "y"], vmax=wmax)
+cbar = fig.colorbar(ax_dict["width"].images[0], ax=ax_dict["width"])
 cbar.set_label(label=f"Width [{width.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["width"].set_title("Line Width (2nd Moment)")
 
 for ax in ax_dict.values():
-    ax.coords[0].set_ticklabel(exclude_overlapping=True, fontsize=8)
-    ax.coords[0].set_axislabel("Helioprojective Longitude", fontsize=8)
-    ax.coords[1].set_ticklabel(exclude_overlapping=True, fontsize=8)
-    ax.coords[1].set_axislabel("Helioprojective Latitude", fontsize=8)
+    # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
+    for coord, name, side in ((ax.coords[0], "Latitude", "l"), (ax.coords[1], "Longitude", "b")):
+        coord.set_axislabel(f"Helioprojective {name}", fontsize=8)
+        coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
+        coord.set_ticks_position(side)
+        coord.set_ticklabel_position(side)
+        coord.set_axislabel_position(side)
 fig.tight_layout()
 
 plt.show()
