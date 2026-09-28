@@ -1,0 +1,1 @@
+Removed ``SJICube.basic_wcs``; use ``SJICube.fits_wcs``, which now also describes the sliced pixels of a spatially sliced cube, and is ``None`` for a rebinned one. Removed ``SJICube.scaled`` and the ``scaled`` argument of `~irispy.sji.SJICube`; `~irispy.io.sji.read_sji_lvl2` stores it in ``cube.meta["scaled"]``.

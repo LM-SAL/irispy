@@ -1,0 +1,1 @@
+The outer pixel corners of SJI cubes now have finite times.
