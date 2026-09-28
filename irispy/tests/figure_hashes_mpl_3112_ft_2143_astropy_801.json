@@ -1,0 +1,13 @@
+{
+  "irispy.utils.tests.test_dust.test_remove_dust_before_after_figure": "7bb744932918da114efa2d849df3bd200f26e50eb0da24929c6562e8674ed689",
+  "irispy.utils.tests.test_moments.test_calculate_moments_known_gaussian_figure": "e9b832403b5aac1d0f7db55bfe850a45aa3a297a3904b477238536aea72effbb",
+  "irispy.utils.tests.test_red_blue.test_calculate_red_blue_asymmetry_continuum_figure": "e09531eaec9fdf36139d4da33eab7c57f8842d13d413f45f8fbbcc76523bced3",
+  "irispy.utils.tests.test_response.test_plot_idl_vs_python_fuv_sg": "a32ba085b70a8613ca82ea6b23e9dc52d03adbd5090f192e54e26efcf6b38624",
+  "irispy.utils.tests.test_response.test_plot_idl_vs_python_nuv_sg": "2c6396516bfbcca077dd0683900c1749548b3d0701e498bc6ee143f7c09dd4f3",
+  "irispy.utils.tests.test_response.test_plot_idl_vs_python_sji_1": "7cbe9eef8bb863fe3fd080b2e545a53215e53e55b4a6602ab1650efbd2049b12",
+  "irispy.utils.tests.test_response.test_plot_idl_vs_python_sji_2": "aafcd0cfa362f38ba871f49f3707d2a157c15ddaf296b865aeb46bc0f5cdab5a",
+  "irispy.utils.tests.test_response.test_plot_idl_vs_python_sji_3": "c9a822f4c0a125800237f275e42641f313cfd02a53ca4eb7cfaec437ba6ebf41",
+  "irispy.utils.tests.test_response.test_plot_idl_vs_python_sji_4": "e7d5aa31d5b6bb0ddc7fd8f9eafed44b5284161c237f822b182ea4338db96ba3",
+  "irispy.utils.tests.test_response.test_plot_get_interpolated_effective_area": "a5e6305f8301fecd656e52de6676fb8981812f1c449be71179c0cc1cc4047e95",
+  "irispy.utils.tests.test_rgb.test_plot_rgb_figure": "da48f9935c06c171115e47e42111d90a74697b12461c3c9727f7042227d7e50c"
+}

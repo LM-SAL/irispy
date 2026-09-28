@@ -78,7 +78,7 @@ def make_test_spectrogram_cube(data, wavelengths):
 
     N.B. FITS stores axes in reverse order relative to numpy arrays:
     NAXIS1 corresponds to the last numpy axis, NAXIS2 to the penultimate,
-    and NAXIS3 to the first.  This helper assumes the wavelength axis is
+    and NAXIS3 to the first. This helper assumes the wavelength axis is
     the **last** numpy axis.
 
     Parameters
