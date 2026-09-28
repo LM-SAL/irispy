@@ -49,6 +49,7 @@ class _ResolveNegativeIndicesMixin:
             # sanitize_slices counts the Ellipsis itself against the dimensionality.
             at = item.index(Ellipsis)
             item = (*item[:at], *[slice(None)] * (len(self.shape) - len(item) + 1), *item[at + 1 :])
+        # sanitize_slices raises for any step other than 1, so dropping the step loses nothing.
         item = tuple(
             slice(*index.indices(length)[:2]) if isinstance(index, slice) else range(length)[index]
             for index, length in zip(sanitize_slices(item, len(self.shape)), self.shape, strict=True)

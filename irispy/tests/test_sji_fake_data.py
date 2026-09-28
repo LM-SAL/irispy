@@ -218,12 +218,14 @@ def test_sjicube_apply_dust_mask_initializes_missing_mask(dust_cube):
     ],
 )
 def test_sjicube_slice_preserves_fits_wcs(sns_sjicube_1330, item, expected_len):
-    assert sns_sjicube_1330.fits_wcs is sns_sjicube_1330.fits_wcs
+    fits_wcs = sns_sjicube_1330.fits_wcs
+    assert sns_sjicube_1330.fits_wcs is fits_wcs
 
     subset = sns_sjicube_1330[item]
 
-    assert subset.fits_wcs is not None
-    assert subset.fits_wcs is subset.fits_wcs
+    subset_fits_wcs = subset.fits_wcs
+    assert subset_fits_wcs is not None
+    assert subset.fits_wcs is subset_fits_wcs
     if expected_len is None:
         assert isinstance(subset.fits_wcs, WCS)
     else:

@@ -55,6 +55,9 @@ def test_spectrogram_cube_negative_indices(sns_sg_file):
     assert cube[-3:].shape == (3, *cube.shape[1:])
     with pytest.raises(IndexError, match="length-0 axis"):
         cube[3:3]
+    for item in (slice(None, None, 2), slice(None, None, -1), (slice(None), slice(5, 1, -1))):
+        with pytest.raises(IndexError, match="with a step is not supported"):
+            cube[item]
 
 
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
