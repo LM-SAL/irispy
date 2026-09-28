@@ -3,7 +3,7 @@
 Crop IRIS SJI
 =============
 
-In this example we will show crop a IRIS dataset and the particularity of the crop
+In this example we will show how to crop an IRIS dataset, and a particularity of the crop
 operation.
 """
 
@@ -27,7 +27,7 @@ from irispy.obsid import ObsID
 # You will need to update the path to the data in the next section if you do that.
 
 sji_filename = pooch.retrieve(
-    "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/09/19/20140919_051712_3860608353/iris_l2_20140919_051712_3860608353_SJI_2832_t000.fits.gz",
+    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/09/19/20140919_051712_3860608353/iris_l2_20140919_051712_3860608353_SJI_2832_t000.fits.gz",
     known_hash="7ec0f3d63d97bc7620675c78fb6c670ef5b4249d31ef7818435b629c04b72f60",
 )
 
@@ -56,11 +56,11 @@ print(ObsID(sji_2832.meta["OBSID"]))
 # Now, we will plot the SJI. By default, **irispy** will
 # color the spatial axes.
 
-# This is an animation
+# This returns an animator with a slider through the frames; the gallery shows its first frame.
 sji_2832.plot()
 
 ###############################################################################
-# We also have the option of going directly to an individual scan.
+# We also have the option of going directly to an individual frame.
 
 sji_45 = sji_2832[45]
 print(sji_45)
@@ -82,15 +82,15 @@ bbox = [
 # This dataset has a peculiarity: the observation has a 45 degree roll.
 # The image does not have a 45 degree rotation because plotting shows the data
 # in the way they are written in the file.
-# We will a coordinate grid to make this clear.
+# We will add a coordinate grid to make this clear.
 #
 # You can also change the axis labels and ticks if you so desire.
 # `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
 #
 # Now, let us cut out the top sunspot.
 #
-# We need to specify the corners for the cut (note the coordinate order is
-# the same as the plotted image). Be aware that crop works in the default N/S frame,
+# We need to specify the corners for the cut (``SkyCoord`` takes the longitude first,
+# then the latitude). Be aware that crop works in the default N/S frame,
 # so it will crop along those axes where as the data is rotated.
 # You will also need to create a proper bounding box, with 4 corners.
 #

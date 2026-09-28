@@ -43,7 +43,7 @@ print(sji_2832)
 
 # Note that the .get_animation() is used to animate this example and is not required normally.
 ax = sji_2832.plot().get_animation()
-plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']}", pad=25)
+plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']:.0f} Å", pad=25)
 
 ###############################################################################
 # Finally we will output a frame of the SJI into a sunpy Map.

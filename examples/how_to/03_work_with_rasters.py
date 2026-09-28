@@ -30,7 +30,7 @@ quantity_support()
 # You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
-    "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz",
+    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2018/01/02/20180102_153155_3610108077/iris_l2_20180102_153155_3610108077_raster.tar.gz",
     known_hash="8949562149cfa5fba067b5b102e8434b14cea3c3416dd79c06b7f6e211c61a39",
 )
 
@@ -77,14 +77,17 @@ fig = plt.figure()
 mg_ii.plot(fig=fig)
 
 ###############################################################################
-# If we want to "raster" over wavelength, we can do the following
+# If we want to "raster" over wavelength, we can do the following.
 #
-# This will also "transpose" the data but this is only for visualization purposes
-# We have to set the vmin and vmax, as by default "plot" works out the
-# vmin,vmax from the first slice which in this case is 0.
+# This will also "transpose" the data but this is only for visualization purposes.
+# The first wavelength pixels of this window hold almost no data (they are fill values,
+# which are masked), so we crop to the Mg II k line (279.4 to 279.9 nm) and the animation
+# starts on real data. We also set the vmin and vmax, as by default "plot" works them out
+# from the first slice only.
 
+mg_ii_k_line = mg_ii.crop([SpectralCoord(279.4, unit=u.nm), None], [SpectralCoord(279.9, unit=u.nm), None])
 fig = plt.figure()
-mg_ii.plot(fig=fig, plot_axes=["x", "y", None], vmin=0, vmax=1000)
+mg_ii_k_line.plot(fig=fig, plot_axes=["x", "y", None], vmin=0, vmax=500)
 
 ###############################################################################
 # This object is sliceable, so we can do things like this:
@@ -108,10 +111,12 @@ mg_ii[120, 200].plot(axes=ax)
 (mg_wave,) = mg_ii.axis_world_coords("wl")
 
 fig, ax = plt.subplots()
-ax.plot(mg_wave.to("AA"), mg_ii.data[120, 200])
+# The array still holds the fill values (-200) that the cube masks, so we hide them as well.
+ax.plot(mg_wave.to("AA"), np.where(mg_ii.mask[120, 200], np.nan, mg_ii.data[120, 200]))
+ax.set_ylabel(f"Intensity [{mg_ii.unit}]")
 
 ###############################################################################
-# When we use the underlying data directly, we lose all the metadata and WCS information.
+# When we use the underlying data directly, we lose all the metadata, the mask and the WCS information.
 # So the main workflow for most code in ``irispy`` is to use provided WCS wherever possible
 # , and only use the underlying data when you need to do some custom processing.
 #
@@ -140,8 +145,8 @@ print(mg_index)
 # require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
 
 # Note that this has to be in axis order and that None, means that the axis is not cropped
-lower_corner = [SpectralCoord(280, unit=u.nm), None]
-upper_corner = [SpectralCoord(280, unit=u.nm), None]
+lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
+upper_corner = [SpectralCoord(279.63, unit=u.nm), None]
 mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()
@@ -170,7 +175,7 @@ print(mg_ii.meta)
 
 ###############################################################################
 # But this is mostly about the observation in general.
-# Times of individual scans are saved in .extra_coords['time'].
+# The time of each exposure (raster step) is saved in .extra_coords['time'].
 # Getting access to it can be done in the following  way:
 
 print(mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords))
