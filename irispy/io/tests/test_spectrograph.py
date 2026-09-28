@@ -8,8 +8,15 @@ from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.time import Time
 
-from sunpy.coordinates import Helioprojective
+from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
+from irispy._interpolation import _time_lookup
+from irispy._spectrograph_wcs import (
+    _create_raster_gwcs,
+    _raster_wcs_bad_row_mask,
+    _sanitize_raster_times,
+    _sanitize_raster_wcs_tables,
+)
 from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
@@ -309,3 +316,81 @@ def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)["C II 1336"][0]
     assert isinstance(cube.uncertainty, StdDevUncertainty)
     assert cube.uncertainty.array.shape == cube.data.shape
+
+
+def _synthetic_raster_gwcs(pc, crval, dt, **header):
+    header = {"CUNIT1": "nm", "CDELT1": 0.1, "CRVAL1": 140, "CRPIX1": 1, **header}
+    observer = HeliographicStonyhurst(0 * u.deg, 0 * u.deg, 1 * u.AU, obstime="2020-01-01")
+    return _create_raster_gwcs(header, pc, crval, dt, "2020-01-01", observer, sit_and_stare=False)
+
+
+def test_time_lookup_is_nan_beyond_the_pixel_edges():
+    lookup = _time_lookup(np.array([0.0, 1, 4, 5]) * u.s)
+    assert_quantity_allclose(lookup([-1, -0.5, 1.5, 3.5, 4] * u.pix), [np.nan, -0.5, 2.5, 5.5, np.nan] * u.s)
+
+    lookup = _time_lookup(np.arange(6.0).reshape(3, 2) * u.s)
+    assert_quantity_allclose(
+        lookup([-0.5, 2.5, 3, 1] * u.pix, [-0.5, 1.5, 0, -1] * u.pix), [-1.5, 6.5, np.nan, np.nan] * u.s
+    )
+
+
+def test_raster_gwcs_crpix_is_zero_based():
+    pc = np.repeat(np.eye(2)[np.newaxis, :, :], 6, axis=0) * u.pix
+    crval = np.repeat([[10.0, 20.0]], 6, axis=0) * u.arcsec
+    wcs = _synthetic_raster_gwcs(pc, crval, np.arange(6) * u.s, CDELT2=0.5, CDELT3=2.0, CRPIX2=3.0, CRPIX3=4.0)
+
+    _, sky, _, _ = wcs.array_index_to_world(3, 2, 0)
+    assert_quantity_allclose(sky.Tx.to(u.arcsec), 10 * u.arcsec)
+    assert_quantity_allclose(sky.Ty.to(u.arcsec), 20 * u.arcsec)
+
+    # The far edge of the last of an even number of steps is half a step past its centre.
+    lon = [wcs.pixel_to_world_values(0, 2, step)[1] for step in (5, 5.25, 5.5)]
+    np.testing.assert_allclose(lon[2] - lon[0], 2 * (lon[1] - lon[0]))
+
+
+def test_sit_and_stare_zero_pc_rows_are_interpolated_unless_every_row_is_bad():
+    pc = np.array([np.eye(2), np.zeros((2, 2)), 3 * np.eye(2)]) * u.pix
+    crval = np.repeat([[10.0, 20.0]], 3, axis=0) * u.arcsec
+
+    assert not _raster_wcs_bad_row_mask(pc, crval).any()
+    bad_rows = _raster_wcs_bad_row_mask(pc, crval, pc_only=True)
+    np.testing.assert_array_equal(bad_rows, [False, True, False])
+    with pytest.warns(UserWarning, match="all-zero or non-finite WCS tables"):
+        pc_out, crval_out = _sanitize_raster_wcs_tables(pc.copy(), crval.copy(), pc_only=True)
+    np.testing.assert_allclose(pc_out[1].to_value(u.pix), [[2.0, 0.0], [0.0, 2.0]])
+    assert_quantity_allclose(crval_out[1], [10.0, 20.0] * u.arcsec)
+
+    # When every row is all-zero there is nothing to interpolate from, so reading fails.
+    with pytest.raises(ValueError, match="Every exposure has all-zero or non-finite"):
+        _sanitize_raster_wcs_tables(np.zeros((2, 2, 2)) * u.pix, np.zeros((2, 2)) * u.arcsec)
+
+
+@pytest.mark.parametrize(
+    ("offsets", "expected"),
+    [([np.nan, 1, 2, np.nan, 4, np.nan], [0, 1, 2, 3, 4, 5]), ([np.nan, 5, np.nan], [5, 5, 5])],
+    ids=["interpolate_and_extrapolate", "one_good_row"],
+)
+def test_raster_times_are_interpolated_between_and_beyond_good_rows(offsets, expected):
+    start = Time("2020-01-01T23:59:58")  # The times cross midnight.
+    with pytest.warns(UserWarning, match="non-finite times"):
+        times = _sanitize_raster_times(start, offsets * u.s)
+    assert_quantity_allclose((times - start).to(u.s), expected * u.s, atol=1e-9 * u.s)
+
+    with pytest.raises(ValueError, match="Every exposure has non-finite times"):
+        _sanitize_raster_times(start, [np.nan, np.nan] * u.s)
+    with pytest.warns(UserWarning, match="Using the planned start times"):
+        times = _sanitize_raster_times(start, [np.nan, np.nan] * u.s, fallback_to_start=True)
+    assert abs((times - start).to_value(u.s)).max() < 1e-9
+
+
+def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic():
+    # Two passes over the same 8 slit positions, the second back in time.
+    steps = np.arange(8.0)
+    pc = np.repeat(np.eye(2)[np.newaxis, :, :], 16, axis=0) * u.pix
+    crval = np.zeros((16, 2)) * u.arcsec
+    crval[:, 0] = np.tile(steps, 2) * u.arcsec
+    wcs = _synthetic_raster_gwcs(pc, crval, np.concatenate([steps, steps[::-1]]) * u.s, CDELT2=1, CDELT3=1, CRPIX2=1)
+
+    for scan_index in (1, 9):
+        point = wcs.array_index_to_world(scan_index, 20, 10)
+        assert wcs.world_to_array_index(*point) == (scan_index, 20, 10)
