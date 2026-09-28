@@ -26,7 +26,6 @@ Citing irispy
 
 If you use ``irispy`` in your work, please cite the Zenodo record of the version you used.
 Every release is archived on Zenodo, and `10.5281/zenodo.10443678 <https://doi.org/10.5281/zenodo.10443678>`__ resolves to the latest version and lists all of them.
-The same information is in ``CITATION.cff``, which GitHub shows under "Cite this repository".
 
 Usage of Generative AI
 ----------------------
