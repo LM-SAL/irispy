@@ -189,33 +189,74 @@ def test_raster_animation_plots_and_reapplies_axis_colors_after_update(combined_
 
 
 @pytest.mark.parametrize(
-    ("axes_coordinates", "time_label", "edges"),
+    ("axes_coordinates", "edges", "hidden"),
     [
-        ([LON, LAT, None], "", {LON: "b", LAT: "l"}),
-        ([LON, None, None], "", {LON: "b"}),
-        (None, "Seconds from Start [$\\mathrm{s}$]", {}),
+        (None, {LON: "b", LAT: "l"}, ["time", "raster_step"]),
+        ([LON, LAT, None], {LON: "b", LAT: "l"}, ["time", "raster_step"]),
+        ([LON, None, None], {LON: "b"}, [LAT, "time", "raster_step"]),
+        ([LON, "time", None], {LON: "b"}, [LAT, "raster_step"]),
     ],
-    ids=["requested_longitude_on_bottom", "longitude_only", "time_label_does_not_repeat_unit"],
+    ids=["default", "longitude_and_latitude", "longitude_only", "longitude_and_time"],
 )
-def test_raster_animation_axis_labels_survive_update(raster_sg_files, axes_coordinates, time_label, edges):
+def test_raster_animation_axis_layout_survives_update(raster_sg_files, axes_coordinates, edges, hidden):
+    """
+    Longitude follows the raster step axis and latitude the slit axis; time and step are
+    only shown when asked for.
+
+    A hidden coordinate must not keep an automatic position, or it takes an edge from a
+    shown coordinate.
+    """
     cube = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")["Mg II k 2796"][0]
     fig = plt.figure()
     with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
         animator = cube.plot(plot_axes=["x", "y", None], axes_coordinates=axes_coordinates, aspect="auto", fig=fig)
-    time = animator.axes.coords["time"]
-    edge_coords = [(animator.axes.coords[name], edge) for name, edge in edges.items()]
+    coords = animator.axes.coords
 
-    def assert_labels():
-        assert time.get_axislabel() == time_label
-        for coord, edge in edge_coords:
-            assert edge in coord.get_axislabel_position()
-        if axes_coordinates:
-            # Latitude is only moved onto the left edge when requested.
-            assert (animator.axes.coords[LAT].get_ticks_position() == ["l"]) == (LAT in axes_coordinates)
+    def assert_layout():
+        assert coords["time"].get_axislabel() == "Seconds from Start [$\\mathrm{s}$]"
+        for name, edge in edges.items():
+            assert coords[name].get_ticklabel_position() == [edge]
+            assert coords[name].get_axislabel_position() == [edge]
+        for name in hidden:
+            assert coords[name].get_ticklabel_position() == []
+        if "time" not in hidden:
+            assert coords["time"].get_ticklabel_position() != []
 
-    assert_labels()
+    assert_layout()
     animator.update_plot_2d(0, animator.im, SimpleNamespace(cval=0))
-    assert_labels()
+    assert_layout()
+    plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    ("plot_axes", "edges"),
+    [(None, {LAT: "b", LON: "l"}), (["x", "y"], {LON: "b", LAT: "l"})],
+    ids=["slit_on_x", "step_on_x"],
+)
+def test_raster_image_labels_latitude_on_slit_edge_and_longitude_on_step_edge(raster_sg_file, plot_axes, edges):
+    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
+    wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])
+    image = cube.crop([wavelength, None, None, None], [wavelength, None, None, None])
+    assert image.shape == cube.shape[:2]
+    fig = plt.figure()
+    ax = image.plot(plot_axes=plot_axes)
+    fig.canvas.draw()
+
+    for name, edge in edges.items():
+        assert ax.coords[name].get_ticklabel_position() == [edge]
+    for name in ("time", "raster_step"):
+        assert ax.coords[name].get_ticklabel_position() == []
+    plt.close(fig)
+
+
+def test_spectrogram_animation_labels_latitude_left_and_longitude_right(raster_sg_file):
+    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
+    fig = plt.figure()
+    coords = cube.plot(fig=fig).axes.coords
+
+    assert coords[LAT].get_ticklabel_position() == ["l"]
+    assert coords[LON].get_ticklabel_position() == ["r"]
+    assert coords["time"].get_ticklabel_position() == []
     plt.close(fig)
 
 
