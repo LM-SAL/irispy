@@ -21,6 +21,12 @@ For more information see the instrument paper which is available `online for fre
     Please be aware that the package name on pypi and conda-forge is ``irispy-lmsal`` to avoid name clashes with other packages.
     However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
 
+Citing irispy
+-------------
+
+If you use ``irispy`` in your work, please cite the Zenodo record of the version you used.
+Every release is archived on Zenodo, and `10.5281/zenodo.10443678 <https://doi.org/10.5281/zenodo.10443678>`__ resolves to the latest version and lists all of them.
+
 Usage of Generative AI
 ----------------------
 

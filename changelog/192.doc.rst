@@ -1,0 +1,1 @@
+Added a "Citing irispy" section to the README and documentation, pointing at the Zenodo record of every release.

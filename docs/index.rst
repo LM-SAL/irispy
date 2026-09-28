@@ -55,6 +55,12 @@ These classes also provide methods for applying a number of calibration routines
 
 .. _Interface Region Imaging Spectrograph: https://iris.lmsal.com/
 
+Citing irispy
+=============
+
+If you use ``irispy`` in your work, please cite the Zenodo record of the version you used.
+Every release is archived on Zenodo, and `10.5281/zenodo.10443678 <https://doi.org/10.5281/zenodo.10443678>`__ resolves to the latest version and lists all of them.
+
 Getting help
 ============
 
