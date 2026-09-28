@@ -1,0 +1,1 @@
+The documentation build and the remote-data tests now download their data from release assets on `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__ instead of Git LFS, and the documentation uses an O IV-only CHIANTI database (35 MB instead of 909 MB).

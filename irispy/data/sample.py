@@ -73,7 +73,7 @@ def download_all(*, force_download=False):
     Parameters
     ----------
     force_download : `bool`
-        If ``True``, files are downloaded even if they already exist.  Default is
+        If ``True``, files are downloaded even if they already exist. Default is
         ``False``.
     """
     _get_sample_files(_SAMPLE_DATA.values(), force_download=force_download)
