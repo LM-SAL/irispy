@@ -254,8 +254,9 @@ def read_spectrograph_lvl2(
                 data_mask = None
                 if not memmap:
                     data_mask = data == BAD_PIXEL_VALUE_SCALED
-                if uncertainty:
-                    out_uncertainty = calculate_uncertainty(data, readout_noise, dn_unit)
+                    # memmap data are unscaled integers, so the photon noise would be wrong
+                    if uncertainty:
+                        out_uncertainty = calculate_uncertainty(data, readout_noise, dn_unit)
                 _set_wcs_aux_obs_coord(wcs, observer)
                 cube = SpectrogramCube(
                     data,
