@@ -102,6 +102,50 @@ def test_sgmeta_observer_radial_velocity():
     assert u.isclose(meta.observer_radial_velocity, 3500.0 * u.m / u.s)
 
 
+def test_sgmeta_observer_radial_velocity_per_exposure(sns_sg_file):
+    # Level 2 primary headers have no OBS_VR, only the per-exposure OBS_VRIX
+    meta = read_files(sns_sg_file)["Si IV 1403"][0].meta
+    with fits.open(sns_sg_file) as hdulist:
+        assert "OBS_VR" not in hdulist[0].header
+        expected = hdulist[-2].data[:, hdulist[-2].header["OBS_VRIX"]] * u.m / u.s
+    assert u.allclose(meta.observer_radial_velocity, expected)
+
+
+def test_sgmeta_missing_cadence_keys():
+    meta = SGMeta(_make_sg_header(), "Si IV 1403", data_shape=(10, 2, 2))
+    assert meta.temporal_cadence is None
+    assert meta.cadence_planned_average is None
+    assert meta.cadence_planned_stddev is None
+    assert meta.cadence_executed_stddev is None
+    assert meta.observer_radial_velocity is None
+
+
+def test_sjimeta_aia_cutout_header():
+    # The IRIS-aligned AIA cutouts lack TWMIN/TWMAX, CADEX_AV and OBS_VR, and store DATE_TIME_OBSID
+    header = fits.Header()
+    header["INSTRUME"] = "AIA_3"
+    header["TDET1"] = "SJI"
+    header["TDESC1"] = "171_THIN"
+    header["TWAVE1"] = 171
+    header["OBSID"] = "20250519_165924_3640107442"
+    meta = SJIMeta(header, data_shape=(10, 10))
+    assert meta.observing_mode_id == 3640107442
+    for name in (
+        "spectral_range",
+        "temporal_cadence",
+        "observer_radial_velocity",
+        "distance_to_sun",
+        "sun_angular_radius",
+        "satellite_rotation",
+        "exposure_time",
+        "processing_level",
+        "raster_fov_width_x",
+        "raster_fov_width_y",
+    ):
+        assert getattr(meta, name) is None, name
+    assert "Spectral Range:  None" in str(meta)
+
+
 def test_sgmeta_number_of_spectral_windows():
     meta = SGMeta(_make_sg_header(), "Si IV 1403", data_shape=(10, 2, 2))
     assert meta.number_of_spectral_windows == 1
