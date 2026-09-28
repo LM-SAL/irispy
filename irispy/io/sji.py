@@ -4,6 +4,7 @@ import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
 from astropy.io import fits
+from astropy.nddata import StdDevUncertainty
 from astropy.time import Time
 
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
@@ -248,7 +249,7 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             scaled = True
             unit = DN_UNIT["SJI"]
             if uncertainty and instrume in ["IRIS", "SJI"]:
-                out_uncertainty = calculate_uncertainty(data, READOUT_NOISE["SJI"], DN_UNIT["SJI"])
+                out_uncertainty = StdDevUncertainty(calculate_uncertainty(data, READOUT_NOISE["SJI"], DN_UNIT["SJI"]))
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
         meta = SJIMeta(hdulist[0].header)
         meta["frame_wcs_headers"] = _create_headers_wcs(hdulist, t_obs)  # root-relative, not axis-aware

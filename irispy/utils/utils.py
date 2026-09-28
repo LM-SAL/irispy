@@ -166,7 +166,7 @@ def calculate_dust_mask(data_array):
     return ndimage.binary_dilation(mask, structure=struct).astype(mask.dtype)
 
 
-def calculate_uncertainty(data: np.ndarray, readout_noise: u.Quantity, unit: u.Quantity) -> float:
+def calculate_uncertainty(data: np.ndarray, readout_noise: u.Quantity, unit: u.Quantity) -> np.ndarray:
     """
     Calculates the uncertainty of a given data array.
 
@@ -181,8 +181,9 @@ def calculate_uncertainty(data: np.ndarray, readout_noise: u.Quantity, unit: u.Q
 
     Returns
     -------
-    float
-        The readout noise with no unit.
+    numpy.ndarray
+        The standard deviation of each value (photon and readout noise), in ``unit``
+        but with the unit removed.
     """
     # Negative DN (dark-subtracted noise or the -200 fill) have no photon noise, only readout noise
     photons = np.clip((data * unit).to(u.photon).value, 0, None)

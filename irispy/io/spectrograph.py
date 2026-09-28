@@ -6,6 +6,7 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.nddata import StdDevUncertainty
 from astropy.time import Time, TimeDelta
 from astropy.wcs import WCS
 
@@ -256,7 +257,7 @@ def read_spectrograph_lvl2(
                     data_mask = data == BAD_PIXEL_VALUE_SCALED
                     # memmap data are unscaled integers, so the photon noise would be wrong
                     if uncertainty:
-                        out_uncertainty = calculate_uncertainty(data, readout_noise, dn_unit)
+                        out_uncertainty = StdDevUncertainty(calculate_uncertainty(data, readout_noise, dn_unit))
                 _set_wcs_aux_obs_coord(wcs, observer)
                 cube = SpectrogramCube(
                     data,

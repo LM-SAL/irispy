@@ -6,6 +6,7 @@ import numpy as np
 
 import astropy.units as u
 from astropy import constants
+from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils.constants import RADIANCE_UNIT
@@ -89,7 +90,7 @@ def radiometric_calibration(
         solid_angle=solid_angle,
     )
     new_data = new_data_quantities[0].value
-    new_uncertainty = new_data_quantities[1].value if len(new_data_quantities) > 1 else None
+    new_uncertainty = StdDevUncertainty(new_data_quantities[1].value) if len(new_data_quantities) > 1 else None
     new_unit = new_data_quantities[0].unit
     new_cube = SpectrogramCube(
         new_data,

@@ -3,6 +3,7 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs import WCS
 
@@ -257,3 +258,9 @@ def test_frame_wcs_headers_match_per_frame_make_fitswcs_header(sns_sji_1400_file
                 unit=u.DN,
             )
             assert dict(headers[i]) == dict(expected)
+
+
+def test_read_sji_lvl2_uncertainty_is_a_standard_deviation(sns_sji_1330_file):
+    cube = read_sji_lvl2(sns_sji_1330_file, uncertainty=True)
+    assert isinstance(cube.uncertainty, StdDevUncertainty)
+    assert cube.uncertainty.array.shape == cube.data.shape
