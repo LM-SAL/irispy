@@ -179,7 +179,11 @@ ax_dict["total_flux"].set_title("Total Gaussian Flux")
 asym_max = np.nanpercentile(np.abs(flux_asymmetry), 99.99)
 SpectrogramCube(flux_asymmetry, line_core.wcs).plot(
     # Reversed, so that pixels where the blue component is stronger are blue.
-    axes=ax_dict["asymmetry"], plot_axes=["x", "y"], cmap="coolwarm_r", vmin=-asym_max, vmax=asym_max
+    axes=ax_dict["asymmetry"],
+    plot_axes=["x", "y"],
+    cmap="coolwarm_r",
+    vmin=-asym_max,
+    vmax=asym_max,
 )
 fig.colorbar(ax_dict["asymmetry"].images[0], ax=ax_dict["asymmetry"], label="(blue - red) / total flux", extend="both")
 ax_dict["asymmetry"].set_title("Blue-red Flux Asymmetry")
