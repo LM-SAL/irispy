@@ -6,9 +6,10 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs import WCS
 
-from sunpy.coordinates import Helioprojective
+from sunpy.coordinates import Helioprojective, get_body_heliographic_stonyhurst
+from sunpy.map.header_helper import make_fitswcs_header
 
-from irispy.io.sji import read_sji_lvl2
+from irispy.io.sji import _create_headers_wcs, _fill_dropped_pointing_rows, _t_obs, read_sji_lvl2
 from irispy.sji import AIACube
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
@@ -225,3 +226,34 @@ def test_sji_first_and_last_frames_round_trip(sns_sjicube_1400):
     assert np.isfinite(cube.axis_world_coords("time", pixel_corners=True)[0].jd).all()
     for index in ((0, 5, 3), (cube.shape[0] - 1, 39, 36)):
         assert cube.wcs.world_to_array_index(*cube.wcs.array_index_to_world(*index)) == index
+
+
+def test_frame_wcs_headers_match_per_frame_make_fitswcs_header(sns_sji_1400_file):
+    # The headers are built from one template; each frame must equal a header made for that frame alone.
+    with fits.open(sns_sji_1400_file) as hdulist:
+        hdulist.verify("silentfix")
+        t_obs = _t_obs(hdulist)
+        _fill_dropped_pointing_rows(hdulist)
+        headers = _create_headers_wcs(hdulist, t_obs)
+        aux = hdulist[1]
+        for i in (1, len(headers) - 1):
+            pointing = Helioprojective(
+                aux.data[i, aux.header["XCENIX"]] * u.arcsec,
+                aux.data[i, aux.header["YCENIX"]] * u.arcsec,
+                observer=get_body_heliographic_stonyhurst("Earth", t_obs[i].isot),
+                obstime=t_obs[i],
+            )
+            pc = [aux.data[i, aux.header[key]] for key in ("PC1_1IX", "PC1_2IX", "PC2_1IX", "PC2_2IX")]
+            expected = make_fitswcs_header(
+                data=hdulist[0].data[i].shape,
+                coordinate=pointing,
+                scale=[hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]] * u.arcsec / u.pixel,
+                rotation_matrix=np.asanyarray([[pc[0], pc[1]], [pc[2], pc[3]]]),
+                instrument="SJI",
+                telescope="IRIS",
+                observatory="IRIS",
+                wavelength=int(hdulist[0].header["TWAVE1"]) * u.AA,
+                exposure=aux.data[i, aux.header["EXPTIMES"]] * u.second,
+                unit=u.DN,
+            )
+            assert dict(headers[i]) == dict(expected)
