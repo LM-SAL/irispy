@@ -1,0 +1,1 @@
+Uncertainties computed with ``uncertainty=True`` (and by `~irispy.utils.spectrograph.radiometric_calibration`) are now stored as `~astropy.nddata.StdDevUncertainty` instead of an unknown uncertainty type.
