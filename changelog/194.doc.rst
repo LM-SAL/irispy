@@ -1,0 +1,1 @@
+Documented that the frame of `irispy.sji.SJICube.wcs` uses the time of the first exposure as its ``obstime``, and how to get a frame for the time of each exposure.

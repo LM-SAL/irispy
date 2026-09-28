@@ -33,3 +33,13 @@ Using equation 187 in `Calabretta & Greisen 2002 <https://www.aanda.org/articles
 
 Note that since these pixels are extremely rectangular, with an aspect ratio of ~3e-10, the cross terms in the PCij matrix are quite small: -3.4e-12 and -3.8e-7.
 Hopefully, 64-bit floats have enough precision to enable this to work all of the time.
+
+Slit-jaw gWCS observation time
+==============================
+
+The world coordinates from `irispy.sji.SJICube.wcs` (a gWCS) are in a `~sunpy.coordinates.Helioprojective` frame whose ``obstime`` is the time of the first exposure, whichever exposure they belong to.
+The coordinates themselves use the pointing of their own exposure, and the time returned with them is the time of their own exposure; only the frame's ``obstime``, and so the observer it implies, is fixed.
+This matters when transforming to frames that depend on the time, such as heliographic coordinates.
+A gWCS output frame cannot yet change its ``obstime`` from one pixel to the next (`#43 <https://github.com/LM-SAL/irispy/issues/43>`__).
+
+If you need a coordinate frame at the time of a given exposure, use the FITS WCS of that exposure, ``sji_cube.fits_wcs[i]`` (see `irispy.sji.SJICube.fits_wcs`), or its map, ``sji_cube.to_maps(i)`` (see `irispy.sji.SJICube.to_maps`); both use the time of that exposure.
