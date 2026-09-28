@@ -3,10 +3,10 @@
 Co-align IRIS SJI to SDO/AIA
 ============================
 
-In this example we will show how to co-align a rolled IRIS dataset to SDO/AIA.
+In this example we will show how to co-align an IRIS dataset to SDO/AIA.
 
 The IRIS instrument team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV for
-each observation the `IRIS data search page <https://iris.lmsal.com/search/>`__.
+each observation via the `IRIS data search page <https://iris.lmsal.com/search/>`__.
 
 Therefore this example is more a showcase of functionality.
 """
@@ -49,18 +49,20 @@ sji_2832 = read_files(sji_filename)
 
 ###############################################################################
 # We will want to align the data to AIA.
-# First we will want to pick a timestamp during the observation.
+# First we pick one frame of the observation and its time.
 
 (time_sji,) = sji_2832.axis_world_coords("time")
+sji_index = 8
+sji_time = Time(time_sji[sji_index])
 # We need to get a sunpy map as the coalignment works on sunpy maps only for now.
-sji_map = sji_2832.to_maps(8)
+sji_map = sji_2832.to_maps(sji_index)
 
 ###############################################################################
 # We will download the closest AIA 170 nm image from the Virtual Solar Observatory (VSO).
 # Once we have acquired it, we will need to use `aiapy` to "prep" this image.
 
 search_results = Fido.search(
-    a.Time(time_sji[0], Time(time_sji[0]) + TimeDelta(1 * u.minute), near=time_sji[0]),
+    a.Time(sji_time, sji_time + TimeDelta(1 * u.minute), near=sji_time),
     a.Instrument.aia,
     a.Wavelength(1700 * u.AA),
 )
@@ -68,7 +70,7 @@ files = Fido.fetch(search_results, site="NSO")
 aia_map = sunpy.map.Map(files[0])
 pointing_table = get_pointing_table(
     source="JSOC",
-    time_range=(Time(time_sji[0]) - TimeDelta(5 * 60 * u.minute), Time(time_sji[0]) + TimeDelta(1 * u.minute)),
+    time_range=(sji_time - TimeDelta(5 * 60 * u.minute), sji_time + TimeDelta(1 * u.minute)),
 )
 aia_map = update_pointing(aia_map, pointing_table=pointing_table)
 
@@ -100,9 +102,9 @@ aia_crop = aia_map.submap(
 # so we will use the SJI Map for this case and not the cube.
 #
 # Before co-aligning the images, we have to make sure that both images have the
-# image scale, as this is important for the routine.
+# same image scale, as this is important for the routine.
 #
-# Now we can co-align cross-correlation using the "match_template" method.
+# Now we can co-align them by cross-correlation, using the "match_template" method.
 # For details of the implementation refer to the documentation of
 # `~sunkit_image.coalignment.match_template.match_template_coalign`.
 
@@ -120,6 +122,9 @@ if np.any(nan_mask):
 sji_map_corrected = sunpy.map.Map(sji_map_corrected_data, sji_map.meta)
 
 coaligned_sji_map = coalign_map(sji_map_corrected, aia_upsampled, method="match_template")
+# The co-alignment only updates the pointing in the metadata, so we plot the original
+# data (with its NaNs, which show as blank) with the new metadata.
+coaligned_sji_map = sunpy.map.Map(sji_map.data, coaligned_sji_map.meta)
 
 ###############################################################################
 # Finally, we can plot the results of the co-alignment.

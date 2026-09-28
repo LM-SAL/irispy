@@ -6,7 +6,7 @@ Reproject IRIS SJI (rolled) to SDO/AIA
 In this example we will show how to reproject a rolled IRIS dataset to SDO/AIA.
 
 The IRIS team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV for
-each observation the `IRIS data search page <https://iris.lmsal.com/search/>`__.
+each observation via the `IRIS data search page <https://iris.lmsal.com/search/>`__.
 
 Therefore this example is more a showcase of functionality.
 """
@@ -37,7 +37,7 @@ from irispy.obsid import ObsID
 # You will need to update the path to the data in the next section if you do that.
 
 sji_filename = pooch.retrieve(
-    "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/09/19/20140919_051712_3860608353/iris_l2_20140919_051712_3860608353_SJI_2832_t000.fits.gz",
+    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/09/19/20140919_051712_3860608353/iris_l2_20140919_051712_3860608353_SJI_2832_t000.fits.gz",
     known_hash="7ec0f3d63d97bc7620675c78fb6c670ef5b4249d31ef7818435b629c04b72f60",
 )
 
@@ -93,7 +93,7 @@ sji_frame = wcs_to_celestial_frame(sji_cut.fits_wcs)
 
 plt.figure()
 ax = sji_cut.plot()
-plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']}", pad=20)
+plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']:.0f} Å", pad=20)
 # You have to specify the grid type to be contours for WCSAxes to plot it correctly.
 # This is due to a quirk of how gWCS interacts with WCSAxes.
 ax.coords.grid(grid_type="contours")
@@ -141,7 +141,8 @@ aia_map = update_pointing(aia_map, pointing_table=pointing_table)
 # **irispy** will set this to be at Earth.
 # This will allow us to transform from IRIS to any another observer.
 #
-# Using :meth:`sunpy.map.GenericMap.draw_extent`, drawing regions is straightforward.
+# Using `sunpy.visualization.drawing.extent`, drawing the IRIS field of view on the AIA image
+# is straightforward.
 
 aia_bottom_left = SkyCoord(-850 * u.arcsec, -50 * u.arcsec, frame=aia_map.coordinate_frame)
 aia_top_right = SkyCoord(-650 * u.arcsec, 150 * u.arcsec, frame=aia_map.coordinate_frame)
@@ -153,7 +154,7 @@ aia_sub.plot()
 extent(ax, sji_cut.fits_wcs)
 
 ###############################################################################
-# We have a green square showing the region of the IRIS observation.
+# The outline shows the region of the IRIS observation, rotated by its 45 degree roll.
 # To work with both IRIS and AIA data, it helps if the image axes are aligned,
 # and for this we need to rotate one of them. We can either rotate SDO/AIA to the
 # IRIS frame, or vice-versa.
