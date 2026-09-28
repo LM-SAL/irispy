@@ -1,9 +1,12 @@
+import io
+import tarfile
+
 import numpy as np
 import pytest
 
 from astropy.io import fits
 
-from irispy.io.utils import _get_spec_group_key, fits_info, read_files
+from irispy.io.utils import _extract_tarfile, _get_spec_group_key, fits_info, read_files
 
 
 def test_fits_info(capsys, sns_sg_file, sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
@@ -137,3 +140,23 @@ def test_read_files_raster_scanning(remote_raster_scanning_tar):
         returns["C II 1336"].shape, (29, 4, 388, 186)
     )  # 29 time steps, 4 steps, 388 spatial pixels, 186 spectral pixels
     np.testing.assert_array_equal(returns.aligned_dimensions, [29, 4, 388])
+
+
+def test_extract_tarfile_reuses_complete_extraction(tmp_path):
+    tar_path = tmp_path / "obs_raster.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        for name in ("a.fits", "b.fits"):
+            info = tarfile.TarInfo(name)
+            info.size = 3
+            tar.addfile(info, io.BytesIO(b"abc"))
+    extract_dir = tmp_path / "obs_raster"
+    first = _extract_tarfile([tar_path])
+    assert first == [extract_dir / "a.fits", extract_dir / "b.fits"]
+    # A second call must not extract again, or it would restore "abc".
+    (extract_dir / "a.fits").write_bytes(b"new")
+    assert _extract_tarfile([tar_path]) == first
+    assert (extract_dir / "a.fits").read_bytes() == b"new"
+    # A missing file means the extraction is incomplete, so it is extracted again.
+    (extract_dir / "b.fits").unlink()
+    assert _extract_tarfile([tar_path]) == first
+    assert (extract_dir / "a.fits").read_bytes() == b"abc"

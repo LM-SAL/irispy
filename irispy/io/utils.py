@@ -40,6 +40,9 @@ def _extract_tarfile(filenames):
     """
     Extracts a tar file to the same location as the tar file.
 
+    A complete earlier extraction is reused while it is newer than the tar file
+    and all of its files still exist.
+
     Parameters
     ----------
     filenames : `list of str`
@@ -50,10 +53,19 @@ def _extract_tarfile(filenames):
         filename = Path(fname)
         if tarfile.is_tarfile(filename):
             extract_dir = filename.with_suffix("").with_suffix("")  # removes .tar.gz or .tar
-            extract_dir.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(filename, "r") as tar:
-                tar.extractall(extract_dir, filter="data")
-                expanded_files.extend([extract_dir / member.name for member in tar.getmembers() if member.isfile()])
+            # Written only after a complete extraction, listing the extracted files.
+            marker = extract_dir / ".irispy-extracted"
+            names = []
+            if marker.is_file() and marker.stat().st_mtime >= filename.stat().st_mtime:
+                names = marker.read_text().splitlines()
+            if not names or not all((extract_dir / name).is_file() for name in names):
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                marker.unlink(missing_ok=True)
+                with tarfile.open(filename, "r") as tar:
+                    tar.extractall(extract_dir, filter="data")
+                    names = [member.name for member in tar.getmembers() if member.isfile()]
+                marker.write_text("\n".join(names))
+            expanded_files.extend(extract_dir / name for name in names)
         else:
             expanded_files.append(filename)
     return expanded_files
@@ -196,7 +208,8 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
             if sdo_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith("AIA"):
                 file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
                 for f in file:
-                    instrume, describe = _get_simple_metadata(f)
+                    if sdo_tarfile:
+                        instrume, describe = _get_simple_metadata(f)
                     returns[f"{describe}"] = read_sji_lvl2(f, memmap=memmap, uncertainty=uncertainty, **kwargs)
             elif raster_tarfile:
                 file = _extract_tarfile([filename]) if raster_tarfile else [filename]
