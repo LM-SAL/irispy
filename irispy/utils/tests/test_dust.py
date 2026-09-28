@@ -356,3 +356,19 @@ def test_remove_dust_before_after_figure(sns_sjicube_1330):
         ax.coords[1].set_ticklabel_visible(False)
 
     return fig
+
+
+@pytest.mark.parametrize("spatial_box", [3, 4, 5])
+def test_local_median_fill_matches_generic_filter(spatial_box):
+    from scipy import ndimage  # noqa: PLC0415
+
+    from irispy.utils.dust import _local_median_fill  # noqa: PLC0415
+
+    rng = np.random.default_rng(0)
+    frame = rng.normal(size=(30, 40))
+    invalid = rng.random(frame.shape) < 0.3
+    target = rng.random(frame.shape) < 0.5
+    expected = ndimage.generic_filter(np.where(invalid, np.nan, frame), np.nanmedian, size=spatial_box, mode="nearest")
+    result = _local_median_fill(frame, invalid, spatial_box, target)
+    np.testing.assert_array_equal(result[target], expected[target])
+    assert np.isnan(result[~target]).all()

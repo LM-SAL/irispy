@@ -5,7 +5,6 @@ Utilities for repairing dust-darkened pixels in IRIS image cubes.
 import warnings
 
 import numpy as np
-from scipy import ndimage
 
 import astropy.units as u
 
@@ -26,11 +25,22 @@ def _coerce_dust_mask(data, dust_mask):
     return dust_mask.copy()
 
 
-def _local_median_fill(frame, invalid_mask, spatial_box):
+def _local_median_fill(frame, invalid_mask, spatial_box, target_mask):
+    """
+    Local ``nanmedian`` of ``frame`` at ``target_mask`` pixels, NaN elsewhere.
+
+    Matches ``ndimage.generic_filter(..., np.nanmedian, size=spatial_box, mode="nearest")``
+    at the target pixels without evaluating the filter over the whole frame.
+    """
     masked_frame = np.where(invalid_mask | ~np.isfinite(frame), np.nan, frame)
+    padded = np.pad(masked_frame, spatial_box // 2, mode="edge")
+    windows = np.lib.stride_tricks.sliding_window_view(padded, (spatial_box, spatial_box))
+    rows, cols = np.nonzero(target_mask)
+    spatial_fill = np.full(frame.shape, np.nan)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        return ndimage.generic_filter(masked_frame, np.nanmedian, size=spatial_box, mode="nearest")
+        spatial_fill[rows, cols] = np.nanmedian(windows[rows, cols].reshape(rows.size, spatial_box**2), axis=1)
+    return spatial_fill
 
 
 def _resolve_exposure_times(cube, frame_count, *, exposure_normalize):
@@ -158,7 +168,7 @@ def remove_dust(
 
     if fallback == "spatial":
         if clean_data.ndim == 2:
-            spatial_fill = _local_median_fill(clean_data, original_mask | dust_mask, spatial_box)
+            spatial_fill = _local_median_fill(clean_data, original_mask | dust_mask, spatial_box, dust_mask)
             can_fill = dust_mask & np.isfinite(spatial_fill)
             clean_data[can_fill] = spatial_fill[can_fill]
             filled_mask[can_fill] = True
@@ -171,6 +181,7 @@ def remove_dust(
                     clean_data[frame_index],
                     original_mask[frame_index] | dust_mask[frame_index],
                     spatial_box,
+                    target_mask,
                 )
                 can_fill = target_mask & np.isfinite(spatial_fill)
                 clean_data[frame_index, can_fill] = spatial_fill[can_fill]
