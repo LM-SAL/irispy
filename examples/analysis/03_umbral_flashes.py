@@ -21,6 +21,8 @@ time_support()
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml>`__.
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_raster.tar.gz>`__.
+# To keep the download small, we use a cutout of it that only has the Mg II k 2796 and C II 1336 windows.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -28,8 +30,8 @@ time_support()
 # You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
-    "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_raster.tar.gz",
-    known_hash="445c495cb6e4bdd8b563b318589691e3f4da79ee0e507d5ea587f1bd995fcb22",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20130902_163935_4000255147_cutout_raster.tar.gz",
+    known_hash="b9e55d682f881b6cb7c48e2530bcd3718b42ec6e398cae3d7017b15de3bda6b2",
 )
 sji_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits.gz",

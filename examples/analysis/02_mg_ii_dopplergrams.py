@@ -25,6 +25,8 @@ from irispy.utils import image_clipping
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20140708_114109_3824262996_2014-07-08T11%3A41%3A092014-07-08T11%3A41%3A09.xml>`__.
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/07/08/20140708_114109_3824262996/iris_l2_20140708_114109_3824262996_raster.tar.gz>`__.
+# To keep the download small, we use a cutout of it that only has the Mg II k 2796 window.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -32,8 +34,8 @@ from irispy.utils import image_clipping
 # You will need to update the path to the data in the next section if you do that.
 
 iris_raster_tar = pooch.retrieve(
-    "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/07/08/20140708_114109_3824262996/iris_l2_20140708_114109_3824262996_raster.tar.gz",
-    known_hash="21cff86fd0064936ce6807b1334ea1d3d50f3d358e5888810fba8e9bc1118567",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20140708_114109_3824262996_cutout_raster.tar.gz",
+    known_hash="8ac7efd70404bdb4fc92794e7694e6248dbe4a6369af82a9fcca697a3bad6015",
 )
 
 ###############################################################################

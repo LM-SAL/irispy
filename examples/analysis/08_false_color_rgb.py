@@ -32,14 +32,17 @@ from irispy.utils.rgb import asinh_velocity
 #
 # Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_182935_4000005156_2013-09-02T18%3A29%3A352013-09-02T18%3A29%3A35.xml
 #
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz>`__.
+# To keep the download small, we use a cutout of it that only has the first raster scan of the Si IV 1403, Mg II k 2796 and C II 1336 windows.
+#
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
 #
 # You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
-    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz",
-    known_hash="91211a52e278fb6e535242d4d6064facf9f93cf24f0a433c276ace1b2d621e7d",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20130902_182935_4000005156_cutout_raster.tar.gz",
+    known_hash="caec6a9d7e4d8fac70163f5f11ef992f3efd5a05b9b5fa6f67b79418bc183e1a",
 )
 
 # We will only focus on the Si IV.
@@ -71,10 +74,15 @@ si_iv.plotter.plot_rgb(
 ###############################################################################
 # For a sit-and-stare, you can use ``coordinates="time"`` to plot time along
 # the horizontal axis.
+#
+# This sit-and-stare is from the observation used in
+# :ref:`sphx_glr_generated_gallery_analysis_05_red_blue_asymmetry.py`.
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2021/04/29/20210429_110908_3660259102/iris_l2_20210429_110908_3660259102_raster.tar.gz>`__.
+# To keep the download small, we use a cutout of it that only has the Si IV 1403 window.
 
 sns_filename = pooch.retrieve(
-    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2021/04/29/20210429_110908_3660259102/iris_l2_20210429_110908_3660259102_raster.tar.gz",
-    known_hash="6d07f8dfa4c4644f26dce0c63166d22900d263d555c3d142454ff27fe257688b",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20210429_110908_3660259102_cutout_raster.tar.gz",
+    known_hash="3b0a5c731334bc952aad0078a2865338f1165ed78603398df115f5bde2d1d513",
 )
 sit_and_stare = read_files(sns_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
 

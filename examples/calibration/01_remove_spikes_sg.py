@@ -25,6 +25,8 @@ quantity_support()
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260209_215233_3602506433_2026-02-09T21%3A52%3A332026-02-09T21%3A52%3A33.xml>`__.
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/02/09/20260209_215233_3602506433/iris_l2_20260209_215233_3602506433_raster.tar.gz>`__.
+# To keep the download small, we use a cutout of it that only has the eleventh raster scan of the Si IV 1403 window.
 #
 # This dataset is during the South Atlantic Anomaly (SAA) passage, which is known to cause a large
 # number of cosmic ray hits in the data.
@@ -37,8 +39,8 @@ quantity_support()
 # You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
-    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/02/09/20260209_215233_3602506433/iris_l2_20260209_215233_3602506433_raster.tar.gz",
-    known_hash="bad4a3617d0fd04679203951d7db595df196f79b41a3f6f1f71ce0e301486434",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20260209_215233_3602506433_cutout_raster.tar.gz",
+    known_hash="cfed302a860202b1a8fdd90d3f1faec23bfca60a231bbbb9b851ea0c57d14fd8",
 )
 
 ###############################################################################
@@ -47,7 +49,7 @@ raster_filename = pooch.retrieve(
 
 raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 # Open the data and select one slice for the comparison.
-raster = raster["Si IV 1403"][10][4]
+raster = raster["Si IV 1403"][0][4]
 
 ###############################################################################
 # Now we use ``remove_cosmic_rays`` with the default parameters on IRIS Level 2

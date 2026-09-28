@@ -31,6 +31,8 @@ from irispy.utils.spectrograph import radiometric_calibration
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260308_051050_3893012099_2026-03-08T05%3A10%3A502026-03-08T05%3A10%3A50.xml>`__.
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/03/08/20260308_051050_3893012099/iris_l2_20260308_051050_3893012099_raster.tar.gz>`__.
+# To keep the download small, we use a cutout of it that only has the Mg II k 2796 and Si IV 1394 windows.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -38,8 +40,8 @@ from irispy.utils.spectrograph import radiometric_calibration
 # You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
-    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/03/08/20260308_051050_3893012099/iris_l2_20260308_051050_3893012099_raster.tar.gz",
-    known_hash="b76277ae89e79f50e7ddc603a86b9bbf70e23b2e64fc5343dbe99af19a05f854",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20260308_051050_3893012099_cutout_raster.tar.gz",
+    known_hash="16e7152b5525e16d78df93e8679c870dcbd9f5f78283c91e7631cbe417575987",
 )
 
 ###############################################################################

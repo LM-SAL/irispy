@@ -23,6 +23,8 @@ from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20210429_110908_3660259102_2021-04-29T11%3A09%3A082021-04-29T11%3A09%3A08.xml>`__.
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2021/04/29/20210429_110908_3660259102/iris_l2_20210429_110908_3660259102_raster.tar.gz>`__.
+# To keep the download small, we use a cutout of it that only has the Si IV 1403 window.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -30,8 +32,8 @@ from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
 # You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
-    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2021/04/29/20210429_110908_3660259102/iris_l2_20210429_110908_3660259102_raster.tar.gz",
-    known_hash="6d07f8dfa4c4644f26dce0c63166d22900d263d555c3d142454ff27fe257688b",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20210429_110908_3660259102_cutout_raster.tar.gz",
+    known_hash="3b0a5c731334bc952aad0078a2865338f1165ed78603398df115f5bde2d1d513",
 )
 
 ###############################################################################

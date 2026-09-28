@@ -6,8 +6,8 @@ exclude .cruft.json
 exclude .gitignore
 exclude .isort.cfg
 exclude .pre-commit-config.yaml
-exclude .readthedocs.yaml
-exclude .rtd-environment.yml
+exclude .readthedocs.yml
+exclude .rtd-requirements.txt
 exclude .ruff.toml
 
 # Prune folders
