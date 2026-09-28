@@ -67,6 +67,7 @@ def set_axis_properties(ax, axes_coordinates=None, slices=None):
     laid out like its FITS WCS. ``slices`` are the WCSAxes slices (``"x"``, ``"y"`` or
     an index per pixel axis, in WCS order); an animator provides its own.
     """
+    pixel_axis_names = getattr(ax, "_iris_pixel_axis_names", None)
     if hasattr(ax, "axes") and not hasattr(ax, "coords"):
         slices = getattr(ax, "slices_wcsaxes", slices)
         ax = ax.axes
@@ -90,7 +91,7 @@ def set_axis_properties(ax, axes_coordinates=None, slices=None):
         else:
             _hide_coord(axis)
     if "l" in ax.coords.frame.spine_names:
-        _place_celestial_coords(ax, shown, slices)
+        _place_celestial_coords(ax, shown, slices, pixel_axis_names)
 
 
 def _set_axis_properties(axis, label, color):
@@ -131,8 +132,10 @@ def _hide_coord(coord):
         set_position("")
 
 
-def _place_celestial_coords(ax, shown, slices):
-    pixel_axis_names = list(getattr(ax.wcs, "pixel_axis_names", None) or ())
+def _place_celestial_coords(ax, shown, slices, pixel_axis_names=None):
+    if pixel_axis_names is None:
+        pixel_axis_names = getattr(ax.wcs, "pixel_axis_names", None)
+    pixel_axis_names = list(pixel_axis_names or ())
     slices = list(("x", "y") if slices is None else slices)
     if len(slices) != len(pixel_axis_names):
         return
@@ -194,7 +197,7 @@ class IRISPlotter(MatplotlibPlotter):
         colormap derived from the cube metadata (falling back to viridis), and
         ``interpolation`` defaults to ``"nearest"``. For one-dimensional cubes ``cmap``
         is dropped entirely, even when given. IRIS axis styling is applied to the result
-        (see `set_axis_properties`); all other arguments are passed to the parent
+        (see ``set_axis_properties``); all other arguments are passed to the parent
         plotter's ``plot``.
         """
         if len(self._ndcube.shape) == 1:
@@ -209,6 +212,9 @@ class IRISPlotter(MatplotlibPlotter):
             kwargs.setdefault("interpolation", "nearest")
         ax = super().plot(axes=axes, plot_axes=plot_axes, axes_coordinates=axes_coordinates, **kwargs)
         ax._iris_axes_coordinates = axes_coordinates
+        # With axes_coordinates, ndcube plots through its combined WCS, whose pixel axis
+        # names are unusable (ndcube's CompoundLowLevelWCS raises), so keep the cube's own.
+        ax._iris_pixel_axis_names = tuple(self._ndcube.wcs.low_level_wcs.pixel_axis_names)
         set_axis_properties(ax, axes_coordinates, slices=_wcs_order_slices(plot_axes, len(self._ndcube.shape)))
         return ax
 

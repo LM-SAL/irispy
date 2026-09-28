@@ -249,6 +249,36 @@ def test_raster_image_labels_latitude_on_slit_edge_and_longitude_on_step_edge(ra
     plt.close(fig)
 
 
+def test_requested_time_coordinate_joins_the_celestial_layout(raster_sg_file):
+    """
+    A single-file cube carries a "time" extra coordinate, so with ``axes_coordinates``
+    ndcube plots through its combined WCS, whose pixel axis names it cannot join. The
+    layout must still come from the cube's own pixel axes, with time on a free edge.
+    """
+    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
+    wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])
+    image = cube.crop([wavelength, None, None, None], [wavelength, None, None, None])
+    fig = plt.figure()
+    ax = image.plot(plot_axes=["x", "y"], axes_coordinates=[LON, LAT, "time"])
+    fig.canvas.draw()
+
+    assert ax.coords[LON].get_ticklabel_position() == ["b"]
+    assert ax.coords[LAT].get_ticklabel_position() == ["l"]
+    # Time follows the step axis, so WCSAxes puts it on a free edge with its ticks.
+    assert ax.coords["Seconds from Start (s)"].get_ticklabel_position()[0] in "tr"
+    assert ax.coords["raster_step"].get_ticklabel_position() == []
+    plt.close(fig)
+
+    fig = plt.figure()
+    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
+        animator = cube.plot(plot_axes=["x", "y", None], axes_coordinates=[LON, LAT, "time"], fig=fig)
+    animator.update_plot_2d(1, animator.im, SimpleNamespace(cval=1))
+    assert animator.axes.coords[LON].get_ticklabel_position() == ["b"]
+    assert animator.axes.coords[LAT].get_ticklabel_position() == ["l"]
+    assert animator.axes.coords["raster_step"].get_ticklabel_position() == []
+    plt.close(fig)
+
+
 def test_spectrogram_animation_labels_latitude_left_and_longitude_right(raster_sg_file):
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
     fig = plt.figure()
