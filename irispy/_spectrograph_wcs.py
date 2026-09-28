@@ -7,6 +7,7 @@ import astropy.modeling.models as m
 import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
+from astropy.modeling.math_functions import RintUfunc, SubtractUfunc
 from astropy.time import Time
 from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
@@ -22,6 +23,20 @@ from sunpy.time import parse_time
 
 from irispy._interpolation import _time_lookup
 from irispy.utils.constants import SLIT_WIDTH
+
+
+def _wrap_longitude():
+    """
+    Wrap a longitude into [-180, 180) degrees, the range of a helioprojective ``Tx``.
+
+    The celestial rotation inside dkist's varying transforms returns longitudes in
+    [0, 360) degrees, so without this an exposure east of disk centre is 360 degrees
+    too high in the low-level (``*_values``) API; ``SkyCoord`` wraps by itself. This is
+    ``lon - 360 * rint(lon / 360)``, from standard models so the gWCS still serialises to
+    ASDF, and unit-agnostic because dkist's transform returns degrees as a Quantity.
+    """
+    turns = m.Multiply(1 / 360) | RintUfunc() | m.Multiply(360)
+    return m.Mapping((0, 0)) | (m.Identity(1) & turns) | SubtractUfunc()
 
 
 def _raster_crop_bounds(cube, points, wcs):
@@ -285,9 +300,14 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         crval_table=crval_all,
         crpix_table=crpix * u.pix,
     )
+    sky = celestial | (_wrap_longitude() & m.Identity(1))
+    if sit_and_stare:
+        # The slit does not move between exposures, so a fractional step must not ramp the
+        # pointing at the virtual step scale: snap it to the nearest exposure instead.
+        sky = (RintUfunc(name="NearestExposure") & m.Identity(celestial.n_inputs - 1)) | sky
     temporal = _time_lookup(dt_all, name="Time")
     if separate_raster_axis:
-        celestial_forward = m.Mapping((1, 0, 1, 2), n_inputs=3, name="StepSlitScanMapping") | celestial
+        celestial_forward = m.Mapping((1, 0, 1, 2), n_inputs=3, name="StepSlitScanMapping") | sky
         sky_time = CoupledCompoundModel("&", left=celestial_forward, right=temporal, shared_inputs=2)
         non_spectral = CoupledCompoundModel("&", left=sky_time, right=m.Identity(2, name="step_scan"), shared_inputs=2)
         non_spectral.inverse = (
@@ -296,7 +316,7 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
             | m.Mapping((1, 2, 3), n_inputs=4, name="SelectSlitStepScan")
         )
     else:
-        sky_time = CoupledCompoundModel("&", left=celestial, right=temporal, shared_inputs=1)
+        sky_time = CoupledCompoundModel("&", left=sky, right=temporal, shared_inputs=1)
         non_spectral = AsymmetricMapping([1, 0, 1, 1], [1, 0], name="StepSlitMapping") | (
             sky_time & m.Identity(1, name="step")
         )

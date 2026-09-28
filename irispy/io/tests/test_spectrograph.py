@@ -178,12 +178,14 @@ def test_read_spectrograph_lvl2_keeps_requested_window_order_and_data_and_report
         read_spectrograph_lvl2(filename, spectral_windows=[*requested_windows, "NOPE1", "NOPE2"])
 
 
-def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
+@pytest.mark.parametrize("files", ["raster_sg_file", "sns_sg_file"], ids=["raster", "sit_and_stare_east_of_centre"])
+def test_read_spectrograph_lvl2_uses_auxiliary_pointing(request, files):
+    filename = request.getfixturevalue(files)
     windows = ["C II 1336", "Mg II k 2796"]
-    raster = read_spectrograph_lvl2(raster_sg_file, spectral_windows=windows)
+    raster = read_spectrograph_lvl2(filename, spectral_windows=windows)
 
     for window in windows:
-        header, aux, aux_header = _window_header_and_aux(raster_sg_file, window)
+        header, aux, aux_header = _window_header_and_aux(filename, window)
         expected_longitude = aux[:, aux_header["XCENIX"]] / 3600
         expected_latitude = aux[:, aux_header["YCENIX"]] / 3600
         steps = np.arange(header["NAXIS3"])
@@ -195,12 +197,14 @@ def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
         np.testing.assert_allclose(latitude, expected_latitude)
         np.testing.assert_allclose(longitude, expected_longitude)
         _, sky_longitude, sky_latitude, _, _ = cube.wcs.pixel_to_world_values(*pixels)
+        # A longitude east of disk centre is negative, not 360 degrees minus something.
         np.testing.assert_allclose(sky_longitude / 3600, expected_longitude)
         np.testing.assert_allclose(sky_latitude / 3600, expected_latitude)
 
-    assert raster[windows[0]].time[0].isot == "2014-03-29T14:09:43.000"
-    assert raster[windows[1]].time[0].isot == "2014-03-29T14:09:42.940"
-    assert raster[windows[0]].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
+    if files == "raster_sg_file":
+        assert raster[windows[0]].time[0].isot == "2014-03-29T14:09:43.000"
+        assert raster[windows[1]].time[0].isot == "2014-03-29T14:09:42.940"
+        assert raster[windows[0]].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
 
 
 def test_nuv_times_reject_invalid_source_filename(raster_sg_file):
@@ -812,6 +816,20 @@ def test_gwcs_slit_centre_matches_aux_pointing_and_fits_wcs(request, case):
         assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=0.001 * u.arcsec)
         assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=0.001 * u.arcsec)
         assert cube.wcs.world_to_array_index(*cube.wcs.array_index_to_world(*array_index)) == array_index
+
+
+def test_sit_and_stare_pointing_does_not_ramp_between_exposures(sns_sg_file):
+    """
+    A sit-and-stare slit does not move between exposures, so a fractional step takes the
+    pointing of the nearest exposure instead of ramping at the virtual step scale, which
+    made plotted longitude ticks repeat.
+    """
+    wcs = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"].wcs
+    steps = np.array([4.0, 4.25, 4.49, 4.51, 5.0])
+    _, longitude, latitude, _, _ = wcs.pixel_to_world_values(np.zeros(5), np.zeros(5), steps)
+    np.testing.assert_array_equal(longitude, longitude[[0, 0, 0, 4, 4]])
+    np.testing.assert_array_equal(latitude, latitude[[0, 0, 0, 4, 4]])
+    assert longitude[4] != longitude[0]
 
 
 def test_celestial_frame_is_slicing_invariant(raster_sg_files):
