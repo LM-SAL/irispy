@@ -11,6 +11,8 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs import WCS
 
+from ndcube.utils.exceptions import NDCubeUserWarning
+
 import irispy.io._raster_combine as raster_combine
 from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
 from irispy.io.spectrograph import read_spectrograph_lvl2
@@ -19,6 +21,7 @@ from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED, SLIT_WIDTH
 
+LON, LAT = "custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"
 SPATIAL_AXES = [("HPLT-TAN", "arcsec", 0.1, 0), ("HPLN-TAN", "arcsec", 0.1, 0)]
 NO_LATITUDE_AXES = [("WAVE", "nm", 0.02, 140.0), ("TIME", "s", 1.0, 0), ("UTC", "s", 1.0, 0)]
 
@@ -182,6 +185,62 @@ def test_raster_animation_plots_and_reapplies_axis_colors_after_update(combined_
     assert label_colors() == ("red", "black")
     animator.update_plot_2d(0, animator.im, SimpleNamespace(cval=0))
     assert label_colors() == ("red", "black")
+    plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    ("axes_coordinates", "time_label", "edges"),
+    [
+        ([LON, LAT, None], "", {LON: "b", LAT: "l"}),
+        ([LON, None, None], "", {LON: "b"}),
+        (None, "Seconds from Start [$\\mathrm{s}$]", {}),
+    ],
+    ids=["requested_longitude_on_bottom", "longitude_only", "time_label_does_not_repeat_unit"],
+)
+def test_raster_animation_axis_labels_survive_update(raster_sg_files, axes_coordinates, time_label, edges):
+    cube = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")["Mg II k 2796"][0]
+    fig = plt.figure()
+    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
+        animator = cube.plot(plot_axes=["x", "y", None], axes_coordinates=axes_coordinates, aspect="auto", fig=fig)
+    time = animator.axes.coords["time"]
+    edge_coords = [(animator.axes.coords[name], edge) for name, edge in edges.items()]
+
+    def assert_labels():
+        assert time.get_axislabel() == time_label
+        for coord, edge in edge_coords:
+            assert edge in coord.get_axislabel_position()
+        if axes_coordinates:
+            # Latitude is only moved onto the left edge when requested.
+            assert (animator.axes.coords[LAT].get_ticks_position() == ["l"]) == (LAT in axes_coordinates)
+
+    assert_labels()
+    animator.update_plot_2d(0, animator.im, SimpleNamespace(cval=0))
+    assert_labels()
+    plt.close(fig)
+
+
+def test_fixed_wavelength_raster_spatial_slider_label(raster_sg_files):
+    cube = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")["Mg II k 2796"]
+    wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])
+    fixed_wavelength = cube.crop([wavelength, None, None, None, None], [wavelength, None, None, None, None])
+    fig = plt.figure()
+    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
+        animator = fixed_wavelength.plot(plot_axes=["x", "y", None], aspect="auto", fig=fig)
+
+    assert animator.slider_axes == [2]
+    assert animator.slider_ranges == [[0, fixed_wavelength.shape[2]]]
+    assert animator.slider_labels == ["Spatial pixel"]
+    plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "labels"),
+    [({}, ["Scan number", "Raster step"]), ({"slider_labels": ["Slit", "Line"]}, ["Slit", "Line"])],
+    ids=["default_scan_and_step", "custom"],
+)
+def test_raster_sequence_animation_slider_labels(combined_si_iv, kwargs, labels):
+    fig = plt.figure()
+    assert combined_si_iv.plot(fig=fig, vmin=0, vmax=1000, **kwargs).slider_labels == labels
     plt.close(fig)
 
 
