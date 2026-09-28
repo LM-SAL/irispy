@@ -205,12 +205,9 @@ fig.colorbar(
 ax_dict["separation"].set_title("Gaussian Peak Separation")
 
 for ax in ax_dict.values():
-    # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
-    for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
-        coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
-        coord.set_ticks_position(side)
-        coord.set_ticklabel_position(side)
-        coord.set_axislabel_position(side)
+    # Longitude and latitude are already on the raster step and slit edges; just shrink their labels.
+    for index in (0, 1):
+        ax.coords[index].set_ticklabel(exclude_overlapping=True, fontsize=8)
 fig.tight_layout()
 
 plt.show()
