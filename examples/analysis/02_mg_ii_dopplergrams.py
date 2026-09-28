@@ -8,8 +8,6 @@ In this example, we are going to produce a Dopplergram for the Mg II k line from
 symmetrical velocity shifts from the line core (e.g., ±50 km/s).
 """
 
-import tarfile
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pooch
@@ -18,7 +16,6 @@ from scipy.interpolate import make_interp_spline
 import astropy.units as u
 from astropy import constants
 from astropy.coordinates import SpectralCoord
-from astropy.io import fits
 
 from irispy.io import read_files
 from irispy.utils import image_clipping
@@ -84,24 +81,12 @@ mg_crop.plot(aspect="auto")
 # You can see a regular bright-dark pattern along the x-axis, an
 # indication that the intensities are not taken at the same position in
 # the line because of wavelength shifts. The shifts are caused by the
-# orbital velocity changes, and we can find these in the auxiliary
-# metadata which are to be found in the extension past the "last" window
-# in the FITS file.
+# orbital velocity changes, which are stored in the auxiliary data
+# extension past the "last" window in the FITS file (column ``OBS_VRIX``).
+# ``read_files`` already reads that extension and stores the values, one per
+# raster step, in the cube metadata.
 
-# astropy.io.fits does not support opening tar files, so we need to extract.
-with tarfile.open(iris_raster_tar, "r:gz") as tar_iris_file:
-    tar_iris_file.extractall("./", filter="data")
-
-# We know ahead of time what the filename is.
-raster_filename = "iris_l2_20140708_114109_3824262996_raster_t000_r00000.fits"
-
-# The information we need is in the auxiliary data, which is stored in an
-# extension past the last  window. It is always the second to last extension.
-aux_data = fits.getdata(raster_filename, -2)
-aux_header = fits.getheader(raster_filename, -2)
-v_obs = aux_data[:, aux_header["OBS_VRIX"]] * u.m / u.s
-# Convert to km/s as the data is in m/s
-v_obs = v_obs.to("km/s")
+v_obs = mg_ii.meta["observer radial velocity"].to("km/s")
 
 plt.figure()
 plt.plot(v_obs)
