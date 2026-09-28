@@ -29,8 +29,8 @@ def _local_median_fill(frame, invalid_mask, spatial_box, target_mask):
     """
     Local ``nanmedian`` of ``frame`` at ``target_mask`` pixels, NaN elsewhere.
 
-    Matches ``ndimage.generic_filter(..., np.nanmedian, size=spatial_box, mode="nearest")``
-    at the target pixels without evaluating the filter over the whole frame.
+    Matches ``generic_filter`` with ``np.nanmedian`` and ``mode="nearest"`` at the
+    target pixels, without filtering the whole frame.
     """
     masked_frame = np.where(invalid_mask | ~np.isfinite(frame), np.nan, frame)
     padded = np.pad(masked_frame, spatial_box // 2, mode="edge")
