@@ -7,6 +7,11 @@ Installation
 This is the first chapter in the ``irispy`` tutorial, and by the end of it you should have a working installation of Python and ``irispy``.
 For further information and alternative methods for installing ``irispy`` beyond the recommended approach outlined below, refer to sunpy's documentation (:ref:`sunpy-topic-guide-installing`).
 
+.. warning::
+
+    Please be aware that the package name on pypi and conda-forge is `irispy-lmsal <https://pypi.org/project/irispy-lmsal/>`__ to avoid name clashes with other packages.
+    However, the package is imported as ``irispy`` and is referred to as ``irispy`` in the documentation.
+
 Installing Python
 =================
 
@@ -121,7 +126,7 @@ Now that we have a fresh virtual environment, we can proceed with installing ``i
 
 .. code-block:: bash
 
-    $ conda install irispy
+    $ conda install irispy-lmsal
 
 This will install ``irispy`` and all of its dependencies.
 If you are planning on using irispy in jupyter notebooks we also recommend you install the ``ipywidgets`` and ``itables`` packages.
@@ -130,7 +135,7 @@ To ensure that ``irispy`` was installed correctly, run the following command:
 
 .. code-block:: bash
 
-    $ conda list irispy
+    $ conda list irispy-lmsal
 
 This checks if ``irispy`` was installed correctly.
 
