@@ -31,7 +31,8 @@ class BaseMeta(NDMeta):
 
     def _quantity(self, key, unit):
         """
-        The header value ``key`` as a float in ``unit``, or `None` when the header lacks it.
+        The header value ``key`` as a float in ``unit``, or `None` when the header lacks
+        it.
         """
         val = self.get(key)
         return None if val is None else float(val) * unit
@@ -88,8 +89,8 @@ class BaseMeta(NDMeta):
 
         Level 2 primary headers have no ``OBS_VR``; they record the velocity per
         exposure (``OBS_VRIX``). For rasters this returns those per-exposure values,
-        which the reader stores as ``"observer radial velocity"``. For slit-jaw
-        images it is `None`; use the ``obs_vrix`` extra coordinate instead.
+        which the reader stores as ``"observer radial velocity"``. For slit-jaw images
+        it is `None`; use the ``obs_vrix`` extra coordinate instead.
         """
         velocity = self._quantity("OBS_VR", u.m / u.s)
         if velocity is None:
