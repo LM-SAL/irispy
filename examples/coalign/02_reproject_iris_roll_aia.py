@@ -23,8 +23,6 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 import sunpy.map
 from aiapy.calibrate import update_pointing
 from aiapy.calibrate.utils import get_pointing_table
-from sunpy.net import Fido
-from sunpy.net import attrs as a
 from sunpy.visualization.drawing import extent
 
 from irispy.io import read_files
@@ -103,18 +101,38 @@ time_stamp = time_sji[time_index].isot
 print(time_index, time_stamp)
 
 ###############################################################################
+# We will use this frame, and not the one above, for the rest of the example,
+# so that the IRIS and AIA images are from the same time.
+
+sji_cut = sji_2832[time_index]
+
+###############################################################################
 # The fact that it is rolled 45 degrees makes manual alignment tricky
 # and will illustrate the usefulness of working with WCS.
-# We will download an AIA 170 nm image from the VSO.
-# Once we have acquired it, we will need to use **aiapy** to prep this image.
+# We need the AIA 170 nm image closest to that time, which you can find and
+# download from the VSO with `sunpy.net.Fido`:
+#
+# .. code-block:: python
+#
+#     from sunpy.net import Fido
+#     from sunpy.net import attrs as a
+#
+#     search_results = Fido.search(
+#         a.Time(time_stamp, Time(time_stamp) + TimeDelta(1 * u.minute), near=time_stamp),
+#         a.Instrument.aia,
+#         a.Wavelength(1700 * u.AA),
+#     )
+#     files = Fido.fetch(search_results, site="NSO")
+#
+# To keep this example independent of the VSO, we download the file this search
+# returns from `irispy-data <https://github.com/LM-SAL/irispy-data>`__ instead.
+# Once we have it, we will need to use **aiapy** to prep this image.
 
-search_results = Fido.search(
-    a.Time(time_stamp, Time(time_stamp) + TimeDelta(1 * u.minute), near=time_stamp),
-    a.Instrument.aia,
-    a.Wavelength(1700 * u.AA),
+aia_filename = pooch.retrieve(
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/aia.lev1.1700A_2014_09_19T05_59_18.71Z.image_lev1.fits",
+    known_hash="f36224ec4da14259aa90abdb6e53e4d5986b357ac45e96574c068a9dc3a5dceb",
 )
-files = Fido.fetch(search_results, site="NSO")
-aia_map = sunpy.map.Map(files[0])
+aia_map = sunpy.map.Map(aia_filename)
 pointing_table = get_pointing_table(
     source="JSOC",
     time_range=(Time(time_stamp) - TimeDelta(5 * 60 * u.minute), Time(time_stamp) + TimeDelta(1 * u.minute)),
