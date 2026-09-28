@@ -51,8 +51,8 @@ sji_frame = sji_2832[5]
 del sji_2832
 
 ###############################################################################
-# Now we use `~irispy.SJICube.remove_cosmic_rays` with the default
-# parameters on IRIS Level 2 SJI data.
+# Now we use `~irispy.SJICube.remove_cosmic_rays` on IRIS Level 2 SJI data, with the
+# ``astroscrappy`` backend and some of its parameters changed from their defaults (see below).
 #
 # ``astroscrappy`` is a more general-purpose cosmic ray removal algorithm that
 # is widely used in the astronomy community for imaging data. Note that this is
@@ -66,15 +66,14 @@ del sji_2832
 # and you will need to read the documentation and experiment with the parameters
 # to find the best solution for your data.
 #
-# What we can say that is for ``astroscrappy``, is the defaults work pretty well
-# for SJI data out of the box.
+# For ``astroscrappy``, the parameters used below were found to work well for SJI data.
 #
 # A few other notes about ``astroscrappy``, found running on spectra data:
 #
 # ``astroscrappy`` does not remove small negative dips "flanking" positive spikes, which happens
 # commonly.
 #
-# ``astroscrappy``  can not deal with cosmic ray hits that cause purely negative intensity spikes
+# ``astroscrappy`` can not deal with cosmic ray hits that cause purely negative intensity spikes
 # in a safe, straightforward way.
 
 # For example, these set of parameters was shown to show better treatment of values around
