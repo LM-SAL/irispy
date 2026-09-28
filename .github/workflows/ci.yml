@@ -91,7 +91,6 @@ jobs:
       libraries: |
         apt:
           - libopenjp2-7
-          - graphviz
           - ffmpeg
       cache-path: |
         docs/_build/
@@ -115,7 +114,6 @@ jobs:
       libraries: |
         apt:
           - libopenjp2-7
-          - graphviz
           - ffmpeg
       envs: |
         - linux: build_docs-gallery

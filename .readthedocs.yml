@@ -4,8 +4,6 @@ build:
   os: "ubuntu-lts-latest"
   tools:
     python: "3.13"
-  apt_packages:
-    - graphviz
   jobs:
     post_checkout:
       - git fetch --unshallow || true
