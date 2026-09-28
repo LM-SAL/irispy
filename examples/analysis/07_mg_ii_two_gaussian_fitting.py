@@ -27,10 +27,10 @@ from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.wcs.utils import wcs_to_celestial_frame
 
-from ndcube import NDCube
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
+from irispy.spectrograph import SpectrogramCube
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
@@ -155,8 +155,8 @@ component_separation = (
 component_separation = np.where(valid_components, component_separation, np.nan * component_separation.unit)
 total_flux = np.where(valid_components, total_flux, np.nan * total_flux.unit)
 
-# The fitted parameters are plain arrays, so we give them the WCS of the line-core image
-# as `~ndcube.NDCube` objects; they then plot with the same orientation and coordinates.
+# The fitted parameters are plain arrays, so we wrap them in `~irispy.spectrograph.SpectrogramCube`
+# objects with the WCS of the line-core image; they then plot with the same orientation and coordinates.
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "total_flux"], ["asymmetry", "separation"]],
     subplot_kw={"projection": line_core.wcs},
@@ -169,21 +169,21 @@ ax_dict["fov"].set_title("Mg II k core")
 fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]", shrink=0.8)
 
 flux_max = np.nanpercentile(total_flux.value, 99.99)
-NDCube(total_flux, wcs=line_core.wcs).plot(axes=ax_dict["total_flux"], plot_axes=["x", "y"], vmin=0, vmax=flux_max)
+SpectrogramCube(total_flux, line_core.wcs).plot(axes=ax_dict["total_flux"], plot_axes=["x", "y"], vmin=0, vmax=flux_max)
 fig.colorbar(
     ax_dict["total_flux"].images[0], ax=ax_dict["total_flux"], label=f"Total flux [{total_flux.unit.to_string()}]"
 )
 ax_dict["total_flux"].set_title("Total Gaussian Flux")
 
 asym_max = np.nanpercentile(np.abs(peak_asymmetry), 99.99)
-NDCube(peak_asymmetry, wcs=line_core.wcs).plot(
+SpectrogramCube(peak_asymmetry, line_core.wcs).plot(
     axes=ax_dict["asymmetry"], plot_axes=["x", "y"], cmap="coolwarm", vmin=-asym_max, vmax=asym_max
 )
 fig.colorbar(ax_dict["asymmetry"].images[0], ax=ax_dict["asymmetry"], label="Blue-red asymmetry", extend="both")
 ax_dict["asymmetry"].set_title("Peak Asymmetry")
 
 sep_max = np.nanpercentile(np.abs(component_separation.value), 99.99)
-NDCube(component_separation, wcs=line_core.wcs).plot(
+SpectrogramCube(component_separation, line_core.wcs).plot(
     axes=ax_dict["separation"], plot_axes=["x", "y"], vmin=0, vmax=sep_max
 )
 fig.colorbar(
@@ -195,8 +195,7 @@ ax_dict["separation"].set_title("Gaussian Peak Separation")
 
 for ax in ax_dict.values():
     # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
-    for coord, name, side in ((ax.coords[0], "Latitude", "l"), (ax.coords[1], "Longitude", "b")):
-        coord.set_axislabel(f"Helioprojective {name}", fontsize=8)
+    for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
         coord.set_ticks_position(side)
         coord.set_ticklabel_position(side)

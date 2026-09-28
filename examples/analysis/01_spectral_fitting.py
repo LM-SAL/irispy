@@ -28,10 +28,10 @@ from astropy.modeling import models as m
 from astropy.modeling.fitting import LMLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.wcs.utils import wcs_to_celestial_frame
 
-from ndcube import NDCube
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
+from irispy.spectrograph import SpectrogramCube
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
@@ -224,8 +224,8 @@ if errors:
 #
 # We also need to convert the fitted parameters into physical quantities.
 
-# The fitted parameters are plain arrays, so we give them the WCS of the line-core image
-# as `~ndcube.NDCube` objects; they then plot with the same orientation and coordinates.
+# The fitted parameters are plain arrays, so we wrap them in `~irispy.spectrograph.SpectrogramCube`
+# objects with the WCS of the line-core image; they then plot with the same orientation and coordinates.
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "net_flux"], ["velocity", "sigma"]],
     subplot_kw={"projection": si_iv_spec_crop.wcs},
@@ -243,7 +243,7 @@ net_flux = (
     / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1]).to(u.nm)
 )
 amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
-NDCube(net_flux, wcs=si_iv_spec_crop.wcs).plot(axes=ax_dict["net_flux"], plot_axes=["x", "y"], vmin=0, vmax=amp_max)
+SpectrogramCube(net_flux, si_iv_spec_crop.wcs).plot(axes=ax_dict["net_flux"], plot_axes=["x", "y"], vmin=0, vmax=amp_max)
 cbar = fig.colorbar(ax_dict["net_flux"].images[0], ax=ax_dict["net_flux"])
 cbar.set_label(label=f"Intensity [{net_flux.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
@@ -251,7 +251,7 @@ ax_dict["net_flux"].set_title("Gaussian Net Flux")
 
 core_shift = ((iris_model_fit.mean_1.quantity.to(u.nm)) - si_iv_core) / si_iv_core * (constants.c.to(u.km / u.s))
 shift_max = np.nanpercentile(np.abs(core_shift.value), 95)
-NDCube(core_shift, wcs=si_iv_spec_crop.wcs).plot(
+SpectrogramCube(core_shift, si_iv_spec_crop.wcs).plot(
     axes=ax_dict["velocity"], plot_axes=["x", "y"], cmap="coolwarm", vmin=-shift_max, vmax=shift_max
 )
 cbar = fig.colorbar(ax_dict["velocity"].images[0], ax=ax_dict["velocity"], extend="both")
@@ -263,7 +263,7 @@ sigma = (iris_model_fit.stddev_1.quantity.to(u.nm)) / si_iv_core * (constants.c.
 # We make any negative values nan for the purpose of the color scale.
 sigma = np.where(sigma < 0, np.nan, sigma)
 line_max = np.nanpercentile(np.abs(sigma.value), 95)
-NDCube(sigma, wcs=si_iv_spec_crop.wcs).plot(axes=ax_dict["sigma"], plot_axes=["x", "y"], vmax=line_max)
+SpectrogramCube(sigma, si_iv_spec_crop.wcs).plot(axes=ax_dict["sigma"], plot_axes=["x", "y"], vmax=line_max)
 cbar = fig.colorbar(ax_dict["sigma"].images[0], ax=ax_dict["sigma"])
 cbar.set_label(label=f"Line Width [{sigma.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
@@ -271,8 +271,7 @@ ax_dict["sigma"].set_title("Gaussian Sigma")
 
 for ax in ax_dict.values():
     # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
-    for coord, name, side in ((ax.coords[0], "Latitude", "l"), (ax.coords[1], "Longitude", "b")):
-        coord.set_axislabel(f"Helioprojective {name}", fontsize=8)
+    for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
         coord.set_ticks_position(side)
         coord.set_ticklabel_position(side)

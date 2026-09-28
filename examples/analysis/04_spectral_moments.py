@@ -139,8 +139,7 @@ ax_dict["width"].set_title("Line Width (2nd Moment)")
 
 for ax in ax_dict.values():
     # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
-    for coord, name, side in ((ax.coords[0], "Latitude", "l"), (ax.coords[1], "Longitude", "b")):
-        coord.set_axislabel(f"Helioprojective {name}", fontsize=8)
+    for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
         coord.set_ticks_position(side)
         coord.set_ticklabel_position(side)
