@@ -1,4 +1,5 @@
 import io
+import os
 import tarfile
 
 import numpy as np
@@ -160,3 +161,12 @@ def test_extract_tarfile_reuses_complete_extraction(tmp_path):
     (extract_dir / "b.fits").unlink()
     assert _extract_tarfile([tar_path]) == first
     assert (extract_dir / "a.fits").read_bytes() == b"abc"
+    # A replaced tar file is extracted again, even if its modification time is older.
+    old_mtime_ns = tar_path.stat().st_mtime_ns - 10**9
+    with tarfile.open(tar_path, "w:gz") as tar:
+        info = tarfile.TarInfo("a.fits")
+        info.size = 4
+        tar.addfile(info, io.BytesIO(b"abcd"))
+    os.utime(tar_path, ns=(old_mtime_ns, old_mtime_ns))
+    assert _extract_tarfile([tar_path]) == [extract_dir / "a.fits"]
+    assert (extract_dir / "a.fits").read_bytes() == b"abcd"

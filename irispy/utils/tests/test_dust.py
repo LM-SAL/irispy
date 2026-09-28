@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from scipy import ndimage
 
 from astropy import units as u
 
 from irispy.tests.helpers import figure_test
-from irispy.utils.dust import remove_dust
+from irispy.utils.dust import _local_median_fill, remove_dust
 
 
 def test_remove_dust_repairs_pixels_from_neighboring_frames(sns_sjicube_1330):
@@ -360,10 +361,6 @@ def test_remove_dust_before_after_figure(sns_sjicube_1330):
 
 @pytest.mark.parametrize("spatial_box", [3, 4, 5])
 def test_local_median_fill_matches_generic_filter(spatial_box):
-    from scipy import ndimage  # noqa: PLC0415
-
-    from irispy.utils.dust import _local_median_fill  # noqa: PLC0415
-
     rng = np.random.default_rng(0)
     frame = rng.normal(size=(30, 40))
     invalid = rng.random(frame.shape) < 0.3
