@@ -49,7 +49,7 @@ raster_filename = pooch.retrieve(
 
 raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 # Open the data and select one slice for the comparison.
-raster = raster["Si IV 1403"][0][4]
+raster = raster["Si IV 1403"].raster_slice(0)[4]
 
 ###############################################################################
 # Now we use ``remove_cosmic_rays`` on IRIS Level 2 spectrograph data, with a few

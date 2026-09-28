@@ -13,7 +13,7 @@ colorsynth = pytest.importorskip("colorsynth")
 
 @pytest.fixture
 def si_iv_cube(sns_sg_file):
-    return read_files(sns_sg_file)["Si IV 1403"][0]
+    return read_files(sns_sg_file)["Si IV 1403"]
 
 
 @pytest.fixture

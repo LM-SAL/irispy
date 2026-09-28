@@ -1,0 +1,1 @@
+Spectrograph cubes now have a gWCS whose world coordinates are wavelength, helioprojective longitude and latitude, time and raster step (and raster scan for combined cubes), so `~ndcube.NDCube.crop` needs one entry per world object and the old two-element ``[SpectralCoord, SkyCoord]`` crops raise ``ValueError``. The FITS WCS is available as ``cube.fits_wcs``.

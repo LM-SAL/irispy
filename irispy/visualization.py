@@ -5,10 +5,9 @@ import astropy.units as u
 
 import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
-from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
 from sunpy import log as logger
 
-__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "IRISSequencePlotter", "SJIPlotter", "SpectrogramPlotter"]
+__all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "SJIPlotter", "SpectrogramPlotter"]
 
 
 LAT_LABELS = [
@@ -90,15 +89,9 @@ class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
         return [_shorten_slider_label(label) for label in super()._compute_slider_labels_from_wcs(slices)]
 
 
-class IRISSequenceAnimator(Plot2DMixin, SequenceAnimator):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("slider_labels", ["Raster step", "Scan number"])
-        super().__init__(*args, **kwargs)
-
-
 class _IRISPlotMixin:
     """
-    Shared IRIS plot behavior for cube and sequence plotters.
+    Shared IRIS plot behavior.
     """
 
     def _default_cmap_name(self):
@@ -169,29 +162,3 @@ class SpectrogramPlotter(IRISPlotter):
 class SJIPlotter(IRISPlotter):
     def _default_cmap_name(self):
         return f"irissji{int(self._ndcube.meta['TWAVE1'])}"
-
-
-class IRISSequencePlotter(_IRISPlotMixin, MatplotlibSequencePlotter):
-    def animate(self, sequence_axis_coords=None, sequence_axis_unit=None, **kwargs):
-        """
-        Animate the `~ndcube.NDCubeSequence` with the sequence axis as a slider.
-
-        Keyword arguments are passed to
-        `ndcube.visualization.mpl_plotter.MatplotlibPlotter.plot` and therefore only
-        apply to cube axes, not the sequence axis.
-        See that method's docstring for definition of keyword arguments.
-
-        Parameters
-        ----------
-        sequence_axis_coords: `str` optional
-            The name of the coordinate in `~ndcube.NDCubeSequence.sequence_axis_coords`
-            to be used as the slider pixel values.
-            If None, array indices will be used.
-
-        sequence_axis_unit: `astropy.units.Unit` or `str`, optional
-            The unit in which the sequence_axis_coordinates should be displayed.
-            If None, the default unit will be used.
-        """
-        return IRISSequenceAnimator(
-            self._ndcube, sequence_axis_coords=sequence_axis_coords, sequence_axis_unit=sequence_axis_unit, **kwargs
-        )

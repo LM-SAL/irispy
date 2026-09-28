@@ -1,0 +1,1 @@
+Spectrograph cubes can be cropped by any subset of their world coordinates, for example only a sky region, a time interval or a range of raster steps, when ndcube provides the crop-bounds extension point (not in an ndcube release yet). Sky crops account for the slit width of each exposure.

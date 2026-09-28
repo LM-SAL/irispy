@@ -14,9 +14,6 @@ import pooch
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 
@@ -57,7 +54,16 @@ print(raster)
 
 mg_ii_k = raster["Mg II k 2796"]
 mg_ii_k_unflipped = raster_unflipped["Mg II k 2796"]
+first_raster = mg_ii_k.raster_slice(0)
+first_raster_unflipped = mg_ii_k_unflipped.raster_slice(0)
 print(mg_ii_k)
+
+###############################################################################
+# Use ``raster_slice`` when you want one known raster scan. Use ``split_rasters``
+# when you want to iterate over every raster scan in the observation.
+
+for raster_scan in mg_ii_k.split_rasters():
+    print(raster_scan.shape)
 
 ###############################################################################
 # To see the effect of the v34 handling, we will plot a spectroheliogram
@@ -66,13 +72,13 @@ print(mg_ii_k)
 # We can use the ``crop`` method to get this information, this will
 # require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
 
-# None, means that the axis is not cropped
+# None means that the world component is not cropped.
 # Since we want one physical coordinate, we will just use the
-# same spectral coordinate for both corners.
-lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
+# same spectral coordinate for both bounds.
+lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 
-mg_spec_crop = mg_ii_k[0].crop(lower_corner, lower_corner)
-mg_spec_unflipped_crop = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
+mg_spec_crop = first_raster.crop(lower_corner, lower_corner)
+mg_spec_unflipped_crop = first_raster_unflipped.crop(lower_corner, lower_corner)
 
 fig = plt.figure(figsize=(6, 12))
 ax = fig.add_subplot(121, projection=mg_spec_crop.wcs)
@@ -90,9 +96,9 @@ fig.tight_layout()
 #
 # The same is true for the times in the raster:
 
-print(f"Flipped time: {mg_ii_k.time[:5]}")
+print(f"Flipped time: {first_raster.time[:5]}")
 print("*" * 50)
-print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
+print(f"Unflipped time: {first_raster_unflipped.time[:5]}")
 
 ###############################################################################
 # Finally we will just see that the spectral profiles are unaffected in either case.
@@ -100,12 +106,22 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 # We choose a specific helioprojective location on the disk and crop the spectrogram
 # down to the spectrum at that point.
 
-iris_observer = wcs_to_celestial_frame(mg_ii_k[0].wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
-lower_corner = [None, SkyCoord(-912 * u.arcsec, 298 * u.arcsec, frame=iris_frame)]
+iris_frame = first_raster.celestial_frame
+target = SkyCoord(-912 * u.arcsec, 298 * u.arcsec, frame=iris_frame)
+wavelength = SpectralCoord(279.63, unit=u.nm)
 
-mg_ii_k_unflipped_spectra = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
-mg_ii_k_spectra = mg_ii_k[0].crop(lower_corner, lower_corner)
+unflipped_step, unflipped_slit_pixel, _ = first_raster_unflipped.fits_wcs.world_to_array_index(wavelength, target)
+mg_ii_k_unflipped_spectra = first_raster_unflipped.crop(
+    first_raster_unflipped.wcs.array_index_to_world(unflipped_step, unflipped_slit_pixel, 0),
+    first_raster_unflipped.wcs.array_index_to_world(
+        unflipped_step, unflipped_slit_pixel, first_raster_unflipped.data.shape[-1] - 1
+    ),
+)
+step, slit_pixel, _ = first_raster.fits_wcs.world_to_array_index(wavelength, target)
+mg_ii_k_spectra = first_raster.crop(
+    first_raster.wcs.array_index_to_world(step, slit_pixel, 0),
+    first_raster.wcs.array_index_to_world(step, slit_pixel, first_raster.data.shape[-1] - 1),
+)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii_k_unflipped_spectra.wcs)

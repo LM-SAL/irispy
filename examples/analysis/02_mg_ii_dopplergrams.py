@@ -47,7 +47,7 @@ raster = read_files(iris_raster_tar, memmap=True, spectral_windows="Mg II k 2796
 ###############################################################################
 # We are after the Mg II k window, which we can select using a key.
 
-mg_ii = raster["Mg II k 2796"][0]
+mg_ii = raster["Mg II k 2796"]
 (mg_wave,) = mg_ii.axis_world_coords("wl")
 
 ###############################################################################
@@ -71,8 +71,8 @@ plt.xlabel("Wavelength (nm)")
 # For this dataset, the line core of this line falls around 280.2 nm.
 # We crop in wavelength space.
 
-lower_corner = [SpectralCoord(280.2, unit=u.nm), None]
-upper_corner = [SpectralCoord(280.2, unit=u.nm), None]
+lower_corner = [SpectralCoord(280.2, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(280.2, unit=u.nm), None, None, None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 # The raw values include fill values (-32768) and the dark sky above the limb, so we take
 # the colour limits from the part of the slit on the disk (roughly its first 600 pixels).

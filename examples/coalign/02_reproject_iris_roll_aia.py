@@ -18,7 +18,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
-from astropy.wcs.utils import wcs_to_celestial_frame
 
 import sunpy.map
 from aiapy.calibrate import update_pointing
@@ -81,7 +80,7 @@ print(sji_cut)
 # We need to get the coordinate frame for the IRIS data.
 # While this is stored in the WCS, getting a coordinate frame is a little more involved.
 
-sji_frame = wcs_to_celestial_frame(sji_cut.fits_wcs)
+sji_frame = sji_cut.celestial_frame
 
 ###############################################################################
 # This dataset has a peculiarity: the observation has a 45 degree roll.

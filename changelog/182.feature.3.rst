@@ -1,0 +1,1 @@
+A multi-file read with ``memmap=True`` now returns one lazy, dask-backed cube per spectral window, which reads each file on demand.

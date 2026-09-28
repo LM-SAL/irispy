@@ -116,7 +116,7 @@ def test_sgmeta_observer_radial_velocity():
 
 def test_sgmeta_observer_radial_velocity_per_exposure(sns_sg_file):
     # Level 2 primary headers have no OBS_VR, only the per-exposure OBS_VRIX
-    meta = read_files(sns_sg_file)["Si IV 1403"][0].meta
+    meta = read_files(sns_sg_file)["Si IV 1403"].meta
     with fits.open(sns_sg_file) as hdulist:
         assert "OBS_VR" not in hdulist[0].header
         expected = hdulist[-2].data[:, hdulist[-2].header["OBS_VRIX"]] * u.m / u.s
