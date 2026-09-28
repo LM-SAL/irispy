@@ -23,8 +23,6 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 import sunpy.map
 from aiapy.calibrate import update_pointing
 from aiapy.calibrate.utils import get_pointing_table
-from sunpy.net import Fido
-from sunpy.net import attrs as a
 from sunpy.visualization.drawing import extent
 
 from irispy.io import read_files
@@ -64,9 +62,19 @@ print(sji_2832)
 print(ObsID(sji_2832.meta["OBSID"]))
 
 ###############################################################################
-# We also have the option of going directly to an individual scan.
+# We will want to align the data to AIA, so we pick one frame of the observation:
+# the one closest to 06:00 on 2014-09-19.
 
-sji_cut = sji_2832[45]
+(time_sji,) = sji_2832.axis_world_coords("time")
+time_target = Time("2014-09-19T06:00:00.0")
+time_index = np.abs(time_sji - time_target).argmin()
+time_stamp = time_sji[time_index].isot
+print(time_index, time_stamp)
+
+###############################################################################
+# We can go directly to that individual frame.
+
+sji_cut = sji_2832[time_index]
 print(sji_cut)
 
 ###############################################################################
@@ -79,7 +87,7 @@ sji_frame = wcs_to_celestial_frame(sji_cut.fits_wcs)
 # This dataset has a peculiarity: the observation has a 45 degree roll.
 # The image does not have a 45 degree rotation because plotting shows the data
 # in the way they are written in the file.
-# We will a coordinate grid to make this clear.
+# We will add a coordinate grid to make this clear.
 # You can also change the axis labels and ticks if you so desire.
 # `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
 
@@ -91,30 +99,32 @@ plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']}", pad=20)
 ax.coords.grid(grid_type="contours")
 
 ###############################################################################
-# We will want to align the data to AIA.
-# First we will want to pick a timestamp during the observation.
-#
-# Lets us now find the SJI observation where the time is closest to 06:00 on 2014-09-19.
-
-(time_sji,) = sji_2832.axis_world_coords("time")
-time_target = Time("2014-09-19T06:00:00.0")
-time_index = np.abs(time_sji - time_target).argmin()
-time_stamp = time_sji[time_index].isot
-print(time_index, time_stamp)
-
-###############################################################################
 # The fact that it is rolled 45 degrees makes manual alignment tricky
 # and will illustrate the usefulness of working with WCS.
-# We will download an AIA 170 nm image from the VSO.
-# Once we have acquired it, we will need to use **aiapy** to prep this image.
+# We need the AIA 170 nm image closest to that time, which you can find and
+# download from the VSO with `sunpy.net.Fido`:
+#
+# .. code-block:: python
+#
+#     from sunpy.net import Fido
+#     from sunpy.net import attrs as a
+#
+#     search_results = Fido.search(
+#         a.Time(time_stamp, Time(time_stamp) + TimeDelta(1 * u.minute), near=time_stamp),
+#         a.Instrument.aia,
+#         a.Wavelength(1700 * u.AA),
+#     )
+#     files = Fido.fetch(search_results, site="NSO")
+#
+# To keep this example independent of the VSO, we download the file this search
+# returns from `irispy-data <https://github.com/LM-SAL/irispy-data>`__ instead.
+# Once we have it, we will need to use **aiapy** to prep this image.
 
-search_results = Fido.search(
-    a.Time(time_stamp, Time(time_stamp) + TimeDelta(1 * u.minute), near=time_stamp),
-    a.Instrument.aia,
-    a.Wavelength(1700 * u.AA),
+aia_filename = pooch.retrieve(
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/aia.lev1.1700A_2014_09_19T05_59_18.71Z.image_lev1.fits",
+    known_hash="f36224ec4da14259aa90abdb6e53e4d5986b357ac45e96574c068a9dc3a5dceb",
 )
-files = Fido.fetch(search_results, site="NSO")
-aia_map = sunpy.map.Map(files[0])
+aia_map = sunpy.map.Map(aia_filename)
 pointing_table = get_pointing_table(
     source="JSOC",
     time_range=(Time(time_stamp) - TimeDelta(5 * 60 * u.minute), Time(time_stamp) + TimeDelta(1 * u.minute)),

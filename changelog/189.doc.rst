@@ -1,0 +1,1 @@
+Fixed the fitted and moment maps in the spectral fitting, spectral moments and Mg II two-Gaussian gallery examples, which were plotted against the wrong coordinates, the prose of the IRIS–AIA co-alignment example, which rendered as code, and the rolled-SJI reprojection example, which matched the AIA image to a different SJI frame.

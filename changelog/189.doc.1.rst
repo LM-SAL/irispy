@@ -1,0 +1,1 @@
+The fitting examples average 2x2 spatial pixels before fitting, the reprojection example downloads its AIA image from `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__ instead of the VSO, and the AIA cube example uses a five-minute cutout of its observation.

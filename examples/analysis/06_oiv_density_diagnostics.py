@@ -31,15 +31,11 @@ density = np.logspace(9, 12, 20) * u.cm**-3
 temperature_samples = 10 ** np.array([4.80, 5.15, 5.50]) * u.K
 line_styles = [":", "-", "--"]
 temperature_labels = ["4.80", "5.15", "5.50"]
-o4_models = []
-for temperature, line_style, label in zip(
-    temperature_samples,
-    line_styles,
-    temperature_labels,
-    strict=True,
-):
-    ion = fiasco.Ion("O IV", np.array([temperature.to_value("K")]) * u.K, ask_before=False)
-    o4_models.append((line_style, label, ion))
+# One ion holding all three temperatures: fiasco then computes the
+# proton-to-electron density ratio (which reads every element in the database)
+# once rather than once per temperature.
+ion = fiasco.Ion("O IV", temperature_samples, ask_before=False)
+o4_models = list(zip(line_styles, temperature_labels, temperature_samples, strict=True))
 
 ratio_definitions = [
     ("O IV 1401.16 / 1404.78Å", 1401.157 * u.angstrom, 1404.806 * u.angstrom),
@@ -64,7 +60,7 @@ fig, axes = plt.subplots(
 
 line_ratio_kwargs = {"use_two_ion_model": False}
 for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=True):
-    for line_style, label, ion in o4_models:
+    for line_style, label, temperature in o4_models:
         diagnostic = density_diagnostic(
             1 * u.ct,
             1 * u.ct,
@@ -72,7 +68,7 @@ for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=T
             ion=ion,
             numerator=numerator,
             denominator=denominator,
-            temperature=ion.temperature,
+            temperature=temperature,
             line_ratio_kwargs=line_ratio_kwargs,
         )
         ax.plot(
@@ -93,7 +89,7 @@ for ax, (title, numerator, denominator) in zip(axes, ratio_definitions, strict=T
                 ion=ion,
                 numerator=numerator,
                 denominator=denominator,
-                temperature=ion.temperature,
+                temperature=temperature,
                 line_ratio_kwargs=line_ratio_kwargs,
             )
             ax.plot(

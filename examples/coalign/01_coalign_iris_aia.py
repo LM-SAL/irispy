@@ -89,7 +89,7 @@ aia_crop = aia_map.submap(
     ),
 )
 
-# ###############################################################################
+###############################################################################
 # One way to visualize the alignment is to plot the AIA contours on the IRIS SJI image.
 #
 # As one will see, the alignment is not perfect. Creating a pixel perfect WCS
@@ -121,7 +121,7 @@ sji_map_corrected = sunpy.map.Map(sji_map_corrected_data, sji_map.meta)
 
 coaligned_sji_map = coalign_map(sji_map_corrected, aia_upsampled, method="match_template")
 
-# ###############################################################################
+###############################################################################
 # Finally, we can plot the results of the co-alignment.
 
 fig = plt.figure(figsize=(12, 6))

@@ -36,6 +36,8 @@ raster_filename = pooch.retrieve(
 sji_filename = pooch.retrieve(
     "http://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/20130902_163935_4000255147/iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits.gz",
     known_hash="1f424de4420b729385e81b00df4ba4d868a121486686f17cd1ecdbe7754ee78b",
+    # Decompress once: astropy decompresses a .fits.gz file again every time it is opened.
+    processor=pooch.Decompress(name="iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits"),
 )
 
 ###############################################################################

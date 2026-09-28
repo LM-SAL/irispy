@@ -30,14 +30,13 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         The array holding the actual data in this object.
     wcs: `astropy.wcs.WCS`
         The WCS object containing the axes' information
-    unit : `astropy.units.Unit` or `str`
+    unit : `astropy.units.Unit` or `str`, optional
         Unit for the dataset. Strings that can be converted to a Unit are allowed.
-    meta : `dict` object
-        Additional meta information about the dataset. Must contain at least the
-        following keys:
-        - detector type: str, (FUV1, FUV2 or NUV)
-        - OBSID: int
-        - spectral window: str
+        Defaults to None, which takes the unit of ``data`` if it is a `~astropy.units.Quantity`.
+    meta : `dict` object, optional
+        Additional meta information about the dataset, such as the
+        `~irispy.meta.SGMeta` of the observation the data comes from.
+        Defaults to None.
     uncertainty : any type, optional
         Uncertainty in the dataset. Should have an attribute uncertainty_type
         that defines what kind of uncertainty is stored, for example "std"
@@ -58,7 +57,7 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
 
     plotter = PlotterDescriptor(default_type=SpectrogramPlotter)
 
-    def __init__(self, data, wcs, uncertainty, unit, meta, *, mask=None, copy=False, **kwargs) -> None:
+    def __init__(self, data, wcs, uncertainty=None, unit=None, meta=None, *, mask=None, copy=False, **kwargs) -> None:
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     def __getitem__(self, item):
