@@ -17,6 +17,9 @@ from irispy.io import read_files
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20250519_165924_3640107442_2025-05-19T16%3A59%3A242025-05-19T16%3A59%3A24.xml>`__.
+# The full set of AIA cubes for this observation is available as an
+# `SDO tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2025/05/19/20250519_165924_3640107442/iris_l2_20250519_165924_3640107442_SDO.tar.gz>`__.
+# To keep the download small, we use a cutout of it that has every AIA channel but only the first five minutes.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -24,8 +27,8 @@ from irispy.io import read_files
 # You will need to update the path to the data in the next section if you do that.
 
 sdo_aia_file = pooch.retrieve(
-    "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2025/05/19/20250519_165924_3640107442/iris_l2_20250519_165924_3640107442_SDO.tar.gz",
-    known_hash="b77d693fa328a96aec78b4a4aa420d5b167f8f670719fce815836627ed567f42",
+    "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20250519_165924_3640107442_cutout_SDO.tar.gz",
+    known_hash="db95aec5c0b3400e39d077b0e840e9280f72e2fac798e1fd15975257f3677dc4",
 )
 
 ###############################################################################
