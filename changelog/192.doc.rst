@@ -1,0 +1,1 @@
+Added citation information: a ``CITATION.cff`` file and a "Citing irispy" section pointing at the Zenodo record of every release.
