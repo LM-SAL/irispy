@@ -144,6 +144,7 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "reproject": ("https://reproject.readthedocs.io/en/latest/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/reference/", None),
+    "sunkit_image": ("https://docs.sunpy.org/projects/sunkit-image/en/latest/", None),
     "sunpy": ("https://docs.sunpy.org/en/latest/", None),
     "sunraster": ("https://docs.sunpy.org/projects/sunraster/en/latest/", None),
 }
