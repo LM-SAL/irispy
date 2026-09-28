@@ -1,5 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
+
+import astropy.units as u
 
 import sunpy.map
 
@@ -89,3 +92,36 @@ def test_sji_plot_accepts_custom_slider_label(sns_sjicube_1330):
 
     assert animator.slider_labels == ["Frame"]
     plt.close(fig)
+
+
+def test_negative_slices(sns_sjicube_1330):
+    assert sns_sjicube_1330[-3:].shape == (3, 40, 37)
+    assert len(sns_sjicube_1330[-3:].fits_wcs) == 3
+    assert sns_sjicube_1330[:-2].shape == (50, 40, 37)
+    assert len(sns_sjicube_1330[:-2].fits_wcs) == 50
+
+
+def test_rebinned_cube_has_no_fits_wcs(sns_sjicube_1330):
+    rebinned = sns_sjicube_1330[:, :, :36].rebin((1, 2, 2))
+
+    assert rebinned.fits_wcs is None
+    assert rebinned.celestial_frame == sns_sjicube_1330.celestial_frame
+    with pytest.raises(ValueError, match="no FITS WCS"):
+        rebinned.to_maps(0)
+
+
+def test_spatial_slice_fits_wcs_describes_sliced_pixels(sns_sjicube_1330):
+    sliced = sns_sjicube_1330[:, 10:, 20:].fits_wcs[0].pixel_to_world(0, 0)
+    full = sns_sjicube_1330.fits_wcs[0].pixel_to_world(20, 10)
+    assert sliced.separation(full) < 1e-6 * u.arcsec
+
+
+def test_to_maps_negative_index(sns_sjicube_1330):
+    last = sns_sjicube_1330.shape[0] - 1
+    assert sns_sjicube_1330.to_maps(-1).meta["DATE-OBS"] == sns_sjicube_1330.to_maps(last).meta["DATE-OBS"]
+    dates = [m.meta["DATE-OBS"] for m in sns_sjicube_1330.to_maps([-1, 0])]
+    assert dates == [sns_sjicube_1330.to_maps(i).meta["DATE-OBS"] for i in (last, 0)]
+
+
+def test_to_maps_accepts_numpy_integers(sns_sjicube_1330):
+    assert sns_sjicube_1330.to_maps(np.int64(2)).meta["DATE-OBS"] == sns_sjicube_1330.to_maps(2).meta["DATE-OBS"]

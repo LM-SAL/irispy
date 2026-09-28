@@ -70,7 +70,7 @@ print(sji_45)
 # While this is stored in the WCS, getting a coordinate frame is a little more involved.
 # We will use this to do a cutout later on.
 
-sji_frame = wcs_to_celestial_frame(sji_45.basic_wcs)
+sji_frame = wcs_to_celestial_frame(sji_45.fits_wcs)
 bbox = [
     SkyCoord(-750 * u.arcsec, 90 * u.arcsec, frame=sji_frame),
     SkyCoord(-750 * u.arcsec, 95 * u.arcsec, frame=sji_frame),

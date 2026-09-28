@@ -1,10 +1,13 @@
 import textwrap
 import warnings
 from numbers import Integral
+from functools import cached_property
 
 import numpy as np
 
+import gwcs
 from astropy.wcs import WCS
+from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube.visualization import PlotterDescriptor
 from sunpy.map import Map
@@ -12,6 +15,7 @@ from sunpy.util import MetaDict
 from sunpy.util.exceptions import SunpyMetadataWarning
 from sunraster import SpectrogramCube
 
+from irispy._wcs import _celestial_frame_from_cube, _ResolveNegativeIndicesMixin
 from irispy.utils import calculate_dust_mask
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import remove_dust as _remove_dust
@@ -20,33 +24,7 @@ from irispy.visualization import SJIPlotter
 __all__ = ["AIACube", "SJICube"]
 
 
-def _normalize_tuple_index(item, ndim):
-    """
-    Normalize a tuple index to explicit per-axis entries.
-
-    Returns
-    -------
-    list or None
-        A normalized list of length ``ndim`` when normalization is valid.
-        Returns ``None`` when the tuple contains more than one ellipsis.
-    """
-    normalized_item = []
-    ellipsis_seen = False
-    for subitem in item:
-        if subitem is Ellipsis:
-            if ellipsis_seen:
-                return None
-            ellipsis_seen = True
-            missing_dims = ndim - (len(item) - 1)
-            normalized_item.extend([slice(None)] * missing_dims)
-        else:
-            normalized_item.append(subitem)
-    if len(normalized_item) < ndim:
-        normalized_item.extend([slice(None)] * (ndim - len(normalized_item)))
-    return normalized_item
-
-
-class SJICube(SpectrogramCube):
+class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
     """
     Class representing SJI Image described by a single WCS.
 
@@ -79,8 +57,6 @@ class SJICube(SpectrogramCube):
         as reference. Note however that it is not always possible to save the
         input as reference.
         Default is False.
-    scaled : `bool`, optional
-        Indicates if the data has been scaled.
     """
 
     plotter = PlotterDescriptor(default_type=SJIPlotter)
@@ -95,14 +71,9 @@ class SJICube(SpectrogramCube):
         meta=None,
         mask=None,
         copy=False,
-        scaled=None,
         **kwargs,
     ) -> None:
-        self.scaled = scaled
         self.dust_masked = False
-        self._basic_wcs = kwargs.pop("_basic_wcs", None)
-        if self._basic_wcs is not None and not isinstance(self._basic_wcs, list):
-            self._basic_wcs = [self._basic_wcs]
         super().__init__(
             data,
             wcs,
@@ -141,31 +112,6 @@ class SJICube(SpectrogramCube):
             """,
         )
 
-    def _get_basic_wcs_slice_item(self, item):
-        basic_wcs_item = None
-        if self._basic_wcs is not None and self.data.ndim == 3:
-            if isinstance(item, (Integral, slice)):
-                basic_wcs_item = item
-            elif item is Ellipsis:
-                basic_wcs_item = slice(None)
-            elif isinstance(item, tuple):
-                normalized_item = _normalize_tuple_index(item, self.data.ndim)
-                if (
-                    normalized_item is not None
-                    and normalized_item
-                    and isinstance(normalized_item[0], (Integral, slice))
-                ):
-                    basic_wcs_item = normalized_item[0]
-        return basic_wcs_item
-
-    def __getitem__(self, item):
-        sliced_self = super().__getitem__(item)
-        sliced_self.scaled = self.scaled
-        basic_wcs_item = self._get_basic_wcs_slice_item(item)
-        if basic_wcs_item is not None:
-            sliced_self._basic_wcs = self._basic_wcs[basic_wcs_item]
-        return sliced_self
-
     def plot(self, *args, **kwargs):
         return self.plotter.plot(*args, **kwargs)
 
@@ -182,15 +128,14 @@ class SJICube(SpectrogramCube):
             If True, dust particles positions mask will be removed.
             Default=False
         """
-        if self.mask is None:
-            self.mask = np.zeros(self.data.shape, dtype=bool)
         dust_mask = calculate_dust_mask(self.data)
         if undo:
-            # If undo kwarg IS set, unmask dust pixels.
-            self.mask[dust_mask] = False
+            if self.mask is not None:
+                self.mask[dust_mask] = False
             self.dust_masked = False
         else:
-            # If undo kwarg is NOT set, mask dust pixels.
+            if self.mask is None:
+                self.mask = np.zeros(self.shape, dtype=bool)
             self.mask[dust_mask] = True
             self.dust_masked = True
 
@@ -275,16 +220,26 @@ class SJICube(SpectrogramCube):
             spatial_box=spatial_box,
         )
 
-    @property
-    def basic_wcs(self):
+    celestial_frame = property(_celestial_frame_from_cube)
+
+    @cached_property
+    def fits_wcs(self):
         """
         Returns a standard WCS instead of gWCS.
         """
-        if self._basic_wcs is None:
+        headers = self.meta.get("frame_wcs_headers") if self.meta is not None else None
+        low = self.wcs.low_level_wcs
+        item = [slice(None)] * low.pixel_n_dim
+        if isinstance(low, SlicedLowLevelWCS):
+            low, item = low._wcs, list(low._slices_array)
+        # Any other low-level WCS (e.g. a rebinned one) no longer matches the frame headers.
+        if headers is None or not isinstance(low, gwcs.WCS):
             return None
-        if isinstance(self._basic_wcs, MetaDict):
-            return WCS(self._basic_wcs)
-        return [WCS(wcs_header) for wcs_header in self._basic_wcs]
+        frames = headers[item[0]]
+        spatial = tuple(item[1:])
+        if isinstance(frames, MetaDict):
+            return WCS(frames).slice(spatial, numpy_order=True)
+        return [WCS(h).slice(spatial, numpy_order=True) for h in frames]
 
     def to_maps(self, index: int | list[int] | None = None):
         """
@@ -301,7 +256,10 @@ class SJICube(SpectrogramCube):
         `sunpy.map.Map` or `sunpy.map.MapSequence`
             A single Map if index is an int, otherwise a MapSequence.
         """
-        if isinstance(index, int):
+        if self.fits_wcs is None:
+            msg = "This cube has no FITS WCS (for example, it was rebinned), so it cannot be converted to maps."
+            raise ValueError(msg)
+        if isinstance(index, Integral):
             idx_list = [index]
         elif index is None:
             idx_list = range(self.data.shape[0])
@@ -311,8 +269,10 @@ class SJICube(SpectrogramCube):
         # We can shortcut if the Cube has been reduced to a 2D slice
         if self.wcs.world_n_dim == 2:
             # TODO: Missing metadata
-            return Map(self.data, self.basic_wcs)
-        data_wcs = ((self.data[i], self.basic_wcs[i]) for i in idx_list)
+            return Map(self.data, self.fits_wcs)
+        # pixel_to_world does not wrap negative indices the way the data and fits_wcs lists do.
+        idx_list = [range(self.data.shape[0])[i] for i in idx_list]
+        data_wcs = ((self.data[i], self.fits_wcs[i]) for i in idx_list)
         times_iso = (self.wcs.pixel_to_world(0, 0, i)[-1].utc.isot for i in idx_list)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SunpyMetadataWarning)
@@ -324,7 +284,7 @@ class SJICube(SpectrogramCube):
             m.meta["EXPTIME"] = self.meta.get("EXPTIME", 0.0)
             m.meta["TWAVE1"] = self.meta.get("TWAVE1")
             m.plot_settings["cmap"] = f"irissji{int(self.meta['TWAVE1'])}"
-        return maps[0] if isinstance(index, int) else maps
+        return maps[0] if isinstance(index, Integral) else maps
 
 
 class AIACube(SJICube):

@@ -43,6 +43,20 @@ def test_spectrogram_cube_slice_preserves_coordinates(sns_sg_file):
     assert "time" in tuple(sliced_sequence.extra_coords.keys())
 
 
+def test_spectrogram_cube_negative_indices(sns_sg_file):
+    cube = read_spectrograph_lvl2(sns_sg_file)["C II 1336"][0]
+    last = cube.shape[0] - 1
+
+    def slit_bottom(sliced):
+        return sliced.wcs.array_index_to_world(0, 0)[1]
+
+    assert slit_bottom(cube[-1]) == slit_bottom(cube[last])
+    assert slit_bottom(cube[1:5][-1]) == slit_bottom(cube[4])
+    assert cube[-3:].shape == (3, *cube.shape[1:])
+    with pytest.raises(IndexError, match="length-0 axis"):
+        cube[3:3]
+
+
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     captured = {}
 

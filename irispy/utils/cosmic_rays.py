@@ -157,10 +157,6 @@ def remove_cosmic_rays(
         "extra_coords": "copy",
         "global_coords": "copy",
     }
-    if hasattr(cube, "scaled"):
-        cleaned_cube_kwargs["scaled"] = "copy"
-    if hasattr(cube, "_basic_wcs"):
-        cleaned_cube_kwargs["_basic_wcs"] = "copy"
     cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
     if hasattr(cleaned_cube, "dust_masked") and hasattr(cube, "dust_masked"):
         cleaned_cube.dust_masked = cube.dust_masked
