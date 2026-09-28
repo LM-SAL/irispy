@@ -72,7 +72,7 @@ def idl_response():
 @pytest.fixture
 def remote_raster_scanning_tar():
     return pooch.retrieve(
-        "https://github.com/LM-SAL/irispy-lmsal-test-data/raw/refs/heads/main/iris_l2_20250613_123658_3620107423/iris_l2_20250613_123658_3620107423_raster.tar.gz",
+        "https://github.com/LM-SAL/irispy-sample-data/releases/download/v1/iris_l2_20250613_123658_3620107423_raster.tar.gz",
         known_hash="756ca99cbdfafca2a97c3e357a9e8ab1bc897bca6991f6e0fa42ac2717d5b05a",
     )
 

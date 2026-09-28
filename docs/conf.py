@@ -311,7 +311,7 @@ if on_rtd or on_gha:
         config.write(fd)
 
     _ensure_hdf5_database(
-        "https://github.com/LM-SAL/data/raw/refs/heads/main/chianti_dbase.h5",
+        "https://github.com/LM-SAL/irispy-sample-data/releases/download/v1/chianti_dbase_o4.h5",
         hdf5_dbase_root,
     )
 
