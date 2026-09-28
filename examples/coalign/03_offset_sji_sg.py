@@ -83,10 +83,9 @@ fuv_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")
 fuv_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
 
 ###############################################################################
-# The Level 2 FITS WCS describes the shared physical slit, so the NUV and FUV
-# coordinates should coincide. Residual per-step pointing deviations are not
-# represented by the linear FITS WCS. The remaining SJI-SG slit offset in this
-# exposure is small, about one spatial pixel.
+# The NUV and FUV windows share the physical slit, so their coordinates coincide.
+# The slit position recorded in the SJI auxiliary data agrees with them to well
+# under a pixel.
 
 nuv_slit = SkyCoord(Tx=nuv_lon_coords, Ty=nuv_lat_coords, frame=sji_2796_frame)
 fuv_slit = SkyCoord(Tx=fuv_lon_coords, Ty=fuv_lat_coords, frame=sji_2796_frame)
