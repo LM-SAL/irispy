@@ -1,0 +1,1 @@
+Reading a raster with ``memmap=True`` no longer computes an uncertainty from the unscaled data, as documented; before, every sample got the readout noise alone.
