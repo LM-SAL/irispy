@@ -1,0 +1,1 @@
+`~irispy.io.read_files` reuses a complete earlier extraction of a tar file instead of extracting it again on every call, reading slit-jaw and AIA files builds their per-frame WCS headers much faster, and `~irispy.utils.dust.remove_dust` computes its spatial fallback only at the pixels it fills.

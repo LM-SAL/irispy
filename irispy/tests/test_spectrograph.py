@@ -230,6 +230,13 @@ def test_spectrogram_sequence_plot_uses_iris_slider_labels(sns_sg_file):
     plt.close(fig)
 
 
+def test_raster_collection_aligned_axis_physical_types_are_sorted(sns_sg_file):
+    # NDCollection builds these from sets, so without sorting the order changes between runs.
+    types = read_files(sns_sg_file).aligned_axis_physical_types
+    assert any(len(axis_types) > 1 for axis_types in types)
+    assert types == [tuple(sorted(axis_types)) for axis_types in types]
+
+
 def test_spectrogram_cube_from_data_and_wcs():
     # For example, a map of fitted line parameters with the WCS of the cube they came from.
     wcs = WCS(naxis=2)

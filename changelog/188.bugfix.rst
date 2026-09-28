@@ -1,0 +1,1 @@
+Printing a `~irispy.spectrograph.RasterCollection` now lists its aligned physical types in a fixed order; it changed from run to run before.

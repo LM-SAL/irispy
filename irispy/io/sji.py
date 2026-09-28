@@ -128,46 +128,44 @@ def _create_headers_wcs(hdulist, t_obs):
     from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
     from sunpy.map.header_helper import make_fitswcs_header  # NOQA: PLC0415
 
+    aux = {key: hdulist[1].data[:, hdulist[1].header[key]] for key in ("XCENIX", "YCENIX", "EXPTIMES")}
+    pc = [hdulist[1].data[:, hdulist[1].header[key]] for key in ("PC1_1IX", "PC1_2IX", "PC2_1IX", "PC2_2IX")]
+    # Earth is looked up at millisecond precision, as t_obs[i].isot would for each frame.
+    earth = get_body_heliographic_stonyhurst("Earth", Time(t_obs.isot))
+    pointing = Helioprojective(aux["XCENIX"] * u.arcsec, aux["YCENIX"] * u.arcsec, observer=earth, obstime=t_obs)
+    # make_fitswcs_header takes ~2 ms, so build frame 0 once and swap in the keys that vary per frame.
+    template = make_fitswcs_header(
+        data=hdulist[0].data.shape[1:],
+        coordinate=pointing[0],
+        scale=[hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]] * u.arcsec / u.pixel,
+        rotation_matrix=np.asanyarray([[pc[0][0], pc[1][0]], [pc[2][0], pc[3][0]]]),
+        instrument="SJI",
+        telescope="IRIS",
+        observatory="IRIS",
+        wavelength=int(hdulist[0].header["TWAVE1"]) * u.AA,
+        exposure=aux["EXPTIMES"][0] * u.second,
+        unit=u.DN,
+    )
+    per_frame = {
+        "crval1": pointing.spherical.lon.to_value(template["cunit1"]),
+        "crval2": pointing.spherical.lat.to_value(template["cunit2"]),
+        "date-obs": [str(date) for date in t_obs.isot],
+        # make_fitswcs_header reads these back from a FITS-WCS header, which keeps 14 significant digits.
+        "dsun_obs": [float(f"{value:.14G}") for value in earth.radius.to_value(u.m)],
+        "hgln_obs": [float(f"{value:.14G}") for value in earth.lon.to_value(u.deg)],
+        "hglt_obs": [float(f"{value:.14G}") for value in earth.lat.to_value(u.deg)],
+        "exptime": aux["EXPTIMES"],
+        "pc1_1": pc[0],
+        "pc1_2": pc[1],
+        "pc2_1": pc[2],
+        "pc2_2": pc[3],
+        "rsun_obs": np.arcsin(pointing.rsun / earth.radius).to_value(u.arcsec),
+    }
     wcses = []
-    xcenix_idx = hdulist[1].header["XCENIX"]
-    ycenix_idx = hdulist[1].header["YCENIX"]
-    pc1_1ix = hdulist[1].header["PC1_1IX"]
-    pc1_2ix = hdulist[1].header["PC1_2IX"]
-    pc2_1ix = hdulist[1].header["PC2_1IX"]
-    pc2_2ix = hdulist[1].header["PC2_2IX"]
-    xcenix_values = hdulist[1].data[:, xcenix_idx]
-    ycenix_values = hdulist[1].data[:, ycenix_idx]
-    pc1_1ix_values = hdulist[1].data[:, pc1_1ix]
-    pc1_2ix_values = hdulist[1].data[:, pc1_2ix]
-    pc2_1ix_values = hdulist[1].data[:, pc2_1ix]
-    pc2_2ix_values = hdulist[1].data[:, pc2_2ix]
     for i in range(hdulist[0].header["NAXIS3"]):
-        location = get_body_heliographic_stonyhurst("Earth", t_obs[i].isot)
-        observer = Helioprojective(
-            xcenix_values[i] * u.arcsec,
-            ycenix_values[i] * u.arcsec,
-            observer=location,
-            obstime=t_obs[i],
-        )
-        rotation_matrix = np.asanyarray(
-            [
-                [pc1_1ix_values[i], pc1_2ix_values[i]],
-                [pc2_1ix_values[i], pc2_2ix_values[i]],
-            ]
-        )
-        new_header = make_fitswcs_header(
-            data=hdulist[0].data[i].shape,
-            coordinate=observer,
-            scale=[hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]] * u.arcsec / u.pixel,
-            rotation_matrix=rotation_matrix,
-            instrument="SJI",
-            telescope="IRIS",
-            observatory="IRIS",
-            wavelength=int(hdulist[0].header["TWAVE1"]) * u.AA,
-            exposure=hdulist[1].data[i, hdulist[1].header["EXPTIMES"]] * u.second,
-            unit=u.DN,
-        )
-        wcses.append(new_header)
+        header = template.copy()
+        header.update({key: values[i] for key, values in per_frame.items()})
+        wcses.append(header)
     # Object array, so SJICube.fits_wcs can take the frames of any slice.
     headers = np.empty(len(wcses), dtype=object)
     headers[:] = wcses
