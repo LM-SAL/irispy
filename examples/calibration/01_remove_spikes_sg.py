@@ -52,8 +52,8 @@ raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 raster = raster["Si IV 1403"][0][4]
 
 ###############################################################################
-# Now we use ``remove_cosmic_rays`` with the default parameters on IRIS Level 2
-# spectrograph data.
+# Now we use ``remove_cosmic_rays`` on IRIS Level 2 spectrograph data, with a few
+# parameters changed from their defaults (see below).
 #
 # ``rsliding`` is the default backend, which is used by the SPICE team for
 # their cosmic ray removal.
@@ -69,19 +69,19 @@ raster = raster["Si IV 1403"][0][4]
 # What we can say that is for ``rsliding``, the main parameter to change is the kernel
 # size, which controls how aggressive the algorithm is in removing spikes.
 # The size will depend on the spectral resolution of the data.
-
+#
 # A few other notes about ``rsliding``:
 #
 # ``rsliding`` seems to perform better on spectra, with the key controlling argument being
 # "kernel" and the values found to work the best assuming ~0.0254 :math:`\AA` spectral resolution
-#  are 3 and 5.
+# are 3 and 5 (this dataset is binned to ~0.051 :math:`\AA` per pixel).
 #
 # * 5 is more aggressive, effectively detecting and replacing most of the spikes. A slight
 #   disadvantage is that it sometimes designates "real" jumps in the continuum as "spikes" and
 #   replaces them.
 #
-# * 3 works the opposite, it can ignore some real spikes but is less forgiving to the
-# irregularities in the continuum. This is also the default value used by ``rsliding``.
+# * 3 works the opposite, it can miss some real spikes but is more tolerant of
+#   irregularities in the continuum. This is also the default value used by ``rsliding``.
 #
 # One more parameter you might look for is "threads" which controls how much of the CPU is used
 # for the despiking. The despiking should take few minutes to run on a cropped intensity cube.
@@ -94,13 +94,12 @@ raster_rsliding = raster.remove_cosmic_rays(method="rsliding", sigma=3, method_k
 ###############################################################################
 # One reason to always be cautious when removing cosmic rays is that you can
 # easily remove real features in the data if you are too aggressive.
-# For example, in this case, we have a strong Si IV 1403 line at around row 246,
-# which is removed as a spike. But we will look at a different row instead,
-# which has a cleaner profile for Si IV 1403.
+# For example, a strong and narrow line can look like a spike to the algorithm.
+# Here we compare a row with a clean Si IV 1403 profile.
 
 si_iv_idx = 66
 
-fig, axes = plt.subplots(1, 2, figsize=(8, 4), subplot_kw={"projection": raster.wcs})
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), subplot_kw={"projection": raster.wcs})
 
 raster.plot(axes=axes[0], aspect="auto", vmin=0, vmax=500)
 axes[0].set_title("Original")
@@ -118,7 +117,7 @@ si_iv_wave = raster.axis_world_coords("wl")[0].to_value("angstrom")
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(si_iv_wave, raster.data[si_iv_idx, :], label="Original", linestyle="dotted", color="black")
 ax.plot(si_iv_wave, raster_rsliding.data[si_iv_idx, :], label="rsliding", linestyle="dashed")
-ax.set_ylabel("Intensity (DN/s)")
+ax.set_ylabel("Intensity (DN)")
 ax.set_xlabel("Wavelength (Å)")
 ax.set_xlim(1400, 1406)
 ax.legend()

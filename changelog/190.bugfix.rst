@@ -1,0 +1,1 @@
+`~irispy.sji.SJICube.to_maps` now sets the wavelength of the maps, so their names and plot titles show it.

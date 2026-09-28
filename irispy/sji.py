@@ -283,6 +283,9 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
             m.meta["TELESCOP"] = self.meta.get("TELESCOP", "IRIS")
             m.meta["EXPTIME"] = self.meta.get("EXPTIME", 0.0)
             m.meta["TWAVE1"] = self.meta.get("TWAVE1")
+            # sunpy reads the wavelength (shown in the map name and plot title) from these.
+            m.meta["WAVELNTH"] = self.meta.get("TWAVE1")
+            m.meta["WAVEUNIT"] = "Angstrom"
             m.plot_settings["cmap"] = f"irissji{int(self.meta['TWAVE1'])}"
         return maps[0] if isinstance(index, Integral) else maps
 

@@ -60,7 +60,7 @@ plt.xlabel("Wavelength (nm)")
 
 ###############################################################################
 # This very large dense raster took more than three hours to complete
-# across the 400 scans (with 30 s exposures), which means that the
+# across the 400 raster steps (with 30 s exposures), which means that the
 # spacecraft's orbital velocity changes during the observations.
 # This means that any calibration will need to correct for those shifts.
 #
@@ -74,11 +74,15 @@ plt.xlabel("Wavelength (nm)")
 lower_corner = [SpectralCoord(280.2, unit=u.nm), None]
 upper_corner = [SpectralCoord(280.2, unit=u.nm), None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
+# The raw values include fill values (-32768) and the dark sky above the limb, so we take
+# the colour limits from the part of the slit on the disk (roughly its first 600 pixels).
+vmin, vmax = np.percentile(mg_crop.data[:, :600], [1, 99])
+plt.figure()
 # We will "crunch" the image a bit using the aspect ratio.
-mg_crop.plot(aspect="auto")
+mg_crop.plot(aspect="auto", vmin=vmin, vmax=vmax)
 
 ###############################################################################
-# You can see a regular bright-dark pattern along the x-axis, an
+# You can see a regular bright-dark pattern along the y-axis (the raster steps), an
 # indication that the intensities are not taken at the same position in
 # the line because of wavelength shifts. The shifts are caused by the
 # orbital velocity changes, which are stored in the auxiliary data
@@ -91,10 +95,10 @@ v_obs = mg_ii.meta["observer radial velocity"].to("km/s")
 plt.figure()
 plt.plot(v_obs)
 plt.ylabel("Orbital velocity (km/s)")
-plt.xlabel("Scan number")
+plt.xlabel("Raster step")
 
 ###############################################################################
-# To look at intensities at any given scan we only need to subtract this
+# To look at intensities at any given raster step we only need to subtract this
 # velocity shift from the wavelength scale, but to look at the whole image
 # at a given wavelength we must interpolate the original data to take this
 # shift into account. Here is a way to do it (note that array dimensions
@@ -103,7 +107,7 @@ plt.xlabel("Scan number")
 c = constants.c.to("km/s")
 mn_i_wavelength = 280.2 * u.nm
 wave_shift = -v_obs * mn_i_wavelength / c
-# Linear interpolation in wavelength, for each scan
+# Linear interpolation in wavelength, for each raster step
 for i in range(mg_ii.data.shape[0]):
     shifted_data = make_interp_spline(
         (mg_wave - wave_shift[i]).to_value(u.nm),
@@ -120,8 +124,8 @@ for i in range(mg_ii.data.shape[0]):
 plt.figure()
 # Since we changed the underlying data, we need to re-crop
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
-# We will "crunch" the image a bit using the aspect ratio.
-mg_crop.plot(aspect="auto")
+# We will "crunch" the image a bit using the aspect ratio, with the same colour limits as before.
+mg_crop.plot(aspect="auto", vmin=vmin, vmax=vmax)
 
 ###############################################################################
 # Some residual shift remains, but we will not correct for it here. A more
@@ -151,18 +155,21 @@ doppler = mg_ii.data[..., index_m] - mg_ii.data[..., index_p]
 # because of the unscaled DNs).
 
 vmin, vmax = image_clipping(doppler)
+# A diverging colour map needs limits centred on zero.
+limit = max(abs(vmin), abs(vmax))
 plt.figure()
 plt.imshow(
     doppler.T,
     cmap="RdBu",
     origin="lower",
     aspect=0.5,
-    vmin=vmin,
-    vmax=vmax,
+    vmin=-limit,
+    vmax=limit,
 )
 plt.colorbar()
-plt.xlabel("Solar X (arcsec)")
-plt.ylabel("Solar Y (arcsec)")
+# This plots the array itself, so the axes are array indices rather than solar coordinates.
+plt.xlabel("Raster step")
+plt.ylabel("Position along the slit (pixel)")
 plt.tight_layout()
 
 plt.show()

@@ -56,6 +56,8 @@ def test_to_map(sns_sjicube_1330):
     assert isinstance(output, sunpy.map.GenericMap)
     assert output.data.shape == (40, 37)
     assert output.reference_date is not None
+    assert output.wavelength == 1330 * u.AA
+    assert "1330" in output.name
 
     output = sns_sjicube_1330.to_maps([0, 2])
     assert isinstance(output, sunpy.map.mapsequence.MapSequence)

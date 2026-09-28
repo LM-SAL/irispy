@@ -49,11 +49,11 @@ sdo_aia_file = pooch.retrieve(
 # - aia_l2_20250519_165924_3640107442_131.fits
 # - aia_l2_20250519_165924_3640107442_1600.fits
 
-# This will return a list of the AIA cubes.
+# This returns a collection of the AIA cubes, keyed by channel.
 aia_collection = read_files(sdo_aia_file)
 
 ###############################################################################
-# Let us look at the first collection returned of the AIA cube.
+# Let us look at the collection of AIA cubes.
 
 print(aia_collection)
 
@@ -63,12 +63,14 @@ print(aia_collection)
 print(aia_collection["304_THIN"])
 
 ###############################################################################
-# We will now plot the AIA data in the same manner as the SJI data.
+# We will now plot the AIA data in the same manner as the SJI data, with the AIA 304
+# color map. Like the SJI plot, this is an animator with a slider through the frames;
+# the gallery shows its first frame.
 #
 # You can also change the axis labels and ticks if you so desire.
 # `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
 
 fig = plt.figure()
-aia_collection["304_THIN"].plot(fig=fig)
+aia_collection["304_THIN"].plot(fig=fig, cmap="sdoaia304")
 
 plt.show()

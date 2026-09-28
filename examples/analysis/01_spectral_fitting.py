@@ -6,7 +6,7 @@ Fit Spectral Models to Spectra
 In this example, we are going to fit Si IV 1403 from IRIS with a single Gaussian.
 Then we will use the fitted values to calculate the Gaussian moments.
 
-This is direct contrast to taking the spectral moments of the data cube, which is done in
+This is in direct contrast to taking the spectral moments of the data cube, which is done in
 the following example, :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
 where we calculate the spectral moments of the data cube directly.
 
@@ -62,8 +62,8 @@ si_iv_1403 = raster["Si IV 1403"][0]
 
 iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-bottom_right = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
+top_left = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
+bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
 si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
 # We also average 2x2 spatial pixels, after trimming both spatial axes to an even length.
 # This improves the signal-to-noise of the faint Si IV line and means 4x fewer fits.
@@ -84,14 +84,7 @@ si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 spatial_mean = si_iv_1403.rebin((*si_iv_1403.data.shape[:-1], 1))[0, 0, :]
 wavelength_coords = spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)
 
-################################################################################
-# Now we can create a model for this spectra.
-
-initial_model = m.Const1D(amplitude=2 * si_iv_1403.unit) + m.Gaussian1D(
-    amplitude=8 * si_iv_1403.unit, mean=si_iv_core, stddev=0.005 * u.nm
-)
-
-################################################################################
+###############################################################################
 # This example uses the non-radiometric calibrated data to fit a model to
 # the IRIS Si IV spectral line.
 #
@@ -111,12 +104,12 @@ initial_model = m.Const1D(
     amplitude=np.nanmax(spatial_mean.data[si_iv_core_window]) * si_iv_1403.unit, mean=si_iv_core, stddev=0.005 * u.nm
 )
 
-################################################################################
+###############################################################################
 # To improve our initial conditions we now fit the initial model to the spatially averaged spectra.
-# To do this we use the `ndcube.NDCube.axis_world_coords` method of NDCube which returns all,
-# or a subset of the world coordinates along however many array axes they are
-# correlated with. So in this case we get the wavelength dimension which only
-# returns a single `astropy.coordinates.SpectralCoord` object corresponding to the first array dimension of the cube.
+# For this we use ``wavelength_coords``, which we got above with the `ndcube.NDCube.axis_world_coords`
+# method. It returns all, or a subset of the world coordinates along however many array axes they are
+# correlated with. For the wavelength it returns a single `astropy.coordinates.SpectralCoord` object,
+# for the last array axis of the cube.
 
 fitter = TRFLSQFitter()
 average_fit = fitter(
@@ -125,7 +118,7 @@ average_fit = fitter(
     spatial_mean.data * spatial_mean.unit,
 )
 
-################################################################################
+###############################################################################
 # Now we check, the initial model and the model fitted to the average spectra.
 
 fig = plt.figure()
@@ -134,7 +127,7 @@ ax.plot(initial_model(wavelength_coords), label="Initial model")
 ax.plot(average_fit(wavelength_coords), linestyle="--", label="Spatial average fit")
 plt.legend()
 
-################################################################################
+###############################################################################
 # The function `~astropy.modeling.fitting.parallel_fit_dask` will map a model
 # to each element of a cube along one (or more) "fitting axes", in this case our
 # fitting axis is our wavelength axis (array axis -1). So we want to fit each
@@ -143,9 +136,9 @@ plt.legend()
 # The key arguments to the parallel_fit_dask function are:
 #
 # * A data array: This can be a numpy array or a dask array, or a NDData (or subclass like NDCube)
-#                 object. If it's a NDData object then the data, wcs, mask, data_unit and uncertainty
-#                 are all extracted from the NDData object and used in place of their respective keyword
-#                 arguments.
+#   object. If it's a NDData object then the data, wcs, mask, data_unit and uncertainty
+#   are all extracted from the NDData object and used in place of their respective keyword
+#   arguments.
 # * A model to fit
 # * A fitter instance.
 # * The fitting axis (or axes).
@@ -158,7 +151,7 @@ plt.legend()
 filtered_data = np.where(si_iv_1403.data < 0, 0, si_iv_1403.data)
 filtered_data = np.where(np.isfinite(filtered_data), filtered_data, 0)
 
-################################################################################
+###############################################################################
 # Before we fit the data cube, I want to briefly talk about errors during the
 # fitting process.
 #
@@ -193,17 +186,21 @@ iris_model_fit = parallel_fit_dask(
     diagnostics_path=diag_path,
 )
 
-################################################################################
-# Note that this example is done in a single thread. If you want to use multiple cores.
-# You can create a dask client and pass it to the parallel_fit_dask function.
+###############################################################################
+# Note that this example is done in a single thread. If you want to use multiple cores,
+# you can create a dask client and pass it to the parallel_fit_dask function.
 #
 # For example:
+#
+# .. code-block:: python
 #
 #     from dask.distributed import Client
 #
 #     client = Client()
 #
-# Then pass this to the parallel_fit_dask function by replacing scheduler line above with:
+# Then pass this to the parallel_fit_dask function by replacing the scheduler line above with:
+#
+# .. code-block:: python
 #
 #     scheduler=client,
 #
@@ -216,7 +213,7 @@ if errors:
     print("First error is:")
     print(errors[0])
 
-################################################################################
+###############################################################################
 # Let us see the fitted output. The model parameters are now 2D arrays with
 # the same shape as the spatial dimensions of the data cube.
 #
@@ -233,13 +230,16 @@ fig, ax_dict = plt.subplot_mosaic(
 )
 
 si_iv_spec_crop.plot(axes=ax_dict["fov"], plot_axes=["x", "y"], vmin=0, vmax=200)
-ax_dict["fov"].set_title("Si IV 1402.77 A")
+ax_dict["fov"].set_title("Si IV 1402.77 Å")
 fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]", shrink=0.8)
 
+# The fitter does not keep the Gaussian width positive, so a few fits return a negative one.
+# Only its size matters, so we use its absolute value.
+gaussian_width = np.abs(iris_model_fit.stddev_1.quantity)
 net_flux = (
     np.sqrt(2 * np.pi)
     * (iris_model_fit.amplitude_1)
-    * iris_model_fit.stddev_1.quantity
+    * gaussian_width
     / np.mean(si_iv_1403.axis_world_coords("wl")[0][1:] - si_iv_1403.axis_world_coords("wl")[0][:-1]).to(u.nm)
 )
 amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
@@ -261,9 +261,7 @@ cbar.set_label(label=f"Doppler shift [{core_shift.unit.to_string()}]", fontsize=
 cbar.ax.tick_params(labelsize=8)
 ax_dict["velocity"].set_title("Velocity from Gaussian shift")
 
-sigma = (iris_model_fit.stddev_1.quantity.to(u.nm)) / si_iv_core * (constants.c.to(u.km / u.s))
-# We make any negative values nan for the purpose of the color scale.
-sigma = np.where(sigma < 0, np.nan, sigma)
+sigma = gaussian_width.to(u.nm) / si_iv_core * (constants.c.to(u.km / u.s))
 line_max = np.nanpercentile(np.abs(sigma.value), 95)
 SpectrogramCube(sigma, si_iv_spec_crop.wcs).plot(axes=ax_dict["sigma"], plot_axes=["x", "y"], vmax=line_max)
 cbar = fig.colorbar(ax_dict["sigma"].images[0], ax=ax_dict["sigma"])

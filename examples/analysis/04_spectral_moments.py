@@ -10,7 +10,7 @@ Moments provide a model-independent way to characterize spectral lines:
 * 1st moment gives the centroid (Doppler shift)
 * 2nd moment gives the line width
 
-This is direct contrast to fitting a model to the data which is done in example
+This is in direct contrast to fitting a model to the data which is done in example
 :ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py` where we fit a Gaussian to the
 line profile and extract the same information from the fit parameters.
 """
@@ -51,7 +51,6 @@ raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 
 ###############################################################################
 # We will just focus on the Si IV 1403 line which we can select using a key.
-# Then we will just plot a spectral line selected at random in space.
 
 # There is only one complete scan, so we index that away.
 si_iv_1403 = raster["Si IV 1403"][0]
@@ -59,8 +58,8 @@ si_iv_1403 = raster["Si IV 1403"][0]
 # However, before we get to that, we will shrink the data cube to make it easier to work with.
 iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-top_left = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-bottom_right = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
+top_left = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
+bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
 si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
 
 ###############################################################################
@@ -71,7 +70,7 @@ lower_corner = [SpectralCoord(si_iv_core), None]
 upper_corner = [SpectralCoord(si_iv_core), None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
-################################################################################
+###############################################################################
 # Now we can calculate the spectral moments using the `~irispy.utils.moments.calculate_moments` function.
 #
 # This helper function automatically extracts the wavelength coordinates from the cube's
@@ -88,16 +87,21 @@ si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 # from the wavelength shift in the 1st moment, otherwise you get the ``centroid``
 # in wavelength units instead of velocity units and the same goes for the line
 # width from the 2nd moment.
+#
+# Where the line is faint, the window is mostly noise and the moments say little about
+# the line (noise alone gives a width of about 60 km/s here). With ``min_intensity`` we
+# only keep pixels with a total intensity of at least 200 DN, and the others are left blank.
 
-moments = calculate_moments(si_iv_1403, rest_wavelength=si_iv_core, wings=0.05 * u.nm, integrated=False)
-# The return is a RasterCollection with the same form as the input cube.
+moments = calculate_moments(
+    si_iv_1403, rest_wavelength=si_iv_core, wings=0.05 * u.nm, integrated=False, min_intensity=200 * si_iv_1403.unit
+)
+# The return is a RasterCollection of 2D maps, one for each moment; it also has the
+# "centroid" and "width" in wavelength units.
 intensity = moments["intensity"]
-centroid = moments["centroid"]
-width = moments["width"]
 velocity = moments["velocity"]
 velocity_width = moments["velocity_width"]
 
-################################################################################
+###############################################################################
 # We will now visualize the moments. Note that the output is a
 # `~irispy.spectrograph.RasterCollection` which contains 2D
 # `~irispy.spectrograph.SpectrogramCube` objects with the spatial WCS preserved
@@ -110,7 +114,7 @@ fig, ax_dict = plt.subplot_mosaic(
 )
 
 si_iv_spec_crop.plot(axes=ax_dict["fov"], plot_axes=["x", "y"], vmin=0, vmax=200)
-ax_dict["fov"].set_title("Si IV 1402.77 A")
+ax_dict["fov"].set_title("Si IV 1402.77 Å")
 fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]", shrink=0.8)
 
 # 0th moment: Total intensity
@@ -129,11 +133,11 @@ cbar.set_label(label=f"Doppler shift [{velocity.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["velocity"].set_title("Velocity from Centroid")
 
-# 2nd moment: Line width
-wmax = np.nanpercentile(width.data, 95)
-width.plot(axes=ax_dict["width"], plot_axes=["x", "y"], vmax=wmax)
+# 2nd moment: Line width, in velocity units
+wmax = np.nanpercentile(velocity_width.data, 95)
+velocity_width.plot(axes=ax_dict["width"], plot_axes=["x", "y"], vmax=wmax)
 cbar = fig.colorbar(ax_dict["width"].images[0], ax=ax_dict["width"])
-cbar.set_label(label=f"Width [{width.unit.to_string()}]", fontsize=8)
+cbar.set_label(label=f"Width [{velocity_width.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["width"].set_title("Line Width (2nd Moment)")
 

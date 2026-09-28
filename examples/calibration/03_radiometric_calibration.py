@@ -56,7 +56,7 @@ raster = read_files(raster_filename, spectral_windows=["Mg II k 2796", "Si IV 13
 # random in space.
 
 # There is only one complete scan, so we index that away.
-# We also only take the first scan of the sequence to reduce memory usage for
+# We also only take the first raster step (slit position) to reduce memory usage for
 # the online documentation build.
 mg_ii_k_2796 = raster["Mg II k 2796"][0][0]
 si_iv_1394 = raster["Si IV 1394"][0][0]
@@ -72,7 +72,7 @@ del raster
 #
 # where :math:`E_\lambda \equiv h \cdot c / \lambda` is the photon energy (in erg),
 # :math:`DN2PHOT\_SG` is the number of photons per DN,
-# :math:`A_\mathrm{eff}` is the effective area (in :math:`cm^{-2}`),
+# :math:`A_\mathrm{eff}` is the effective area (in :math:`cm^{2}`),
 # :math:`Pix_{xy}` is the size of the spatial pixels in radians (e.g., multiply the spatial binning factor by :math:`\pi/(180\cdot3600\cdot6)`),
 # :math:`Pix_{\lambda}` is the size of the spectral pixels in :math:`Å`,
 # :math:`t_\mathrm{exp}` is the exposure time in seconds and

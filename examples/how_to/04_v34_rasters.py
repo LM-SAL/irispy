@@ -68,8 +68,8 @@ print(mg_ii_k)
 
 # None, means that the axis is not cropped
 # Since we want one physical coordinate, we will just use the
-# same spectral coordinate for both axes.
-lower_corner = [SpectralCoord(280, unit=u.nm), None]
+# same spectral coordinate for both corners.
+lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
 
 mg_spec_crop = mg_ii_k[0].crop(lower_corner, lower_corner)
 mg_spec_unflipped_crop = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
@@ -85,8 +85,8 @@ mg_spec_unflipped_crop.plot(axes=ax2, plot_axes=["x", "y"])
 fig.tight_layout()
 
 ###############################################################################
-# As you can see, the v34 data is flipped in the y-axis and the WCS is
-# adjusted accordingly.
+# As you can see, the v34 data is flipped along the x-axis (the raster steps, which run
+# in longitude) and the WCS is adjusted accordingly.
 #
 # The same is true for the times in the raster:
 
@@ -97,12 +97,12 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 ###############################################################################
 # Finally we will just see that the spectral profiles are unaffected in either case.
 #
-# We choose a specific helioprojective location and crop the spectrogram down to the
-# spectrum at that point.
+# We choose a specific helioprojective location on the disk and crop the spectrogram
+# down to the spectrum at that point.
 
 iris_observer = wcs_to_celestial_frame(mg_ii_k[0].wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
-lower_corner = [None, SkyCoord(-940 * u.arcsec, 311 * u.arcsec, frame=iris_frame)]
+lower_corner = [None, SkyCoord(-912 * u.arcsec, 298 * u.arcsec, frame=iris_frame)]
 
 mg_ii_k_unflipped_spectra = mg_ii_k_unflipped[0].crop(lower_corner, lower_corner)
 mg_ii_k_spectra = mg_ii_k[0].crop(lower_corner, lower_corner)

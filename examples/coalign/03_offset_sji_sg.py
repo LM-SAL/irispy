@@ -21,7 +21,7 @@ from irispy.io import read_files
 ###############################################################################
 # We will start by getting some data from the IRIS archive.
 #
-# In this case, we will use ``pooch`` so to keep this example self-contained
+# In this case, we will use ``pooch`` to keep this example self-contained
 # but using your browser will also work.
 #
 # Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_182935_4000005156_2013-09-02T18%3A29%3A352013-09-02T18%3A29%3A35.xml
