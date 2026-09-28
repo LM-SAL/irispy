@@ -1,4 +1,5 @@
 import textwrap
+from functools import cached_property
 
 import numpy as np
 
@@ -8,7 +9,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from ndcube.meta import NDMeta
-from sunpy.coordinates import Helioprojective
+from sunpy.coordinates import Helioprojective, get_earth
 from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 
 from irispy.utils.constants import SPECTRAL_BAND
@@ -25,9 +26,7 @@ class BaseMeta(NDMeta):
 
     def _construct_time(self, key):
         val = self.get(key)
-        if val is not None:
-            val = Time(val, format="fits", scale="utc")
-        return val
+        return Time(val, format="fits", scale="utc") if val is not None and str(val).strip() else None
 
     def _quantity(self, key, unit):
         """
@@ -510,6 +509,13 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
             )
         self._iwin = np.arange(len(spectral_windows))[window_mask][0] + 1
         self._fits_header = header
+
+    @cached_property
+    def observer(self):
+        """
+        The IRIS observer location at the observation start, assumed to be at Earth.
+        """
+        return get_earth(self.date_reference or self.observing_campaign_start)
 
     @property
     def number_of_spectral_windows(self):
