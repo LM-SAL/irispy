@@ -41,7 +41,7 @@ def standard_deviation(cube):
     return np.broadcast_to(sigma, cube.data.shape)
 
 
-def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False):
+def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False, uncertainty=None):
     combined_mask = None
     for next_mask in (template.mask, mask, ~np.isfinite(values) if mask_invalid else None):
         if next_mask is None:
@@ -51,7 +51,7 @@ def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False):
     return SpectrogramCube(
         values,
         template.wcs,
-        None,
+        uncertainty,
         unit,
         template.meta,
         mask=combined_mask,

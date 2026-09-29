@@ -6,6 +6,7 @@ import numpy as np
 
 import astropy.units as u
 from astropy import constants
+from astropy.nddata import StdDevUncertainty, UnknownUncertainty
 
 from irispy.spectrograph import RasterCollection
 from irispy.utils._spectral import make_map_cube, make_spatial_template
@@ -83,6 +84,9 @@ def calculate_moments(
         * ``"velocity"`` — Doppler shift from the centroid in km/s
         * ``"velocity_width"`` — line width converted to velocity units in km/s
 
+        If ``cube`` has an uncertainty (for example read with ``uncertainty=True``), each map
+        carries its propagated `~astropy.nddata.StdDevUncertainty`.
+
     Notes
     -----
     * Negative and non-finite data values are set to zero before computing moments.
@@ -90,6 +94,12 @@ def calculate_moments(
       are always returned in nm.
     * For a uniform spectral grid, the 1st and 2nd moments are identical regardless of the
       ``integrated`` setting because the pixel spacing cancels out in the ratio.
+    * Uncertainties are propagated to first order, assuming independent samples; samples set to
+      zero carry none. They are statistical only: they leave out the bias from zeroing negative
+      samples, which widens faint lines (about 1.2 times at 100 DN, 2-3 times at 10 DN; see
+      ``min_intensity``), and the wavelength calibration and orbital drift, which are several km/s.
+      They are unreliable below a signal-to-noise ratio of about 5, and the width error is NaN
+      where the width is 0.
 
     References
     ----------
@@ -106,6 +116,7 @@ def calculate_moments(
     wavelengths = wavelengths.to(u.nm)
     data = np.asarray(cube.data)
     mask = None if cube.mask is None else np.asarray(cube.mask, dtype=bool)
+    sigma = _standard_deviation(cube)
     if wings is not None:
         if rest_wavelength is None:
             msg = "rest_wavelength must be provided (or detectable from cube metadata) when wings is given"
@@ -125,11 +136,14 @@ def calculate_moments(
         data = data[tuple(slicer)]
         if mask is not None:
             mask = mask[tuple(slicer)]
+        if sigma is not None:
+            sigma = sigma[tuple(slicer)]
         wavelengths = wavelengths[crop_mask]
     data = np.array(data, dtype=float, copy=True)
+    dropped = (data < 0) | ~np.isfinite(data)
     if mask is not None:
-        data[mask] = 0
-    data[(data < 0) | ~np.isfinite(data)] = 0
+        dropped |= mask
+    data[dropped] = 0
 
     dwvl = np.mean(np.diff(wavelengths))
     data_moved = np.moveaxis(data, wavelength_axis, -1)
@@ -175,32 +189,56 @@ def calculate_moments(
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)
 
+    errors = {}
+    if sigma is not None:
+        # First-order propagation of independent sample errors; samples set to zero carry none.
+        weight_sigma = np.moveaxis(np.where(dropped, 0, sigma), wavelength_axis, -1) * (dwvl_value if integrated else 1)
+        weight_variance = weight_sigma**2
+        offset = wvls_broadcast - centroid_value[..., np.newaxis]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            errors["intensity"] = np.sqrt(weight_variance.sum(axis=-1))
+            errors["centroid"] = np.sqrt((offset**2 * weight_variance).sum(axis=-1)) / intensity_value
+            spread = (offset**2 - variance_value[..., np.newaxis]) ** 2 * weight_variance
+            errors["width"] = np.sqrt(spread.sum(axis=-1)) / intensity_value / (2 * stddev_value)
+
     template = make_spatial_template(cube, wavelength_axis)
+
+    def map_cube(name, value, unit):
+        uncertainty = StdDevUncertainty(np.where(np.isnan(value), np.nan, errors[name])) if errors else None
+        return name, make_map_cube(template, value, unit, mask_invalid=True, uncertainty=uncertainty)
+
     cubes = [
-        ("intensity", make_map_cube(template, intensity_value, intensity_unit, mask_invalid=True)),
-        ("centroid", make_map_cube(template, centroid_value, wavelengths.unit, mask_invalid=True)),
-        ("width", make_map_cube(template, stddev_value, wavelengths.unit, mask_invalid=True)),
+        map_cube("intensity", intensity_value, intensity_unit),
+        map_cube("centroid", centroid_value, wavelengths.unit),
+        map_cube("width", stddev_value, wavelengths.unit),
     ]
     if rest_wavelength is not None:
         rest_wavelength = u.Quantity(rest_wavelength)
-        with np.errstate(invalid="ignore"):
-            velocity_value = (
-                ((centroid_value * wavelengths.unit).to(rest_wavelength.unit) - rest_wavelength)
-                / rest_wavelength
-                * constants.c.to(u.km / u.s)
-            )
-            velocity_width_value = (
-                (stddev_value * wavelengths.unit).to(rest_wavelength.unit)
-                / rest_wavelength
-                * constants.c.to(u.km / u.s)
-            )
-        cubes.extend(
-            [
-                ("velocity", make_map_cube(template, velocity_value.value, velocity_value.unit, mask_invalid=True)),
-                (
-                    "velocity_width",
-                    make_map_cube(template, velocity_width_value.value, velocity_width_value.unit, mask_invalid=True),
-                ),
-            ]
-        )
+
+        def to_velocity(difference):
+            with np.errstate(invalid="ignore", divide="ignore"):
+                return (difference * wavelengths.unit / rest_wavelength * constants.c).to_value(u.km / u.s)
+
+        if errors:
+            errors["velocity"], errors["velocity_width"] = to_velocity(errors["centroid"]), to_velocity(errors["width"])
+        velocity = to_velocity(centroid_value - rest_wavelength.to_value(wavelengths.unit))
+        cubes += [
+            map_cube("velocity", velocity, u.km / u.s),
+            map_cube("velocity_width", to_velocity(stddev_value), u.km / u.s),
+        ]
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
+
+
+def _standard_deviation(cube):
+    """
+    The standard deviation of each sample in the unit of ``cube``, or `None`.
+
+    An `~astropy.nddata.UnknownUncertainty` is taken to be a standard deviation.
+    """
+    uncertainty = cube.uncertainty
+    if uncertainty is None:
+        return None
+    if not isinstance(uncertainty, UnknownUncertainty):
+        uncertainty = uncertainty.represent_as(StdDevUncertainty)
+    scale = 1 if uncertainty.unit is None or cube.unit is None else uncertainty.unit.to(cube.unit)
+    return np.asarray(uncertainty.array, dtype=float) * scale
