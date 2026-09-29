@@ -3,6 +3,7 @@ from . import constants as constants
 from . import cosmic_rays as cosmic_rays
 from . import density as density
 from . import dust as dust
+from . import mg_features as mg_features
 from . import moments as moments
 from . import red_blue as red_blue
 from . import response as response
