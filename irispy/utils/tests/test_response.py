@@ -16,15 +16,23 @@ from irispy.tests.helpers import figure_test
 from irispy.utils.response import _fit_xput_lite, get_interpolated_effective_area, get_latest_response
 
 
-def test_fit_xput_lite_idl():
+@pytest.mark.parametrize(
+    ("observation_time", "idl_output"),
+    [
+        ("2025-08-05T22:25:04.723", "fit_iris_xput_output.sav"),
+        # IDL 9.2 fit_iris_xput with the same coefficients, in an interval before the last one
+        ("2013-10-22T21:00", "fit_iris_xput_output_20131022.sav"),
+    ],
+)
+def test_fit_xput_lite_idl(observation_time, idl_output):
     fit_xput_idl_inputs = scipy.io.readsav(get_test_filepath("fit_iris_xput_input.sav"), python_dict=True)
-    fit_xput_idl_outputs = scipy.io.readsav(get_test_filepath("fit_iris_xput_output.sav"), python_dict=True)
+    fit_xput_idl_outputs = scipy.io.readsav(get_test_filepath(idl_output), python_dict=True)
 
     time_cal_coeffs = fit_xput_idl_inputs["cftime"]
     cal_coeffs = fit_xput_idl_inputs["coeffs_fuv"]
     iris_fit_expected = fit_xput_idl_outputs["rr"]
 
-    test_time = [parse_time("2025-08-05T22:25:04.723", format="utime")]
+    test_time = [parse_time(observation_time)]
     time_cal_coeffs_astropy = Time(time_cal_coeffs, format="utime")
 
     # Test each coefficient set
