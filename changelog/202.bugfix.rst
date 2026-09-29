@@ -1,0 +1,1 @@
+`~irispy.utils.red_blue.calculate_red_blue_asymmetry` now converts variance, inverse-variance and differently scaled uncertainties to standard deviations; it used to read any uncertainty as a standard deviation in the cube's unit.
