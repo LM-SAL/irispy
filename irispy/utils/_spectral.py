@@ -18,7 +18,8 @@ def check_scaled(cube):
     """
     Raise a `ValueError` if ``cube`` holds unscaled data read with ``memmap=True``.
     """
-    if np.issubdtype(cube.data.dtype, np.integer):
+    # The slit-jaw reader records the scaling, as scaled AIA data stay integer
+    if not cube.meta.get("scaled", not np.issubdtype(cube.data.dtype, np.integer)):
         msg = "The data are unscaled; read them with memmap=False"
         raise ValueError(msg)
 

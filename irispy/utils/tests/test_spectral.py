@@ -11,8 +11,11 @@ from irispy.utils._spectral import check_scaled, standard_deviation
 def test_check_scaled():
     wavelengths = np.arange(3) * u.nm
     check_scaled(make_test_spectrogram_cube(np.ones((1, 1, 3)), wavelengths))
+    integer = make_test_spectrogram_cube(np.ones((1, 1, 3), dtype=np.int16), wavelengths)
     with pytest.raises(ValueError, match="unscaled"):
-        check_scaled(make_test_spectrogram_cube(np.ones((1, 1, 3), dtype=np.int16), wavelengths))
+        check_scaled(integer)
+    integer.meta["scaled"] = True  # as the slit-jaw reader gives scaled AIA data
+    check_scaled(integer)
 
 
 @pytest.mark.parametrize(
