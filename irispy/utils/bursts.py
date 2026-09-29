@@ -1,8 +1,5 @@
 """
 Detection of UV bursts in IRIS Si IV spectra and 1400 Å slit-jaw images.
-
-Ports of P. Young's SolarSoft routines ``iris_burst_check.pro`` and
-``iris_sji_burst_check.pro`` (2017).
 """
 
 import warnings
@@ -11,18 +8,19 @@ import numpy as np
 from scipy import ndimage
 
 import astropy.units as u
-from astropy.constants import c
+from astropy.coordinates import SkyCoord
 from astropy.table import QTable, vstack
 from astropy.time import Time
 
 from irispy.spectrograph import RasterCollection, SpectrogramCubeSequence
-from irispy.utils._spectral import make_map_cube, make_spatial_template
-from irispy.utils.response import get_latest_response
+from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
+from irispy.utils.constants import DN_UNIT
+from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
 __all__ = ["find_si_iv_bursts", "find_sji_bursts"]
 
 _SI_IV = 1402.77 * u.AA
-# The default threshold of 500 DN/s was set on this observation, which is summed by 2 in wavelength.
+# The 500 DN/s default threshold was set on this observation, summed by 2 in wavelength.
 _REFERENCE_TIME = Time("2013-10-22T21:00")
 _EIGHT_CONNECTED = np.ones((3, 3), dtype=bool)
 
@@ -39,89 +37,92 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
 
     Parameters
     ----------
-    raster : `~irispy.spectrograph.SpectrogramCube`, `~irispy.spectrograph.SpectrogramCubeSequence` or `~irispy.spectrograph.RasterCollection`
-        Level 2 spectra read with ``memmap=False``, with axes (step, slit, wavelength).
-        From a `~irispy.spectrograph.RasterCollection`, the first window covering 1402.77 Å is used.
+    raster : `~irispy.SpectrogramCube`, `~irispy.SpectrogramCubeSequence` or `~irispy.RasterCollection`
+        Level 2 spectra in DN with axes (step, slit, wavelength). From a `~irispy.RasterCollection`,
+        the first window covering 1402.77 Å is used.
     threshold : `float` or `~astropy.units.Quantity`, optional
-        Burst threshold in DN/s per wavelength bin, for data summed by 2 in wavelength and not
-        along the slit. It is scaled by the spatial summing and by half the spectral summing of the data.
+        Burst threshold in DN/s per wavelength bin for data summed by 2 in wavelength and not along
+        the slit; it is scaled by the data's spatial summing and half its spectral summing.
         Defaults to 500 DN/s times the ratio of the 1402.77 Å effective area at the observation
-        date to that on 2013-10-22 21:00.
+        date to that on 2013-10-22 21:00. A Quantity in ``u.DN`` per unit time is read as the
+        data's DN; any other unit must convert to ``DN_UNIT["FUV"] / u.s`` from `irispy.utils.constants`.
     velocity_range : `~astropy.units.Quantity`, optional
-        Half-width of the Doppler velocity range averaged around 1402.77 Å.
+        Half-width of the averaged wavelength range, as a Doppler velocity.
     median_factor : `float` or `None`, optional
-        A burst pixel's mean must be below this factor times the median of the same bins.
-        `None` switches the test off.
+        Particle-hit test factor; `None` switches the test off.
 
     Returns
     -------
-    labels : `~irispy.spectrograph.SpectrogramCube` or `~irispy.spectrograph.SpectrogramCubeSequence`
+    labels : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
         Event labels on the (step, slit) plane of each raster: 0 outside bursts, and 1 to N
         for the N events, numbered on through the rasters of a sequence.
     events : `~astropy.table.QTable`
-        One row per event: its ``label``, the ``raster`` it is in, its number of pixels ``npix``, and
-        the ``step``, ``y``, ``time``, ``coordinate`` and mean ``intensity`` of its brightest pixel.
-        ``events.meta["threshold"]`` is the threshold applied to the data.
+        One row per event: ``label``, ``raster`` index, number of pixels ``npix``, and the
+        ``step``, ``y``, ``time``, ``coordinate`` and mean ``intensity`` of its brightest pixel.
+        The coordinates of a sequence are in the frame of its first raster.
+        ``events.meta["threshold"]`` is the scaled threshold.
 
     Notes
     -----
-    This is a port of ``iris_burst_check.pro``. It finds the same burst pixels and events on
-    the IDL reference data, with these deliberate differences:
+    Port of `iris_burst_check.pro <https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/nrl/iris_burst_check.pro>`__.
+    It finds the same burst pixels and events as IDL on the reference data, with these deliberate differences:
 
-    * The threshold is scaled by half the spectral summing. IDL does not scale it, so its
-      default, set on data summed by 2, is twice too high for unsummed data and twice too low
-      for data summed by 4. Data summed by 2 give the same result.
+    * IDL does not scale the threshold by the spectral summing, so the same threshold gives the
+      same result only on data summed by 2 in wavelength.
     * The median leaves out missing bins; IDL's includes the -200 fill values.
-    * ``median_factor=None`` skips the median test. IDL's ``/no_median`` raises the factor to
-      1e10 instead, which still rejects every pixel whose median is not positive.
-    * Labels are 32-bit integers numbered in array order; IDL's are bytes that wrap after 255.
+    * The median of an even number of bins is the mean of the two middle values, not IDL's
+      upper one.
+    * IDL's ``/no_median`` sets the factor to 1e10, which, unlike ``median_factor=None``, still
+      rejects every pixel whose median is not positive.
+    * Labels are 32-bit integers numbered by step, then slit position; IDL numbers them by slit
+      position, then step, in bytes that wrap after 255.
     * Times are exposure midpoints and coordinates follow the per-step pointing of the WCS;
-      IDL reports the shutter-open time and a regular grid built from the header.
-    * Only the bins within ``velocity_range`` are averaged, and the median is only computed
-      for pixels above the threshold, so large sit-and-stare windows are cheap to search.
+      IDL reports the shutter-open time, the per-step XCEN in x and a header grid along the slit.
 
     References
     ----------
-    * `iris_burst_check.pro <https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/nrl/iris_burst_check.pro>`__
     * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-z>`__
     """
     if isinstance(raster, RasterCollection):
         raster = _si_iv_window(raster)
     cubes = raster.data if isinstance(raster, SpectrogramCubeSequence) else [raster]
+    meta = cubes[0].meta
     if threshold is None:
-        area_ratio = _si_iv_effective_area(cubes[0].meta.date_reference) / _si_iv_effective_area(_REFERENCE_TIME)
+        area_ratio = _si_iv_effective_area(meta.date_reference) / _si_iv_effective_area(_REFERENCE_TIME)
         threshold = 500 * area_ratio.to_value(u.one)
+    unit = DN_UNIT["FUV"] / u.s
+    if isinstance(threshold, u.Quantity):
+        threshold = threshold.to(unit, equivalencies=[(u.DN / u.s, unit)])
+    threshold = u.Quantity(threshold, unit) * meta.spatial_summing_factor * meta.spectral_summing_factor / 2
     maps, tables, offset = [], [], 0
     for index, cube in enumerate(cubes):
-        scaled_threshold = (
-            u.Quantity(threshold, cube.unit / u.s)
-            * cube.meta.spatial_summing_factor
-            * cube.meta.spectral_summing_factor
-            / 2
-        )
-        labels, count, intensity = _label_si_iv(cube, scaled_threshold.value, velocity_range, median_factor)
+        labels, count, intensity = _label_si_iv(cube, threshold, velocity_range, median_factor)
+        label, npix, (step, y) = _events(intensity, labels, count)
         labels[labels > 0] += offset
         template = make_spatial_template(cube, cube.wavelength_axis)
-        label, npix, (step, y) = _events(intensity, labels, count, offset)
+        coordinate = template.wcs.array_index_to_world(step, y)
+        if tables:
+            # Rasters read separately have their own obstime, which vstack rejects
+            coordinate = SkyCoord(tables[0]["coordinate"].frame.realize_frame(coordinate.data))
         table = QTable(
             {
-                "label": label,
+                "label": label + offset,
                 "raster": np.full(count, index),
                 "npix": npix,
                 "step": step,
                 "y": y,
                 "time": cube.axis_world_coords("time", wcs=cube.extra_coords)[0][step],
-                "coordinate": template.wcs.array_index_to_world(step, y),
+                "coordinate": coordinate,
                 "intensity": intensity[step, y] * cube.unit / u.s,
             },
-            meta={"threshold": scaled_threshold},
+            meta={"threshold": threshold},
         )
         maps.append(make_map_cube(template, labels, u.one))
         tables.append(table)
         offset += count
     if not isinstance(raster, SpectrogramCubeSequence):
         return maps[0], tables[0]
-    return SpectrogramCubeSequence(maps, meta=raster.meta), vstack(tables, metadata_conflicts="silent")
+    return SpectrogramCubeSequence(maps, meta=raster.meta), vstack(tables)
 
 
 def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
@@ -129,69 +130,67 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
     Find UV bursts in 1400 Å slit-jaw images.
 
     A pixel is part of a burst when it is at least ``sigma_factor`` standard deviations above
-    the median of its frame. Burst pixels that touch within a frame, diagonally included, form
-    one event, and events with fewer than ``min_pixels`` pixels are dropped.
+    the median of its frame. Burst pixels that touch within a frame, diagonally included, form one event.
 
     Parameters
     ----------
     sji : `~irispy.sji.SJICube`
-        A 1400 Å slit-jaw cube read with ``memmap=False``.
+        A 1400 Å slit-jaw cube with axes (frame, y, x).
     sigma_factor : `float`, optional
-        Burst threshold, in standard deviations above the median of each frame.
+        Burst threshold, in standard deviations.
     min_pixels : `int`, optional
-        Smallest event kept.
+        Events with fewer pixels are dropped.
 
     Returns
     -------
     labels : `~irispy.sji.SJICube`
-        Event labels with the WCS of ``sji``: 0 outside bursts, and 1 to N for the N events.
+        Event labels with the WCS and extra coordinates of ``sji``: 0 outside bursts, and 1 to N
+        for the N events.
     events : `~astropy.table.QTable`
-        One row per event: its ``label``, ``frame``, number of pixels ``npix``, the frame's
-        ``threshold``, and the ``y``, ``x``, ``time``, ``coordinate`` and ``intensity`` of its
-        brightest pixel.
+        One row per event: ``label``, ``frame``, number of pixels ``npix``, the frame's ``threshold``,
+        and the ``y``, ``x``, ``time``, ``coordinate`` and ``intensity`` of its brightest pixel.
 
     Notes
     -----
-    This is a port of ``iris_sji_burst_check.pro``, which fixes ``sigma_factor`` at 10 and
-    ``min_pixels`` at 2. It finds the same burst pixels and events on the IDL reference data,
-    with these deliberate differences:
+    Port of `iris_sji_burst_check.pro <https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/nrl/iris_sji_burst_check.pro>`__,
+    which fixes the parameters at their defaults. It finds the same burst pixels and events on the
+    IDL reference data, with these deliberate differences:
 
-    * Pixels on the image edges can belong to events. IDL's ``REGION_GROW`` never grows a
-      region from an edge pixel.
-    * Masked pixels are left out of the statistics, not only the -200 fill.
-    * The median of an even number of pixels is the mean of the two middle values; IDL takes
-      the upper one. The standard deviation is accumulated in double precision.
+    * Edge pixels can belong to events; IDL's ``REGION_GROW`` leaves them out of every region,
+      and an above-threshold edge pixel makes the IDL loop never end.
+    * Masked pixels, not only the -200 fill, are left out of the statistics and are never burst
+      pixels.
+    * The median of an even number of pixels is the mean of the two middle values, not IDL's
+      upper one, and the standard deviation is accumulated in double precision.
     * Labels are unique through the cube; IDL numbers the events of each frame from 1, in bytes
       that wrap after 255.
-    * All frames are processed at once.
 
-    A fixed 10-sigma rule is a quick look: on active-region data it flags events in every frame,
-    and Young et al. (2018) recommend thresholds chosen for each data set.
+    The 10-sigma default is a quick look: on active-region data it flags events in every frame,
+    and Young et al. (2018) recommend a threshold chosen for each data set.
 
     References
     ----------
-    * `iris_sji_burst_check.pro <https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/nrl/iris_sji_burst_check.pro>`__
     * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-z>`__
     """
     if sji.meta.spectral_window != "1400":
         msg = f"Bursts are found in 1400 Å slit-jaw images, not {sji.meta.spectral_window}"
         raise ValueError(msg)
-    if not sji.meta.get("scaled", True):
-        msg = "The slit-jaw data are unscaled; read them with memmap=False"
+    check_scaled(sji)
+    if sji.data.ndim != 3:
+        msg = "The slit-jaw cube must have axes (frame, y, x); slice with a range, such as [0:1], not an index"
         raise ValueError(msg)
     data = sji.data if sji.mask is None else np.where(sji.mask, np.nan, sji.data)
     frames = data.reshape(len(data), -1)
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)  # frames without valid pixels
+        # Frames without valid pixels, or with only one
+        warnings.filterwarnings("ignore", "All-NaN slice encountered", RuntimeWarning)
+        warnings.filterwarnings("ignore", "Degrees of freedom <= 0", RuntimeWarning)
         threshold = np.nanmedian(frames, axis=1) + sigma_factor * np.nanstd(frames, axis=1, ddof=1, dtype=float)
     within_frame = np.stack([np.zeros_like(_EIGHT_CONNECTED), _EIGHT_CONNECTED, np.zeros_like(_EIGHT_CONNECTED)])
-    labels, _ = ndimage.label(data >= threshold[:, np.newaxis, np.newaxis], structure=within_frame)
-    kept = np.bincount(labels.ravel()) >= min_pixels
-    kept[0] = False
-    relabel = np.zeros(kept.size, dtype=labels.dtype)
-    relabel[kept] = np.arange(1, kept.sum() + 1)
-    labels = relabel[labels]
-    count = int(kept.sum())
+    burst = data >= threshold[:, np.newaxis, np.newaxis]
+    labels, _ = ndimage.label(burst, structure=within_frame)
+    burst &= (np.bincount(labels.ravel()) >= min_pixels)[labels]
+    labels, count = ndimage.label(burst, structure=within_frame)
     label, npix, (frame, y, x) = _events(data, labels, count)
     coordinate, time = sji.wcs.array_index_to_world(frame, y, x)
     events = QTable(
@@ -207,7 +206,7 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
             "intensity": data[frame, y, x] * sji.unit,
         }
     )
-    return type(sji)(labels, sji.wcs, unit=u.one, meta=sji.meta), events
+    return type(sji)(labels, sji.wcs, unit=u.one, meta=sji.meta, extra_coords=sji.extra_coords), events
 
 
 def _si_iv_window(collection):
@@ -221,46 +220,47 @@ def _si_iv_window(collection):
 
 
 def _si_iv_effective_area(time):
-    response = get_latest_response(time)
-    closest = np.argmin(np.abs(response["LAMBDA"] - _SI_IV))
-    return response["AREA_SG"][0, closest]
+    return get_interpolated_effective_area(get_latest_response(time), "FUV", _SI_IV)
 
 
 def _label_si_iv(cube, threshold, velocity_range, median_factor):
     """
-    Label the burst pixels of one raster; also return the mean intensity in DN/s.
+    Label the burst pixels of one raster; also return the mean intensity per second.
     """
-    if np.issubdtype(cube.data.dtype, np.integer):
-        msg = "The spectrograph data are unscaled; read them with memmap=False"
+    check_scaled(cube)
+    if cube.data.ndim != 3:
+        msg = "The spectra must have axes (step, slit, wavelength); slice with a range, not an index"
         raise ValueError(msg)
-    wavelength = cube.axis_world_coords(cube.wavelength_axis)[0]
-    velocity = ((wavelength - _SI_IV) / _SI_IV * c).to(u.km / u.s)
-    bins = np.flatnonzero(np.abs(velocity) <= velocity_range)
-    if not bins.size:
+    if not DN_UNIT["FUV"].is_equivalent(cube.unit):
+        msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
+        raise ValueError(msg)
+    wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
+    bins = np.abs(wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(_SI_IV))) <= velocity_range
+    if not bins.any():
         msg = f"The spectral window has no wavelength bins within {velocity_range} of Si IV 1402.77 Å"
         raise ValueError(msg)
-    bins = slice(bins[0], bins[-1] + 1)
     data = cube.data[..., bins]
-    # The -200 fill, and the values from -199 to -10 that iris_getwindata.pro also treats as missing
-    missing = data < -10
+    # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
+    data = np.ma.masked_where(~(data >= -10), data)
     if cube.mask is not None:
-        missing |= np.broadcast_to(cube.mask, cube.data.shape)[..., bins]
-    exposure = np.broadcast_to(cube.meta["exposure time"].to_value(u.s)[:, np.newaxis], data.shape[:-1])
-    with np.errstate(invalid="ignore", divide="ignore"):  # pixels and zero-exposure steps without data
-        intensity = np.where(missing, 0, data).sum(axis=-1, dtype=float) / (~missing).sum(axis=-1) / exposure
-    burst = intensity >= threshold
+        data[np.broadcast_to(cube.mask, cube.data.shape)[..., bins]] = np.ma.masked
+    mean = data.mean(axis=-1, dtype=float)
+    intensity = (mean / cube.meta["exposure time"].to_value(u.s)[:, np.newaxis]).filled(np.nan)
+    burst = intensity >= threshold.to_value(cube.unit / u.s)
     if median_factor is not None:
-        median = np.nanmedian(np.where(missing[burst], np.nan, data[burst]), axis=-1) / exposure[burst]
-        burst[burst] = intensity[burst] < median_factor * median
+        burst[burst] = mean[burst] < median_factor * np.ma.median(data[burst], axis=-1)
     labels, count = ndimage.label(burst, structure=_EIGHT_CONNECTED)
     return labels, count, intensity
 
 
-def _events(values, labels, count, offset=0):
+def _events(values, labels, count):
     """
     The label, number of pixels and array index of the brightest pixel of each event.
     """
-    label = np.arange(offset + 1, offset + count + 1)
-    peak = np.array(ndimage.maximum_position(values, labels, label), dtype=int).reshape(count, values.ndim)
-    npix = np.bincount(labels.ravel(), minlength=offset + count + 1)[offset + 1 :]
-    return label, npix, tuple(peak.T)
+    # Only the labelled pixels: maximum_position makes several copies of whatever it is given
+    where = np.flatnonzero(labels)
+    event = labels.ravel()[where]
+    label = np.arange(1, count + 1)
+    peak = ndimage.maximum_position(values.ravel()[where], event, label) if count else []
+    npix = np.bincount(event, minlength=count + 1)[1:]
+    return label, npix, np.unravel_index(where[np.array(peak, dtype=int).reshape(-1)], labels.shape)
