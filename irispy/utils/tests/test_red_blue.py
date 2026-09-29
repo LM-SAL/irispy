@@ -5,7 +5,7 @@ import pytest
 import astropy.units as u
 from astropy import constants
 from astropy.io import fits
-from astropy.nddata import StdDevUncertainty
+from astropy.nddata import StdDevUncertainty, VarianceUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 
 import irispy.utils.red_blue as red_blue_module
@@ -133,6 +133,22 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
     assert_quantity_allclose(
         symmetric_result["red_blue_asymmetry_error"].data[0, 0] * u.one, expected_zero_error * u.one
     )
+
+
+@pytest.mark.parametrize(
+    "uncertainty",
+    [VarianceUncertainty(np.full((1, 1, 41), 0.01)), StdDevUncertainty(np.full((1, 1, 41), 100), unit=u.DN / 1000)],
+)
+def test_calculate_red_blue_asymmetry_error_from_other_uncertainties(uncertainty):
+    velocity = np.arange(-200, 201, 10) * u.km / u.s
+    cube = make_test_spectrogram_cube(
+        _flat_wing_profile(velocity, red_excess=2).reshape(1, 1, -1), _wavelengths_from_velocity(velocity)
+    )
+    cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
+    expected = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry_error"]
+    cube.uncertainty = uncertainty
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry_error"]
+    np.testing.assert_allclose(result.data, expected.data)
 
 
 def test_calculate_red_blue_asymmetry_flags_error_interpolation_failure(monkeypatch):
