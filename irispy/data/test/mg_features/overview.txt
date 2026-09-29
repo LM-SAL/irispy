@@ -1,0 +1,41 @@
+Test data for irispy/utils/tests/test_mg_features.py. The whole level 2 file is in
+https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/
+
+iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits
+---------------------------------------------------------------------------
+
+Cut from iris_l2_20130902_182935_4000005156_raster_t000_r00000.fits (in
+20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz).
+OBS 4000005156: Large coarse raster 126"x120" 64s, no summing.
+
+Kept:   raster steps 13, 32 and 57 (of 64) and all 771 slit rows of the Mg II k 2796
+        window (extension 8, 560 wavelength pixels), split into two windows of 34 pixels:
+          1  Mg II k 2796  pixels  82-115, 2795.94-2796.78 A, -44.3 to +45.8 km/s from k
+          2  Mg II h 2803  pixels 364-397, 2803.12-2803.96 A, -44.1 to +45.8 km/s from h
+        Indices are 0-based. The data values (150 spectra of each window hold -200 fill)
+        and the rows of the auxiliary and filename tables for these steps are unchanged.
+Header: NWIN = 2 and NEXP = NRASTERP = 3. Both windows copy the keywords of window 8,
+        except TDESC2 = 'Mg II h 2803' and TWAVE2 = 2803.53 (h, so meta.rest_wavelength
+        is h). NAXIS1/3, CRPIX1 and TWMIN/TWMAX describe the cut. The filename table
+        declares TFIELDS = 9 for its 9 columns (the whole file says 7, see ../compress.py).
+        TSR/TER/TSC/TEC, the statistics keywords (DATA*, TD*) and CRPIX3/CDELT3 still
+        describe the whole window or file, so the WCS solar x of the three steps is wrong.
+
+*.sav
+-----
+
+make_idl_references.pro (IDL 9.2, SolarSoft of 2026-09-28) writes both from the cut;
+see its header for the setup. Read them with scipy.io.readsav.
+
+iris_get_mg_features_lev2_4000005156_r00000.sav
+        lc, bp and rp (line centre, blue and red peak) of iris_get_mg_features with vrange
+        [-40, 40], run on each window and step as iris_get_mg_features_lev2 does; that
+        wrapper cannot open the cut, as iris_obj's version check reads a C II window.
+        Each array is (step, slit row, [velocity in km/s, intensity in DN], [k, h]), with
+        k from window 1 and h from window 2. It is identical to steps 13, 32 and 57 of
+        iris_get_mg_features_lev2, file, 7, [-40, 40] on the whole file (window 7 is extension 8).
+idl_spline.sav
+        SPLINE(x, y, t, 0.) and SPLINE(x, y, t, 1.) as tension_0 and tension_1, with
+        x = -2.5, -2.25, ..., 2.5, y = exp(-x^2) + 0.1 x and t = -2.5, -2.45, ..., 2.5;
+        uneven_tension_0 and uneven_tension_1 are the same for uneven_x = 0, 1, 2, 3, 4, 10,
+        uneven_y = 0, 1, 0, 1, 0, 1 and uneven_t = 3.5, 5, 7, 9.

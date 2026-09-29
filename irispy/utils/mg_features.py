@@ -1,31 +1,26 @@
 """
-Positions and intensities of the Mg II h and k line centres and emission peaks.
-
-A port of the SolarSoft routines ``iris_get_mg_features_lev2.pro`` and
-``iris_get_mg_features.pro``.
+Mg II h and k line feature utilities for IRIS spectrogram cubes.
 """
+
+import warnings
 
 import numpy as np
 from scipy.linalg import solve_banded
-from scipy.ndimage import convolve1d
+from scipy.ndimage import gaussian_filter1d
 
 import astropy.units as u
 from astropy.constants import c
 
-from irispy.spectrograph import RasterCollection
-from irispy.utils._spectral import make_map_cube, make_spatial_template
+from irispy.spectrograph import RasterCollection, SpectrogramCube
+from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 __all__ = ["calculate_mg_features"]
 
 _REST_WAVELENGTH = {"k": 279.63509493 * u.nm, "h": 280.35297192 * u.nm}  # vacuum
 _SAMPLES = 300  # points of the velocity grid the spectra are interpolated to
-_SPACING = 10  # grid points within which only the strongest extremum counts
-# Line centres further than 3 km/s from this Gaussian (sigma 2 pixels) average along the slit are redone.
-_KERNEL = np.exp(-0.5 * (np.arange(-8, 9) / 2) ** 2)
-_KERNEL /= _KERNEL.sum()
-# Numbers of (minima, maxima) inside the grid for which the middle minimum is the line centre, and for
-# which it is the lowest minimum between the two highest maxima.
+_SPACING = 10  # grid points within which only one extremum counts
+# Inner (minima, maxima) counts where the centre is the middle minimum, or the lowest between the two highest maxima.
 _MIDDLE_MINIMUM = [(1, 2), (3, 1), (3, 2), (3, 4), (5, 4), (7, 6)]
 _BETWEEN_MAXIMA = [(2, 2), (2, 3), (3, 3), (4, 2), (4, 3), (4, 4)]
 
@@ -34,82 +29,103 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
     """
     Find the line centres and emission peaks of the Mg II h and k lines.
 
-    For each spectrum, the k3 and h3 line centres and the k2v, k2r, h2v and h2r emission peaks
-    are found as in Pereira et al. (2013): the spectrum is interpolated to a fine velocity grid,
-    its local extrema are classified, and the line centre is refined by a parabola fitted to
-    its minimum. Line centres that jump along the slit are redone from their neighbours.
+    As in Pereira et al. (2013), each spectrum is interpolated to a fine velocity grid, its local
+    extrema are classified, and the line centre is refined by a parabola fitted to its minimum.
+    Line centres that jump along the slit are redone from their neighbours.
 
     Parameters
     ----------
     cube : `~irispy.spectrograph.SpectrogramCube`
-        One raster of a window covering the Mg II lines, read with ``memmap=False``,
-        with axes (step, slit, wavelength).
+        One raster of a Mg II window, read with ``memmap=False``, with axes (step, slit, wavelength).
     velocity_range : `~astropy.units.Quantity`, optional
-        Doppler velocities, relative to each line's rest wavelength, in which the features are searched for.
+        Doppler velocities from each line's rest wavelength within which to search (km/s if unitless).
     lines : `tuple` of `str`, optional
         The lines to measure, ``"k"`` (279.635 nm) and/or ``"h"`` (280.353 nm, both in vacuum).
 
     Returns
     -------
     `~irispy.spectrograph.RasterCollection`
-        Maps on the (step, slit) plane of the input, keyed ``"{feature}_velocity"`` (km/s) and
-        ``"{feature}_intensity"`` (the unit of ``cube``) for the features ``"k2v"``, ``"k3"``,
-        ``"k2r"``, ``"h2v"``, ``"h3"`` and ``"h2r"``. Features that are not found are NaN and masked.
+        (step, slit) maps keyed ``"{feature}_velocity"`` (km/s) and ``"{feature}_intensity"`` (the
+        unit of ``cube``) for the blue peak, line centre and red peak of each measured line:
+        ``"k2v"``, ``"k3"``, ``"k2r"`` and ``"h2v"``, ``"h3"``, ``"h2r"``. Features that are not
+        found are NaN and masked.
 
     Notes
     -----
-    This port finds the same line centres as IDL for almost every spectrum, and peaks within
-    a fraction of a km/s. Its deliberate differences are:
+    As in IDL, a line that the window does not cover over ``velocity_range`` is skipped with a
+    warning; `ValueError` is raised if the window covers none of ``lines``.
 
-    * The peaks are refined with the parabola through the highest point of the velocity grid
-      and its neighbours. IDL evaluates a spline on a decreasing grid, which IDL's ``SPLINE``
-      does not support; it extrapolates one interval and moves the peaks by about 0.1 km/s.
-    * Of two minima within 10 grid points, the deeper one counts; IDL keeps the larger one.
-    * Spectra with missing data in the velocity range give no features; IDL interpolates
-      through the -200 fill values.
-    * When looking for line centres that jump along the slit, IDL zeroes the last one if none
-      is missing.
-    * The minimum searched for near a guessed line centre is found at the right place when the
-      guess is less than 15 grid points from the grid's end.
-    * The reversed rasters of V34 observations are not treated specially (IDL descales them
-      twice), and the rest wavelength of k is 279.635 nm also when h is not measured (IDL's
-      ``/onlyk`` uses 279.644 nm).
-    * Each slit is processed at once, which is about 7 times faster than IDL.
+    The line centres match IDL's for almost every spectrum. Deliberate differences from IDL:
+
+    * The peaks are refined by the parabola through their highest grid point and its neighbours.
+      IDL evaluates its peak spline at decreasing velocities, which ``SPLINE`` does not support:
+      it extrapolates the last interval, moving the peaks by about 0.1 km/s, rarely more than 0.7 km/s.
+    * Spectra with missing data in the velocity range give no features; IDL interpolates through
+      the -200 fill values and uses the line centres it finds there in its guesses along the slit.
+    * The line centres that are redone start from a guess spline along the slit through the others.
+      For unevenly spaced knots, as when slit positions are left out, IDL's ``SPLINE`` reuses the
+      first interval's diagonal in the last row of its system, so the guesses near and beyond the
+      last good slit position can differ.
+    * Not reproduced: IDL's ``/onlyk`` uses 279.644 nm for k, its reversed (V34) rasters are
+      descaled twice, its jump search along the slit takes the last line centre as 0 km/s when
+      none is missing, and its minimum near a guessed line centre is misplaced when the guess is
+      less than 15 grid points (7 in some cases) from the grid's blue end.
+    * IDL's ``wave_comp`` wavelength offset has no keyword; shift the cube's wavelength axis instead.
 
     References
     ----------
     * `Pereira et al. (2013), ApJ 778, 143 <https://doi.org/10.1088/0004-637X/778/2/143>`__
     * `iris_get_mg_features.pro <https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/uio/utils/iris_get_mg_features.pro>`__
     """
+    if not isinstance(cube, SpectrogramCube):
+        msg = f"cube must be a SpectrogramCube, not a {type(cube).__name__}; index it, e.g. raster['Mg II k 2796'][0]"
+        raise TypeError(msg)
+    if cube.data.ndim != 3:
+        msg = "cube must have axes (step, slit, wavelength); slice it with ranges, e.g. cube[:, 300:301]"
+        raise ValueError(msg)
+    check_scaled(cube)
+    velocity_range = u.Quantity(velocity_range, u.km / u.s)
+    if velocity_range.shape != (2,) or not velocity_range[0] < velocity_range[1]:
+        msg = f"velocity_range must be two increasing velocities, not {velocity_range}"
+        raise ValueError(msg)
+    if not lines or not set(lines) <= set(_REST_WAVELENGTH) or len(set(lines)) < len(lines):
+        msg = f"lines must be 'k', 'h' or both, not {lines!r}"
+        raise ValueError(msg)
+    low, high = velocity_range.value
     wavelength = cube.axis_world_coords(cube.wavelength_axis)[0]
-    missing = ~np.isfinite(cube.data) | (cube.data == BAD_PIXEL_VALUE_SCALED)
-    if cube.mask is not None:
-        missing |= np.broadcast_to(cube.mask, cube.data.shape)
-    low, high = velocity_range.to_value(u.km / u.s)
     template = make_spatial_template(cube, cube.wavelength_axis)
-    maps = []
+    maps, skipped = [], []
     for line in lines:
         velocity = ((wavelength - _REST_WAVELENGTH[line]) / _REST_WAVELENGTH[line] * c).to_value(u.km / u.s)
         if not velocity[0] <= low < high <= velocity[-1]:
-            msg = f"The spectral window does not cover Mg II {line} from {low} to {high} km/s"
-            raise ValueError(msg)
+            skipped.append(line)
+            continue
         inside = (velocity >= low - 3) & (velocity <= high + 3)
+        if np.count_nonzero(inside) < 3:
+            msg = f"Too few wavelength points of Mg II {line} between {low} and {high} km/s"
+            raise ValueError(msg)
+        window = np.asarray(cube.data[..., inside])
+        missing = ~np.isfinite(window) | (window == BAD_PIXEL_VALUE_SCALED)
+        if cube.mask is not None:
+            missing |= np.broadcast_to(cube.mask, cube.data.shape)[..., inside]
         grid = np.linspace(velocity[inside][0], velocity[inside][-1], _SAMPLES)
-        features = np.full((*cube.data.shape[:2], 3, 2), np.nan)  # blue peak, centre, red peak
-        for step, (data, bad) in enumerate(zip(cube.data[..., inside], missing[..., inside], strict=True)):
+        features = np.full((*window.shape[:2], 3, 2), np.nan)  # blue peak, centre, red peak
+        for step, (data, bad) in enumerate(zip(window, missing, strict=True)):
             valid = ~bad.any(axis=-1)
             if valid.any():
                 spectra = _spline(velocity[inside], data[valid].T, grid, tension=0).T
                 features[step, valid] = _slit_features(grid, spectra, valid)
-        for index, feature in enumerate(("2v", "3", "2r")):
-            name = f"{line}{feature}"
-            maps.append(
-                (f"{name}_velocity", make_map_cube(template, features[..., index, 0], u.km / u.s, mask_invalid=True))
-            )
-            maps.append(
-                (f"{name}_intensity", make_map_cube(template, features[..., index, 1], cube.unit, mask_invalid=True))
-            )
-    return RasterCollection(maps, aligned_axes=tuple(range(len(template.shape))))
+        maps += [
+            (f"{line}{feature}_{kind}", make_map_cube(template, features[..., index, part], unit, mask_invalid=True))
+            for index, feature in enumerate(("2v", "3", "2r"))
+            for part, (kind, unit) in enumerate([("velocity", u.km / u.s), ("intensity", cube.unit)])
+        ]
+    msg = f"The spectral window does not cover Mg II {' or '.join(skipped)} from {low} to {high} km/s"
+    if not maps:
+        raise ValueError(msg)
+    if skipped:
+        warnings.warn(f"{msg}; skipping it", UserWarning, stacklevel=2)
+    return RasterCollection(maps, aligned_axes=(0, 1))
 
 
 def _slit_features(grid, spectra, valid):
@@ -117,19 +133,22 @@ def _slit_features(grid, spectra, valid):
     Blue peak, line centre and red peak, each as (velocity, intensity), of the valid
     spectra of one slit.
     """
-    maxima, minima = _extrema(spectra, maxima=True), _extrema(spectra, maxima=False)
+    maxima, minima = _extrema(spectra), _extrema(-spectra)
     centre = _centres(grid, spectra, maxima, minima, 0.0)
     positions = np.flatnonzero(valid)
-    kernel = _KERNEL if valid.size >= _KERNEL.size else np.ones(1)
     for _ in range(2):
-        # Redo the line centres that jump from the average along the slit, in which missing ones
-        # count as 0 km/s, from the spline through the others.
+        # Redo centres that jump from the smoothed slit (missing ones count as 0 km/s) from a spline through the
+        # rest. As in IDL, slits shorter than the 17-pixel kernel are not smoothed.
         slit = np.zeros(valid.size)
         slit[positions] = np.nan_to_num(centre[:, 0])
-        good = np.abs(centre[:, 0] - convolve1d(slit, kernel, mode="nearest")[positions]) <= 3
+        average = gaussian_filter1d(slit, 2, mode="nearest") if valid.size >= 17 else slit
+        good = np.abs(centre[:, 0] - average[positions]) <= 3
         if np.count_nonzero(good) >= 3:
-            guess = _spline(positions[good], centre[good, 0], positions, tension=1)
+            with np.errstate(over="ignore", invalid="ignore"):  # it overflows far beyond the good centres
+                guess = _spline(positions[good], centre[good, 0], positions, tension=1)
             redo = ~good
+            centre[redo] = np.nan  # and stays so where the guess overflowed
+            redo &= np.isfinite(guess)
             centre[redo] = _centres(grid, spectra[redo], maxima[redo], minima[redo], guess[redo], forced=True)
     redo = np.isnan(centre[:, 0])
     centre[redo] = _centres(grid, spectra[redo], maxima[redo], minima[redo], 5.0, use_derivative=True)
@@ -137,19 +156,20 @@ def _slit_features(grid, spectra, valid):
     return np.stack([blue, centre, red], axis=1)
 
 
-def _extrema(spectra, *, maxima):
+def _extrema(spectra):
     """
-    Mask of the local extrema of each spectrum, leaving out those within ``_SPACING``
-    points of a stronger one (``lclxtrem.pro``).
+    Mask of the local maxima of each spectrum (``lclxtrem.pro``).
+
+    A maximum is dropped when it is within ``_SPACING`` points of a kept one of larger
+    absolute value, so of two close minima, ``_extrema(-spectra)`` keeps the shallower.
     """
-    strength = spectra if maxima else -spectra
     turn = np.diff(np.sign(np.diff(spectra, axis=-1)), axis=-1)
     candidate = np.zeros(spectra.shape, dtype=bool)
-    candidate[:, 1:-1] = turn < 0 if maxima else turn > 0
-    flat = ~candidate.any(axis=-1)  # no turning point: the extreme value is the extremum
-    candidate[flat, np.argmax(strength[flat], axis=-1)] = True
-    # Keep the candidates from the strongest down, unless a kept one is too close.
-    order = np.argsort(np.where(candidate, -strength, np.inf), axis=-1)[:, : candidate.sum(axis=-1).max()]
+    candidate[:, 1:-1] = turn < 0
+    flat = ~candidate.any(axis=-1)  # no turning point: the highest value is the maximum
+    candidate[flat, np.argmax(spectra[flat], axis=-1)] = True
+    # Keep the candidates from the largest absolute value down, unless a kept one is too close.
+    order = np.argsort(np.where(candidate, -np.abs(spectra), np.inf), axis=-1)[:, : candidate.sum(axis=-1).max()]
     kept = np.take_along_axis(candidate, order, axis=-1)
     for rank in range(1, order.shape[1]):
         close = np.abs(order[:, :rank] - order[:, rank, np.newaxis]) <= _SPACING
@@ -161,12 +181,12 @@ def _extrema(spectra, *, maxima):
 
 def _centres(grid, spectra, maxima, minima, guess, *, forced=False, use_derivative=False):
     """
-    Line centres (``mg_single`` in ``iris_get_mg_features.pro``), as an (n, 2) array.
+    Line centres (IDL ``mg_single``), as an (n, 2) array of (velocity, intensity).
 
-    The extrema away from the grid's ends decide where the centre is: next to a guessed
-    velocity, from a parabola fitted to the lowest point there, or, for a single blended
-    peak, where the spectrum is flattest on its far side (only with ``use_derivative``).
-    With ``forced``, the guess is used unless there is a single peak.
+    The numbers of extrema away from the grid's ends pick a guess, and the centre is the
+    vertex of a parabola fitted near it. A single blended peak gives NaN, or with
+    ``use_derivative`` the flattest point on its higher side. ``forced`` keeps ``guess``
+    unless there is a single peak.
     """
     rows = np.arange(len(spectra))
     guess = np.broadcast_to(guess, rows.shape).astype(float)
@@ -206,8 +226,7 @@ def _centres(grid, spectra, maxima, minima, guess, *, forced=False, use_derivati
 
 def _parabola_minimum(grid, spectra, guess, half_width):
     """
-    Vertex of the parabola fitted to the 7 points around the lowest point near
-    ``guess``.
+    Vertex of a parabola fitted to 7 points around the lowest point near ``guess``.
     """
     rows = np.arange(len(spectra))
     spacing = grid[1] - grid[0]
@@ -218,7 +237,7 @@ def _parabola_minimum(grid, spectra, guess, half_width):
     points = lowest[:, np.newaxis] + np.arange(-3, 4)
     used = (points >= 0) & (points < grid.size)
     points = np.clip(points, 0, grid.size - 1)
-    x = np.where(used, grid[points] - grid[lowest, np.newaxis], 0)
+    x = grid[points] - grid[lowest, np.newaxis]
     powers = x[..., np.newaxis] ** np.arange(3)
     normal = np.einsum("nki,nkj->nij", powers, powers * used[..., np.newaxis])
     moments = np.einsum("nki,nk->ni", powers * used[..., np.newaxis], spectra[rows[:, np.newaxis], points])
@@ -232,8 +251,7 @@ def _parabola_minimum(grid, spectra, guess, half_width):
 
 def _flattest(grid, spectra, peak):
     """
-    For a single blended peak: where the spectrum is flattest within 15 km/s of it, on
-    its higher side.
+    Flattest point within 15 km/s of a single blended peak, on its higher side.
     """
     rows = np.arange(len(spectra))
     margin = 15
@@ -252,7 +270,7 @@ def _flattest(grid, spectra, peak):
 
 def _peaks(grid, spectra, maxima, centre):
     """
-    Blue and red emission peaks (``mg_peaks_single`` in ``iris_get_mg_features.pro``).
+    Blue and red emission peaks (IDL ``mg_peaks_single``).
 
     Only the maxima within 50 km/s of the line centre (0 km/s when it is unknown) count,
     and of more than four, the inner four.
@@ -264,39 +282,26 @@ def _peaks(grid, spectra, maxima, centre):
     rank = np.cumsum(near, axis=-1) - 1 - np.where(count > 4, count // 2 - 2, 0)[:, np.newaxis]
     peak = np.stack([np.argmax(near & (rank == slot), axis=-1) for slot in range(4)], axis=-1)
     x, y = grid[peak], spectra[rows[:, np.newaxis], peak]
-    count = np.minimum(count, 4)
-    blue, red = np.full(rows.shape, -1), np.full(rows.shape, -1)
-
-    def assign(where, blue_slot, red_slot):
-        blue[where] = np.broadcast_to(blue_slot, rows.shape)[where]
-        red[where] = np.broadcast_to(red_slot, rows.shape)[where]
-
-    one = count == 1
-    assign(one & (x[:, 0] > centre), -1, 0)
-    assign(one & (x[:, 0] <= centre), 0, -1)
-    assign(count == 2, 0, 1)
-    three = count == 3
-    first_gap = three & (x[:, 0] < centre) & (centre < x[:, 1])
-    second_gap = three & ~first_gap & (x[:, 1] < centre) & (centre < x[:, 2])
+    three, four = count == 3, count >= 4
     weakest = np.argmin(y[:, :3], axis=-1)
-    assign(first_gap, 0, 1 + (y[:, 2] > y[:, 1]))
-    assign(second_gap, (y[:, 1] > y[:, 0]).astype(int), 2)
-    assign(three & ~first_gap & ~second_gap, (weakest == 0).astype(int), 2 - (weakest == 2))
-    four = count == 4
     outer = (
-        four
-        & (x[:, 3] - x[:, 0] < 40)
-        & (x[:, 2] - x[:, 1] > 13)
-        & (y[:, 0] > 1.06 * y[:, 1])
-        & (y[:, 3] > 1.06 * y[:, 2])
+        (x[:, 3] - x[:, 0] < 40) & (x[:, 2] - x[:, 1] > 13) & (y[:, 0] > 1.06 * y[:, 1]) & (y[:, 3] > 1.06 * y[:, 2])
     )
-    inner = four & ~outer & (((x[:, 1] < centre) & (centre < x[:, 2])) | (centre > x[:, 3]) | (centre < x[:, 0]))
-    blueward = four & ~outer & ~inner & (centre < x[:, 1])
-    redward = four & ~outer & ~inner & ~blueward & (centre < x[:, 3])
-    assign(outer, 0, 3)
-    assign(inner, 1, 2)
-    assign(blueward, 0, 1 + np.argmax(y[:, 1:], axis=-1))
-    assign(redward, np.argmax(y[:, :3], axis=-1), 3)
+    inner = ((x[:, 1] < centre) & (centre < x[:, 2])) | (centre > x[:, 3]) | (centre < x[:, 0])
+    cases = [  # (condition, blue slot, red slot), of which the first that holds counts
+        ((count == 1) & (x[:, 0] > centre), -1, 0),
+        (count == 1, 0, -1),
+        (count == 2, 0, 1),
+        (three & (x[:, 0] < centre) & (centre < x[:, 1]), 0, 1 + (y[:, 2] > y[:, 1])),
+        (three & (x[:, 1] < centre) & (centre < x[:, 2]), y[:, 1] > y[:, 0], 2),
+        (three, weakest == 0, 2 - (weakest == 2)),
+        (four & outer, 0, 3),
+        (four & inner, 1, 2),
+        (four & (centre < x[:, 1]), 0, 1 + np.argmax(y[:, 1:], axis=-1)),
+        (four & (centre < x[:, 3]), np.argmax(y[:, :3], axis=-1), 3),
+    ]
+    condition, blue, red = zip(*cases, strict=True)
+    blue, red = np.select(condition, blue, -1), np.select(condition, red, -1)
     return _vertex(grid, spectra, peak, blue), _vertex(grid, spectra, peak, red)
 
 
@@ -323,10 +328,11 @@ def _vertex(grid, spectra, peak, slot):
 
 def _spline(x, y, t, *, tension):
     """
-    IDL's ``SPLINE``: the spline under tension (Cline 1974) through ``y`` (along its
-    first axis) at ``x``, with end slopes from 3-point formulas, evaluated at ``t``.
+    The spline under tension (Cline 1974) through ``y`` (along its first axis) at ``x``,
+    with end slopes from 3-point formulas, evaluated at ``t``.
 
-    Tension 0 gives a cubic spline.
+    Tension 0 gives a cubic spline. IDL's ``SPLINE`` differs for unevenly spaced ``x``;
+    see `calculate_mg_features`.
     """
     sigma = max(tension, 1e-3) * (x.size - 1) / (x[-1] - x[0])
     shape = (-1,) + (1,) * (y.ndim - 1)
@@ -335,10 +341,7 @@ def _spline(x, y, t, *, tension):
     sinh = np.sinh(sigma * h)
     off_diagonal = (1 / h - sigma / sinh) / sigma**2
     diagonal = (sigma * np.cosh(sigma * h) / sinh - 1 / h) / sigma**2
-    first = -(2 * h[0] + h[1]) / (h[0] + h[1]) / h[0] * y[0] + (h[0] + h[1]) / h[0] / h[1] * y[1]
-    first -= h[0] / (h[0] + h[1]) / h[1] * y[2]
-    last = h[-1] / (h[-1] + h[-2]) / h[-2] * y[-3] - (h[-1] + h[-2]) / h[-1] / h[-2] * y[-2]
-    last += (2 * h[-1] + h[-2]) / (h[-1] + h[-2]) / h[-1] * y[-1]
+    first, last = np.gradient(y, x, axis=0, edge_order=2)[[0, -1]]
     bands = np.zeros((3, x.size))
     bands[0, 1:] = bands[2, :-1] = off_diagonal
     bands[1] = np.concatenate([diagonal[:1], diagonal[:-1] + diagonal[1:], diagonal[-1:]])
