@@ -14,7 +14,12 @@ from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
-from irispy.utils._spectral import drop_extra_coords_dependent_on_axis, make_map_cube, make_spatial_template
+from irispy.utils._spectral import (
+    drop_extra_coords_dependent_on_axis,
+    make_map_cube,
+    make_spatial_template,
+    standard_deviation,
+)
 
 __all__ = ["RBAQualityFlag", "calculate_red_blue_asymmetry"]
 
@@ -87,7 +92,7 @@ def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
         data = np.where(cube.mask, np.nan, data)
     data = np.where(data < 0, np.nan, data)
 
-    errors = np.asarray(cube.uncertainty.array, dtype=float) if cube.uncertainty is not None else None
+    errors = standard_deviation(cube)
     if errors is not None and cube.mask is not None:
         errors = np.where(cube.mask, np.nan, errors)
 

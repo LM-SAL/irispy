@@ -7,9 +7,38 @@ from numbers import Integral
 
 import numpy as np
 
+from astropy.nddata import StdDevUncertainty, UnknownUncertainty
+
 from ndcube import ExtraCoords
 
 from irispy.spectrograph import SpectrogramCube
+
+
+def check_scaled(cube):
+    """
+    Raise a `ValueError` if ``cube`` holds unscaled data read with ``memmap=True``.
+    """
+    # The slit-jaw reader records the scaling, as scaled AIA data stay integer
+    if not cube.meta.get("scaled", not np.issubdtype(cube.data.dtype, np.integer)):
+        msg = "The data are unscaled; read them with memmap=False"
+        raise ValueError(msg)
+
+
+def standard_deviation(cube):
+    """
+    The standard deviation of each sample of ``cube``, in its unit, or `None`.
+
+    An `~astropy.nddata.UnknownUncertainty` is taken to be a standard deviation.
+    """
+    uncertainty = cube.uncertainty
+    if uncertainty is None:
+        return None
+    if not isinstance(uncertainty, StdDevUncertainty | UnknownUncertainty):
+        uncertainty = uncertainty.represent_as(StdDevUncertainty)
+    sigma = np.asarray(uncertainty.array, dtype=float)
+    if uncertainty.unit is not None and cube.unit is not None and uncertainty.unit != cube.unit:
+        sigma = sigma * uncertainty.unit.to(cube.unit)
+    return np.broadcast_to(sigma, cube.data.shape)
 
 
 def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False):
