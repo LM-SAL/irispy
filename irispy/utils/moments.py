@@ -9,26 +9,9 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import RasterCollection
-from irispy.utils._spectral import make_map_cube, make_spatial_template, standard_deviation
+from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, standard_deviation
 
 __all__ = ["calculate_moments"]
-
-
-def _parse_wings(wings):
-    if isinstance(wings, u.Quantity):
-        if wings.isscalar:
-            return wings, wings
-        if len(wings) != 2:
-            msg = "wings must be a scalar Quantity or a two-element Quantity"
-            raise ValueError(msg)
-        return wings[0], wings[1]
-    if isinstance(wings, (tuple, list)) and len(wings) == 2:
-        if not all(isinstance(wing, u.Quantity) for wing in wings):
-            msg = "wings tuple elements must be astropy.units.Quantity"
-            raise TypeError(msg)
-        return wings[0], wings[1]
-    msg = "wings must be an astropy.units.Quantity or a tuple of two Quantities"
-    raise TypeError(msg)
 
 
 def calculate_moments(
@@ -96,13 +79,11 @@ def calculate_moments(
     * `arXiv:2005.02029, Section 3.1 <https://arxiv.org/abs/2005.02029>`__
     * `Færder et al. (2024), ApJ, Appendix C <https://iopscience.iop.org/article/10.3847/1538-4357/ac4223>`__
     """
+    check_scaled(cube)
     if rest_wavelength is None:
         rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
     wavelength_axis = cube.wavelength_axis
-    wavelengths = cube.axis_world_coords(wavelength_axis)[0]
-    if not isinstance(wavelengths, u.Quantity):
-        wavelengths = wavelengths * u.one
-    wavelengths = wavelengths.to(u.nm)
+    wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
     data = np.asarray(cube.data)
     mask = None if cube.mask is None else np.asarray(cube.mask, dtype=bool)
     sigma = standard_deviation(cube)
@@ -111,7 +92,11 @@ def calculate_moments(
             msg = "rest_wavelength must be provided (or detectable from cube metadata) when wings is given"
             raise ValueError(msg)
         rest_wavelength = u.Quantity(rest_wavelength)
-        wing_low, wing_high = _parse_wings(wings)
+        wings = u.Quantity(wings)
+        if wings.shape not in {(), (2,)}:
+            msg = "wings must be one offset or a (lower, upper) pair"
+            raise ValueError(msg)
+        wing_low, wing_high = (wings, wings) if wings.isscalar else wings
         wavelengths_in_rest_unit = wavelengths.to(rest_wavelength.unit)
         wvl_min = rest_wavelength - wing_low.to(rest_wavelength.unit)
         wvl_max = rest_wavelength + wing_high.to(rest_wavelength.unit)
@@ -135,9 +120,6 @@ def calculate_moments(
     dwvl = np.abs(np.mean(np.diff(wavelengths)))
     data_moved = np.moveaxis(data, wavelength_axis, -1)
     wvls = wavelengths.value
-    broadcast_shape = [1] * data_moved.ndim
-    broadcast_shape[-1] = -1
-    wvls_broadcast = wvls.reshape(broadcast_shape)
     dwvl_value = dwvl.value
 
     if integrated:
@@ -149,10 +131,10 @@ def calculate_moments(
 
     intensity_value = np.nansum(weights, axis=-1)
     intensity_nonzero = intensity_value != 0
-    centroid_numerator = np.nansum(weights * wvls_broadcast, axis=-1)
+    centroid_numerator = np.nansum(weights * wvls, axis=-1)
     with np.errstate(invalid="ignore"):
         centroid_value = np.where(intensity_nonzero, centroid_numerator / intensity_value, np.nan)
-    offset_squared = (wvls_broadcast - centroid_value[..., np.newaxis]) ** 2
+    offset_squared = (wvls - centroid_value[..., np.newaxis]) ** 2
     variance_numerator = np.nansum(offset_squared * weights, axis=-1)
     with np.errstate(invalid="ignore"):
         variance_value = np.where(intensity_nonzero, variance_numerator / intensity_value, np.nan)
@@ -160,19 +142,13 @@ def calculate_moments(
     stddev_value = np.sqrt(variance_value)
 
     if min_intensity is not None:
-        min_intensity_value = (
-            min_intensity.to_value(intensity_unit) if isinstance(min_intensity, u.Quantity) else min_intensity
-        )
-        low_intensity = intensity_value < min_intensity_value
+        low_intensity = intensity_value < u.Quantity(min_intensity, intensity_unit).value
         intensity_value = np.where(low_intensity, np.nan, intensity_value)
         centroid_value = np.where(low_intensity, np.nan, centroid_value)
         stddev_value = np.where(low_intensity, np.nan, stddev_value)
 
     if saturation_limit is not None:
-        saturation_limit_value = (
-            saturation_limit.to_value(cube.unit) if isinstance(saturation_limit, u.Quantity) else saturation_limit
-        )
-        saturated = np.max(data_moved, axis=-1) > saturation_limit_value
+        saturated = np.max(data_moved, axis=-1) > u.Quantity(saturation_limit, cube.unit).value
         intensity_value = np.where(saturated, np.nan, intensity_value)
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)

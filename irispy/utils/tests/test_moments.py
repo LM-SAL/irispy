@@ -100,8 +100,14 @@ def test_calculate_moments_asymmetric_wings_rejects_bare_tuple():
     wvls = np.linspace(1.0, 5.0, 5) * u.nm
     cube = make_test_spectrogram_cube(np.ones((1, 1, len(wvls))), wvls)
 
-    with pytest.raises(TypeError, match=r"wings tuple elements must be astropy\.units\.Quantity"):
+    with pytest.raises(u.UnitConversionError):
         calculate_moments(cube, rest_wavelength=3 * u.nm, wings=(1.1, 0.1))
+
+
+def test_calculate_moments_rejects_unscaled_data():
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 3), dtype=np.int16), [500.0, 501.0, 502.0] * u.nm)
+    with pytest.raises(ValueError, match="unscaled"):
+        calculate_moments(cube)
 
 
 def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):

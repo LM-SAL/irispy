@@ -97,13 +97,18 @@ def test_calculate_red_blue_asymmetry_requires_wavelength_axis():
         calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)
 
 
+def test_calculate_red_blue_asymmetry_rejects_unscaled_data():
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 5), dtype=np.int16), np.arange(5) * u.nm)
+    with pytest.raises(ValueError, match="unscaled"):
+        calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)
+
+
 def test_calculate_red_blue_asymmetry_with_uncertainty():
     velocity = np.arange(-200, 201, 10) * u.km / u.s
     wavelengths = _wavelengths_from_velocity(velocity)
     profile = _flat_wing_profile(velocity, red_excess=2)
     data = profile.reshape(1, 1, -1)
-    cube = make_test_spectrogram_cube(data, wavelengths)
-    cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
+    cube = make_test_spectrogram_cube(data, wavelengths, uncertainty=StdDevUncertainty(np.full(data.shape, 0.1)))
 
     result = calculate_red_blue_asymmetry(
         cube,
@@ -121,8 +126,11 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
     assert result["red_blue_asymmetry"].meta["rba_rest_wavelength"] == 140.277
     assert result["red_blue_asymmetry"].meta["rba_interpolation_degree"] == 1
 
-    symmetric_cube = make_test_spectrogram_cube(_flat_wing_profile(velocity).reshape(1, 1, -1), wavelengths)
-    symmetric_cube.uncertainty = StdDevUncertainty(np.full(symmetric_cube.shape, 0.1))
+    symmetric_cube = make_test_spectrogram_cube(
+        _flat_wing_profile(velocity).reshape(1, 1, -1),
+        wavelengths,
+        uncertainty=StdDevUncertainty(np.full(data.shape, 0.1)),
+    )
     symmetric_result = calculate_red_blue_asymmetry(
         symmetric_cube,
         rest_wavelength=REST_WAVELENGTH,
@@ -142,9 +150,10 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
 def test_calculate_red_blue_asymmetry_error_from_other_uncertainties(uncertainty):
     velocity = np.arange(-200, 201, 10) * u.km / u.s
     cube = make_test_spectrogram_cube(
-        _flat_wing_profile(velocity, red_excess=2).reshape(1, 1, -1), _wavelengths_from_velocity(velocity)
+        _flat_wing_profile(velocity, red_excess=2).reshape(1, 1, -1),
+        _wavelengths_from_velocity(velocity),
+        uncertainty=StdDevUncertainty(np.full((1, 1, velocity.size), 0.1)),
     )
-    cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
     expected = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry_error"]
     cube.uncertainty = uncertainty
     result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry_error"]
@@ -163,8 +172,11 @@ def test_calculate_red_blue_asymmetry_flags_error_interpolation_failure(monkeypa
     monkeypatch.setattr(red_blue_module, "make_interp_spline", fail_on_error_spline)
     velocity = np.arange(-200, 201, 10) * u.km / u.s
     wavelengths = _wavelengths_from_velocity(velocity)
-    cube = make_test_spectrogram_cube(_flat_wing_profile(velocity, red_excess=2).reshape(1, 1, -1), wavelengths)
-    cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
+    cube = make_test_spectrogram_cube(
+        _flat_wing_profile(velocity, red_excess=2).reshape(1, 1, -1),
+        wavelengths,
+        uncertainty=StdDevUncertainty(np.full((1, 1, velocity.size), 0.1)),
+    )
 
     result = calculate_red_blue_asymmetry(
         cube,
@@ -201,8 +213,7 @@ def test_calculate_red_blue_asymmetry_return_profiles():
     wavelengths = _wavelengths_from_velocity(velocity)
     profile = _flat_wing_profile(velocity, red_excess=2)
     data = np.stack([profile, profile + 1]).reshape(1, 2, -1)
-    cube = make_test_spectrogram_cube(data, wavelengths)
-    cube.uncertainty = StdDevUncertainty(np.full(cube.shape, 0.1))
+    cube = make_test_spectrogram_cube(data, wavelengths, uncertainty=StdDevUncertainty(np.full(data.shape, 0.1)))
 
     result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
     observed_cube = result["observed_profile"]

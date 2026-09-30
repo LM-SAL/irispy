@@ -1,0 +1,1 @@
+`~irispy.utils.moments.calculate_moments` and `~irispy.utils.red_blue.calculate_red_blue_asymmetry` now raise a `ValueError` for unscaled data read with ``memmap=True``, instead of giving wrong values.
