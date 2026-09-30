@@ -19,7 +19,12 @@ from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCubeSequence
-from irispy.utils.bursts import find_si_iv_bursts, find_sji_bursts
+from irispy.utils.bursts import (
+    find_bright_image_events,
+    find_bright_spectral_events,
+    find_si_iv_bursts,
+    find_sji_bursts,
+)
 from irispy.utils.constants import DN_UNIT
 
 IRISPY_DATA = "https://github.com/LM-SAL/irispy-data/releases/download/v1"
@@ -126,6 +131,27 @@ def test_si_iv_errors(bursts_si_iv_raster, bursts_si_iv_file):
         find_si_iv_bursts(bursts_si_iv_raster[0].apply_exposure_time_correction())
 
 
+def test_bright_spectral_events_match_si_iv_bursts(si_iv_cube):
+    # The rest wavelength is that of the window, and the threshold is applied as given
+    labels, events = find_bright_spectral_events(si_iv_cube, 40)
+    burst_labels, bursts = find_si_iv_bursts(si_iv_cube, threshold=80)
+    assert events.meta["threshold"] == 40 * DN_UNIT["FUV"] / u.s
+    np.testing.assert_array_equal(labels.data, burst_labels.data)
+    assert events.pformat(max_lines=-1, max_width=-1) == bursts.pformat(max_lines=-1, max_width=-1)
+
+
+def test_bright_spectral_events_nuv():
+    mg_ii = read_spectrograph_lvl2(
+        get_test_filepath("sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits"),
+        spectral_windows="Mg II k 2796",
+    )["Mg II k 2796"][0]
+    labels, events = find_bright_spectral_events(mg_ii, 100 * u.DN / u.s)
+    assert events.meta["threshold"] == 100 * DN_UNIT["NUV"] / u.s
+    assert labels.data.shape == mg_ii.data.shape[:2]
+    with pytest.raises(ValueError, match="no wavelength bins"):
+        find_bright_spectral_events(mg_ii, 100, rest_wavelength=1402.77 * u.AA)
+
+
 def test_sji_matches_idl(bursts_sjicube_1400):
     idl = Table.read(get_test_filepath("bursts/iris_sji_burst_check_4000255147_pixels.ecsv"))
     summary = Table.read(SJI_SUMMARY)
@@ -180,6 +206,14 @@ def test_sji_errors(sns_sjicube_1330, bursts_sjicube_1400, bursts_sji_1400_file)
         find_sji_bursts(read_sji_lvl2(bursts_sji_1400_file, memmap=True))
     with pytest.raises(ValueError, match="slice with a range"):
         find_sji_bursts(bursts_sjicube_1400[0])
+
+
+def test_bright_image_events_any_band(sns_sjicube_1330):
+    sji = copy.deepcopy(sns_sjicube_1330)
+    sji.data[0, 20:23, 20:23] = 1e5
+    labels, events = find_bright_image_events(sji)
+    assert labels.data[0, 20:23, 20:23].all()
+    assert list(events[events["frame"] == 0]["npix"]) == [9]
 
 
 @pytest.mark.remote_data

@@ -1,5 +1,6 @@
 """
-Detection of UV bursts in IRIS Si IV spectra and 1400 Å slit-jaw images.
+Detection of compact bright events, such as UV bursts, in IRIS spectra and slit-jaw
+images.
 """
 
 import warnings
@@ -17,7 +18,7 @@ from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_tem
 from irispy.utils.constants import DN_UNIT
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
-__all__ = ["find_si_iv_bursts", "find_sji_bursts"]
+__all__ = ["find_bright_image_events", "find_bright_spectral_events", "find_si_iv_bursts", "find_sji_bursts"]
 
 _SI_IV = 1402.77 * u.AA
 # The 500 DN/s default threshold was set on this observation, summed by 2 in wavelength.
@@ -29,11 +30,8 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
     """
     Find UV bursts in Si IV 1402.77 Å spectra.
 
-    A pixel (raster step, slit position) is part of a burst when the mean intensity of the
-    wavelength bins within ``velocity_range`` of 1402.77 Å reaches the threshold and stays
-    below ``median_factor`` times their median, which rejects particle hits. Burst pixels that
-    touch, diagonally included, form one event. For sit-and-stare data the step axis is time,
-    so events also link in time.
+    This is `find_bright_spectral_events` for Si IV 1402.77 Å, with the threshold convention
+    and default of ``iris_burst_check.pro``.
 
     Parameters
     ----------
@@ -52,14 +50,8 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
 
     Returns
     -------
-    labels : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
-        Event labels on the (step, slit) plane of each raster: 0 outside bursts, and 1 to N
-        for the N events, numbered on through the rasters of a sequence.
-    events : `~astropy.table.QTable`
-        One row per event: ``label``, ``raster`` index, number of pixels ``npix``, and the
-        ``step``, ``y``, ``time``, ``coordinate`` and mean ``intensity`` of its brightest pixel.
-        The coordinates of a sequence are in the frame of its first raster.
-        ``events.meta["threshold"]`` is the scaled threshold.
+    labels, events
+        As `find_bright_spectral_events`; ``events.meta["threshold"]`` is the scaled threshold.
 
     Notes
     -----
@@ -82,31 +74,81 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
     ----------
     * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-0>`__
     """
-    cubes = raster.data if isinstance(raster, SpectrogramCubeSequence) else [raster]
-    meta = cubes[0].meta
+    meta = (raster.data[0] if isinstance(raster, SpectrogramCubeSequence) else raster).meta
     if threshold is None:
         now, then = (
             get_interpolated_effective_area(get_latest_response(time), "FUV", _SI_IV)
             for time in (meta.date_reference, _REFERENCE_TIME)
         )
         threshold = 500 * (now / then).to_value(u.one)
-    unit = DN_UNIT["FUV"] / u.s
+    threshold = threshold * meta.spatial_summing_factor * meta.spectral_summing_factor / 2
+    return find_bright_spectral_events(
+        raster, threshold, rest_wavelength=_SI_IV, velocity_range=velocity_range, median_factor=median_factor
+    )
+
+
+def find_bright_spectral_events(
+    raster, threshold, *, rest_wavelength=None, velocity_range=50 * u.km / u.s, median_factor=10
+):
+    """
+    Find compact bright events in the spectra of one line.
+
+    A pixel (raster step, slit position) is part of an event when the mean intensity of the
+    wavelength bins within ``velocity_range`` of ``rest_wavelength`` reaches ``threshold`` and
+    stays below ``median_factor`` times their median, which rejects particle hits. Pixels that
+    touch, diagonally included, form one event. For sit-and-stare data the step axis is time,
+    so events also link in time.
+
+    Parameters
+    ----------
+    raster : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
+        Level 2 spectra of one window, in DN with axes (step, slit, wavelength).
+    threshold : `float` or `~astropy.units.Quantity`
+        Threshold in DN/s per wavelength bin of the data, applied as given. A Quantity in
+        ``u.DN`` per unit time is read as the data's DN; any other unit must convert to the
+        DN of the window's detector per second, ``DN_UNIT[band] / u.s`` from `irispy.utils.constants`.
+    rest_wavelength : `~astropy.units.Quantity`, optional
+        Rest wavelength of the line. Defaults to that of the window, ``meta.rest_wavelength``.
+    velocity_range : `~astropy.units.Quantity`, optional
+        Half-width of the averaged wavelength range, as a Doppler velocity.
+    median_factor : `float` or `None`, optional
+        Particle-hit test factor; `None` switches the test off.
+
+    Returns
+    -------
+    labels : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
+        Event labels on the (step, slit) plane of each raster: 0 outside events, and 1 to N
+        for the N events, numbered on through the rasters of a sequence.
+    events : `~astropy.table.QTable`
+        One row per event: ``label``, ``raster`` index, number of pixels ``npix``, and the
+        ``step``, ``y``, ``time``, ``coordinate`` and mean ``intensity`` of its brightest pixel.
+        The coordinates of a sequence are in the frame of its first raster.
+        ``events.meta["threshold"]`` is the threshold.
+    """
+    cubes = raster.data if isinstance(raster, SpectrogramCubeSequence) else [raster]
+    meta = cubes[0].meta
+    if rest_wavelength is None:
+        rest_wavelength = meta.rest_wavelength
+        if rest_wavelength is None:
+            msg = f"The {meta.spectral_window} window has no rest wavelength; pass rest_wavelength"
+            raise ValueError(msg)
+    unit = DN_UNIT[meta.detector_band] / u.s
     if isinstance(threshold, u.Quantity):
         threshold = threshold.to(unit, equivalencies=[(u.DN / u.s, unit)])
-    threshold = u.Quantity(threshold, unit) * meta.spatial_summing_factor * meta.spectral_summing_factor / 2
+    threshold = u.Quantity(threshold, unit)
     maps, tables, offset = [], [], 0
     for index, cube in enumerate(cubes):
         check_scaled(cube)
         if cube.data.ndim != 3:
             msg = "The spectra must have axes (step, slit, wavelength); slice with a range, not an index"
             raise ValueError(msg)
-        if not DN_UNIT["FUV"].is_equivalent(cube.unit):
+        if not DN_UNIT[cube.meta.detector_band].is_equivalent(cube.unit):
             msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
             raise ValueError(msg)
         wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
-        bins = np.abs(wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(_SI_IV))) <= velocity_range
+        bins = np.abs(wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(rest_wavelength))) <= velocity_range
         if not bins.any():
-            msg = f"The spectral window has no wavelength bins within {velocity_range} of Si IV 1402.77 Å"
+            msg = f"The spectral window has no wavelength bins within {velocity_range} of {rest_wavelength}"
             raise ValueError(msg)
         data = cube.data[..., bins]
         # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
@@ -151,8 +193,7 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
     """
     Find UV bursts in 1400 Å slit-jaw images.
 
-    A pixel is part of a burst when it is at least ``sigma_factor`` standard deviations above
-    the median of its frame. Burst pixels that touch within a frame, diagonally included, form one event.
+    This is `find_bright_image_events` for 1400 Å slit-jaw images.
 
     Parameters
     ----------
@@ -165,12 +206,8 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
 
     Returns
     -------
-    labels : `~irispy.sji.SJICube`
-        Event labels with the WCS and extra coordinates of ``sji``: 0 outside bursts, and 1 to N
-        for the N events.
-    events : `~astropy.table.QTable`
-        One row per event: ``label``, ``frame``, number of pixels ``npix``, the frame's ``threshold``,
-        and the ``y``, ``x``, ``time``, ``coordinate`` and ``intensity`` of its brightest pixel.
+    labels, events
+        As `find_bright_image_events`.
 
     Notes
     -----
@@ -197,11 +234,39 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
     if sji.meta.spectral_window != "1400":
         msg = f"Bursts are found in 1400 Å slit-jaw images, not {sji.meta.spectral_window}"
         raise ValueError(msg)
-    check_scaled(sji)
-    if sji.data.ndim != 3:
+    return find_bright_image_events(sji, sigma_factor=sigma_factor, min_pixels=min_pixels)
+
+
+def find_bright_image_events(cube, *, sigma_factor=10, min_pixels=2):
+    """
+    Find compact bright events in images.
+
+    A pixel is part of an event when it is at least ``sigma_factor`` standard deviations above
+    the median of its frame. Pixels that touch within a frame, diagonally included, form one event.
+
+    Parameters
+    ----------
+    cube : `~irispy.sji.SJICube`
+        Slit-jaw images of any band, or IRIS-aligned AIA images, with axes (frame, y, x).
+    sigma_factor : `float`, optional
+        Threshold, in standard deviations.
+    min_pixels : `int`, optional
+        Events with fewer pixels are dropped.
+
+    Returns
+    -------
+    labels : `~irispy.sji.SJICube`
+        Event labels with the WCS and extra coordinates of ``cube``: 0 outside events, and 1 to N
+        for the N events.
+    events : `~astropy.table.QTable`
+        One row per event: ``label``, ``frame``, number of pixels ``npix``, the frame's ``threshold``,
+        and the ``y``, ``x``, ``time``, ``coordinate`` and ``intensity`` of its brightest pixel.
+    """
+    check_scaled(cube)
+    if cube.data.ndim != 3:
         msg = "The slit-jaw cube must have axes (frame, y, x); slice with a range, such as [0:1], not an index"
         raise ValueError(msg)
-    data = sji.data if sji.mask is None else np.where(sji.mask, np.nan, sji.data)
+    data = cube.data if cube.mask is None else np.where(cube.mask, np.nan, cube.data)
     frames = data.reshape(len(data), -1)
     with warnings.catch_warnings():
         # Frames without valid pixels, or with only one
@@ -214,21 +279,21 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
     burst &= (np.bincount(labels.ravel()) >= min_pixels)[labels]
     labels, count = ndimage.label(burst, structure=within_frame)
     label, npix, (frame, y, x) = _events(data, labels, count)
-    coordinate, time = sji.wcs.array_index_to_world(frame, y, x)
+    coordinate, time = cube.wcs.array_index_to_world(frame, y, x)
     events = QTable(
         {
             "label": label,
             "frame": frame,
             "npix": npix,
-            "threshold": threshold[frame] * sji.unit,
+            "threshold": threshold[frame] * cube.unit,
             "y": y,
             "x": x,
             "time": time,
             "coordinate": coordinate,
-            "intensity": data[frame, y, x] * sji.unit,
+            "intensity": data[frame, y, x] * cube.unit,
         }
     )
-    return type(sji)(labels, sji.wcs, unit=u.one, meta=sji.meta, extra_coords=sji.extra_coords), events
+    return type(cube)(labels, cube.wcs, unit=u.one, meta=cube.meta, extra_coords=cube.extra_coords), events
 
 
 def _events(values, labels, count):
