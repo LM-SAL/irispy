@@ -87,8 +87,7 @@ def test_calculate_moments_sliced_cube(sns_sg_file):
 @pytest.mark.parametrize("wings", [(1.1 * u.nm, 0.1 * u.nm), (1.1, 0.1) * u.nm])
 def test_calculate_moments_asymmetric_wings(wings):
     """
-    Test that asymmetric wings can be given as a tuple of Quantity objects or a two-
-    element Quantity.
+    Test asymmetric wings given as a tuple of Quantities or as a two-element Quantity.
     """
     wvls = np.linspace(1.0, 5.0, 5) * u.nm
     cube = make_test_spectrogram_cube(np.ones((1, 1, len(wvls))), wvls)
