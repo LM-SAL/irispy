@@ -17,6 +17,9 @@ Header: NWIN = 1 and the window keywords of Si IV 1403 are numbered 1. NAXIS1/2,
         TFIELDS = 9 for its 9 columns (the whole file says 7, see ../compress.py).
         TSR1/TER1/TSC1/TEC1 and the statistics keywords (DATA*, TD*1) still describe
         the whole window or file.
+Made:   python ../cut.py iris_l2_20130902_182935_4000005156_raster_t000_r00000.fits \
+            iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv_test.fits \
+            --rows 385:576 --window "Si IV 1403" 262:305
 
 iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits
 ----------------------------------------------------------
@@ -29,6 +32,8 @@ Kept:   frames 0, 69 and 227 (0-based), whole images, with the same rows of the
         below the threshold and frame 227 the most events (13).
 Header: CRPIX3/CDELT3 still describe the whole file's cadence; irispy takes the frame
         times from the auxiliary table.
+Made:   python ../cut.py iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits \
+            iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits --exposures 0,69,227
 
 *.ecsv
 ------

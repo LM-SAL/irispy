@@ -4,3 +4,4 @@
 *.fit.gz binary linguist-generated
 *.fits.gz binary linguist-generated
 *.fts.gz binary linguist-generated
+*.ecsv linguist-generated

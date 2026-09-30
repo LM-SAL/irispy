@@ -23,29 +23,17 @@ from irispy.utils.bursts import find_si_iv_bursts, find_sji_bursts
 from irispy.utils.constants import DN_UNIT
 
 IRISPY_DATA = "https://github.com/LM-SAL/irispy-data/releases/download/v1"
-SI_IV_FILE = get_test_filepath("bursts/iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv_test.fits")
-SJI_FILE = get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits")
 SJI_SUMMARY = get_test_filepath("bursts/iris_sji_burst_check_4000255147_summary.ecsv")
 
 
-@pytest.fixture(scope="module")
-def si_iv_raster():
-    return read_spectrograph_lvl2(SI_IV_FILE)
-
-
 @pytest.fixture
-def si_iv_cube(si_iv_raster):
-    return copy.deepcopy(si_iv_raster["Si IV 1403"][0])
+def si_iv_cube(bursts_si_iv_raster):
+    return copy.deepcopy(bursts_si_iv_raster[0])
 
 
 @pytest.fixture(scope="module")
 def idl_si_iv():
     return Table.read(get_test_filepath("bursts/iris_burst_check_4000005156_r00000_thr40.ecsv"))
-
-
-@pytest.fixture(scope="module")
-def sji_1400():
-    return read_sji_lvl2(SJI_FILE)
 
 
 def assert_same_events(labels, pixels, groups):
@@ -69,13 +57,13 @@ def assert_si_iv_matches_idl(labels, events, idl, y_offset):
 
 
 @pytest.mark.parametrize("threshold", [80, 80 * u.DN / u.s, 4800 * DN_UNIT["FUV"] / u.min])
-def test_si_iv_matches_idl(si_iv_raster, idl_si_iv, threshold):
+def test_si_iv_matches_idl(bursts_si_iv_raster, idl_si_iv, threshold):
     # IDL ran with 40 DN/s on data not summed in wavelength, which is 80 DN/s here
-    labels, events = find_si_iv_bursts(si_iv_raster, threshold=threshold)
+    labels, events = find_si_iv_bursts(bursts_si_iv_raster, threshold=threshold)
     assert isinstance(labels, SpectrogramCubeSequence)
     assert events.meta["threshold"].value == 40
     assert_si_iv_matches_idl(labels.data[0].data, events, idl_si_iv, idl_si_iv.meta["y_offset"])
-    cube = si_iv_raster["Si IV 1403"][0]
+    cube = bursts_si_iv_raster[0]
     step = events["step"]
     assert isinstance(events["time"], Time)
     assert all(events["time"] == cube.meta["auxiliary times"][step] + cube.meta["exposure time"][step] / 2)
@@ -127,28 +115,22 @@ def test_si_iv_ignores_missing_data(si_iv_cube):
     assert labels.data[10].any()
 
 
-def test_si_iv_errors(si_iv_raster):
-    other = read_spectrograph_lvl2(
-        get_test_filepath("sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits"),
-        spectral_windows="C II 1336",
-    )
-    with pytest.raises(ValueError, match="No spectral window covers"):
-        find_si_iv_bursts(other)
+def test_si_iv_errors(bursts_si_iv_raster, bursts_si_iv_file):
     with pytest.raises(ValueError, match="no wavelength bins"):
-        find_si_iv_bursts(si_iv_raster["Si IV 1403"][0][:, :, :3])
+        find_si_iv_bursts(bursts_si_iv_raster[0][:, :, :3])
     with pytest.raises(ValueError, match="unscaled"):
-        find_si_iv_bursts(read_spectrograph_lvl2(SI_IV_FILE, memmap=True))
+        find_si_iv_bursts(read_spectrograph_lvl2(bursts_si_iv_file, memmap=True)["Si IV 1403"])
     with pytest.raises(ValueError, match="slice with a range"):
-        find_si_iv_bursts(si_iv_raster["Si IV 1403"][0][3])
+        find_si_iv_bursts(bursts_si_iv_raster[0][3])
     with pytest.raises(ValueError, match="must be in DN"):
-        find_si_iv_bursts(si_iv_raster["Si IV 1403"][0].apply_exposure_time_correction())
+        find_si_iv_bursts(bursts_si_iv_raster[0].apply_exposure_time_correction())
 
 
-def test_sji_matches_idl(sji_1400):
+def test_sji_matches_idl(bursts_sjicube_1400):
     idl = Table.read(get_test_filepath("bursts/iris_sji_burst_check_4000255147_pixels.ecsv"))
     summary = Table.read(SJI_SUMMARY)
-    labels, events = find_sji_bursts(sji_1400)
-    for frame in range(len(sji_1400.data)):
+    labels, events = find_sji_bursts(bursts_sjicube_1400)
+    for frame in range(len(bursts_sjicube_1400.data)):
         pixels = idl[idl["frame"] == frame]
         assert_same_events(labels.data[frame].ravel(), pixels["pixel"], pixels["group"])
         idl_npix = np.unique(pixels["group"], return_counts=True)[1]
@@ -156,19 +138,21 @@ def test_sji_matches_idl(sji_1400):
     # Frame 1 (69 in the file) holds a 2100.50 DN pixel 0.04 DN below the threshold; IDL rejects it too.
     idl_frames = np.unique(idl["idl_frame"])
     np.testing.assert_array_equal(np.bincount(events["frame"], minlength=3), summary["nevents"][idl_frames])
-    np.testing.assert_array_equal(events["intensity"].value, sji_1400.data[events["frame"], events["y"], events["x"]])
+    np.testing.assert_array_equal(
+        events["intensity"].value, bursts_sjicube_1400.data[events["frame"], events["y"], events["x"]]
+    )
     assert np.all(events["intensity"] >= events["threshold"])
     assert events.colnames == ["label", "frame", "npix", "threshold", "y", "x", "time", "coordinate", "intensity"]
     assert isinstance(events["time"], Time)
     assert isinstance(events["coordinate"], SkyCoord)
-    coordinate, time = sji_1400.wcs.pixel_to_world(events["x"], events["y"], events["frame"])
+    coordinate, time = bursts_sjicube_1400.wcs.pixel_to_world(events["x"], events["y"], events["frame"])
     assert all(events["coordinate"] == coordinate)
     assert all(events["time"] == time)
-    assert set(labels.extra_coords.keys()) == set(sji_1400.extra_coords.keys())
+    assert set(labels.extra_coords.keys()) == set(bursts_sjicube_1400.extra_coords.keys())
 
 
-def test_sji_edge_and_small_events(sji_1400):
-    sji = copy.deepcopy(sji_1400)
+def test_sji_edge_and_small_events(bursts_sjicube_1400):
+    sji = copy.deepcopy(bursts_sjicube_1400)
     sji.data[0, :2, :2] = 1e5  # IDL's REGION_GROW leaves edge pixels out of every region
     sji.mask[0, :2, :2] = False  # they are fill in this file
     sji.data[0, 200, 200] = 1e5
@@ -179,8 +163,8 @@ def test_sji_edge_and_small_events(sji_1400):
     assert labels.data[0, 200, 200] > 0
 
 
-def test_sji_frames_without_valid_pixels(sji_1400):
-    sji = copy.deepcopy(sji_1400)
+def test_sji_frames_without_valid_pixels(bursts_sjicube_1400):
+    sji = copy.deepcopy(bursts_sjicube_1400)
     sji.mask[1] = True
     _, events = find_sji_bursts(sji)
     assert 1 not in events["frame"]
@@ -189,13 +173,13 @@ def test_sji_frames_without_valid_pixels(sji_1400):
         find_sji_bursts(sji)
 
 
-def test_sji_errors(sns_sjicube_1330, sji_1400):
+def test_sji_errors(sns_sjicube_1330, bursts_sjicube_1400, bursts_sji_1400_file):
     with pytest.raises(ValueError, match="not 1330"):
         find_sji_bursts(sns_sjicube_1330)
     with pytest.raises(ValueError, match="unscaled"):
-        find_sji_bursts(read_sji_lvl2(SJI_FILE, memmap=True))
+        find_sji_bursts(read_sji_lvl2(bursts_sji_1400_file, memmap=True))
     with pytest.raises(ValueError, match="slice with a range"):
-        find_sji_bursts(sji_1400[0])
+        find_sji_bursts(bursts_sjicube_1400[0])
 
 
 @pytest.mark.remote_data
@@ -205,7 +189,7 @@ def test_si_iv_whole_file_matches_idl(idl_si_iv):
         f"{IRISPY_DATA}/iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv.fits.gz",
         known_hash="ac50a0255b73af1610702653e17d3b3b9c8fc37bc487a313e1c9fb3a2983428a",
     )
-    labels, events = find_si_iv_bursts(read_spectrograph_lvl2(filename), threshold=80)
+    labels, events = find_si_iv_bursts(read_spectrograph_lvl2(filename)["Si IV 1403"], threshold=80)
     assert_si_iv_matches_idl(labels.data[0].data, events, idl_si_iv, 0)
 
 

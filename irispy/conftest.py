@@ -12,6 +12,7 @@ from astropy.io import fits
 
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
+from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.utils import record_to_dict
 
 console_logger = logging.getLogger()
@@ -186,6 +187,28 @@ def raster_sjicube_2796():
 @pytest.fixture
 def raster_sjicube_2832():
     return read_sji_lvl2(get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_2832_t000_test.fits"))
+
+
+@pytest.fixture
+def bursts_si_iv_file():
+    return get_test_filepath("bursts/iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv_test.fits")
+
+
+@pytest.fixture
+def bursts_sji_1400_file():
+    return get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits")
+
+
+@pytest.fixture(scope="module")
+def bursts_si_iv_raster():
+    return read_spectrograph_lvl2(
+        get_test_filepath("bursts/iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv_test.fits")
+    )["Si IV 1403"]
+
+
+@pytest.fixture(scope="module")
+def bursts_sjicube_1400():
+    return read_sji_lvl2(get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits"))
 
 
 @pytest.fixture(scope="session")

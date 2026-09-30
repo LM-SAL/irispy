@@ -12,7 +12,7 @@ from astropy.coordinates import SkyCoord
 from astropy.table import QTable, vstack
 from astropy.time import Time
 
-from irispy.spectrograph import RasterCollection, SpectrogramCubeSequence
+from irispy.spectrograph import SpectrogramCubeSequence
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
 from irispy.utils.constants import DN_UNIT
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
@@ -37,9 +37,8 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
 
     Parameters
     ----------
-    raster : `~irispy.SpectrogramCube`, `~irispy.SpectrogramCubeSequence` or `~irispy.RasterCollection`
-        Level 2 spectra in DN with axes (step, slit, wavelength). From a `~irispy.RasterCollection`,
-        the first window covering 1402.77 Å is used.
+    raster : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
+        Level 2 spectra of a window covering 1402.77 Å, in DN with axes (step, slit, wavelength).
     threshold : `float` or `~astropy.units.Quantity`, optional
         Burst threshold in DN/s per wavelength bin for data summed by 2 in wavelength and not along
         the slit; it is scaled by the data's spatial summing and half its spectral summing.
@@ -81,22 +80,45 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
 
     References
     ----------
-    * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-z>`__
+    * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-0>`__
     """
-    if isinstance(raster, RasterCollection):
-        raster = _si_iv_window(raster)
     cubes = raster.data if isinstance(raster, SpectrogramCubeSequence) else [raster]
     meta = cubes[0].meta
     if threshold is None:
-        area_ratio = _si_iv_effective_area(meta.date_reference) / _si_iv_effective_area(_REFERENCE_TIME)
-        threshold = 500 * area_ratio.to_value(u.one)
+        now, then = (
+            get_interpolated_effective_area(get_latest_response(time), "FUV", _SI_IV)
+            for time in (meta.date_reference, _REFERENCE_TIME)
+        )
+        threshold = 500 * (now / then).to_value(u.one)
     unit = DN_UNIT["FUV"] / u.s
     if isinstance(threshold, u.Quantity):
         threshold = threshold.to(unit, equivalencies=[(u.DN / u.s, unit)])
     threshold = u.Quantity(threshold, unit) * meta.spatial_summing_factor * meta.spectral_summing_factor / 2
     maps, tables, offset = [], [], 0
     for index, cube in enumerate(cubes):
-        labels, count, intensity = _label_si_iv(cube, threshold, velocity_range, median_factor)
+        check_scaled(cube)
+        if cube.data.ndim != 3:
+            msg = "The spectra must have axes (step, slit, wavelength); slice with a range, not an index"
+            raise ValueError(msg)
+        if not DN_UNIT["FUV"].is_equivalent(cube.unit):
+            msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
+            raise ValueError(msg)
+        wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
+        bins = np.abs(wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(_SI_IV))) <= velocity_range
+        if not bins.any():
+            msg = f"The spectral window has no wavelength bins within {velocity_range} of Si IV 1402.77 Å"
+            raise ValueError(msg)
+        data = cube.data[..., bins]
+        # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
+        data = np.ma.masked_where(~(data >= -10), data)
+        if cube.mask is not None:
+            data[np.broadcast_to(cube.mask, cube.data.shape)[..., bins]] = np.ma.masked
+        mean = data.mean(axis=-1, dtype=float)
+        intensity = (mean / cube.meta["exposure time"].to_value(u.s)[:, np.newaxis]).filled(np.nan)
+        burst = intensity >= threshold.to_value(cube.unit / u.s)
+        if median_factor is not None:
+            burst[burst] = mean[burst] < median_factor * np.ma.median(data[burst], axis=-1)
+        labels, count = ndimage.label(burst, structure=_EIGHT_CONNECTED)
         label, npix, (step, y) = _events(intensity, labels, count)
         labels[labels > 0] += offset
         template = make_spatial_template(cube, cube.wavelength_axis)
@@ -170,7 +192,7 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
 
     References
     ----------
-    * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-z>`__
+    * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-0>`__
     """
     if sji.meta.spectral_window != "1400":
         msg = f"Bursts are found in 1400 Å slit-jaw images, not {sji.meta.spectral_window}"
@@ -207,50 +229,6 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
         }
     )
     return type(sji)(labels, sji.wcs, unit=u.one, meta=sji.meta, extra_coords=sji.extra_coords), events
-
-
-def _si_iv_window(collection):
-    for window in collection.values():
-        cube = window.data[0] if isinstance(window, SpectrogramCubeSequence) else window
-        low, high = cube.meta.spectral_range
-        if low <= _SI_IV <= high:
-            return window
-    msg = "No spectral window covers Si IV 1402.77 Å"
-    raise ValueError(msg)
-
-
-def _si_iv_effective_area(time):
-    return get_interpolated_effective_area(get_latest_response(time), "FUV", _SI_IV)
-
-
-def _label_si_iv(cube, threshold, velocity_range, median_factor):
-    """
-    Label the burst pixels of one raster; also return the mean intensity per second.
-    """
-    check_scaled(cube)
-    if cube.data.ndim != 3:
-        msg = "The spectra must have axes (step, slit, wavelength); slice with a range, not an index"
-        raise ValueError(msg)
-    if not DN_UNIT["FUV"].is_equivalent(cube.unit):
-        msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
-        raise ValueError(msg)
-    wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
-    bins = np.abs(wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(_SI_IV))) <= velocity_range
-    if not bins.any():
-        msg = f"The spectral window has no wavelength bins within {velocity_range} of Si IV 1402.77 Å"
-        raise ValueError(msg)
-    data = cube.data[..., bins]
-    # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
-    data = np.ma.masked_where(~(data >= -10), data)
-    if cube.mask is not None:
-        data[np.broadcast_to(cube.mask, cube.data.shape)[..., bins]] = np.ma.masked
-    mean = data.mean(axis=-1, dtype=float)
-    intensity = (mean / cube.meta["exposure time"].to_value(u.s)[:, np.newaxis]).filled(np.nan)
-    burst = intensity >= threshold.to_value(cube.unit / u.s)
-    if median_factor is not None:
-        burst[burst] = mean[burst] < median_factor * np.ma.median(data[burst], axis=-1)
-    labels, count = ndimage.label(burst, structure=_EIGHT_CONNECTED)
-    return labels, count, intensity
 
 
 def _events(values, labels, count):
