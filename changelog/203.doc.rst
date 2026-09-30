@@ -1,0 +1,1 @@
+Add a notebook example constructing an AIA 1700 Angstrom synthetic raster matched to IRIS raster times, with SJI 2832 Angstrom coalignment and alignment diagnostics.
