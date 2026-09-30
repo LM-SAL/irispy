@@ -1,0 +1,1 @@
+`~irispy.utils.moments.calculate_moments` now propagates the input cube's uncertainty to a `~astropy.nddata.StdDevUncertainty` on each moment map.

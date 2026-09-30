@@ -15,6 +15,7 @@ from astropy.wcs import WCS
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import (
+    check_scaled,
     drop_extra_coords_dependent_on_axis,
     make_map_cube,
     make_spatial_template,
@@ -182,6 +183,7 @@ def calculate_red_blue_asymmetry(
         peak-centred; the observed profile velocity axis is relative to
         ``rest_wavelength``.
     """
+    check_scaled(cube)
     if rest_wavelength is None:
         rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
         if rest_wavelength is None:
@@ -237,15 +239,11 @@ def calculate_red_blue_asymmetry(
         warnings.simplefilter("ignore", RuntimeWarning)
         raw_peak = np.nanmax(data, axis=-1)
     if min_intensity is not None:
-        min_intensity_value = (
-            min_intensity.to_value(cube.unit) if isinstance(min_intensity, u.Quantity) else min_intensity
-        )
-        quality = np.where(raw_peak < min_intensity_value, RBAQualityFlag.LOW_SIGNAL, quality).astype(np.uint8)
+        low_signal = raw_peak < u.Quantity(min_intensity, cube.unit).value
+        quality = np.where(low_signal, RBAQualityFlag.LOW_SIGNAL, quality).astype(np.uint8)
     if saturation_limit is not None:
-        saturation_limit_value = (
-            saturation_limit.to_value(cube.unit) if isinstance(saturation_limit, u.Quantity) else saturation_limit
-        )
-        quality = np.where(raw_peak > saturation_limit_value, RBAQualityFlag.SATURATED, quality).astype(np.uint8)
+        saturated = raw_peak > u.Quantity(saturation_limit, cube.unit).value
+        quality = np.where(saturated, RBAQualityFlag.SATURATED, quality).astype(np.uint8)
 
     interpolated_profiles = (
         np.full((*output_shape, interp_velocity.size), np.nan, dtype=float) if return_profiles else None

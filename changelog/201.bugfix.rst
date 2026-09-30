@@ -1,0 +1,1 @@
+`~irispy.utils.moments.calculate_moments` with ``integrated=True`` now gives a positive intensity when the wavelengths decrease along the cube.

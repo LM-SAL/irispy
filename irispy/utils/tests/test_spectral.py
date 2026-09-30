@@ -29,8 +29,7 @@ def test_check_scaled():
     ],
 )
 def test_standard_deviation(uncertainty):
-    cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), np.arange(3) * u.nm)
-    cube.uncertainty = uncertainty
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), np.arange(3) * u.nm, uncertainty=uncertainty)
     sigma = standard_deviation(cube)
     if uncertainty is None:
         assert sigma is None
