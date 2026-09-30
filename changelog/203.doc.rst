@@ -1,0 +1,1 @@
+Added a co-alignment example that builds an AIA 1700 Å synthetic raster matching the exposure times and slit positions of an IRIS 2832 Å raster.
