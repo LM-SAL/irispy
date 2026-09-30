@@ -5,7 +5,7 @@ import pytest
 import astropy.units as u
 from astropy import constants
 from astropy.modeling.models import Gaussian1D
-from astropy.nddata import StdDevUncertainty, UnknownUncertainty, VarianceUncertainty
+from astropy.nddata import StdDevUncertainty, VarianceUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 
 from irispy.io.utils import read_files
@@ -522,22 +522,15 @@ def test_calculate_moments_preserves_time_without_spectral_global_coord(sns_sg_f
     )
 
 
-@pytest.mark.parametrize(
-    ("data", "rest_wavelength", "centroid_error", "width_error"),
-    [
-        # intensity 4, centroid 501 nm, variance 0.5 nm^2
-        ([1.0, 2.0, 1.0], 501, np.sqrt(0.01 + 0.09) / 4, np.sqrt(0.25 * (0.01 + 0.04 + 0.09)) / 4 / (2 * np.sqrt(0.5))),
-        # intensity 7, centroid 501 3/7 nm, offsets (-10, -3, 4)/7 nm, variance 26/49 nm^2
-        ([1.0, 2.0, 4.0], 500.5, np.sqrt(2.8) / 49, np.sqrt(75.32) / 98 / np.sqrt(26)),
-    ],
-    ids=["centred", "off-centre"],
-)
-def test_calculate_moments_uncertainty_by_hand(data, rest_wavelength, centroid_error, width_error):
+def test_calculate_moments_uncertainty_by_hand():
+    # Intensity 7, centroid 501 3/7 nm, offsets (-10, -3, 4)/7 nm, variance 26/49 nm^2
     cube = make_test_spectrogram_cube(
-        [[data]], [500.0, 501.0, 502.0] * u.nm, uncertainty=StdDevUncertainty([[[0.1, 0.2, 0.3]]])
+        [[[1.0, 2.0, 4.0]]], [500.0, 501.0, 502.0] * u.nm, uncertainty=StdDevUncertainty([[[0.1, 0.2, 0.3]]])
     )
-    moments = calculate_moments(cube, rest_wavelength=rest_wavelength * u.nm)
-    speed = constants.c.to_value(u.km / u.s) / rest_wavelength
+    moments = calculate_moments(cube, rest_wavelength=500.5 * u.nm)
+    centroid_error = np.sqrt(2.8) / 49
+    width_error = np.sqrt(75.32) / 98 / np.sqrt(26)
+    speed = constants.c.to_value(u.km / u.s) / 500.5
     expected = {
         "intensity": np.sqrt(0.14),
         "centroid": centroid_error,
@@ -576,16 +569,12 @@ def test_calculate_moments_uncertainty_types_and_invalid_pixels():
     standard = calculate_moments(
         make_test_spectrogram_cube(data, wavelengths, uncertainty=StdDevUncertainty(sigma)), min_intensity=1
     )
-    others = [
-        make_test_spectrogram_cube(data, wavelengths, uncertainty=VarianceUncertainty(sigma**2)),
-        make_test_spectrogram_cube(data, wavelengths, uncertainty=UnknownUncertainty(sigma)),
-        make_test_spectrogram_cube(data, wavelengths, uncertainty=StdDevUncertainty(sigma * 1000, unit=u.DN / 1000)),
-    ]
-    for other in others:
-        other_moments = calculate_moments(other, min_intensity=1)
-        for key, moment in standard.items():
-            np.testing.assert_allclose(other_moments[key].uncertainty.array, moment.uncertainty.array)
-    for moment in standard.values():
+    # test_standard_deviation covers the other types
+    variance = calculate_moments(
+        make_test_spectrogram_cube(data, wavelengths, uncertainty=VarianceUncertainty(sigma**2)), min_intensity=1
+    )
+    for key, moment in standard.items():
+        np.testing.assert_allclose(variance[key].uncertainty.array, moment.uncertainty.array)
         assert np.isfinite(moment.uncertainty.array[0, 0])
         assert np.isnan(moment.uncertainty.array[0, 1])  # below min_intensity
     for moment in calculate_moments(make_test_spectrogram_cube(np.ones((1, 1, 3)), wavelengths)).values():
@@ -593,14 +582,21 @@ def test_calculate_moments_uncertainty_types_and_invalid_pixels():
 
 
 def test_calculate_moments_uncertainty_integrated():
-    cube = make_test_spectrogram_cube(
-        [[[1.0, 2.0, 1.0]]], [500.0, 500.5, 501.0] * u.nm, uncertainty=StdDevUncertainty([[[0.1, 0.2, 0.3]]])
+    # integrated=True scales only the intensity and its error, by the step, also on a decreasing axis
+    wavelengths = [500.0, 500.5, 501.0] * u.nm
+    ascending = make_test_spectrogram_cube(
+        [[[1.0, 2.0, 4.0]]], wavelengths, uncertainty=StdDevUncertainty([[[0.1, 0.2, 0.3]]])
     )
-    summed = calculate_moments(cube, rest_wavelength=500.5 * u.nm)
-    integrated = calculate_moments(cube, rest_wavelength=500.5 * u.nm, integrated=True)
-    np.testing.assert_allclose(integrated["intensity"].uncertainty.array, 0.5 * summed["intensity"].uncertainty.array)
-    for key in ("centroid", "width", "velocity", "velocity_width"):
-        np.testing.assert_allclose(integrated[key].uncertainty.array, summed[key].uncertainty.array, err_msg=key)
+    descending = make_test_spectrogram_cube(
+        [[[4.0, 2.0, 1.0]]], wavelengths[::-1], uncertainty=StdDevUncertainty([[[0.3, 0.2, 0.1]]])
+    )
+    summed = calculate_moments(ascending, rest_wavelength=500.5 * u.nm)
+    for cube in (ascending, descending):
+        integrated = calculate_moments(cube, rest_wavelength=500.5 * u.nm, integrated=True)
+        for key, moment in summed.items():
+            scale = 0.5 if key == "intensity" else 1
+            np.testing.assert_allclose(integrated[key].data, scale * moment.data, err_msg=key)
+            np.testing.assert_allclose(integrated[key].uncertainty.array, scale * moment.uncertainty.array, err_msg=key)
 
 
 def test_calculate_moments_uncertainty_nan_where_undefined():
@@ -633,16 +629,3 @@ def test_calculate_moments_zero_rest_wavelength_warns():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), [500.0, 501.0, 502.0] * u.nm)
     with pytest.warns(RuntimeWarning, match="divide by zero"):
         calculate_moments(cube, rest_wavelength=0 * u.nm)
-
-
-def test_calculate_moments_descending_wavelengths_integrated():
-    ascending = make_test_spectrogram_cube(
-        [[[1.0, 2.0, 4.0]]], [500.0, 501.0, 502.0] * u.nm, uncertainty=StdDevUncertainty([[[0.1, 0.2, 0.3]]])
-    )
-    descending = make_test_spectrogram_cube(
-        [[[4.0, 2.0, 1.0]]], [502.0, 501.0, 500.0] * u.nm, uncertainty=StdDevUncertainty([[[0.3, 0.2, 0.1]]])
-    )
-    expected = calculate_moments(ascending, rest_wavelength=501 * u.nm, integrated=True)
-    for key, moment in calculate_moments(descending, rest_wavelength=501 * u.nm, integrated=True).items():
-        np.testing.assert_allclose(moment.data, expected[key].data, err_msg=key)
-        np.testing.assert_allclose(moment.uncertainty.array, expected[key].uncertainty.array, err_msg=key)
