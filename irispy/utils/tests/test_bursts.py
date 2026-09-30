@@ -1,9 +1,3 @@
-"""
-IDL references come from ``iris_burst_check`` and ``iris_sji_burst_check`` (IDL 9.2,
-SolarSoft of 2026-09-28) run on whole level 2 files, from which the
-``bursts/*_test.fits`` files are cut.
-"""
-
 import copy
 
 import numpy as np
