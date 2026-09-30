@@ -79,13 +79,16 @@ def calculate_moments(
     -----
     * Negative, non-finite and masked samples are set to zero and add no uncertainty.
     * Uncertainties are propagated to first order, treating an `~astropy.nddata.UnknownUncertainty`
-      as a standard deviation and samples as independent (the level 2 resampling slightly
-      correlates neighbours). They leave out the wavelength calibration and orbital drift (several
-      km/s) and the bias from zeroing negative samples, which can widen faint lines several times
-      (see ``min_intensity``). Where the background is near zero they are conservative, up to about
-      25% too large. They are NaN where undefined: the intensity error where no sample is left, the
-      centroid and velocity errors where fewer than two are left, and the width and velocity width
-      errors where the width is 0.
+      as a standard deviation. They are NaN where undefined: the intensity error where no sample is
+      left, the centroid and velocity errors where fewer than two are left, and the width and velocity
+      width errors where the width is 0.
+    * The uncertainties are statistical only and unreliable below a signal-to-noise ratio of about 5.
+      They leave out the wavelength calibration and orbital drift (several km/s, see
+      `#198 <https://github.com/LM-SAL/irispy/pull/198>`__) and the bias from zeroing negative samples,
+      which can widen faint lines several times (see ``min_intensity``). Where the background is near
+      zero they are conservative, up to about 25% too large.
+    * Samples are taken as independent, but the level 2 resampling correlates neighbours, which
+      changes the intensity uncertainty of a 15-sample line by 2 to 15%.
 
     References
     ----------
@@ -119,7 +122,11 @@ def calculate_moments(
             raise ValueError(msg)
         slicer = [slice(None)] * data.ndim
         slicer[wavelength_axis] = crop_indices
-        data, mask, sigma = (None if array is None else array[tuple(slicer)] for array in (data, mask, sigma))
+        data = data[tuple(slicer)]
+        if mask is not None:
+            mask = mask[tuple(slicer)]
+        if sigma is not None:
+            sigma = sigma[tuple(slicer)]
         wavelengths = wavelengths[crop_mask]
     data = np.array(data, dtype=float, copy=True)
     dropped = (data < 0) | ~np.isfinite(data) | (False if mask is None else mask)
@@ -180,34 +187,33 @@ def calculate_moments(
             errors["intensity"] = np.where(kept > 0, np.sqrt(weight_variance.sum(axis=-1)), np.nan)
             centroid_error = np.sqrt((offset_squared * weight_variance).sum(axis=-1)) / intensity_value
             errors["centroid"] = np.where(kept > 1, centroid_error, np.nan)
-            spread = (offset_squared - variance_value[..., np.newaxis]) ** 2 * weight_variance
-            width_error = np.sqrt(spread.sum(axis=-1)) / intensity_value / (2 * stddev_value)
+            width_terms = (offset_squared - variance_value[..., np.newaxis]) ** 2 * weight_variance
+            width_error = np.sqrt(width_terms.sum(axis=-1)) / intensity_value / (2 * stddev_value)
             # Count the samples, as roundoff can leave a width of 0 at about 1e-14
             errors["width"] = np.where(np.count_nonzero(weights, axis=-1) > 1, width_error, np.nan)
 
-    template = make_spatial_template(cube, wavelength_axis)
-
-    def map_cube(name, value, unit):
-        uncertainty = StdDevUncertainty(np.where(np.isnan(value), np.nan, errors[name])) if errors else None
-        return name, make_map_cube(template, value, unit, mask_invalid=True, uncertainty=uncertainty)
-
-    cubes = [
-        map_cube("intensity", intensity_value, intensity_unit),
-        map_cube("centroid", centroid_value, wavelengths.unit),
-        map_cube("width", stddev_value, wavelengths.unit),
+    maps = [
+        ("intensity", intensity_value, intensity_unit),
+        ("centroid", centroid_value, wavelengths.unit),
+        ("width", stddev_value, wavelengths.unit),
     ]
     if rest_wavelength is not None:
         rest_wavelength = u.Quantity(rest_wavelength)
 
-        def to_velocity(difference):
+        def to_velocity(delta_wavelength):
             with np.errstate(invalid="ignore"):
-                return (difference * wavelengths.unit / rest_wavelength * constants.c).to_value(u.km / u.s)
+                return (delta_wavelength * wavelengths.unit / rest_wavelength * constants.c).to_value(u.km / u.s)
 
-        if errors:
+        if sigma is not None:
             errors["velocity"], errors["velocity_width"] = to_velocity(errors["centroid"]), to_velocity(errors["width"])
         velocity = to_velocity(centroid_value - rest_wavelength.to_value(wavelengths.unit))
-        cubes += [
-            map_cube("velocity", velocity, u.km / u.s),
-            map_cube("velocity_width", to_velocity(stddev_value), u.km / u.s),
-        ]
+        maps += [("velocity", velocity, u.km / u.s), ("velocity_width", to_velocity(stddev_value), u.km / u.s)]
+
+    template = make_spatial_template(cube, wavelength_axis)
+
+    def _make_cube(name, values, unit):
+        uncertainty = None if sigma is None else StdDevUncertainty(np.where(np.isnan(values), np.nan, errors[name]))
+        return make_map_cube(template, values, unit, mask_invalid=True, uncertainty=uncertainty)
+
+    cubes = [(name, _make_cube(name, values, unit)) for name, values, unit in maps]
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
