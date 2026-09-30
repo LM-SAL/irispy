@@ -11,8 +11,7 @@
 # - {name: fuv, unit: Angstrom, datatype: float64}
 # meta: !!omap
 # - comment: ['r = iris_prep_wavecorr_l2(file) (IDL 9.2, SSW 2026-09-28) on', 'iris_l2_20130902_182935_4000005156_raster_t000_r00000.fits:',
-#     'per-step shifts r.corrs of the 5 reference lines and the drifts r.corr_nuv, r.corr_fuv.', 'The _wavelength_drift_test.fits crop
-#       holds steps [5, 22, 30, 40, 49, 60].']
+#     'per-step shifts r.corrs of the 5 reference lines and the drifts r.corr_nuv, r.corr_fuv.']
 # - __serialized_columns__:
 #     Fe I:
 #       __class__: astropy.units.quantity.Quantity

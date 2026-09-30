@@ -1,0 +1,52 @@
+Test data for irispy/utils/tests/test_wavelength_drift.py. The whole level 2 files are in
+https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/
+
+iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits
+--------------------------------------------------------------------------------
+
+Cut from iris_l2_20140708_114109_3824262996_raster_t000_r00000.fits (in
+2014/07/08/20140708_114109_3824262996/iris_l2_20140708_114109_3824262996_raster.tar.gz).
+OBS 3824262996: Very large dense raster 131.7x175 400s, FUV spectral summing 2; its 400 steps
+span 3.5 hours, 2.1 orbits.
+
+Kept:   steps 0, 57, ..., 399 (every 57th, 8 of 400), all 1095 slit rows and three of the
+        8 windows, each cut to the fit ranges of its reference lines plus 5 pixels:
+          O I 1356      (extension 3) pixels 117-145 of 172, 1355.29-1356.01 A: O I
+          Si IV 1394    (extension 4) pixels  62-91  of 209, 1392.47-1393.21 A: Fe II
+          Mg II k 2796  (extension 8) pixels 244-504 of 537, 2799.20-2805.82 A: Ni I, Mn I, Fe I
+        Indices are 0-based. The data values (raw int16 with BSCALE/BZERO) are unchanged, and
+        the auxiliary and level 1 filename tables keep the same 8 rows. IDL's Ni I shifts at
+        these steps span 34 mA.
+Header: NWIN = 3 and the kept windows' keywords are numbered 1-3 in file order. NAXIS1/3,
+        CRPIX1 and TWMINn/TWMAXn describe the cut, and CDELT3/CRPIX3 the stride of 57 steps,
+        as ../compress.py decimates. NEXP = NRASTERP = 8 and STEPS_AV/STEPT_AV are 57 times
+        the whole file's; DATE_OBS and DATE_END still hold, as the first and last steps are
+        kept. The filename table declares TFIELDS = 9 for its 9 columns (the whole file says 7,
+        see ../compress.py). TSR/TER/TSC/TEC, STEPS_DV/STEPT_DV and the statistics keywords
+        (DATA*, TD*n) still describe the whole windows or file.
+
+Remote file
+-----------
+
+iris_l2_20130902_182935_4000005156_raster_t000_r00000_wavelength_drift.fits.gz
+
+In https://github.com/LM-SAL/irispy-data/releases/tag/v1, for test_whole_file_matches_idl:
+the same kind of cut, gzipped, of all 64 steps of the 4000005156 r00000 file (Large coarse
+raster 126"x120" 64s, no summing, in
+2013/09/02/20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz), with
+O I 1356 pixels 38-85 of 115, Si IV 1394 pixels 54-102 of 313 and Mg II k 2796 pixels 210-470
+of 560. calculate_wavelength_drift gives the same table on it as on the whole file, bit for bit.
+
+*.ecsv
+------
+
+make_idl_references.pro (IDL 9.2, SolarSoft of 2026-09-28) writes both from the whole r00000
+files, byte for byte; see its header for the setup.
+
+iris_prep_wavecorr_l2_4000005156_r00000.ecsv
+iris_prep_wavecorr_l2_3824262996_r00000.ecsv
+        r = iris_prep_wavecorr_l2(file): one row per step in time order, with r.times, the
+        shifts r.corrs of the 5 reference lines and the drifts r.corr_nuv and r.corr_fuv, in A.
+        For 4000005156, IDL keeps the step without a shift (one for Ni I, one for O I) in
+        the drift fits, so MPFIT fails and both drifts are its starting guess,
+        0.1 + 0.01 sin(2 pi t / 5856 s + 1) A.

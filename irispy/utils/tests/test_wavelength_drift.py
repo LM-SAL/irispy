@@ -1,7 +1,9 @@
 """
-The IDL references were made with ``iris_prep_wavecorr_l2`` (IDL 9.2, SolarSoft of
-2026-09-28) on whole level 2 files; the ``wavelength_drift/*_test.fits`` file is cut
-from one of them.
+IDL references are ``iris_prep_wavecorr_l2`` output (IDL 9.2, SolarSoft of 2026-09-28)
+for whole level 2 files.
+
+``CROP`` holds steps ``CROP_STEPS`` of the 3824262996 file, with the full slit and its
+three reference-line windows cut to the fit ranges plus 5 pixels (see overview.txt).
 """
 
 import numpy as np
@@ -13,14 +15,17 @@ from astropy.table import QTable
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
-from irispy.utils.wavelength_drift import _fit_drift, calculate_wavelength_drift
+from irispy.spectrograph import RasterCollection, SpectrogramCubeSequence
+from irispy.tests.helpers import make_test_spectrogram_cube
+from irispy.utils.wavelength_drift import _LINES, _fit_drift, _line_shifts, _wavelengths, calculate_wavelength_drift
 
-ARCHIVE = "https://www.lmsal.com/solarsoft/irisa/data/level2_compressed"
+IRISPY_DATA = "https://github.com/LM-SAL/irispy-data/releases/download/v1"
 LINES = ["Ni I", "Mn I", "Fe I", "O I", "Fe II"]
 CROP = get_test_filepath(
-    "wavelength_drift/iris_l2_20130902_182935_4000005156_raster_t000_r00000_wavelength_drift_test.fits"
+    "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
 )
-CROP_STEPS = [5, 22, 30, 40, 49, 60]
+CROP_STEPS = list(range(0, 400, 57))
+SHORT = "too short for an orbital fit"
 
 
 def idl_reference(obsid):
@@ -29,8 +34,7 @@ def idl_reference(obsid):
 
 def assert_shifts_match_idl(table, idl):
     """
-    Our Gaussian fits converge further than IDL's CURVEFIT, which moves the centres by
-    up to 2 mÅ.
+    IDL's CURVEFIT stops early, which moves its centres on these files by up to 2 mÅ.
     """
     assert all(np.abs((table["time"] - idl["time"]).to_value(u.s)) < 1e-6)
     for name in LINES:
@@ -39,23 +43,54 @@ def assert_shifts_match_idl(table, idl):
         if name == "Fe II":
             # Fits to the weak Fe II line can land on spikes, and are kept or rejected near the range limit.
             assert np.mean(np.isnan(ours) == np.isnan(theirs)) >= 0.95
-            assert np.median(difference) < 1e-3
+            assert np.mean(difference < 1e-3) >= 0.75
         else:
             np.testing.assert_array_equal(np.isnan(ours), np.isnan(theirs))
-            assert difference.max() < 2.5e-3
+            assert difference.max() < (1e-3 if name == "O I" else 2.5e-3)
 
 
 def seconds(table):
     return (table["time"] - table["time"][0]).to_value(u.s)
 
 
+def synthetic_o_i_shifts(size, sign=1, pixel=0.15, slope=0):
+    """
+    The O I shifts of a line 0.02 Å redward of rest and 0.8 pixels wide, on ``size``
+    pixels of ``pixel`` Å from 1355.05 Å and a background sloping by ``slope`` DN/Å.
+    """
+    wavelengths = 1355.05 + pixel * np.arange(size)
+    x = wavelengths - 1355.62
+    profile = 100 + slope * x + sign * 50 * np.exp(-0.5 * (x / (0.8 * pixel)) ** 2)
+    cube = make_test_spectrogram_cube(np.broadcast_to(profile, (2, 3, size)).copy(), wavelengths * u.AA)
+    return _line_shifts(cube, _wavelengths(cube), *_LINES["O I"])
+
+
 def test_shifts_match_idl():
     table = calculate_wavelength_drift(read_spectrograph_lvl2(CROP))
     assert table.colnames == ["time", "raster", "step", *LINES, "nuv", "fuv"]
     assert list(table["step"]) == list(range(len(CROP_STEPS)))
-    assert_shifts_match_idl(table, idl_reference("4000005156")[CROP_STEPS])
-    assert np.isfinite(table["nuv"]).all()
-    assert np.isfinite(table["fuv"]).all()
+    idl = idl_reference("3824262996")[CROP_STEPS]
+    assert_shifts_match_idl(table, idl)
+    # Each drift is fitted to its own line, and follows IDL's fit through all 400 steps
+    for drift, line, outlier, atol in [("nuv", "Ni I", 0.08, 4e-3), ("fuv", "O I", 0.05, 2e-3)]:
+        fitted = _fit_drift(seconds(table), table[line].to_value(u.AA), outlier, drift)
+        np.testing.assert_array_equal(table[drift].to_value(u.AA), fitted)
+        np.testing.assert_allclose(table[drift].to_value(u.AA), idl[drift].to_value(u.AA), atol=atol)
+
+
+def test_rasters_out_of_time_order():
+    raster = read_spectrograph_lvl2(CROP)
+    table = calculate_wavelength_drift(raster)
+    later_first = RasterCollection(
+        [(key, SpectrogramCubeSequence([window.data[0][3:], window.data[0][:3]])) for key, window in raster.items()],
+        aligned_axes=(0, 1, 2),
+    )
+    swapped = calculate_wavelength_drift(later_first)
+    assert list(swapped["raster"]) == [1, 1, 1, 0, 0, 0, 0, 0]
+    assert list(swapped["step"]) == [0, 1, 2, 0, 1, 2, 3, 4]
+    assert all(swapped["time"] == table["time"])
+    for name in [*LINES, "nuv", "fuv"]:
+        np.testing.assert_array_equal(swapped[name], table[name])
 
 
 def test_drift_fit_matches_idl():
@@ -66,52 +101,134 @@ def test_drift_fit_matches_idl():
 
 
 def test_drift_fit_leaves_out_missing_shifts():
-    # IDL keeps the exposure without a Ni I shift in its fit, so MPFIT returns its starting guess
+    # IDL keeps the exposure without a Ni I shift in its fit, so MPFIT returns its starting guess:
+    # the IDL "nuv" column is 0.1 + 0.01 sin(2πt/5856 s + 1) Å, about 0.1 Å from the shifts.
     idl = idl_reference("4000005156")
-    guess = 0.1 + 0.01 * np.sin(2 * np.pi * seconds(idl) / 5856 + 1)
-    np.testing.assert_allclose(idl["nuv"].to_value(u.AA), guess, atol=1e-10)
     shifts = idl["Ni I"].to_value(u.AA)
-    fitted = _fit_drift(seconds(idl), shifts, 0.08, "nuv")
-    assert np.sqrt(np.nanmean((shifts - fitted) ** 2)) < 1e-3
-    assert np.sqrt(np.nanmean((shifts - guess) ** 2)) > 0.1
+    assert np.isnan(shifts).any()  # fixture check
+    with pytest.warns(UserWarning, match=f"{SHORT}, so the NUV drift is constant"):
+        fitted = _fit_drift(seconds(idl), shifts, 0.08, "nuv")
+    np.testing.assert_allclose(fitted, np.nanmean(shifts))
+
+
+def test_drift_fit_of_a_short_observation():
+    # The O I shifts of 3602506433 r00004, which span 36 s: a sine through the three that are not
+    # outliers reached -3.3 Å
+    times = np.arange(8) * 5.0
+    shifts = np.array([np.nan, np.nan, np.nan, 1.5, np.nan, -109.4, -22.5, -115.2]) * 1e-3
+    with pytest.warns(UserWarning, match=f"{SHORT}, so the FUV drift is constant"):
+        fitted = _fit_drift(times, shifts, 0.05, "fuv")
+    np.testing.assert_allclose(fitted, np.mean(shifts[5:]))
+
+
+def test_drift_fit_just_under_a_quarter_orbit():
+    times = np.arange(8) * 209.0  # 1463 s
+    with pytest.warns(UserWarning, match=f"{SHORT}, so the FUV drift is constant"):
+        _fit_drift(times, 0.01 * np.sin(times / 900), 0.05, "fuv")
+
+
+@pytest.mark.parametrize(("measured", "fits"), [(3, False), (4, True)])
+def test_drift_fit_needs_more_shifts_than_parameters(measured, fits):
+    times = np.arange(8) * 210.0  # 1470 s, just over a quarter orbit: 3 parameters, a sine and a constant
+    shifts = np.full(len(times), np.nan)
+    shifts[:measured] = 0.01 * np.sin(times[:measured] / 900)
+    if fits:
+        assert np.isfinite(_fit_drift(times, shifts, 0.05, "fuv")).all()
+    else:
+        with pytest.warns(UserWarning, match="Too few shifts to fit the FUV drift"):
+            assert np.isnan(_fit_drift(times, shifts, 0.05, "fuv")).all()
+
+
+def test_drift_fit_counts_only_measured_shifts():
+    # The running mean spreads 4 shifts over 20 exposures, but the orbital fit has 4 parameters
+    times = np.arange(100) * 60.0
+    shifts = np.full(len(times), np.nan)
+    shifts[[10, 40, 60, 90]] = 0.01
+    with pytest.warns(UserWarning, match="Too few shifts to fit the NUV drift"):
+        assert np.isnan(_fit_drift(times, shifts, 0.08, "nuv")).all()
+
+
+def test_drift_fit_drops_outliers_on_both_sides():
+    times = np.arange(200) * 30.0
+    drift = 0.01 * np.sin(2 * np.pi * times / 5856 + 0.3)
+    shifts = drift.copy()
+    shifts[[50, 150]] = np.median(drift) + np.array([0.1, -0.1])
+    np.testing.assert_allclose(_fit_drift(times, shifts, 0.08, "nuv"), _fit_drift(times, drift, 0.08, "nuv"), atol=1e-5)
+
+
+def test_drift_fit_across_a_gap():
+    times = np.arange(40) * 60.0
+    shifts = 0.01 * np.sin(times / 180)
+    shifts[10:25] = np.nan  # longer than the 5-minute smoothing window
+    assert np.isfinite(_fit_drift(times, shifts, 0.05, "nuv")).all()
+
+
+@pytest.mark.parametrize(
+    ("size", "sign", "expected"),
+    [
+        (12, 1, -0.02),  # 3 pixels in the fit range, padded to 5
+        (7, 1, -0.02),  # padded to the 4 the window has, one per parameter
+        (6, 1, np.nan),  # 3 pixels, fewer than the parameters
+        (3, 1, np.nan),  # no pixel in the fit range
+        (12, -1, np.nan),  # an absorption line where O I is in emission
+    ],
+)
+def test_line_shifts_of_a_synthetic_line(size, sign, expected):
+    np.testing.assert_allclose(synthetic_o_i_shifts(size, sign), expected, atol=1e-9)
+
+
+def test_line_shifts_on_a_sloping_background():
+    # 10 pixels in the fit range, so the background is linear
+    np.testing.assert_allclose(synthetic_o_i_shifts(30, pixel=0.05, slope=20), -0.02, atol=1e-9)
+
+
+def test_masked_pixels_count_as_zero():
+    cube = read_spectrograph_lvl2(CROP, spectral_windows="Mg II k 2796")["Mg II k 2796"].data[0]
+    wavelength = _wavelengths(cube)
+    cube.data[:, :300] = 0
+    zeroed = _line_shifts(cube, wavelength, *_LINES["Ni I"])
+    cube.data[:, :300] = 5000
+    cube.mask[:, :300] = True
+    np.testing.assert_array_equal(_line_shifts(cube, wavelength, *_LINES["Ni I"]), zeroed)
+
+
+def test_window_chosen_by_its_wavelengths():
+    raster = read_spectrograph_lvl2(CROP)
+    cut = raster["Mg II k 2796"].data[0][..., :5]
+    assert cut.meta.spectral_range[1] > _LINES["Ni I"][0] * u.AA  # fixture check: the header still covers Ni I
+    first_cut = RasterCollection([("cut", SpectrogramCubeSequence([cut])), *raster.items()], aligned_axes=(0, 1, 2))
+    np.testing.assert_array_equal(
+        calculate_wavelength_drift(first_cut)["Ni I"], calculate_wavelength_drift(raster)["Ni I"]
+    )
+
+
+def test_unscaled_data():
+    with pytest.raises(ValueError, match="unscaled"):
+        calculate_wavelength_drift(read_spectrograph_lvl2(CROP, memmap=True))
 
 
 def test_missing_lines():
-    nuv_only = read_spectrograph_lvl2(CROP, spectral_windows=["Ni I 2799", "Mn I 2802", "Fe I 2805"])
+    nuv_only = read_spectrograph_lvl2(CROP, spectral_windows="Mg II k 2796")
     with pytest.warns(UserWarning, match="Too few shifts to fit the FUV drift"):
         table = calculate_wavelength_drift(nuv_only)
     assert np.isnan(table["O I"]).all()
     assert np.isnan(table["fuv"]).all()
     assert np.isfinite(table["nuv"]).all()
-    other = read_spectrograph_lvl2(
-        get_test_filepath("sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits"),
-        spectral_windows="C II 1336",
-    )
+    sns = get_test_filepath("sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits")
     with pytest.raises(ValueError, match="no window with any of the reference lines"):
-        calculate_wavelength_drift(other)
+        calculate_wavelength_drift(read_spectrograph_lvl2(sns, spectral_windows="C II 1336"))
+    # Its O I window ends 3 pixels after the start of the fit range
+    with pytest.warns(UserWarning, match="Too few shifts"):
+        table = calculate_wavelength_drift(read_spectrograph_lvl2(sns))
+    assert np.isnan(table["O I"]).all()
 
 
 @pytest.mark.remote_data
-@pytest.mark.parametrize(
-    ("path", "known_hash"),
-    [
-        (
-            "2013/09/02/20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz",
-            "91211a52e278fb6e535242d4d6064facf9f93cf24f0a433c276ace1b2d621e7d",
-        ),
-        (
-            "2014/07/08/20140708_114109_3824262996/iris_l2_20140708_114109_3824262996_raster.tar.gz",
-            "21cff86fd0064936ce6807b1334ea1d3d50f3d358e5888810fba8e9bc1118567",
-        ),
-    ],
-)
-def test_whole_file_matches_idl(path, known_hash):
-    first_raster = path.split("/")[-1].replace(".tar.gz", "_t000_r00000.fits")
-    (filename,) = pooch.retrieve(f"{ARCHIVE}/{path}", known_hash=known_hash, processor=pooch.Untar([first_raster]))
-    table = calculate_wavelength_drift(read_spectrograph_lvl2(filename))
-    idl = idl_reference(first_raster.split("_")[4])
-    assert_shifts_match_idl(table, idl)
-    if first_raster.startswith("iris_l2_20140708"):
-        # The shift differences carry over to the drifts.
-        for drift in ["nuv", "fuv"]:
-            np.testing.assert_allclose(table[drift].to_value(u.AA), idl[drift].to_value(u.AA), atol=2.5e-3)
+@pytest.mark.filterwarnings(f"ignore:.*{SHORT}")  # it spans 184 s
+def test_whole_file_matches_idl():
+    # Every step of the windows with the reference lines, cut to their fit ranges (see overview.txt)
+    filename = pooch.retrieve(
+        f"{IRISPY_DATA}/iris_l2_20130902_182935_4000005156_raster_t000_r00000_wavelength_drift.fits.gz",
+        known_hash="c9f1166b18acae244c1ad9d015d04b2390e81adf8dd00edf5c012b0a5d726141",
+    )
+    assert_shifts_match_idl(calculate_wavelength_drift(read_spectrograph_lvl2(filename)), idl_reference("4000005156"))
