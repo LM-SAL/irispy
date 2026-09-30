@@ -1,0 +1,1 @@
+In a multi-file read, each raster's FITS WCS now uses its own file's observation date and observer instead of the first file's.

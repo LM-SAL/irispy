@@ -150,6 +150,20 @@ def raster_sg_files():
 
 
 @pytest.fixture
+def small_raster_tar(tmp_path, raster_sg_files):
+    """
+    A small multi-file raster tar bundled the way the archive serves it.
+    """
+    import tarfile  # NOQA: PLC0415
+
+    tar_path = tmp_path / "iris_l2_20140329_140938_3860258481_raster.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        for file in raster_sg_files[:2]:
+            tar.add(file, arcname=Path(file).name)
+    return str(tar_path)
+
+
+@pytest.fixture
 def raster_sji_filelist():
     return [
         get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_1400_t000_test.fits"),

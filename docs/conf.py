@@ -218,7 +218,7 @@ sphinx_gallery_conf = {
     "remove_config_comments": True,
     "doc_module": ("sunpy"),
     "only_warn_on_example_error": True,
-    "matplotlib_animations": True,
+    "matplotlib_animations": (True, "html5"),
     "write_computation_times": profile_gallery,
     "show_memory": profile_gallery,
     # Inherits sphinx's -j; memory profiling only works with serial execution.

@@ -1,0 +1,1 @@
+Spectrograph plots default to nearest-neighbour interpolation and label the raster step and raster scan sliders. They label latitude on the edge of the slit axis and longitude on the edge of the raster step axis, and show the time, raster step and raster scan coordinates only when they are requested with ``axes_coordinates``.

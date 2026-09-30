@@ -18,7 +18,7 @@ def test_calculate_moments_basic(sns_sg_file):
     Test that calculate_moments runs on real data and returns correct shapes and units.
     """
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     # TWAVE1: the C II line, which the window brackets. The bundled test data is a
     # 10-pixel stride of the native data (~0.26 A/pixel), so wings must span
     # several of those coarse pixels.
@@ -64,7 +64,7 @@ def test_calculate_moments_sliced_cube(sns_sg_file):
     velocity outputs are included.
     """
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     cube_slice = cube[10, :, :]
     moments = calculate_moments(cube_slice)
     assert "intensity" in moments
@@ -80,7 +80,7 @@ def test_calculate_moments_asymmetric_wings(sns_sg_file):
     Test that calculate_moments works with asymmetric wings.
     """
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     # TWAVE1 (C II); wings sized for the ~0.26 A/pixel strided test data.
     rest_wvl = 1335.71 * u.Angstrom
     moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=(0.5, 1.5) * u.Angstrom)
@@ -119,7 +119,7 @@ def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
     wings is given without explicit rest_wavelength.
     """
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     moments = calculate_moments(cube, wings=5.0 * u.Angstrom)
     assert "velocity" in moments
 
@@ -495,7 +495,7 @@ def test_calculate_moments_preserves_time_without_spectral_global_coord(sns_sg_f
     Test that moment maps keep scan times without adding a fixed wavelength coordinate.
     """
     raster_collection = read_files(sns_sg_file)
-    cube = raster_collection["C II 1336"][0]
+    cube = raster_collection["C II 1336"]
     moments = calculate_moments(cube)
     intensity = moments["intensity"]
     assert "time" in tuple(intensity.extra_coords.keys())

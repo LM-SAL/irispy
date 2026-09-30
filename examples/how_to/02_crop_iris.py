@@ -12,7 +12,6 @@ import pooch
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from astropy.wcs.utils import wcs_to_celestial_frame
 
 from irispy.io import read_files
 from irispy.obsid import ObsID
@@ -56,8 +55,8 @@ print(ObsID(sji_2832.meta["OBSID"]))
 # Now, we will plot the SJI. By default, **irispy** will
 # color the spatial axes.
 
-# This returns an animator with a slider through the frames; the gallery shows its first frame.
-sji_2832.plot()
+# ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
+animation = sji_2832.plot().get_animation()
 
 ###############################################################################
 # We also have the option of going directly to an individual frame.
@@ -70,7 +69,7 @@ print(sji_45)
 # While this is stored in the WCS, getting a coordinate frame is a little more involved.
 # We will use this to do a cutout later on.
 
-sji_frame = wcs_to_celestial_frame(sji_45.fits_wcs)
+sji_frame = sji_45.celestial_frame
 bbox = [
     SkyCoord(-750 * u.arcsec, 90 * u.arcsec, frame=sji_frame),
     SkyCoord(-750 * u.arcsec, 95 * u.arcsec, frame=sji_frame),
@@ -109,3 +108,5 @@ ax = sji_cutout.plot()
 ax.coords.grid(grid_type="contours")
 
 plt.show()
+
+# sphinx_gallery_thumbnail_number = 2

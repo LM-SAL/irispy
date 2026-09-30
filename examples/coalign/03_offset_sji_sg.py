@@ -14,7 +14,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.wcs.utils import wcs_to_celestial_frame
 
 from irispy.io import read_files
 
@@ -49,14 +48,14 @@ sji_2796 = read_files(sji_filename)
 # Now we will find the closest SJI time to the 56th raster step.
 # The goal is to compare an NUV and an FUV spectrograph window, using the
 # NUV time to find the closest 2796 SJI exposure.
-mg_ii = raster["Mg II k 2796"][0]
-c_ii = raster["C II 1336"][0]
+mg_ii = raster["Mg II k 2796"].raster_slice(0)
+c_ii = raster["C II 1336"].raster_slice(0)
 
-times_SG = mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords)
+times_SG = mg_ii.time
 (time_2796,) = sji_2796.axis_world_coords("time")
 # We picked randomly.
 raster_idx = 55
-time_target = times_SG[0][raster_idx]
+time_target = times_SG[raster_idx]
 
 time_idx_2796 = np.abs(time_2796 - time_target).argmin()
 time_stamp_2796 = time_2796[time_idx_2796].isot
@@ -75,10 +74,10 @@ with fits.open(sji_filename) as sji_hdulist:
     sji_slit_location_pixel_y = sji_aux_data[time_idx_2796, sji_aux_header["SLTPX2IX"]] - 1
 
 ###############################################################################
-# We can now get the slit locations from the raster FITS WCSes.
+# We can now get the slit locations from the raster WCSes.
 
 sji_2796_closest = sji_2796[time_idx_2796]
-sji_2796_frame = wcs_to_celestial_frame(sji_2796_closest.fits_wcs)
+sji_2796_frame = sji_2796_closest.celestial_frame
 
 nuv_lon_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
 nuv_lat_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
@@ -106,7 +105,7 @@ slit_location_from_sji_aux = sji_2796[time_idx_2796].wcs.pixel_to_world(
 )
 ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="SJI auxiliary slit")
 
-# These are the matching NUV and FUV raster slit coordinates from their FITS WCSes.
+# These are the matching NUV and FUV raster slit coordinates from their WCSes.
 ax.plot_coord(nuv_slit, color="red", linestyle="-", linewidth=1, label="NUV raster slit")
 ax.plot_coord(fuv_slit, color="cyan", linestyle="--", linewidth=1, label="FUV raster slit")
 ax.legend()

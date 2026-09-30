@@ -51,12 +51,12 @@ sji_1400 = read_files(sji_filename, memmap=True)
 # We are after the Mg II k and C II lines, which we can select using keys.
 # Then we will produce a space-time image of the Mg II k3 line.
 
-mg_ii = raster["Mg II k 2796"][0]
-c_ii = raster["C II 1336"][0]
+mg_ii = raster["Mg II k 2796"]
+c_ii = raster["C II 1336"]
 
 # Instead of using a pixel index, we can crop the data in wavelength space.
-lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
-upper_corner = [SpectralCoord(279.63, unit=u.nm), None]
+lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()
@@ -81,32 +81,17 @@ plt.title("1400 SJI")
 
 ###############################################################################
 # The slit pixel, "220" is a location on the sunspot's umbra.
-# Let us plot the k3 intensity (spectral pixel 103 of ``mg_ii``) and the
-# core of the brightest C II line (spectral pixel 90 of ``c_ii``) against
-# time (showing the first ~10 minutes only).
+# We will compare the k3 intensity (spectral pixel 103 of ``mg_ii``), the
+# core of the brightest C II line (spectral pixel 90 of ``c_ii``), and the
+# SJI intensity against time (showing the first ~10 minutes only).
 
 # Matplotlib's date formatting works with numpy datetimes, so we convert the times.
 mg_ii_times = mg_ii.time[:200].datetime64
 c_ii_times = c_ii.time[:200].datetime64
 
-plt.figure()
-plt.plot(mg_ii_times, mg_ii.data[:200, 220, 103], label="Mg II k3")
-(ax,) = plt.plot(c_ii_times, c_ii.data[:200, 220, 90], label="C II")
-plt.legend()
-plt.ylabel("DN (Memory Mapped Value)")
-plt.xlabel("Time (UTC)")
-ax.axes.xaxis.set_major_formatter(mdates.ConciseDateFormatter(ax.axes.xaxis.get_major_locator()))
-# Rotates and right-aligns the x labels so they don't crowd each other.
-for label in ax.axes.get_xticklabels(which="major"):
-    label.set(rotation=30, horizontalalignment="right")
-
-plt.tight_layout()
-
 ###############################################################################
-# Imagine now you wanted to compare these oscillations with
-# the intensity from the SJI. The SJI images are typically
-# taken at a different cadence, so you need get the corresponding
-# times for the 1400 SJI.
+# The SJI images are typically taken at a different cadence, so we also
+# need the corresponding times for the 1400 SJI.
 #
 # We will take the first 50 to cut down on the size of the data for this example.
 
@@ -135,3 +120,5 @@ plt.show()
 ###############################################################################
 # You are now ready to explore all the correlations, anti-correlations,
 # and phase differences.
+
+# sphinx_gallery_thumbnail_number = 3

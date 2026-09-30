@@ -50,8 +50,8 @@ def _mask_for_frame(mask, index, data_shape, frame_shape):
 
 
 def _remove_cosmic_rays_astroscrappy(
-    data: np.ndarray,
-    mask: np.ndarray,
+    data,
+    mask,
     *,
     sigma: float | None,
     max_iters: int | None,

@@ -96,6 +96,14 @@ def test_sji_plot_accepts_custom_slider_label(sns_sjicube_1330):
     plt.close(fig)
 
 
+def test_sji_plot_falls_back_to_viridis_without_an_iris_colormap(sns_sjicube_1330):
+    image = sns_sjicube_1330[0]
+    image.meta["TWAVE1"] = 1234  # There is no irissji1234 colormap.
+    ax = image.plot()
+    assert ax.images[0].get_cmap().name == "viridis"
+    plt.close(ax.figure)
+
+
 def test_negative_slices(sns_sjicube_1330):
     assert sns_sjicube_1330[-3:].shape == (3, 40, 37)
     assert len(sns_sjicube_1330[-3:].fits_wcs) == 3
