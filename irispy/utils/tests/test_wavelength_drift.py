@@ -53,14 +53,15 @@ def seconds(table):
     return (table["time"] - table["time"][0]).to_value(u.s)
 
 
-def synthetic_o_i_shifts(size, sign=1, pixel=0.15, slope=0):
+def synthetic_o_i_shifts(size, sign=1, pixel=0.15, slope=0, scale=1):
     """
     The O I shifts of a line 0.02 Å redward of rest and 0.8 pixels wide, on ``size``
-    pixels of ``pixel`` Å from 1355.05 Å and a background sloping by ``slope`` DN/Å.
+    pixels of ``pixel`` Å from 1355.05 Å and a background sloping by ``slope`` DN/Å, all
+    times ``scale``.
     """
     wavelengths = 1355.05 + pixel * np.arange(size)
     x = wavelengths - 1355.62
-    profile = 100 + slope * x + sign * 50 * np.exp(-0.5 * (x / (0.8 * pixel)) ** 2)
+    profile = scale * (100 + slope * x + sign * 50 * np.exp(-0.5 * (x / (0.8 * pixel)) ** 2))
     cube = make_test_spectrogram_cube(np.broadcast_to(profile, (2, 3, size)).copy(), wavelengths * u.AA)
     return _line_shifts(cube, _wavelengths(cube), *_LINES["O I"])
 
@@ -156,6 +157,16 @@ def test_drift_fit_drops_outliers_on_both_sides():
     np.testing.assert_allclose(_fit_drift(times, shifts, 0.08, "nuv"), _fit_drift(times, drift, 0.08, "nuv"), atol=1e-5)
 
 
+def test_drift_fit_polynomial_order_is_at_most_3():
+    # 4.5 orbits at a cadence of 300 s, where the running mean is one exposure wide
+    times = np.arange(88) * 300.0
+    orbits = times / 5856
+    shifts = 0.01 * np.sin(2 * np.pi * orbits + 0.3) + 1e-4 * orbits**3
+    np.testing.assert_allclose(_fit_drift(times, shifts, 0.08, "nuv"), shifts, atol=1e-10)
+    shifts += 2e-5 * orbits**4
+    assert not np.allclose(_fit_drift(times, shifts, 0.08, "nuv"), shifts, atol=1e-5)
+
+
 def test_drift_fit_across_a_gap():
     times = np.arange(40) * 60.0
     shifts = 0.01 * np.sin(times / 180)
@@ -175,6 +186,11 @@ def test_drift_fit_across_a_gap():
 )
 def test_line_shifts_of_a_synthetic_line(size, sign, expected):
     np.testing.assert_allclose(synthetic_o_i_shifts(size, sign), expected, atol=1e-9)
+
+
+def test_line_shifts_of_a_faint_line():
+    # Its slit mean is below the 0.5 DN threshold of O I
+    assert np.isnan(synthetic_o_i_shifts(12, scale=1e-3)).all()
 
 
 def test_line_shifts_on_a_sloping_background():
