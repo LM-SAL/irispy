@@ -50,7 +50,9 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
 
     Returns
     -------
-    labels, events
+    labels : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
+        As `find_bright_spectral_events`.
+    events : `~astropy.table.QTable`
         As `find_bright_spectral_events`; ``events.meta["threshold"]`` is the scaled threshold.
 
     Notes
@@ -206,7 +208,9 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
 
     Returns
     -------
-    labels, events
+    labels : `~irispy.sji.SJICube`
+        As `find_bright_image_events`.
+    events : `~astropy.table.QTable`
         As `find_bright_image_events`.
 
     Notes
