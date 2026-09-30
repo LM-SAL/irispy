@@ -603,11 +603,11 @@ def test_calculate_moments_uncertainty_integrated():
 
 
 def test_calculate_moments_uncertainty_nan_where_undefined():
-    # One sample left, none left, and a width of 0 from exact zeros
-    data = [[[33.9, -0.9, -2.0], [-1.0, -2.0, np.nan], [0.0, 2.0, 0.0]]]
+    # One sample left, none left, and a width of 0 from exact zeros, which rounds to about 1e-14 nm
+    data = [[[33.9, -0.9, -2.0], [-1.0, -2.0, np.nan], [0.0, 33.9, 0.0]]]
     cube = make_cube_with_uncertainty(data, [500.0, 501.0, 502.0] * u.nm, np.full((1, 3, 3), 0.1))
     moments = calculate_moments(cube, rest_wavelength=501 * u.nm)
-    centroid_error = np.sqrt(0.02) / 2
+    centroid_error = np.sqrt(0.02) / 33.9
     expected = {
         "intensity": [0.1, np.nan, np.sqrt(0.03)],
         "centroid": [np.nan, np.nan, centroid_error],

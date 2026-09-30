@@ -182,7 +182,8 @@ def calculate_moments(
             errors["centroid"] = np.where(kept > 1, centroid_error, np.nan)
             spread = (offset_squared - variance_value[..., np.newaxis]) ** 2 * weight_variance
             width_error = np.sqrt(spread.sum(axis=-1)) / intensity_value / (2 * stddev_value)
-            errors["width"] = np.where(stddev_value > 0, width_error, np.nan)
+            # Count the samples, as roundoff can leave a width of 0 at about 1e-14
+            errors["width"] = np.where(np.count_nonzero(weights, axis=-1) > 1, width_error, np.nan)
 
     template = make_spatial_template(cube, wavelength_axis)
 
