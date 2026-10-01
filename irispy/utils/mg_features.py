@@ -9,7 +9,6 @@ from scipy.linalg import solve_banded
 from scipy.ndimage import gaussian_filter1d
 
 import astropy.units as u
-from astropy.constants import c
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
@@ -60,6 +59,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
       it extrapolates the last interval, moving the peaks by about 0.1 km/s, rarely more than 0.7 km/s.
     * Spectra with missing data in the velocity range give no features; IDL interpolates through
       the -200 fill values and uses the line centres it finds there in its guesses along the slit.
+      Beyond the first and last good line centres, the guess is held at their values instead.
     * The line centres that are redone start from a guess spline along the slit through the others.
       For unevenly spaced knots, as when slit positions are left out, IDL's ``SPLINE`` reuses the
       first interval's diagonal in the last row of its system, so the guesses near and beyond the
@@ -91,10 +91,13 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
         raise ValueError(msg)
     low, high = velocity_range.value
     wavelength = cube.axis_world_coords(cube.wavelength_axis)[0]
+    if not np.all(np.diff(wavelength) > 0):
+        msg = "The wavelengths must increase along the cube, as in level 2 data"
+        raise ValueError(msg)
     template = make_spatial_template(cube, cube.wavelength_axis)
     maps, skipped = [], []
     for line in lines:
-        velocity = ((wavelength - _REST_WAVELENGTH[line]) / _REST_WAVELENGTH[line] * c).to_value(u.km / u.s)
+        velocity = u.Quantity(wavelength).to_value(u.km / u.s, equivalencies=u.doppler_optical(_REST_WAVELENGTH[line]))
         if not velocity[0] <= low < high <= velocity[-1]:
             skipped.append(line)
             continue
@@ -142,10 +145,11 @@ def _slit_features(grid, spectra, valid):
         average = gaussian_filter1d(slit, 2, mode="nearest") if valid.size >= 17 else slit
         good = np.abs(centre[:, 0] - average[positions]) <= 3
         if np.count_nonzero(good) >= 3:
-            with np.errstate(over="ignore", invalid="ignore"):  # it overflows far beyond the good centres
-                guess = _spline(positions[good], centre[good, 0], positions, tension=1)
-            centre[~good] = np.nan  # and stays so where the guess overflowed or the peak is blended
-            redo = ~good & np.isfinite(guess) & ~blended
+            # Held at the end centres beyond them, where IDL has knots on the fill and the spline would extrapolate
+            knots = positions[good]
+            guess = _spline(knots, centre[good, 0], np.clip(positions, knots[0], knots[-1]), tension=1)
+            centre[~good] = np.nan  # and stays so where the peak is blended
+            redo = ~good & ~blended
             centre[redo] = _centre_vertex(grid, spectra[redo], guess[redo], 15)
     redo = np.isnan(centre[:, 0])
     centre[redo] = _centres(grid, spectra[redo], maxima[redo], minima[redo], 5.0, use_derivative=True)

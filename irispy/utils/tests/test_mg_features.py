@@ -25,7 +25,8 @@ WINDOWS = {"k": "Mg II k 2796", "h": "Mg II h 2803"}
 # spline's tension everywhere and its values near row 729. For these spectra the lowest point within
 # 15 grid points of the guess is at the edge of that range, so a guess rounded to another grid point
 # gives another centre (0.019 and 0.157 km/s away). From IDL's guesses the port gives IDL's centres.
-OTHER_GUESS = {"k": [], "h": [[0, 112], [2, 727]]}
+# Row 8 is the first good row after the fill, where the port holds its guess at the first good centre.
+OTHER_GUESS = {"k": [], "h": [[0, 112], [2, 8], [2, 727]]}
 
 
 @pytest.fixture(scope="module")
@@ -59,7 +60,11 @@ def test_matches_idl(raster, idl, index, line):
         np.testing.assert_array_equal(np.isfinite(ours), found)
         close = np.isclose(ours[..., 0], theirs[..., 0], rtol=0, atol=velocity)
         close &= np.isclose(ours[..., 1], theirs[..., 1], rtol=intensity, atol=0)
-        assert np.argwhere(found[..., 0] & ~close).tolist() == (OTHER_GUESS[line] if key == "lc" else [])
+        off = np.argwhere(found[..., 0] & ~close).tolist()
+        if key == "lc":
+            assert off == OTHER_GUESS[line]
+        else:  # the peaks are found around the line centre
+            assert all(pixel in OTHER_GUESS[line] for pixel in off)
 
 
 def test_output(raster):
@@ -127,7 +132,7 @@ def test_missing_data(raster):
 
 
 def test_good_centres_far_from_slit_end(raster):
-    # The spline through the good line centres overflows when extrapolated far beyond them.
+    # Extrapolated far beyond the good line centres, the spline through them would overflow.
     cube = copy.deepcopy(raster["Mg II k 2796"][0])
     cube.data[:, 20:] = np.linspace(50, 100, cube.data.shape[-1])  # featureless
     cube.mask[:, 20:] = False
@@ -156,6 +161,11 @@ def test_rejects_other_input(raster):
         calculate_mg_features(raster["Mg II k 2796"])
     with pytest.raises(ValueError, match="slice it with ranges"):
         calculate_mg_features(raster["Mg II k 2796"][0][:, 300])
+    cube = raster["Mg II k 2796"][0]
+    wcs = cube.wcs.deepcopy()
+    wcs.wcs.cdelt[0] *= -1
+    with pytest.raises(ValueError, match="wavelengths must increase"):
+        calculate_mg_features(SpectrogramCube(cube.data[..., ::-1], wcs, unit=cube.unit), lines=("k",))
 
 
 @pytest.mark.parametrize(
@@ -185,10 +195,17 @@ def test_maxima():
 
 def test_parabola_vertices():
     grid = np.linspace(-10, 10, 201)
-    # Vertices between grid points, the second next to the grid's start, where fewer points are fitted.
+    # Vertices between grid points, the second next to the grid's start, where only the 5 points on the
+    # grid are fitted. The asymmetric term makes the fit depend on which points are used.
     vertices = np.array([0.237, -9.863])
-    minimum = _centre_vertex(grid, 2 + 3 * (grid - vertices[:, np.newaxis]) ** 2, vertices, np.array([15, 15]))
-    np.testing.assert_allclose(minimum, [[0.237, 2], [-9.863, 2]], atol=1e-10)
+    offset = grid - vertices[:, np.newaxis]
+    spectra = 2 + 3 * offset**2 + offset**3 * np.exp(-(offset**2))
+    minimum = _centre_vertex(grid, spectra, vertices, np.array([15, 15]))
+    lowest = np.argmin(spectra, axis=-1)
+    for row, points in enumerate([np.arange(lowest[0] - 3, lowest[0] + 4), np.arange(lowest[1] + 4)]):
+        a2, a1, a0 = np.polyfit(grid[points] - grid[lowest[row]], spectra[row, points], 2)
+        vertex = -a1 / (2 * a2)
+        np.testing.assert_allclose(minimum[row], [grid[lowest[row]] + vertex, a0 - a2 * vertex**2], atol=1e-10)
     spectra = np.tile(5 - 2 * (grid - 0.237) ** 2, (2, 1))
     maximum = _peak_vertex(grid, spectra, np.full((2, 4), np.argmax(spectra[0])), np.array([0, -1]))
     np.testing.assert_allclose(maximum, [[0.237, 5], [np.nan, np.nan]], atol=1e-10)
@@ -227,3 +244,4 @@ def test_spline_uneven_knots(idl_spline):
     spline = _spline(x, y, t, tension=0)
     np.testing.assert_allclose(spline, CubicSpline(x, y, bc_type=((1, 2), (1, 7 / 6)))(t), atol=1e-6)
     assert np.abs(spline - idl_spline["uneven_tension_0"]).max() > 2
+    assert np.abs(_spline(x, y, t, tension=1) - idl_spline["uneven_tension_1"]).max() > 1
