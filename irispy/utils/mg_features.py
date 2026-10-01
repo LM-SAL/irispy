@@ -243,7 +243,7 @@ def _flattest(grid, spectra, peak):
     Flattest point within 15 km/s of a single blended peak, on its higher side.
     """
     rows = np.arange(len(spectra))
-    margin = 15
+    margin = 15  # grid points, as IDL's ``margin``, unlike the reach in km/s
     reach = int(15 / (grid[1] - grid[0]))
     first, last = np.maximum(peak - reach, 0), np.minimum(peak + reach, grid.size - 1)
     blue = spectra[rows, first] > spectra[rows, last]

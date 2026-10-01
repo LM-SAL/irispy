@@ -64,18 +64,24 @@ maps = {
 
 ###############################################################################
 # The paper compares three regions: the leading and following polarities of the active region
-# and an area of emerging flux. We try to bound the same regions as in the paper.
+# and an area of emerging flux, each a 10 arcsec box. The maps in the paper have a linear x axis
+# from the header pointing, whereas the WCS follows the pointing of each exposure, which drifts
+# by 5 arcsec over the raster. These are the boxes of the paper where the WCS puts them.
 
 coordinates = features["k3_velocity"].axis_world_coords()[0]
 solar_x, solar_y = coordinates.Tx.to_value(u.arcsec), coordinates.Ty.to_value(u.arcsec)
-regions = {"Leading polarity": (-344, 526), "Following polarity": (-423, 548), "Emerging flux": (-415, 520)}
+regions = {"Leading polarity": (-340.5, 526.7), "Following polarity": (-423.4, 548.9), "Emerging flux": (-416.2, 520.2)}
 inside = {name: (np.abs(solar_x - x) <= 5) & (np.abs(solar_y - y) <= 5) for name, (x, y) in regions.items()}
 
 ###############################################################################
 # The top row shows the maps with the regions outlined, and the bottom row the
-# distribution of each quantity within each region. As in the paper, the k2
-# peaks are furthest apart in the emerging flux and closest in the leading
-# polarity, and the k3 velocities, k-h separations and asymmetries
+# distribution of each quantity within each region. The curves are drawn as in
+# the paper: each is scaled by its share of the pixels, so the three integrate to
+# one together, smoothed with a third of Scott's bandwidth, and evaluated at 200
+# points over the full range of its sample, which is why the k-h separation,
+# whose range is set by a few outliers, is drawn in straight segments.
+# The k2 peaks are furthest apart in the emerging flux and closest in the
+# leading polarity, and the k3 velocities, k-h separations and asymmetries
 # are mostly small and positive.
 
 wcs = features["k3_velocity"].wcs
@@ -83,27 +89,34 @@ fig = plt.figure(figsize=(14, 7.5), layout="constrained")
 for column, (label, (values, cmap, vmin, vmax)) in enumerate(maps.items()):
     ax = fig.add_subplot(2, 4, column + 1, projection=wcs)
     SpectrogramCube(values, wcs).plot(axes=ax, plot_axes=["x", "y"], cmap=cmap, vmin=vmin, vmax=vmax)
-    fig.colorbar(ax.images[0], ax=ax, location="top", label=label)
+    fig.colorbar(ax.images[0], ax=ax, location="top", label=label, ticks=[vmin, (vmin + vmax) / 2, vmax])
     # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
     for coord, side, name in ((ax.coords[0], "l", "Solar Y" if column == 0 else " "), (ax.coords[1], "b", "Solar X")):
+        coord.set_ticks(spacing=30 * u.arcsec)
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8, color="black")
         coord.set_ticks_position(side)
         coord.set_ticklabel_position(side)
         coord.set_axislabel(name, color="black")
         coord.set_axislabel_position(side)
     ax_kde = fig.add_subplot(2, 4, column + 5)
-    grid = np.linspace(vmin, vmax, 200)
-    for color, (name, region) in zip(("C0", "C1", "C2"), inside.items(), strict=True):
+    n_finite = sum(np.isfinite(values[region]).sum() for region in inside.values())
+    # Drawn in reverse so that the leading polarity is in front and the emerging flux at the back.
+    for color, (name, region) in reversed(list(zip(("C0", "C1", "C2"), inside.items(), strict=True))):
         # The maps are plotted with the raster steps along x, so the masks are transposed to match.
         ax.contour(region.T, levels=[0.5], colors=color, linewidths=2)
         sample = values[region]
-        density = gaussian_kde(sample[np.isfinite(sample)])(grid)
-        ax_kde.fill_between(grid, density, color=color, alpha=0.5, label=name)
+        sample = sample[np.isfinite(sample)]
+        kde = gaussian_kde(sample, bw_method=lambda kde: 0.35 * kde.scotts_factor())
+        reach = 3 * np.sqrt(kde.covariance[0, 0])
+        grid = np.linspace(sample.min() - reach, sample.max() + reach, 200)
+        ax_kde.fill_between(grid, kde(grid) * sample.size / n_finite, color=color, alpha=0.5, label=name)
     ax_kde.set_xlim(vmin, vmax)
     ax_kde.set_ylim(bottom=0)
+    ax_kde.locator_params(nbins=4)
     ax_kde.set_xlabel(label)
     ax_kde.set_ylabel("Density" if column == 0 else None)
-fig.legend(*ax_kde.get_legend_handles_labels(), loc="outside lower center", ncols=3)
+handles, labels = ax_kde.get_legend_handles_labels()
+fig.legend(handles[::-1], labels[::-1], loc="outside lower center", ncols=3)
 fig.suptitle(f"IRIS Mg II features, {mg_ii.meta.date_start.isot[:19]}")
 
 plt.show()
