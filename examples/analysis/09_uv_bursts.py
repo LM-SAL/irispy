@@ -7,7 +7,7 @@ UV bursts are compact, short-lived brightening of transition region lines, such 
 Si IV, that are often much broader than the surrounding emission.
 
 In this example, we will find them following
-`Young et al. (2018) <https://doi.org/10.1007/s11214-018-0551-0>`__.
+:cite:t:`young2018`.
 """
 
 import matplotlib.dates as mdates
@@ -68,7 +68,7 @@ ax.contour(labels.data.T > 0, levels=[0.5], colors="red", linewidths=1.5)
 ax.set_title("Bursts in Si IV 1402.77 Å")
 
 ###############################################################################
-# Next, we reproduce Figure 3 of Young et al. (2018), a burst in 1400 Å slit-jaw images
+# Next, we reproduce Figure 3 of :cite:t:`young2018`, a burst in 1400 Å slit-jaw images
 # taken every 1.7 s by `this sit-and-stare <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20161026_090824_3644103603_2016-10-26T09%3A08%3A242016-10-26T09%3A08%3A24.xml>`__,
 # from a cutout of its `Level 2 slit-jaw file <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2016/10/26/20161026_090824_3644103603/iris_l2_20161026_090824_3644103603_SJI_1400_t000.fits.gz>`__
 # with only the area and time range of the figure.

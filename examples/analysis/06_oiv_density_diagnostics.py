@@ -24,7 +24,7 @@ from irispy.utils.density import density_diagnostic
 
 ###############################################################################
 # We will reproduce aspects of the top row of Fig. 4 from
-# `Dudík et al. (2014) <https://doi.org/10.1088/2041-8205/780/1/L12>`__, which shows the O IV line
+# :cite:t:`dudik2014`, which shows the O IV line
 # ratios as a function of electron density for three different Maxwellian temperatures.
 
 density = np.logspace(9, 12, 20) * u.cm**-3
@@ -45,7 +45,7 @@ ratio_definitions = [
 ###############################################################################
 # The exact curve values will differ somewhat from the paper because this example
 # uses the current CHIANTI database through `fiasco` rather than the CHIANTI
-# version used by Dudík et al. (2014).
+# version used by :cite:t:`dudik2014`.
 #
 # `~irispy.utils.density.density_diagnostic` needs measured line intensities as
 # input because it maps an observed ratio back to density. To plot the diagnostic

@@ -26,7 +26,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
     """
     Find the line centres and emission peaks of the Mg II h and k lines.
 
-    As in Pereira et al. (2013), each spectrum is interpolated to a fine velocity grid, its local
+    As in :cite:t:`pereira2013`, each spectrum is interpolated to a fine velocity grid, its local
     extrema are classified, and the line centre is refined by a parabola fitted to its minimum.
     Line centres that jump along the slit are redone from their neighbours.
 
@@ -72,7 +72,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
 
     References
     ----------
-    * `Pereira et al. (2013), ApJ 778, 143 <https://doi.org/10.1088/0004-637X/778/2/143>`__
+    * :cite:t:`pereira2013`
     * `iris_get_mg_features.pro <https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/uio/utils/iris_get_mg_features.pro>`__
     """
     if not isinstance(cube, SpectrogramCube):

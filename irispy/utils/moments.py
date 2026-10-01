@@ -76,8 +76,8 @@ def calculate_moments(
     References
     ----------
     * `Spectral-Cube moment maps <https://spectral-cube.readthedocs.io/en/latest/moments.html#moment-map-equations>`__
-    * `arXiv:2005.02029, Section 3.1 <https://arxiv.org/abs/2005.02029>`__
-    * `Færder et al. (2024), ApJ, Appendix C <https://iopscience.iop.org/article/10.3847/1538-4357/ac4223>`__
+    * :cite:t:`yu2020`, Section 3.1
+    * :cite:t:`cheung2022`, Appendix C
     """
     check_scaled(cube)
     if rest_wavelength is None:

@@ -8,7 +8,7 @@ a central reversal, such as k3. They form at different heights in the chromosphe
 positions and intensities trace its velocities and how these change with height.
 
 In this example, we will measure them and attempt to reproduce Figure 3 of
-`Long et al. (2024) <https://doi.org/10.3847/1538-4357/ad3234>`__.
+:cite:t:`long2024`.
 """
 
 import matplotlib.pyplot as plt

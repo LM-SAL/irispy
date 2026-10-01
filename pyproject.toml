@@ -70,6 +70,7 @@ optional-dependencies.docs = [
   "sphinx-design>=0.6.1",
   "sphinx-gallery>=0.17.0",
   "sphinx>=7.4.0",
+  "sphinxcontrib-bibtex>=2.6.0",
   "sunkit-image>=0.6.0",
   "sunpy-sphinx-theme>=2.0.13",
 ]

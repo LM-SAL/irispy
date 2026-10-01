@@ -87,6 +87,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
+    "sphinxcontrib.bibtex",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -147,6 +148,12 @@ intersphinx_mapping = {
     "sunpy": ("https://docs.sunpy.org/en/latest/", None),
     "sunraster": ("https://docs.sunpy.org/projects/sunraster/en/latest/", None),
 }
+
+# -- Options for sphinxcontrib-bibtex ------------------------------------------
+bibtex_bibfiles = ["references.bib"]
+bibtex_default_style = "plain"
+# Cite as "Pereira et al. [2013]" with :cite:t: and "[Pereira et al., 2013]" with :cite:p:
+bibtex_reference_style = "author_year"
 
 # -- Options for sphinxext-opengraph ------------------------------------------
 

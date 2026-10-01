@@ -1,0 +1,1 @@
+The documentation now cites papers with ``sphinxcontrib-bibtex`` from ``docs/references.bib``, and lists them on a new bibliography page.
