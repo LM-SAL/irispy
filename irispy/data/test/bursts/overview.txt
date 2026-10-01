@@ -1,0 +1,51 @@
+Test data for irispy/utils/tests/test_bursts.py. The whole level 2 files are in
+https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2013/09/02/
+
+iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv_test.fits
+---------------------------------------------------------------------
+
+Cut from iris_l2_20130902_182935_4000005156_raster_t000_r00000.fits (in
+20130902_182935_4000005156/iris_l2_20130902_182935_4000005156_raster.tar.gz).
+OBS 4000005156: Large coarse raster 126"x120" 64s, no summing.
+
+Kept:   the Si IV 1403 window (extension 6), all 64 steps, slit rows 385-575 (of 771)
+        and wavelength pixels 262-304 (of 536), 1402.50-1403.04 A or about +/-57 km/s.
+        Indices are 0-based. The data values, the auxiliary table and the level 1
+        filename table (64 rows) are unchanged.
+Header: NWIN = 1 and the window keywords of Si IV 1403 are numbered 1. NAXIS1/2,
+        CRPIX1/2 and TWMIN1/TWMAX1 describe the cut. The filename table declares
+        TFIELDS = 9 for its 9 columns (the whole file says 7, see ../compress.py).
+        TSR1/TER1/TSC1/TEC1 and the statistics keywords (DATA*, TD*1) still describe
+        the whole window or file.
+Made:   python ../cut.py iris_l2_20130902_182935_4000005156_raster_t000_r00000.fits \
+            iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv_test.fits \
+            --rows 385:576 --window "Si IV 1403" 262:305
+
+iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits
+----------------------------------------------------------
+
+Cut from iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits.gz (in 20130902_163935_4000255147/).
+OBS 4000255147: Medium sit-and-stare 0.3"x60" 1s, 400 frames of 388x417 pixels.
+
+Kept:   frames 0, 69 and 227 (0-based), whole images, with the same rows of the
+        auxiliary and filename tables; NEXP = NAXIS3 = 3. Frame 69 holds a pixel just
+        below the threshold and frame 227 the most events (13).
+Header: CRPIX3/CDELT3 still describe the whole file's cadence; irispy takes the frame
+        times from the auxiliary table.
+Made:   python ../cut.py iris_l2_20130902_163935_4000255147_SJI_1400_t000.fits \
+            iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits --exposures 0,69,227
+
+*.ecsv
+------
+
+make_idl_references.pro (IDL 9.2, SolarSoft of 2026-09-28) writes all three from the
+whole files, byte for byte; see its header for the setup.
+
+iris_burst_check_4000005156_r00000_thr40.ecsv
+        iris_burst_check, raster, threshold=40.: one row per burst pixel, with step and
+        y in the whole file. default_threshold is the routine's default threshold for
+        this date and y_offset the first slit row of the cut.
+iris_sji_burst_check_4000255147_pixels.ecsv
+        iris_sji_burst_check, '2-sep-2013 17:00': the burst pixels of frames 0, 69 and 227.
+iris_sji_burst_check_4000255147_summary.ecsv
+        The same run: events and burst pixels for each of the 400 frames.

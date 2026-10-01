@@ -1,3 +1,4 @@
+from . import bursts as bursts
 from . import constants as constants
 from . import cosmic_rays as cosmic_rays
 from . import density as density

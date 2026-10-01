@@ -6,6 +6,8 @@ The `irispy.utils` module provides functions useful for ``irispy`` users or deve
 
 .. automodapi:: irispy.utils
 
+.. automodapi:: irispy.utils.bursts
+
 .. automodapi:: irispy.utils.constants
 
 .. automodapi:: irispy.utils.cosmic_rays
