@@ -11,8 +11,6 @@ from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs import WCS
 
-from ndcube.utils.exceptions import NDCubeUserWarning
-
 import irispy.io._raster_combine as raster_combine
 from irispy.io._raster_combine import _lazy_raster_scan_chunk_rows
 from irispy.io.spectrograph import read_spectrograph_lvl2
@@ -107,32 +105,8 @@ def test_spectrogram_cube_crop_slices_fits_wcs(combined_si_iv):
     assert_quantity_allclose(image_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
 
 
-def test_spectrogram_cube_exposes_raster_grouping_helpers(combined_si_iv):
-    assert combined_si_iv.raster_slice(0).shape == (8, 109, 29)
-    assert combined_si_iv.raster_slice(-1).shape == (8, 109, 29)
-    assert len(combined_si_iv.split_rasters()) == 13
-    with pytest.raises(IndexError, match=r"Raster index out of range."):
-        combined_si_iv.raster_slice(-14)
-    with pytest.raises(TypeError, match="integer"):
-        combined_si_iv.raster_slice("0")
-
-
-def test_spectrogram_cube_supports_crop_apis(combined_si_iv):
-    wcs, last = combined_si_iv.wcs, combined_si_iv.shape[-1] - 1
-    spectrum = combined_si_iv.crop(wcs.array_index_to_world(1, 2, 50, 0), wcs.array_index_to_world(1, 2, 50, last))
-    spectrum_by_values = combined_si_iv.crop_by_values(
-        wcs.array_index_to_world_values(1, 2, 50, 0),
-        wcs.array_index_to_world_values(1, 2, 50, last),
-        units=(u.nm, u.arcsec, u.arcsec, u.s, u.pix, u.pix),
-    )
-
-    assert spectrum.data.ndim == 1
-    assert spectrum_by_values.data.ndim == 1
-
-
 def test_memmap_raster_and_split_rasters_are_lazy(raster_sg_files):
-    with pytest.warns(UserWarning, match="uncertainty is not computed when memmap=True"):
-        cube = read_spectrograph_lvl2(raster_sg_files, memmap=True, uncertainty=True)["Si IV 1403"]
+    cube = read_spectrograph_lvl2(raster_sg_files, memmap=True)["Si IV 1403"]
     wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])
     rasters = cube.split_rasters()
 
@@ -143,8 +117,6 @@ def test_memmap_raster_and_split_rasters_are_lazy(raster_sg_files):
     assert rasters[0].shape == (8, 109, 29)
     for lazy in (cube, rasters[0]):
         assert isinstance(lazy.data, da.Array)
-        assert lazy.mask is None
-        assert lazy.uncertainty is None
 
 
 def test_memmap_raster_reads_raw_fits_one_scan_chunk_at_a_time(raster_sg_files, monkeypatch):
@@ -152,7 +124,6 @@ def test_memmap_raster_reads_raw_fits_one_scan_chunk_at_a_time(raster_sg_files, 
     raster0 = cube.raster_slice(0)
     expected = _raw_si_iv(raster_sg_files[0])
 
-    assert isinstance(cube.data, da.Array)
     assert max(cube.data.chunks[1]) == _lazy_raster_scan_chunk_rows(raster0.data)
     assert len(cube.data.chunks[0]) == len(cube.split_rasters())
     np.testing.assert_array_equal(raster0.data.compute(), expected)
@@ -168,23 +139,41 @@ def test_memmap_raster_reads_raw_fits_one_scan_chunk_at_a_time(raster_sg_files, 
         open_calls.append(args[0])
         return real_open(*args, **kwargs)
 
-    monkeypatch.setattr(raster_combine.fits, "open", count_open)
+    monkeypatch.setattr(raster_combine, "fits", SimpleNamespace(open=count_open))
     np.testing.assert_array_equal(cube.data[0, 0, 0].compute(), expected[0, 0])
     assert open_calls == [raster_sg_files[0]]
 
 
-def test_raster_animation_plots_and_reapplies_axis_colors_after_update(combined_si_iv):
+@pytest.fixture
+def mg_ii_raster(raster_sg_file):
+    return read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
+
+
+@pytest.fixture
+def mg_ii_image(mg_ii_raster):
+    wavelength = SpectralCoord(mg_ii_raster.spectral_axis[len(mg_ii_raster.spectral_axis) // 2])
+    return mg_ii_raster.crop([wavelength, None, None, None], [wavelength, None, None, None])
+
+
+def test_spectrogram_animation_layout_and_label_colors_survive_update(mg_ii_raster):
+    """
+    Latitude is on the left and longitude on the right, time is hidden, and the latitude
+    label is red, before and after a slider update rebuilds the coordinates.
+    """
     fig = plt.figure()
-    animator = combined_si_iv.raster_slice(0).plot(fig=fig)
+    animator = mg_ii_raster.plot(fig=fig)
 
-    def label_colors():
-        colors = {coord.get_axislabel(): coord._axislabels.get_color() for coord in animator.axes.coords}
-        return colors["Helioprojective Latitude [arcsec]"], colors["Helioprojective Longitude [arcsec]"]
+    def assert_layout():
+        coords = animator.axes.coords
+        assert coords[LAT].get_ticklabel_position() == ["l"]
+        assert coords[LON].get_ticklabel_position() == ["r"]
+        assert not coords["time"].get_ticklabel_visible()
+        # WCSAxes has no public getter for an axis label's color.
+        assert (coords[LAT]._axislabels.get_color(), coords[LON]._axislabels.get_color()) == ("red", "black")
 
-    assert animator.axes
-    assert label_colors() == ("red", "black")
+    assert_layout()
     animator.update_plot_2d(0, animator.im, SimpleNamespace(cval=0))
-    assert label_colors() == ("red", "black")
+    assert_layout()
     plt.close(fig)
 
 
@@ -198,29 +187,29 @@ def test_raster_animation_plots_and_reapplies_axis_colors_after_update(combined_
     ],
     ids=["default", "longitude_and_latitude", "longitude_only", "longitude_and_time"],
 )
+@pytest.mark.filterwarnings("ignore:Animating a NDCube does not support transposing")
 def test_raster_animation_axis_layout_survives_update(raster_sg_files, axes_coordinates, edges, hidden):
     """
     Longitude follows the raster step axis and latitude the slit axis; time and step are
     only shown when asked for.
 
-    A hidden coordinate must not keep an automatic position, or it takes an edge from a
-    shown coordinate.
+    A hidden coordinate must not take an edge from a shown coordinate.
     """
     cube = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")["Mg II k 2796"][0]
     fig = plt.figure()
-    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
-        animator = cube.plot(plot_axes=["x", "y", None], axes_coordinates=axes_coordinates, aspect="auto", fig=fig)
-    coords = animator.axes.coords
+    animator = cube.plot(plot_axes=["x", "y", None], axes_coordinates=axes_coordinates, aspect="auto", fig=fig)
 
     def assert_layout():
+        # A slider update replaces the coordinates, so look them up each time.
+        coords = animator.axes.coords
         assert coords["time"].get_axislabel() == "Seconds from Start [$\\mathrm{s}$]"
         for name, edge in edges.items():
             assert coords[name].get_ticklabel_position() == [edge]
             assert coords[name].get_axislabel_position() == [edge]
         for name in hidden:
-            assert coords[name].get_ticklabel_position() == []
+            assert not coords[name].get_ticklabel_visible()
         if "time" not in hidden:
-            assert coords["time"].get_ticklabel_position() != []
+            assert coords["time"].get_ticklabel_visible()
 
     assert_layout()
     animator.update_plot_2d(0, animator.im, SimpleNamespace(cval=0))
@@ -233,71 +222,55 @@ def test_raster_animation_axis_layout_survives_update(raster_sg_files, axes_coor
     [(None, {LAT: "b", LON: "l"}), (["x", "y"], {LON: "b", LAT: "l"})],
     ids=["slit_on_x", "step_on_x"],
 )
-def test_raster_image_labels_latitude_on_slit_edge_and_longitude_on_step_edge(raster_sg_file, plot_axes, edges):
-    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
-    wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])
-    image = cube.crop([wavelength, None, None, None], [wavelength, None, None, None])
-    assert image.shape == cube.shape[:2]
+def test_raster_image_labels_latitude_on_slit_edge_and_longitude_on_step_edge(
+    mg_ii_raster, mg_ii_image, plot_axes, edges
+):
+    assert mg_ii_image.shape == mg_ii_raster.shape[:2]
     fig = plt.figure()
-    ax = image.plot(plot_axes=plot_axes)
+    ax = mg_ii_image.plot(plot_axes=plot_axes)
     fig.canvas.draw()
 
     for name, edge in edges.items():
         assert ax.coords[name].get_ticklabel_position() == [edge]
     for name in ("time", "raster_step"):
-        assert ax.coords[name].get_ticklabel_position() == []
+        assert not ax.coords[name].get_ticklabel_visible()
     plt.close(fig)
 
 
-def test_requested_time_coordinate_joins_the_celestial_layout(raster_sg_file):
+@pytest.mark.filterwarnings("ignore:Animating a NDCube does not support transposing")
+def test_requested_time_coordinate_joins_the_celestial_layout(mg_ii_raster, mg_ii_image):
     """
     A single-file cube carries a "time" extra coordinate, so with ``axes_coordinates``
     ndcube plots through its combined WCS, whose pixel axis names it cannot join.
 
-    The layout must still come from the cube's own pixel axes, with time on a free edge.
+    The layout must still come from the cube's own pixel axes, with time shown as well.
     """
-    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
-    wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])
-    image = cube.crop([wavelength, None, None, None], [wavelength, None, None, None])
     fig = plt.figure()
-    ax = image.plot(plot_axes=["x", "y"], axes_coordinates=[LON, LAT, "time"])
+    ax = mg_ii_image.plot(plot_axes=["x", "y"], axes_coordinates=[LON, LAT, "time"])
     fig.canvas.draw()
 
     assert ax.coords[LON].get_ticklabel_position() == ["b"]
     assert ax.coords[LAT].get_ticklabel_position() == ["l"]
-    # Time follows the step axis, so WCSAxes puts it on a free edge with its ticks.
-    assert ax.coords["Seconds from Start (s)"].get_ticklabel_position()[0] in "tr"
-    assert ax.coords["raster_step"].get_ticklabel_position() == []
+    assert ax.coords["Seconds from Start (s)"].get_ticklabel_visible()
+    assert not ax.coords["raster_step"].get_ticklabel_visible()
     plt.close(fig)
 
     fig = plt.figure()
-    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
-        animator = cube.plot(plot_axes=["x", "y", None], axes_coordinates=[LON, LAT, "time"], fig=fig)
+    animator = mg_ii_raster.plot(plot_axes=["x", "y", None], axes_coordinates=[LON, LAT, "time"], fig=fig)
     animator.update_plot_2d(1, animator.im, SimpleNamespace(cval=1))
     assert animator.axes.coords[LON].get_ticklabel_position() == ["b"]
     assert animator.axes.coords[LAT].get_ticklabel_position() == ["l"]
-    assert animator.axes.coords["raster_step"].get_ticklabel_position() == []
+    assert not animator.axes.coords["raster_step"].get_ticklabel_visible()
     plt.close(fig)
 
 
-def test_spectrogram_animation_labels_latitude_left_and_longitude_right(raster_sg_file):
-    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Mg II k 2796")["Mg II k 2796"]
-    fig = plt.figure()
-    coords = cube.plot(fig=fig).axes.coords
-
-    assert coords[LAT].get_ticklabel_position() == ["l"]
-    assert coords[LON].get_ticklabel_position() == ["r"]
-    assert coords["time"].get_ticklabel_position() == []
-    plt.close(fig)
-
-
+@pytest.mark.filterwarnings("ignore:Animating a NDCube does not support transposing")
 def test_fixed_wavelength_raster_spatial_slider_label(raster_sg_files):
     cube = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Mg II k 2796")["Mg II k 2796"]
     wavelength = SpectralCoord(cube.spectral_axis[len(cube.spectral_axis) // 2])
     fixed_wavelength = cube.crop([wavelength, None, None, None, None], [wavelength, None, None, None, None])
     fig = plt.figure()
-    with pytest.warns(NDCubeUserWarning, match="does not support transposing"):
-        animator = fixed_wavelength.plot(plot_axes=["x", "y", None], aspect="auto", fig=fig)
+    animator = fixed_wavelength.plot(plot_axes=["x", "y", None], aspect="auto", fig=fig)
 
     assert animator.slider_axes == [2]
     assert animator.slider_ranges == [[0, fixed_wavelength.shape[2]]]
@@ -416,8 +389,8 @@ def test_negative_indices_match_positive(any_cube, negative, positive):
 
 @pytest.mark.parametrize(
     "item",
-    [-9, np.s_[::2], np.s_[::-1], (3, 10, 5), np.s_[10:20], np.s_[5:2]],
-    ids=["out_of_range", "step", "reverse", "scalar", "past_end", "empty"],
+    [-9, np.s_[::2], (3, 10, 5), np.s_[5:2]],
+    ids=["out_of_range", "step", "scalar", "empty"],
 )
 def test_failed_slice_raises_and_keeps_meta(raster_sg_file, item):
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]

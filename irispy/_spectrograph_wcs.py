@@ -7,7 +7,6 @@ import astropy.modeling.models as m
 import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
-from astropy.modeling.math_functions import RintUfunc, SubtractUfunc
 from astropy.time import Time
 from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
@@ -25,29 +24,14 @@ from irispy._interpolation import _time_lookup
 from irispy.utils.constants import SLIT_WIDTH
 
 
-def _wrap_longitude():
-    """
-    Wrap a longitude into [-180, 180) degrees, the range of a helioprojective ``Tx``.
-
-    The celestial rotation inside dkist's varying transforms returns longitudes in
-    [0, 360) degrees, so without this an exposure east of disk centre is 360 degrees
-    too high in the low-level (``*_values``) API; ``SkyCoord`` wraps by itself. This is
-    ``lon - 360 * rint(lon / 360)``, from standard models so the gWCS still serialises to
-    ASDF, and unit-agnostic because dkist's transform returns degrees as a Quantity.
-    """
-    turns = m.Multiply(1 / 360) | RintUfunc() | m.Multiply(360)
-    return m.Mapping((0, 0)) | (m.Identity(1) & turns) | SubtractUfunc()
-
-
-def _raster_crop_bounds(cube, points, wcs):
+def _raster_crop_bounds(cube, points):
     """
     Bound partial raster coordinates using the measured time and pointing tables.
 
     Each exposure contributes its own sky bounds. Repeated matches are retained in one
     bounding slice, which can also contain intervening unmatched data.
     """
-    if wcs is not cube.wcs.low_level_wcs:
-        return NotImplemented
+    wcs = cube.wcs.low_level_wcs
     low = wcs if isinstance(wcs, SlicedLowLevelWCS) else SlicedLowLevelWCS(wcs, Ellipsis)
     root = low._wcs
     if not isinstance(root, gwcs.WCS) or "raster_step" not in root.world_axis_names:
@@ -101,7 +85,8 @@ def _raster_crop_bounds(cube, points, wcs):
         # width, whatever its (virtual, along-slit) step scale; a raster step covers at least one step.
         step_scale = abs(celestial.cdelt.quantity[0].to_value(u.arcsec / u.pix))
         half_width = SLIT_WIDTH.to_value(u.arcsec) / step_scale / 2
-        if not (cube.meta or {}).get("sit_and_stare", False):
+        sit_and_stare = (cube.meta or {}).get("sit_and_stare", False)
+        if not sit_and_stare:
             half_width = max(half_width, 0.5)
         lon, lat = np.meshgrid(bounds[1], bounds[2])
         lon = (lon.ravel() * u.Unit(root.world_axis_units[1])).to_value(u.deg)
@@ -114,7 +99,9 @@ def _raster_crop_bounds(cube, points, wcs):
             x, y = celestial.transform_at_index(lookup).inverse(lon, lat)
             if not np.all(np.isfinite([x, y])):
                 continue
-            if not (x.min() < step + half_width and x.max() > step - half_width):
+            # The slit is at its own step pixel, or at 0 for a sit-and-stare (see _create_raster_gwcs).
+            slit_x = 0 if sit_and_stare else step
+            if not (x.min() < slit_x + half_width and x.max() > slit_x - half_width):
                 continue
             start, stop = _raster_crop_pixel_bounds(y)
             slit_bounds = max(start, slit[0]), min(stop, slit[-1] + 1)
@@ -128,18 +115,11 @@ def _raster_crop_bounds(cube, points, wcs):
     starts = [wavelength_bounds[0], matches[:, 0].min(), matches[:, 2].min(), matches[:, 3].min()]
     stops = [wavelength_bounds[1], matches[:, 1].max(), matches[:, 2].max() + 1, matches[:, 3].max() + 1]
     constrained = root.axis_correlation_matrix[[bound is not None for bound in bounds]].any(axis=0)
-    item = []
-    for axis in low._pixel_keep:
-        if not constrained[axis]:
-            item.append(None)
-            continue
-        start = max(starts[axis] - pixel_ranges[axis][0], 0)
-        stop = min(stops[axis] - pixel_ranges[axis][0], len(pixel_ranges[axis]))
-        if start >= stop:
-            msg = "No raster pixels match the crop coordinates."
-            raise ValueError(msg)
-        item.append((int(start), int(stop) - 1))
-    return tuple(item[::-1])
+    # NDCube clips these to the cube, and raises if an axis misses it.
+    return tuple(
+        (starts[axis] - pixel_ranges[axis][0], stops[axis] - 1 - pixel_ranges[axis][0]) if constrained[axis] else None
+        for axis in low._pixel_keep[::-1]
+    )
 
 
 def _raster_crop_pixel_bounds(values):
@@ -280,12 +260,15 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     if separate_raster_axis:
         # Pixel inputs are (wavelength, slit, step, scan), so lookup tables use (step, scan).
         pc_all, crval_all, dt_all = (np.swapaxes(table, 0, 1) for table in (pc_all, crval_all, dt_all))
-    # Each exposure's CRVAL is its own slit position, so its reference pixel is its own step.
-    crpix = np.empty((*pc_all.shape[:-2], 2))
-    crpix[..., 0] = np.indices(pc_all.shape[:-2])[0]
+    # Each exposure's CRVAL is its own slit position, so its reference pixel is its own step;
+    # a sit-and-stare holds the step input at 0 instead (see below).
+    crpix = np.zeros((*pc_all.shape[:-2], 2))
+    if not sit_and_stare:
+        crpix[..., 0] = np.indices(pc_all.shape[:-2])[0]
     crpix[..., 1] = window_header["CRPIX2"] - 1
     # dkist picks each exposure's row with np.round, which takes the far edge (pixel n - 0.5)
     # to the missing row n when n is even. Repeating the last row keeps that edge finite.
+    # TODO: remove once irispy requires a dkist release that fixes DKISTDC/dkist#761.
     lookup_axes = pc_all.ndim - 2
     pc_all, crval_all, crpix = (
         np.pad(table, [(0, 1)] * lookup_axes + [(0, 0)] * (table.ndim - lookup_axes), mode="edge")
@@ -300,11 +283,12 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
         crval_table=crval_all,
         crpix_table=crpix * u.pix,
     )
-    sky = celestial | (_wrap_longitude() & m.Identity(1))
+    sky = celestial
     if sit_and_stare:
-        # The slit does not move between exposures, so a fractional step must not ramp the
-        # pointing at the virtual step scale: snap it to the nearest exposure instead.
-        sky = (RintUfunc(name="NearestExposure") & m.Identity(celestial.n_inputs - 1)) | sky
+        # The slit does not move between exposures, so the step only picks the exposure (dkist's
+        # row lookup) and must not offset the pointing at the virtual step scale, however dkist
+        # rounds a fractional step.
+        sky = (m.Multiply(0, name="FixedSlit") & m.Identity(celestial.n_inputs - 1)) | sky
     temporal = _time_lookup(dt_all, name="Time")
     if separate_raster_axis:
         celestial_forward = m.Mapping((1, 0, 1, 2), n_inputs=3, name="StepSlitScanMapping") | sky

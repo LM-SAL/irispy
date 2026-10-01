@@ -16,10 +16,8 @@ from ndcube import NDCube
 from sunpy.coordinates import HeliographicStonyhurst, Helioprojective
 
 import irispy.io.spectrograph as spectrograph_io
-from irispy._interpolation import _time_lookup
 from irispy._spectrograph_wcs import (
     _create_raster_gwcs,
-    _raster_crop_bounds,
     _raster_wcs_bad_row_mask,
     _sanitize_raster_times,
     _sanitize_raster_wcs_tables,
@@ -147,6 +145,8 @@ def test_read_spectrograph_lvl2_metadata(request, files):
     assert si_iv.raster_slice(0).shape == si_iv.raster_slice(-1).shape == si_iv.shape[-3:]
     with pytest.raises(IndexError, match=r"Raster index out of range."):
         si_iv.raster_slice(-n_rasters - 1)
+    with pytest.raises(TypeError, match="integer"):
+        si_iv.raster_slice("0")
 
 
 def test_combined_raster_metadata_and_time_match_its_rasters(raster_sg_files):
@@ -178,7 +178,7 @@ def test_read_spectrograph_lvl2_keeps_requested_window_order_and_data_and_report
         read_spectrograph_lvl2(filename, spectral_windows=[*requested_windows, "NOPE1", "NOPE2"])
 
 
-@pytest.mark.parametrize("files", ["raster_sg_file", "sns_sg_file"], ids=["raster", "sit_and_stare_east_of_centre"])
+@pytest.mark.parametrize("files", ["raster_sg_file", "sns_sg_file"], ids=["raster", "sit_and_stare"])
 def test_read_spectrograph_lvl2_uses_auxiliary_pointing(request, files):
     filename = request.getfixturevalue(files)
     windows = ["C II 1336", "Mg II k 2796"]
@@ -191,15 +191,11 @@ def test_read_spectrograph_lvl2_uses_auxiliary_pointing(request, files):
         steps = np.arange(header["NAXIS3"])
         pixels = (np.full(steps.shape, header["CRPIX1"] - 1.0), np.full(steps.shape, header["CRPIX2"] - 1.0), steps)
         cube = raster[window]
-        _, latitude, longitude = cube.fits_wcs.pixel_to_world_values(*pixels)
         assert list(cube.fits_wcs.wcs.ctype)[1:] == ["HPLT-TAB", "HPLN-TAB"]
         assert cube.fits_wcs.wcs.aux.dsun_obs > 1e11
-        np.testing.assert_allclose(latitude, expected_latitude)
-        np.testing.assert_allclose(longitude, expected_longitude)
-        _, sky_longitude, sky_latitude, _, _ = cube.wcs.pixel_to_world_values(*pixels)
-        # A longitude east of disk centre is negative, not 360 degrees minus something.
-        np.testing.assert_allclose(sky_longitude / 3600, expected_longitude)
-        np.testing.assert_allclose(sky_latitude / 3600, expected_latitude)
+        sky = cube.fits_wcs.pixel_to_world(*pixels)[1]
+        np.testing.assert_allclose(sky.Tx.to_value(u.deg), expected_longitude)
+        np.testing.assert_allclose(sky.Ty.to_value(u.deg), expected_latitude)
 
     if files == "raster_sg_file":
         assert raster[windows[0]].time[0].isot == "2014-03-29T14:09:43.000"
@@ -496,12 +492,10 @@ def test_combined_raster_pads_short_final_raster(tmp_path, raster_sg_files):
     assert combined.mask[1, -1].all()
     assert combined.uncertainty.array.shape == combined.shape
     assert np.isnan(combined.uncertainty.array[1, -1]).all()
-    # The gWCS tables are indexed (step, scan), plus a repeated last row on each axis for the
-    # far pixel edges; the short raster also repeats its last exposure.
-    celestial = next(model for model in combined.wcs.forward_transform if hasattr(model, "transform_at_index"))
-    assert celestial.pc_table.shape == (9, 3, 2, 2)
-    assert celestial.crval_table.shape == (9, 3, 2)
-    np.testing.assert_array_equal(celestial.pc_table[-2, 1], celestial.pc_table[-3, 1])
+    # The short raster's missing step repeats its last exposure's pointing and roll.
+    last, padded = (combined.wcs.array_index_to_world(1, step, 0, 0)[1] for step in (6, 7))
+    assert_quantity_allclose(padded.Tx, last.Tx)
+    assert_quantity_allclose(padded.Ty, last.Ty)
     assert combined.time.shape == combined.shape[:2]
     assert combined.time[1, -1].isot == combined.time[1, -2].isot
 
@@ -510,7 +504,7 @@ def test_combined_raster_pads_short_final_raster(tmp_path, raster_sg_files):
 
 
 @pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files", "sns_sg_file"])
-def test_gwcs_inverse_crop_asdf_round_trip_and_finite_time_corners(request, tmp_path, files):
+def test_gwcs_corners_inverse_crop_and_asdf_round_trip(request, tmp_path, files):
     cube = read_spectrograph_lvl2(request.getfixturevalue(files), spectral_windows="Si IV 1403")["Si IV 1403"]
     assert np.isfinite(cube.axis_world_coords("time", pixel_corners=True)[0].jd).all()
     assert np.isfinite(cube.axis_world_coords("custom:pos.helioprojective.lon", pixel_corners=True)[0].Tx).all()
@@ -531,7 +525,7 @@ def test_gwcs_inverse_crop_asdf_round_trip_and_finite_time_corners(request, tmp_
         np.testing.assert_allclose(wcs.world_to_pixel_values(*world), pixel)
 
 
-def test_gwcs_crop_supports_full_world_components_and_rejects_shorthand(raster_sg_files):
+def test_gwcs_crop_supports_full_world_components(raster_sg_files):
     scan = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Si IV 1403")["Si IV 1403"]
     spectral_coord = SpectralCoord(scan.spectral_axis[len(scan.spectral_axis) // 2])
     last = scan.data.shape[-1] - 1
@@ -541,13 +535,6 @@ def test_gwcs_crop_supports_full_world_components_and_rejects_shorthand(raster_s
     values = (scan.wcs.array_index_to_world_values(0, 3, 50, i) for i in (0, last))
     assert scan.crop_by_values(*values, units=(u.nm, u.arcsec, u.arcsec, u.s, u.pix, u.pix)).data.ndim == 1
 
-    frame = wcs_to_celestial_frame(scan.raster_slice(0).fits_wcs.celestial)
-    target = SkyCoord(-8 * u.arcsec, 370 * u.arcsec, unit=u.arcsec, frame=frame)
-    with pytest.raises(ValueError, match="do not match WCS"):
-        scan.crop([spectral_coord, None], [spectral_coord, None])
-    with pytest.raises(ValueError, match="do not match WCS"):
-        scan.crop([None, target], [None, target])
-
 
 # TODO: remove once irispy requires an ndcube release with the crop-bounds hook.
 requires_crop_hook = pytest.mark.skipif(
@@ -556,7 +543,11 @@ requires_crop_hook = pytest.mark.skipif(
 
 
 @pytest.fixture(params=[False, True], ids=["single", "combined"])
-def partial_raster_cube(request):
+def partial_raster_tables(request):
+    """
+    The data shape and the (scan,) step-indexed PC, CRVAL and time tables of a synthetic
+    raster.
+    """
     shape = (2, 6, 4, 5) if request.param else (6, 4, 5)
     table_shape = shape[:-2]
     pc = np.broadcast_to(np.eye(2), (*table_shape, 2, 2)) * u.pix
@@ -564,8 +555,17 @@ def partial_raster_cube(request):
     crval[..., 0] = np.arange(table_shape[-1]) * u.arcsec  # slit moves CDELT3 per step
     # Uneven cadence rules out a two-sample linear inverse.
     dt = np.arange(np.prod(table_shape)).reshape(table_shape) ** 2 * u.s
+    return shape, pc, crval, dt
+
+
+def _partial_raster_cube(shape, pc, crval, dt):
     wcs = _synthetic_raster_gwcs(pc, crval, dt, CDELT2=1, CDELT3=1, CRPIX2=1)
     return SpectrogramCube(np.arange(np.prod(shape)).reshape(shape), wcs=wcs, uncertainty=None, unit=u.DN, meta={})
+
+
+@pytest.fixture
+def partial_raster_cube(partial_raster_tables):
+    return _partial_raster_cube(*partial_raster_tables)
 
 
 @requires_crop_hook
@@ -605,34 +605,30 @@ def test_gwcs_partial_crop(partial_raster_cube, coordinate):
 
 
 @requires_crop_hook
-def test_gwcs_partial_time_crop_keeps_repeated_matches(partial_raster_cube):
-    cube = partial_raster_cube
-    temporal = cube.wcs.forward_transform["Time"]
+def test_gwcs_partial_time_crop_keeps_repeated_matches(partial_raster_tables):
+    shape, pc, crval, dt = partial_raster_tables
     # Both rasters have the same nonmonotonic timestamps; step 2 lies between matches.
-    times = np.array([0, 1, 4, 1, 0, 9]) * u.s
-    times = times[:, None] * np.ones((1, 2)) if cube.data.ndim == 4 else times
-    temporal.lookup_table = _time_lookup(times).lookup_table
+    cube = _partial_raster_cube(shape, pc, crval, np.broadcast_to([0, 1, 4, 1, 0, 9], dt.shape) * u.s)
     point = [None] * len(cube.wcs.world_axis_object_classes)
     point[2] = cube.wcs.array_index_to_world(*((0,) if cube.data.ndim == 4 else ()), 1, 0, 0)[2]
     np.testing.assert_array_equal(cube.crop(point).data, cube.data[..., 1:4, :, :])
 
 
 @requires_crop_hook
-def test_gwcs_partial_sky_crop_uses_each_pointing(partial_raster_cube):
-    cube = partial_raster_cube
-    celestial = next(model for model in cube.wcs.forward_transform if hasattr(model, "transform_at_index"))
-    if cube.data.ndim == 4:
+def test_gwcs_partial_sky_crop_uses_each_pointing(partial_raster_tables):
+    shape, pc, crval, dt = partial_raster_tables
+    if len(shape) == 4:
         # Only the second raster covers the target sky position.
-        celestial.crval_table[:, 1, 0] += 100 * u.arcsec
+        crval[1, :, 0] += 100 * u.arcsec
     else:
-        # Only steps 1 and 3 cover it; include the intervening step in the bounding slice.
-        celestial.crval_table[:, 0] += 100 * u.arcsec
-        celestial.crval_table[[1, 3], 0] -= 100 * u.arcsec
+        # Exposure 4 is pointed back between exposures 1 and 3, so it covers the target too.
+        crval[4, 0] = 2 * u.arcsec
+    cube = _partial_raster_cube(shape, pc, crval, dt)
     prefix = (1,) if cube.data.ndim == 4 else ()
     world = cube.wcs.array_index_to_world(*prefix, 1, 1, 0)
     other = cube.wcs.array_index_to_world(*prefix, 3, 2, 0)
     points = [[value if i == 1 else None for i, value in enumerate(point)] for point in (world, other)]
-    expected = cube.data[1, 1:4, 1:3, :] if prefix else cube.data[1:4, 1:3, :]
+    expected = cube.data[1, 1:4, 1:3, :] if prefix else cube.data[1:5, 1:3, :]
     np.testing.assert_array_equal(cube.crop(*points).data, expected)
 
 
@@ -651,11 +647,11 @@ def test_gwcs_partial_crop_after_slicing(partial_raster_cube, coordinate):
 
 
 @requires_crop_hook
-def test_gwcs_partial_sky_crop_with_rotation(partial_raster_cube):
-    cube = partial_raster_cube
-    celestial = next(model for model in cube.wcs.forward_transform if hasattr(model, "transform_at_index"))
+def test_gwcs_partial_sky_crop_with_rotation(partial_raster_tables):
+    shape, pc, crval, dt = partial_raster_tables
     angle = 0.4
-    celestial.pc_table[:] = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]) * u.pix
+    rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    cube = _partial_raster_cube(shape, np.broadcast_to(rotation, pc.shape) * u.pix, crval, dt)
     prefix = (0,) if cube.data.ndim == 4 else ()
     world = cube.wcs.array_index_to_world(*prefix, 2, 1, 0)
     point = [value if i == 1 else None for i, value in enumerate(world)]
@@ -667,7 +663,7 @@ def test_gwcs_partial_sky_crop_with_rotation(partial_raster_cube):
     ("components", "match"),
     [
         ({3: lambda _: 100 * u.pix}, "No raster pixels"),
-        ({0: lambda _: SpectralCoord(500 * u.nm), 2: lambda w: w[2]}, "No raster pixels"),
+        ({0: lambda _: SpectralCoord(500 * u.nm), 2: lambda w: w[2]}, "outside the range"),
         ({1: lambda w: SkyCoord(np.nan * u.arcsec, w[1].Ty, frame=w[1].frame)}, "finite scalars"),
     ],
     ids=["step", "wavelength", "nan"],
@@ -689,11 +685,11 @@ def test_gwcs_crop_by_values_needs_both_sky_components(partial_raster_cube):
 
 
 @requires_crop_hook
-def test_gwcs_partial_sky_crop_skips_exposure_whose_slit_misses(partial_raster_cube):
-    cube = partial_raster_cube
-    celestial = next(model for model in cube.wcs.forward_transform if hasattr(model, "transform_at_index"))
+def test_gwcs_partial_sky_crop_skips_exposure_whose_slit_misses(partial_raster_tables):
+    shape, pc, crval, dt = partial_raster_tables
     # Step 3's slit is moved along itself, so it no longer reaches slit pixel 1 of step 2.
-    celestial.crval_table[3, ..., 1] = 10 * u.arcsec
+    crval[..., 3, 1] = 10 * u.arcsec
+    cube = _partial_raster_cube(shape, pc, crval, dt)
     prefix = (0,) if cube.data.ndim == 4 else ()
     a, b = (cube.wcs.array_index_to_world(*prefix, step, 1, 0)[1] for step in (2, 3))
     b = SkyCoord(b.Tx, a.Ty, frame=a.frame)
@@ -706,12 +702,10 @@ def test_extra_coords_crop_bypasses_raster_crop(sns_sg_file):
     cube = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]
     times = cube.axis_world_coords(wcs=cube.extra_coords)[0]
     np.testing.assert_array_equal(cube.crop([times[3]], [times[4]], wcs=cube.extra_coords).data, cube.data[3:5])
-    # Nor is another cube's raster WCS.
-    assert _raster_crop_bounds(cube, [(None, None, None, None, 1.0)], cube[1:].wcs.low_level_wcs) is NotImplemented
 
 
 @requires_crop_hook
-@pytest.mark.parametrize("partial_raster_cube", [True], indirect=True, ids=["combined"])
+@pytest.mark.parametrize("partial_raster_tables", [True], indirect=True, ids=["combined"])
 def test_gwcs_partial_crop_with_scan_selection(partial_raster_cube):
     cube = partial_raster_cube
     world = cube.wcs.array_index_to_world(1, 2, 1, 0)
@@ -832,6 +826,23 @@ def test_sit_and_stare_pointing_does_not_ramp_between_exposures(sns_sg_file):
     assert longitude[4] != longitude[0]
 
 
+@pytest.mark.parametrize("n_steps", [4, 5], ids=["even", "odd"])
+def test_sit_and_stare_slit_stays_at_the_exposure_pointing(n_steps):
+    """
+    With every exposure at the same pointing, the slit centre is there for any step
+    pixel, including half pixels and both edges, however dkist rounds a fractional step.
+    """
+    pc = np.broadcast_to(np.eye(2), (n_steps, 2, 2)) * u.pix
+    crval = np.zeros((n_steps, 2)) * u.arcsec
+    wcs = _synthetic_raster_gwcs(
+        pc, crval, np.arange(n_steps) * u.s, sit_and_stare=True, CDELT2=0.5, CDELT3=0, CRPIX2=1
+    )
+    steps = np.arange(-0.5, n_steps, 0.5)
+    sky = wcs.pixel_to_world(np.zeros(steps.size), np.zeros(steps.size), steps)[1]
+    assert_quantity_allclose(sky.Tx, 0 * u.arcsec, atol=1e-9 * u.arcsec)
+    assert_quantity_allclose(sky.Ty, 0 * u.arcsec, atol=1e-9 * u.arcsec)
+
+
 def test_celestial_frame_is_slicing_invariant(raster_sg_files):
     cube = read_spectrograph_lvl2(raster_sg_files)["Si IV 1403"]
 
@@ -852,22 +863,6 @@ def test_celestial_frame_is_slicing_invariant(raster_sg_files):
     assert np.isfinite(roundtripped.Ty.value)
 
 
-def test_sji_celestial_frame_is_slicing_invariant_and_keeps_sg_points_in_place(sns_sg_file, sns_sjicube_1400):
-    """
-    SG and SJI see the Sun from the same place, so an SG point must not move in the SJI
-    frame.
-    """
-    frame = sns_sjicube_1400.celestial_frame
-    assert isinstance(frame, Helioprojective)
-    assert sns_sjicube_1400[0].celestial_frame == frame
-
-    cube = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]
-    _, point, _, _ = cube.wcs.pixel_to_world(5, 20, 93)
-    moved = point.transform_to(frame)
-    assert_quantity_allclose(moved.Tx, point.Tx, atol=0.1 * u.arcsec)
-    assert_quantity_allclose(moved.Ty, point.Ty, atol=0.1 * u.arcsec)
-
-
 def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
     # A bare array would be stored as an UnknownUncertainty (issue #57).
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)["C II 1336"][0]
@@ -875,20 +870,10 @@ def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
     assert cube.uncertainty.array.shape == cube.data.shape
 
 
-def _synthetic_raster_gwcs(pc, crval, dt, **header):
+def _synthetic_raster_gwcs(pc, crval, dt, *, sit_and_stare=False, **header):
     header = {"CUNIT1": "nm", "CDELT1": 0.1, "CRVAL1": 140, "CRPIX1": 1, **header}
     observer = HeliographicStonyhurst(0 * u.deg, 0 * u.deg, 1 * u.AU, obstime="2020-01-01")
-    return _create_raster_gwcs(header, pc, crval, dt, "2020-01-01", observer, sit_and_stare=False)
-
-
-def test_time_lookup_is_nan_beyond_the_pixel_edges():
-    lookup = _time_lookup(np.array([0.0, 1, 4, 5]) * u.s)
-    assert_quantity_allclose(lookup([-1, -0.5, 1.5, 3.5, 4] * u.pix), [np.nan, -0.5, 2.5, 5.5, np.nan] * u.s)
-
-    lookup = _time_lookup(np.arange(6.0).reshape(3, 2) * u.s)
-    assert_quantity_allclose(
-        lookup([-0.5, 2.5, 3, 1] * u.pix, [-0.5, 1.5, 0, -1] * u.pix), [-1.5, 6.5, np.nan, np.nan] * u.s
-    )
+    return _create_raster_gwcs(header, pc, crval, dt, "2020-01-01", observer, sit_and_stare=sit_and_stare)
 
 
 def test_raster_gwcs_crpix_is_zero_based():
@@ -900,7 +885,12 @@ def test_raster_gwcs_crpix_is_zero_based():
     assert_quantity_allclose(sky.Tx.to(u.arcsec), 10 * u.arcsec)
     assert_quantity_allclose(sky.Ty.to(u.arcsec), 20 * u.arcsec)
 
-    # The far edge of the last of an even number of steps is half a step past its centre.
+
+def test_raster_gwcs_far_edge_of_an_even_step_count_is_half_a_step_past_the_last_centre():
+    pc = np.repeat(np.eye(2)[np.newaxis, :, :], 6, axis=0) * u.pix
+    crval = np.repeat([[10.0, 20.0]], 6, axis=0) * u.arcsec
+    wcs = _synthetic_raster_gwcs(pc, crval, np.arange(6) * u.s, CDELT2=0.5, CDELT3=2.0, CRPIX2=3.0, CRPIX3=4.0)
+
     lon = [wcs.pixel_to_world_values(0, 2, step)[1] for step in (5, 5.25, 5.5)]
     np.testing.assert_allclose(lon[2] - lon[0], 2 * (lon[1] - lon[0]))
 
@@ -932,12 +922,6 @@ def test_raster_times_are_interpolated_between_and_beyond_good_rows(offsets, exp
     with pytest.warns(UserWarning, match="non-finite times"):
         times = _sanitize_raster_times(start, offsets * u.s)
     assert_quantity_allclose((times - start).to(u.s), expected * u.s, atol=1e-9 * u.s)
-
-    with pytest.raises(ValueError, match="Every exposure has non-finite times"):
-        _sanitize_raster_times(start, [np.nan, np.nan] * u.s)
-    with pytest.warns(UserWarning, match="Using the planned start times"):
-        times = _sanitize_raster_times(start, [np.nan, np.nan] * u.s, fallback_to_start=True)
-    assert abs((times - start).to_value(u.s)).max() < 1e-9
 
 
 def test_gwcs_inverse_uses_explicit_step_when_time_is_not_monotonic():

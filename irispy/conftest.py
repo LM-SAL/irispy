@@ -1,5 +1,6 @@
 import os
 import logging
+import tarfile
 import importlib
 from pathlib import Path
 
@@ -154,8 +155,6 @@ def small_raster_tar(tmp_path, raster_sg_files):
     """
     A small multi-file raster tar bundled the way the archive serves it.
     """
-    import tarfile  # NOQA: PLC0415
-
     tar_path = tmp_path / "iris_l2_20140329_140938_3860258481_raster.tar.gz"
     with tarfile.open(tar_path, "w:gz") as tar:
         for file in raster_sg_files[:2]:

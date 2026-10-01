@@ -111,6 +111,7 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         # TODO: remove once ndcube returns C-ordered world coordinates or astropy's Time string
         # formats respect memory order. ndcube transposes N-D coordinates (Fortran order), and
         # astropy's isot/iso/datetime64 then emit them out of order, scrambling a 4D cube's times.
+        # astropy main emits them in order since astropy/astropy#19942, which is not released yet.
         return tuple(
             coord.copy() if isinstance(coord, Time) else coord for coord in super().axis_world_coords(*axes, **kwargs)
         )
@@ -292,5 +293,6 @@ class RasterCollection(NDCollection):
     @property
     def aligned_axis_physical_types(self):
         # NDCollection builds each tuple from a set, whose order changes from run to run.
+        # TODO: remove once irispy requires an ndcube with sunpy/ndcube#983.
         types = super().aligned_axis_physical_types
         return None if types is None else [tuple(sorted(axis_types)) for axis_types in types]

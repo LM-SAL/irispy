@@ -5,6 +5,7 @@ import astropy.units as u
 
 import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
+from ndcube.visualization.plotting_utils import prep_plot_kwargs
 from sunpy import log as logger
 
 __all__ = ["IRISArrayAnimatorWCS", "IRISPlotter", "SJIPlotter", "SpectrogramPlotter"]
@@ -125,6 +126,9 @@ def _hide_coord(coord):
     A hidden coordinate left in the automatic placement of WCSAxes still competes for an
     edge, and wins it on tick count, so a shown coordinate can end up on an edge where
     it has no ticks.
+
+    TODO: drop the position reset once irispy requires an astropy release with
+    astropy/astropy#20499, which skips fully hidden coordinates in that placement.
     """
     coord.set_ticks_visible(False)
     coord.set_ticklabel_visible(False)
@@ -174,17 +178,6 @@ class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
         return [_shorten_slider_label(label) for label in super()._compute_slider_labels_from_wcs(slices)]
 
 
-def _wcs_order_slices(plot_axes, naxis):
-    """
-    The WCSAxes ``slices`` that ndcube derives from ``plot_axes`` (in array order).
-    """
-    axes = list(plot_axes) if isinstance(plot_axes, (list, tuple)) else [plot_axes] if plot_axes else [..., "y", "x"]
-    if Ellipsis in axes:
-        at = axes.index(Ellipsis)
-        axes[at : at + 1] = [None] * (naxis - len(axes) + 1)
-    return axes[::-1]
-
-
 class IRISPlotter(MatplotlibPlotter):
     def _default_cmap_name(self):
         return "viridis"
@@ -215,7 +208,8 @@ class IRISPlotter(MatplotlibPlotter):
         # With axes_coordinates, ndcube plots through its combined WCS, whose pixel axis
         # names are unusable (ndcube's CompoundLowLevelWCS raises), so keep the cube's own.
         ax._iris_pixel_axis_names = tuple(self._ndcube.wcs.low_level_wcs.pixel_axis_names)
-        set_axis_properties(ax, axes_coordinates, slices=_wcs_order_slices(plot_axes, len(self._ndcube.shape)))
+        slices = prep_plot_kwargs(len(self._ndcube.shape), self._ndcube.wcs, plot_axes, None, None)[0]
+        set_axis_properties(ax, axes_coordinates, slices=slices)
         return ax
 
     def _animate_cube(

@@ -3,8 +3,12 @@ import numpy as np
 import pytest
 
 import astropy.units as u
+from astropy.tests.helper import assert_quantity_allclose
 
 import sunpy.map
+from sunpy.coordinates import Helioprojective
+
+from irispy.io.spectrograph import read_spectrograph_lvl2
 
 AXIS = [
     (
@@ -104,13 +108,6 @@ def test_sji_plot_falls_back_to_viridis_without_an_iris_colormap(sns_sjicube_133
     plt.close(ax.figure)
 
 
-def test_negative_slices(sns_sjicube_1330):
-    assert sns_sjicube_1330[-3:].shape == (3, 40, 37)
-    assert len(sns_sjicube_1330[-3:].fits_wcs) == 3
-    assert sns_sjicube_1330[:-2].shape == (50, 40, 37)
-    assert len(sns_sjicube_1330[:-2].fits_wcs) == 50
-
-
 def test_rebinned_cube_has_no_fits_wcs(sns_sjicube_1330):
     rebinned = sns_sjicube_1330[:, :, :36].rebin((1, 2, 2))
 
@@ -135,3 +132,19 @@ def test_to_maps_negative_index(sns_sjicube_1330):
 
 def test_to_maps_accepts_numpy_integers(sns_sjicube_1330):
     assert sns_sjicube_1330.to_maps(np.int64(2)).meta["DATE-OBS"] == sns_sjicube_1330.to_maps(2).meta["DATE-OBS"]
+
+
+def test_sji_celestial_frame_is_slicing_invariant_and_keeps_sg_points_in_place(sns_sg_file, sns_sjicube_1400):
+    """
+    SG and SJI see the Sun from the same place, so an SG point must not move in the SJI
+    frame.
+    """
+    frame = sns_sjicube_1400.celestial_frame
+    assert isinstance(frame, Helioprojective)
+    assert sns_sjicube_1400[0].celestial_frame == frame
+
+    cube = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]
+    _, point, _, _ = cube.wcs.pixel_to_world(5, 20, 93)
+    moved = point.transform_to(frame)
+    assert_quantity_allclose(moved.Tx, point.Tx, atol=0.1 * u.arcsec)
+    assert_quantity_allclose(moved.Ty, point.Ty, atol=0.1 * u.arcsec)

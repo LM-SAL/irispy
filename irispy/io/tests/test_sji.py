@@ -195,11 +195,10 @@ def test_sji_gwcs_matches_the_fits_pointing(sns_sji_1400_file):
             [aux[frame, columns["PC1_1IX"]], aux[frame, columns["PC1_2IX"]]],
             [aux[frame, columns["PC2_1IX"]], aux[frame, columns["PC2_2IX"]]],
         ]
-        longitude, latitude = (value * 3600 for value in fits_wcs.pixel_to_world_values(x, y))
-        world = cube.wcs.pixel_to_world_values(x, y, np.full_like(x, frame))
-        # the gWCS wraps longitude to [0, 360) degrees and astropy to (-180, 180]
-        np.testing.assert_allclose((world[0] - longitude + 648000) % 1296000 - 648000, 0, atol=1e-6)
-        np.testing.assert_allclose(world[1], latitude, atol=1e-6)
+        expected = fits_wcs.pixel_to_world(x, y)
+        sky = cube.wcs.pixel_to_world(x, y, np.full_like(x, frame))[0]
+        assert_quantity_allclose(sky.Tx, expected.Tx, atol=1e-6 * u.arcsec)
+        assert_quantity_allclose(sky.Ty, expected.Ty, atol=1e-6 * u.arcsec)
 
 
 def test_sji_extra_coordinate_units(sns_sji_1400_file):

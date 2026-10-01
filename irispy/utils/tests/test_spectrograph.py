@@ -12,7 +12,6 @@ from sunpy.time import parse_time
 from irispy.data.test import get_test_filepath
 from irispy.io.utils import read_files
 from irispy.spectrograph import SpectrogramCube
-from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.response import get_latest_response
 from irispy.utils.spectrograph import (
     calculate_dn_to_radiance_factor,
@@ -32,15 +31,14 @@ def test_calculate_dn_to_radiance_factor(c_ii_cube):
     idl_wavelength = readsav(get_test_filepath("input_calibration.sav"))["wavelength"] * u.Angstrom
     # IDL factor is in units: erg cm^-2 s^-1 sr^-1 Å^-1
     idl_factor = readsav(get_test_filepath("output_calibration.sav"))["factor"] * RADIANCE_UNIT
-    fits_wcs = c_ii_cube.fits_wcs.wcs
 
     # The slit width is divided by 2 in the IDL code, unsure why.
     factor = calculate_dn_to_radiance_factor(
         iris_response=get_latest_response(parse_time("2025-01-01")),
         wavelength=idl_wavelength,
         detector_type="FUV",
-        spectral_dispersion_per_pixel=fits_wcs.cdelt[0] * fits_wcs.cunit[0],
-        solid_angle=fits_wcs.cdelt[1] * fits_wcs.cunit[1] * (SLIT_WIDTH / 2),
+        spectral_dispersion_per_pixel=c_ii_cube.spectral_dispersion,
+        solid_angle=c_ii_cube.solid_angle / 2,
     )
     assert len(factor) == len(idl_wavelength)
     # Idl output is here to help check values
@@ -87,7 +85,7 @@ def test_radiometric_calibration_of_full_sliced_and_rebinned_cube(c_ii_cube):
     np.testing.assert_allclose(factor[usable], native_factor[usable], rtol=1e-6)
 
 
-def test_radiometric_calibration_preserves_combined_raster_metadata(raster_sg_files):
+def test_radiometric_calibration_keeps_combined_raster_grouping(raster_sg_files):
     cube = read_files(raster_sg_files)["Si IV 1403"]
     calibrated_cube = radiometric_calibration(cube)
 
@@ -127,14 +125,13 @@ def test_radiometric_calibration_rejects_fixed_wavelength_raster_images(c_ii_cub
 
 
 def test_convert_photons_per_sec_to_radiance_vs_peter_young(c_ii_cube):
-    fits_wcs = c_ii_cube.fits_wcs.wcs
-    spectral_dispersion_per_pixel = fits_wcs.cdelt[0] * fits_wcs.cunit[0]
+    spectral_dispersion_per_pixel = c_ii_cube.spectral_dispersion
     factor = calculate_dn_to_radiance_factor(
         iris_response=get_latest_response(parse_time("2014-09-10")),
         wavelength=[1402.77] * u.Angstrom,
         detector_type="FUV",
         spectral_dispersion_per_pixel=spectral_dispersion_per_pixel,
-        solid_angle=fits_wcs.cdelt[1] * fits_wcs.cunit[1] * SLIT_WIDTH,
+        solid_angle=c_ii_cube.solid_angle,
     )
     intensity = 1 * factor * 4 * (u.photon / u.s)  # factor assumes data is in photons / s
     """
