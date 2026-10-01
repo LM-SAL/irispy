@@ -1,0 +1,1 @@
+Corrected the wavelength scale in the Mg II Dopplergram example with `~irispy.utils.wavelength_drift.calculate_wavelength_drift`, as the IDL tutorial does with ``iris_prep_wavecorr_l2``, instead of the orbital velocity alone.
