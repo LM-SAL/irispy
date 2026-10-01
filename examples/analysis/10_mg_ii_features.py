@@ -7,10 +7,8 @@ The Mg II h and k lines each have two emission peaks, such as k2v and k2r, on ei
 a central reversal, such as k3. They form at different heights in the chromosphere, so their
 positions and intensities trace its velocities and how these change with height.
 
-In this example, we will measure them and reproduce Figure 3 of
-`Long et al. (2024) <https://doi.org/10.3847/1538-4357/ad3234>`__, who measured them with
-``iris_get_mg_features_lev2.pro``, the IDL routine that
-`~irispy.utils.mg_features.calculate_mg_features` ports.
+In this example, we will measure them and attempt to reproduce Figure 3 of
+`Long et al. (2024) <https://doi.org/10.3847/1538-4357/ad3234>`__.
 """
 
 import matplotlib.pyplot as plt
@@ -25,9 +23,17 @@ from irispy.spectrograph import SpectrogramCube
 from irispy.utils.mg_features import calculate_mg_features
 
 ###############################################################################
-# We start with the first raster scan of `this observation <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20200402_224709_3610108077_2020-04-02T22%3A47%3A092020-04-02T22%3A47%3A09.xml>`__
-# of active region 12759, from a cutout of its `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2020/04/02/20200402_224709_3610108077/iris_l2_20200402_224709_3610108077_raster.tar.gz>`__
-# with only the area of the figure and the wavelengths of the h and k lines.
+# We will start by getting some data from the IRIS archive.
+#
+# Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20200402_224709_3610108077_2020-04-02T22%3A47%3A092020-04-02T22%3A47%3A09.xml
+#
+# The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2020/04/02/20200402_224709_3610108077/iris_l2_20200402_224709_3610108077_raster.tar.gz>`__.
+# To keep the download small, we use a cutout.
+#
+# In this case, we will use ``pooch`` to keep this example self-contained
+# but you can download the data manually using your browser as well.
+#
+# You will need to update the path to the data in the next section if you do that.
 
 raster_filename = pooch.retrieve(
     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20200402_224709_3610108077_cutout_2796_raster.fits.gz",
@@ -36,16 +42,16 @@ raster_filename = pooch.retrieve(
 mg_ii = read_files(raster_filename)["Mg II k 2796"][0]
 
 ###############################################################################
-# For each spectrum, `~irispy.utils.mg_features.calculate_mg_features` finds the velocity and
-# intensity of the blue peak, line centre and red peak of both lines, within 40 km/s of their
-# rest wavelengths. Each is a map with the spatial WCS of the raster.
+# `~irispy.utils.mg_features.calculate_mg_features` finds the velocity and
+# intensity of the blue peak, line centre and red peak of both lines, within
+# 40 km/s of their rest wavelengths. Each is a map with the spatial WCS of the raster.
 
 features = calculate_mg_features(mg_ii)
 features.keys()
 
 ###############################################################################
-# The figure shows the separation of the k2 peaks, the k3 velocity, the difference of the k3
-# and h3 velocities and the asymmetry of the k2 peaks.
+# The figure shows the separation of the k2 peaks, the k3 velocity, the
+# difference of the k3 and h3 velocities and the asymmetry of the k2 peaks.
 
 velocity = {name: features[f"{name}_velocity"].data for name in ("k2v", "k3", "k2r", "h3")}
 k2v, k2r = features["k2v_intensity"].data, features["k2r_intensity"].data
@@ -58,7 +64,7 @@ maps = {
 
 ###############################################################################
 # The paper compares three regions: the leading and following polarities of the active region
-# and an area of emerging flux. Their 10" boxes are centred where they appear in its Figure 2.
+# and an area of emerging flux. We try to bound the same regions as in the paper.
 
 coordinates = features["k3_velocity"].axis_world_coords()[0]
 solar_x, solar_y = coordinates.Tx.to_value(u.arcsec), coordinates.Ty.to_value(u.arcsec)
@@ -66,10 +72,11 @@ regions = {"Leading polarity": (-344, 526), "Following polarity": (-423, 548), "
 inside = {name: (np.abs(solar_x - x) <= 5) & (np.abs(solar_y - y) <= 5) for name, (x, y) in regions.items()}
 
 ###############################################################################
-# The top row shows the maps with the regions outlined, and the bottom row the distribution of
-# each quantity within the regions. As in the paper, the k2 peaks are furthest apart in the
-# emerging flux and closest in the leading polarity, and the k3 velocities, k-h separations and
-# asymmetries are mostly small and positive.
+# The top row shows the maps with the regions outlined, and the bottom row the
+# distribution of each quantity within each region. As in the paper, the k2
+# peaks are furthest apart in the emerging flux and closest in the leading
+# polarity, and the k3 velocities, k-h separations and asymmetries
+# are mostly small and positive.
 
 wcs = features["k3_velocity"].wcs
 fig = plt.figure(figsize=(14, 7.5), layout="constrained")

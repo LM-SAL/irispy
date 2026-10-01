@@ -1,8 +1,3 @@
-"""
-The IDL references ``mg_features/*.sav`` are made from the FITS file there by
-``make_idl_references.pro``, as ``mg_features/overview.txt`` describes.
-"""
-
 import copy
 
 import dask.array as da
@@ -20,12 +15,14 @@ from irispy.utils.mg_features import _centre_vertex, _maxima, _peak_vertex, _pea
 
 TEST_FILE = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits"
 WINDOWS = {"k": "Mg II k 2796", "h": "Mg II h 2803"}
-# (step, slit) of the line centres IDL finds from another guess along the slit. Its guess spline also
-# goes through the centres it finds in the -200 fill (h slit rows 0-7 and 729-770), which changes the
-# spline's tension everywhere and its values near row 729. For these spectra the lowest point within
-# 15 grid points of the guess is at the edge of that range, so a guess rounded to another grid point
+# (step, slit) of the line centres IDL finds from another guess along the slit.
+# Its guess spline also goes through the centres it finds in the -200 fill
+# (h slit rows 0-7 and 729-770), which changes the spline's tension everywhere
+# and its values near row 729. For these spectra the lowest point within 15 grid points
+# of the guess is at the edge of that range, so a guess rounded to another grid point
 # gives another centre (0.019 and 0.157 km/s away). From IDL's guesses the port gives IDL's centres.
-# Row 8 is the first good row after the fill, where the port holds its guess at the first good centre.
+# Row 8 is the first good row after the fill, where the port holds its
+# guess at the first good centre.
 OTHER_GUESS = {"k": [], "h": [[0, 112], [2, 8], [2, 727]]}
 
 
