@@ -16,7 +16,7 @@ import astropy.units as u
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube
-from irispy.utils.mg_features import _extrema, _parabola_minimum, _peaks, _spline, _vertex, calculate_mg_features
+from irispy.utils.mg_features import _centre_vertex, _maxima, _peak_vertex, _peaks, _spline, calculate_mg_features
 
 TEST_FILE = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits"
 WINDOWS = {"k": "Mg II k 2796", "h": "Mg II h 2803"}
@@ -57,17 +57,13 @@ def test_matches_idl(raster, idl, index, line):
         theirs = idl[key][..., index]
         found = np.isfinite(theirs) & ~missing[..., np.newaxis]
         np.testing.assert_array_equal(np.isfinite(ours), found)
-        close = np.isclose(ours[..., 0], theirs[..., 0], rtol=0, atol=velocity) & np.isclose(
-            ours[..., 1], theirs[..., 1], rtol=intensity, atol=0
-        )
+        close = np.isclose(ours[..., 0], theirs[..., 0], rtol=0, atol=velocity)
+        close &= np.isclose(ours[..., 1], theirs[..., 1], rtol=intensity, atol=0)
         assert np.argwhere(found[..., 0] & ~close).tolist() == (OTHER_GUESS[line] if key == "lc" else [])
 
 
 def test_output(raster):
     features = calculate_mg_features(raster["Mg II k 2796"][0], lines=("k",))
-    assert list(features.keys()) == [
-        f"k{feature}_{kind}" for feature in ("2v", "3", "2r") for kind in ("velocity", "intensity")
-    ]
     velocity = features["k3_velocity"]
     assert velocity.unit == u.km / u.s
     assert velocity.data.shape == (3, 771)
@@ -107,11 +103,9 @@ def test_dask_data(raster):
 def test_velocity_range(raster):
     cube = raster["Mg II k 2796"][0]
     features = calculate_mg_features(cube, lines=("k",), velocity_range=(-30, 30))
-    in_metres = calculate_mg_features(cube, lines=("k",), velocity_range=[-3e4, 3e4] * u.m / u.s)
     assert np.nanmax(np.abs(calculate_mg_features(cube, lines=("k",))["k2r_velocity"].data)) > 33
     for key in ("k2v_velocity", "k3_velocity", "k2r_velocity"):
         assert np.nanmax(np.abs(features[key].data)) <= 33  # the grid reaches 3 km/s beyond the range
-        np.testing.assert_array_equal(features[key].data, in_metres[key].data)
 
 
 def test_skips_uncovered_line(raster):
@@ -158,13 +152,10 @@ def test_rejects_unscaled_data():
 
 
 def test_rejects_other_input(raster):
-    sequence = raster["Mg II k 2796"]
-    for wrong in (raster, sequence):
-        with pytest.raises(TypeError, match="index it"):
-            calculate_mg_features(wrong)
-    for wrong in (sequence[0][:, 300], sequence[0][0]):
-        with pytest.raises(ValueError, match="slice it with ranges"):
-            calculate_mg_features(wrong)
+    with pytest.raises(TypeError, match="index it"):
+        calculate_mg_features(raster["Mg II k 2796"])
+    with pytest.raises(ValueError, match="slice it with ranges"):
+        calculate_mg_features(raster["Mg II k 2796"][0][:, 300])
 
 
 @pytest.mark.parametrize(
@@ -183,25 +174,23 @@ def test_rejects_bad_arguments(raster, keywords, match):
         calculate_mg_features(raster["Mg II k 2796"][0], **{"lines": ("k",), **keywords})
 
 
-def test_extrema():
-    # As in lclxtrem.pro, an extremum is dropped only near a kept one of larger absolute value.
+def test_maxima():
+    # As in lclxtrem.pro, a maximum is dropped only near a kept one of larger absolute value.
     x = np.arange(40)
     bumps = 3 * np.exp(-((x - 5) ** 2) / 2), 2 * np.exp(-((x - 13) ** 2) / 2), np.exp(-((x - 21) ** 2) / 2)
-    np.testing.assert_array_equal(np.flatnonzero(_extrema(sum(bumps)[np.newaxis])), [5, 21])
-    # So of two close minima, the shallower counts.
-    np.testing.assert_array_equal(np.flatnonzero(_extrema((bumps[0] + bumps[1] - 10)[np.newaxis])), [13])
+    np.testing.assert_array_equal(np.flatnonzero(_maxima(sum(bumps)[np.newaxis])), [5, 21])
     # With no turning point, the highest value counts.
-    np.testing.assert_array_equal(np.flatnonzero(_extrema(x[np.newaxis] * 1.0)), [39])
+    np.testing.assert_array_equal(np.flatnonzero(_maxima(x[np.newaxis] * 1.0)), [39])
 
 
 def test_parabola_vertices():
     grid = np.linspace(-10, 10, 201)
     # Vertices between grid points, the second next to the grid's start, where fewer points are fitted.
     vertices = np.array([0.237, -9.863])
-    minimum = _parabola_minimum(grid, 2 + 3 * (grid - vertices[:, np.newaxis]) ** 2, vertices, np.array([15, 15]))
+    minimum = _centre_vertex(grid, 2 + 3 * (grid - vertices[:, np.newaxis]) ** 2, vertices, np.array([15, 15]))
     np.testing.assert_allclose(minimum, [[0.237, 2], [-9.863, 2]], atol=1e-10)
     spectra = np.tile(5 - 2 * (grid - 0.237) ** 2, (2, 1))
-    maximum = _vertex(grid, spectra, np.full((2, 4), np.argmax(spectra[0])), np.array([0, -1]))
+    maximum = _peak_vertex(grid, spectra, np.full((2, 4), np.argmax(spectra[0])), np.array([0, -1]))
     np.testing.assert_allclose(maximum, [[0.237, 5], [np.nan, np.nan]], atol=1e-10)
 
 

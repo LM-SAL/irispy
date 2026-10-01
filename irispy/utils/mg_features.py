@@ -18,8 +18,6 @@ from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 __all__ = ["calculate_mg_features"]
 
 _REST_WAVELENGTH = {"k": 279.63509493 * u.nm, "h": 280.35297192 * u.nm}  # vacuum
-_SAMPLES = 300  # points of the velocity grid the spectra are interpolated to
-_SPACING = 10  # grid points within which only one extremum counts
 # Inner (minima, maxima) counts where the centre is the middle minimum, or the lowest between the two highest maxima.
 _MIDDLE_MINIMUM = [(1, 2), (3, 1), (3, 2), (3, 4), (5, 4), (7, 6)]
 _BETWEEN_MAXIMA = [(2, 2), (2, 3), (3, 3), (4, 2), (4, 3), (4, 4)]
@@ -108,7 +106,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
         missing = ~np.isfinite(window) | (window == BAD_PIXEL_VALUE_SCALED)
         if cube.mask is not None:
             missing |= np.broadcast_to(cube.mask, cube.data.shape)[..., inside]
-        grid = np.linspace(velocity[inside][0], velocity[inside][-1], _SAMPLES)
+        grid = np.linspace(velocity[inside][0], velocity[inside][-1], 300)
         features = np.full((*window.shape[:2], 3, 2), np.nan)  # blue peak, centre, red peak
         for step, (data, bad) in enumerate(zip(window, missing, strict=True)):
             valid = ~bad.any(axis=-1)
@@ -130,12 +128,12 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
 
 def _slit_features(grid, spectra, valid):
     """
-    Blue peak, line centre and red peak, each as (velocity, intensity), of the valid
-    spectra of one slit.
+    Blue peak, line centre and red peak, as (velocity, intensity), of a slit's spectra.
     """
-    maxima, minima = _extrema(spectra), _extrema(-spectra)
+    maxima, minima = _maxima(spectra), _maxima(-spectra)
     centre = _centres(grid, spectra, maxima, minima, 0.0)
     positions = np.flatnonzero(valid)
+    blended = np.count_nonzero(maxima & (grid > grid[0] + 20) & (grid < grid[-1] - 20), axis=-1) == 1
     for _ in range(2):
         # Redo centres that jump from the smoothed slit (missing ones count as 0 km/s) from a spline through the
         # rest. As in IDL, slits shorter than the 17-pixel kernel are not smoothed.
@@ -146,89 +144,76 @@ def _slit_features(grid, spectra, valid):
         if np.count_nonzero(good) >= 3:
             with np.errstate(over="ignore", invalid="ignore"):  # it overflows far beyond the good centres
                 guess = _spline(positions[good], centre[good, 0], positions, tension=1)
-            redo = ~good
-            centre[redo] = np.nan  # and stays so where the guess overflowed
-            redo &= np.isfinite(guess)
-            centre[redo] = _centres(grid, spectra[redo], maxima[redo], minima[redo], guess[redo], forced=True)
+            centre[~good] = np.nan  # and stays so where the guess overflowed or the peak is blended
+            redo = ~good & np.isfinite(guess) & ~blended
+            centre[redo] = _centre_vertex(grid, spectra[redo], guess[redo], 15)
     redo = np.isnan(centre[:, 0])
     centre[redo] = _centres(grid, spectra[redo], maxima[redo], minima[redo], 5.0, use_derivative=True)
     blue, red = _peaks(grid, spectra, maxima, centre[:, 0])
     return np.stack([blue, centre, red], axis=1)
 
 
-def _extrema(spectra):
+def _maxima(spectra):
     """
     Mask of the local maxima of each spectrum (``lclxtrem.pro``).
 
-    A maximum is dropped when it is within ``_SPACING`` points of a kept one of larger
-    absolute value, so of two close minima, ``_extrema(-spectra)`` keeps the shallower.
+    A maximum is dropped when it is within 10 grid points of a kept one of larger
+    absolute value, so of two close minima, ``_maxima(-spectra)`` keeps the shallower.
     """
     turn = np.diff(np.sign(np.diff(spectra, axis=-1)), axis=-1)
-    candidate = np.zeros(spectra.shape, dtype=bool)
-    candidate[:, 1:-1] = turn < 0
+    candidate = np.pad(turn < 0, ((0, 0), (1, 1)))
     flat = ~candidate.any(axis=-1)  # no turning point: the highest value is the maximum
     candidate[flat, np.argmax(spectra[flat], axis=-1)] = True
-    # Keep the candidates from the largest absolute value down, unless a kept one is too close.
     order = np.argsort(np.where(candidate, -np.abs(spectra), np.inf), axis=-1)[:, : candidate.sum(axis=-1).max()]
     kept = np.take_along_axis(candidate, order, axis=-1)
     for rank in range(1, order.shape[1]):
-        close = np.abs(order[:, :rank] - order[:, rank, np.newaxis]) <= _SPACING
+        close = np.abs(order[:, :rank] - order[:, rank, np.newaxis]) <= 10
         kept[:, rank] &= ~(close & kept[:, :rank]).any(axis=-1)
-    extrema = np.zeros_like(candidate)
-    np.put_along_axis(extrema, order, kept, axis=-1)
-    return extrema
+    np.put_along_axis(candidate, order, kept, axis=-1)  # order holds every candidate
+    return candidate
 
 
-def _centres(grid, spectra, maxima, minima, guess, *, forced=False, use_derivative=False):
+def _centres(grid, spectra, maxima, minima, guess, *, use_derivative=False):
     """
     Line centres (IDL ``mg_single``), as an (n, 2) array of (velocity, intensity).
 
     The numbers of extrema away from the grid's ends pick a guess, and the centre is the
     vertex of a parabola fitted near it. A single blended peak gives NaN, or with
-    ``use_derivative`` the flattest point on its higher side. ``forced`` keeps ``guess``
-    unless there is a single peak.
+    ``use_derivative`` the flattest point on its higher side.
     """
     rows = np.arange(len(spectra))
-    guess = np.broadcast_to(guess, rows.shape).astype(float)
-    half_width = np.full(rows.shape, 15)
-    if forced:
-        maxima = maxima & (grid > grid[0] + 20) & (grid < grid[-1] - 20)
-        blended = np.count_nonzero(maxima, axis=-1) == 1
-    else:
-        inner = (grid > grid[0] + 10) & (grid < grid[-1] - 10)
-        maxima, minima = maxima & inner, minima & inner
-        counts = np.stack([np.count_nonzero(minima, axis=-1), np.count_nonzero(maxima, axis=-1)], axis=-1)
-        middle = (counts[:, np.newaxis] == _MIDDLE_MINIMUM).all(axis=-1).any(axis=-1)
-        between = ~middle & (counts[:, np.newaxis] == _BETWEEN_MAXIMA).all(axis=-1).any(axis=-1)
-        pair = ~middle & ~between & (counts == (2, 1)).all(axis=-1)
-        index = np.arange(grid.size)
-        rank = np.cumsum(minima, axis=-1) - 1
-        guess = np.where(middle, grid[np.argmax(minima & (rank == counts[:, :1] // 2), axis=-1)], guess)
-        highest = np.sort(np.argpartition(np.where(maxima, spectra, -np.inf), -2, axis=-1)[:, -2:], axis=-1)
-        enclosed = minima & (index > highest[:, :1]) & (index < highest[:, 1:])
-        found = between & enclosed.any(axis=-1)  # otherwise the guess stays
-        guess = np.where(found, grid[np.argmin(np.where(enclosed, spectra, np.inf), axis=-1)], guess)
-        lowest = np.argmin(np.where(minima, spectra, np.inf), axis=-1)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            contrast = np.where(minima, spectra, -np.inf).max(axis=-1) / spectra[rows, lowest]
-        deep = pair & (contrast > 1.3)
-        single = ~middle & ~between & ~pair & (counts[:, 0] == 1) & (counts[:, 1] != 1)
-        guess = np.where(deep | single, grid[lowest], guess)
-        half_width[middle | deep] = 7
-        blended = (pair & ~deep) | (~middle & ~between & ~pair & (counts[:, 1] == 1))
+    inner = (grid > grid[0] + 10) & (grid < grid[-1] - 10)
+    maxima, minima = maxima & inner, minima & inner
+    counts = np.stack([np.count_nonzero(minima, axis=-1), np.count_nonzero(maxima, axis=-1)], axis=-1)
+    middle = (counts[:, np.newaxis] == _MIDDLE_MINIMUM).all(axis=-1).any(axis=-1)
+    between = ~middle & (counts[:, np.newaxis] == _BETWEEN_MAXIMA).all(axis=-1).any(axis=-1)
+    pair = ~middle & ~between & (counts == (2, 1)).all(axis=-1)
+    index = np.arange(grid.size)
+    rank = np.cumsum(minima, axis=-1) - 1
+    guess = np.where(middle, grid[np.argmax(minima & (rank == counts[:, :1] // 2), axis=-1)], guess)
+    highest = np.sort(np.argpartition(np.where(maxima, spectra, -np.inf), -2, axis=-1)[:, -2:], axis=-1)
+    enclosed = minima & (index > highest[:, :1]) & (index < highest[:, 1:])
+    found = between & enclosed.any(axis=-1)  # otherwise the guess stays
+    guess = np.where(found, grid[np.argmin(np.where(enclosed, spectra, np.inf), axis=-1)], guess)
+    lowest = np.argmin(np.where(minima, spectra, np.inf), axis=-1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        contrast = np.where(minima, spectra, -np.inf).max(axis=-1) / spectra[rows, lowest]
+    deep = pair & (contrast > 1.3)
+    single = ~middle & ~between & ~pair & (counts[:, 0] == 1) & (counts[:, 1] != 1)
+    guess = np.where(deep | single, grid[lowest], guess)
+    half_width = np.where(middle | deep, 7, 15)
+    blended = (pair & ~deep) | (~middle & ~between & ~pair & (counts[:, 1] == 1))
     centre = np.full((rows.size, 2), np.nan)
-    fit = ~blended
-    centre[fit] = _parabola_minimum(grid, spectra[fit], guess[fit], half_width[fit])
+    centre[~blended] = _centre_vertex(grid, spectra[~blended], guess[~blended], half_width[~blended])
     if use_derivative:
         centre[blended] = _flattest(grid, spectra[blended], np.argmax(maxima[blended], axis=-1))
     return centre
 
 
-def _parabola_minimum(grid, spectra, guess, half_width):
+def _centre_vertex(grid, spectra, guess, half_width):
     """
     Vertex of a parabola fitted to 7 points around the lowest point near ``guess``.
     """
-    rows = np.arange(len(spectra))
     spacing = grid[1] - grid[0]
     nearest = np.clip(np.rint((guess - grid[0]) / spacing), 0, grid.size - 1).astype(int)
     index = np.arange(grid.size)
@@ -238,15 +223,15 @@ def _parabola_minimum(grid, spectra, guess, half_width):
     used = (points >= 0) & (points < grid.size)
     points = np.clip(points, 0, grid.size - 1)
     x = grid[points] - grid[lowest, np.newaxis]
-    powers = x[..., np.newaxis] ** np.arange(3)
-    normal = np.einsum("nki,nkj->nij", powers, powers * used[..., np.newaxis])
-    moments = np.einsum("nki,nk->ni", powers * used[..., np.newaxis], spectra[rows[:, np.newaxis], points])
+    powers = np.where(used[..., np.newaxis], x[..., np.newaxis] ** np.arange(3), 0)  # leaves out the clipped points
+    normal = np.einsum("nki,nkj->nij", powers, powers)
+    moments = np.einsum("nki,nk->ni", powers, np.take_along_axis(spectra, points, axis=-1))
     a = np.linalg.solve(normal, moments[..., np.newaxis])[..., 0]
     with np.errstate(divide="ignore", invalid="ignore"):
         vertex = -a[:, 1] / (2 * a[:, 2])
         value = a[:, 0] - a[:, 2] * vertex**2
     close = np.abs(vertex) <= 4 * spacing
-    return np.column_stack([np.where(close, grid[lowest] + vertex, np.nan), np.where(close, value, np.nan)])
+    return np.where(close[:, np.newaxis], np.column_stack([grid[lowest] + vertex, value]), np.nan)
 
 
 def _flattest(grid, spectra, peak):
@@ -262,10 +247,10 @@ def _flattest(grid, spectra, peak):
     stop = np.where(blue, peak, last) - margin - 1
     change = np.abs(np.diff(spectra, axis=-1))
     index = np.arange(change.shape[-1])
-    window = (index >= start[:, np.newaxis]) & (index <= stop[:, np.newaxis])
-    flattest = np.argmin(np.where(window, change, np.inf), axis=-1) + 1
+    searched = (index >= start[:, np.newaxis]) & (index <= stop[:, np.newaxis])
+    flattest = np.argmin(np.where(searched, change, np.inf), axis=-1) + 1
     found = stop >= start
-    return np.column_stack([np.where(found, grid[flattest], np.nan), np.where(found, spectra[rows, flattest], np.nan)])
+    return np.where(found[:, np.newaxis], np.column_stack([grid[flattest], spectra[rows, flattest]]), np.nan)
 
 
 def _peaks(grid, spectra, maxima, centre):
@@ -275,40 +260,37 @@ def _peaks(grid, spectra, maxima, centre):
     Only the maxima within 50 km/s of the line centre (0 km/s when it is unknown) count,
     and of more than four, the inner four.
     """
-    rows = np.arange(len(spectra))
     centre = np.nan_to_num(centre)
     near = maxima & (np.abs(grid - centre[:, np.newaxis]) < 50)
     count = np.count_nonzero(near, axis=-1)
     rank = np.cumsum(near, axis=-1) - 1 - np.where(count > 4, count // 2 - 2, 0)[:, np.newaxis]
     peak = np.stack([np.argmax(near & (rank == slot), axis=-1) for slot in range(4)], axis=-1)
-    x, y = grid[peak], spectra[rows[:, np.newaxis], peak]
+    y = np.take_along_axis(spectra, peak, axis=-1)
+    (x0, x1, x2, x3), (y0, y1, y2, y3) = grid[peak].T, y.T
     three, four = count == 3, count >= 4
     weakest = np.argmin(y[:, :3], axis=-1)
-    outer = (
-        (x[:, 3] - x[:, 0] < 40) & (x[:, 2] - x[:, 1] > 13) & (y[:, 0] > 1.06 * y[:, 1]) & (y[:, 3] > 1.06 * y[:, 2])
-    )
-    inner = ((x[:, 1] < centre) & (centre < x[:, 2])) | (centre > x[:, 3]) | (centre < x[:, 0])
+    outer = (x3 - x0 < 40) & (x2 - x1 > 13) & (y0 > 1.06 * y1) & (y3 > 1.06 * y2)
+    inner = ((x1 < centre) & (centre < x2)) | (centre > x3) | (centre < x0)
     cases = [  # (condition, blue slot, red slot), of which the first that holds counts
-        ((count == 1) & (x[:, 0] > centre), -1, 0),
+        ((count == 1) & (x0 > centre), -1, 0),
         (count == 1, 0, -1),
         (count == 2, 0, 1),
-        (three & (x[:, 0] < centre) & (centre < x[:, 1]), 0, 1 + (y[:, 2] > y[:, 1])),
-        (three & (x[:, 1] < centre) & (centre < x[:, 2]), y[:, 1] > y[:, 0], 2),
+        (three & (x0 < centre) & (centre < x1), 0, 1 + (y2 > y1)),
+        (three & (x1 < centre) & (centre < x2), y1 > y0, 2),
         (three, weakest == 0, 2 - (weakest == 2)),
         (four & outer, 0, 3),
         (four & inner, 1, 2),
-        (four & (centre < x[:, 1]), 0, 1 + np.argmax(y[:, 1:], axis=-1)),
-        (four & (centre < x[:, 3]), np.argmax(y[:, :3], axis=-1), 3),
+        (four & (centre < x1), 0, 1 + np.argmax(y[:, 1:], axis=-1)),
+        (four & (centre < x3), np.argmax(y[:, :3], axis=-1), 3),
     ]
     condition, blue, red = zip(*cases, strict=True)
     blue, red = np.select(condition, blue, -1), np.select(condition, red, -1)
-    return _vertex(grid, spectra, peak, blue), _vertex(grid, spectra, peak, red)
+    return _peak_vertex(grid, spectra, peak, blue), _peak_vertex(grid, spectra, peak, red)
 
 
-def _vertex(grid, spectra, peak, slot):
+def _peak_vertex(grid, spectra, peak, slot):
     """
-    Vertex of the parabola through the chosen grid maximum and its neighbours, as
-    (velocity, intensity).
+    Vertex (velocity, intensity) of the parabola through a peak and its neighbours.
     """
     rows = np.arange(len(spectra))
     index = peak[rows, np.maximum(slot, 0)]
@@ -317,13 +299,8 @@ def _vertex(grid, spectra, peak, slot):
     curvature = before - 2 * top + after
     with np.errstate(divide="ignore", invalid="ignore"):
         shift = np.where((left < index) & (index < right) & (curvature < 0), 0.5 * (before - after) / curvature, 0)
-    found = slot >= 0
-    return np.column_stack(
-        [
-            np.where(found, grid[index] + shift * (grid[1] - grid[0]), np.nan),
-            np.where(found, top - 0.25 * (before - after) * shift, np.nan),
-        ]
-    )
+    vertex = np.column_stack([grid[index] + shift * (grid[1] - grid[0]), top - 0.25 * (before - after) * shift])
+    return np.where((slot >= 0)[:, np.newaxis], vertex, np.nan)
 
 
 def _spline(x, y, t, *, tension):
@@ -345,9 +322,8 @@ def _spline(x, y, t, *, tension):
     bands = np.zeros((3, x.size))
     bands[0, 1:] = bands[2, :-1] = off_diagonal
     bands[1] = np.concatenate([diagonal[:1], diagonal[:-1] + diagonal[1:], diagonal[-1:]])
-    moments = solve_banded(
-        (1, 1), bands, np.concatenate([slope[:1] - first, np.diff(slope, axis=0), last - slope[-1:]])
-    )
+    rhs = np.concatenate([slope[:1] - first, np.diff(slope, axis=0), last - slope[-1:]])
+    moments = solve_banded((1, 1), bands, rhs)
     i = np.clip(np.searchsorted(x, t, side="right") - 1, 0, x.size - 2)
     left, right, width = (t - x[i]).reshape(shape), (x[i + 1] - t).reshape(shape), h[i].reshape(shape)
     return (
