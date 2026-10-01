@@ -126,7 +126,7 @@ mg_ii_model_fit = parallel_fit_dask(
 # two components, (blue - red) / total, and the separation of their peaks.
 #
 # These maps are motivated by the Mg II h/k diagnostics described by
-# `Leenaarts et al. (2013) <https://doi.org/10.1088/0004-637X/772/2/90>`__.
+# :cite:t:`leenaarts2013`.
 #
 # In that work, the Mg II k2 peak intensities, blue-red peak imbalance, and
 # peak separation were shown to trace chromospheric temperature, upper-chromospheric

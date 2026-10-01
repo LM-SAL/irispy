@@ -74,7 +74,7 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
 
     References
     ----------
-    * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-0>`__
+    * :cite:t:`young2018`
     """
     meta = (raster.data[0] if isinstance(raster, SpectrogramCubeSequence) else raster).meta
     if threshold is None:
@@ -229,11 +229,11 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
       that wrap after 255.
 
     The 10-sigma default is a quick look: on active-region data it flags events in every frame,
-    and Young et al. (2018) recommend a threshold chosen for each data set.
+    and :cite:t:`young2018` recommend a threshold chosen for each data set.
 
     References
     ----------
-    * `Young et al. (2018), Space Science Reviews 214, 120 <https://doi.org/10.1007/s11214-018-0551-0>`__
+    * :cite:t:`young2018`
     """
     if sji.meta.spectral_window != "1400":
         msg = f"Bursts are found in 1400 Å slit-jaw images, not {sji.meta.spectral_window}"

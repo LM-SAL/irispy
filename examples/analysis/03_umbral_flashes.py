@@ -4,7 +4,7 @@ Study umbral flashes
 ====================
 
 In this tutorial, we are going to work with IRIS data to study an example of a dynamical
-phenomena called `umbral flashes <https://ui.adsabs.harvard.edu/abs/1973SoPh...30..403M>`__.
+phenomena called umbral flashes :cite:p:`moore1973`.
 """
 
 import matplotlib.dates as mdates
