@@ -12,8 +12,6 @@ from astropy.convolution import Box1DKernel, convolve
 from astropy.table import QTable, vstack
 from astropy.utils.exceptions import AstropyUserWarning
 
-from irispy.utils._spectral import check_scaled
-
 __all__ = ["calculate_wavelength_drift"]
 
 # Name: rest wavelength (Å), fit range (Å), minimum slit-mean intensity (DN), sign (-1 absorption, 1 emission)
@@ -48,7 +46,8 @@ def calculate_wavelength_drift(raster):
     Parameters
     ----------
     raster : `~irispy.spectrograph.RasterCollection`
-        Level 2 spectra in DN, i.e. not read with ``memmap=True``.
+        Level 2 spectra. They may be read with ``memmap=True``: only the fit ranges are read,
+        and scaled to DN.
 
     Returns
     -------
@@ -56,13 +55,14 @@ def calculate_wavelength_drift(raster):
         One row per exposure, sorted by exposure start ``time``, with its ``raster`` and ``step``
         indices. Each line's column (``"Ni I"`` ... ``"Fe II"``) holds its unsmoothed shift in Å,
         NaN if the line is in no window, too faint, has too few pixels, or its fit is rejected.
-        ``"nuv"`` and ``"fuv"`` hold the drifts in Å, NaN (with a warning) if no more shifts remain
-        than the fit has parameters; adding a drift to its detector's wavelengths corrects them.
+        ``"nuv"`` and ``"fuv"`` hold the drifts in Å, NaN if their line is in no window or, with a
+        warning, if no more shifts remain than the fit has parameters; adding a drift to its
+        detector's wavelengths corrects them.
 
     Raises
     ------
     ValueError
-        If no window contains any of the reference lines, or the data are unscaled.
+        If no window contains any of the reference lines.
 
     Notes
     -----
@@ -114,7 +114,8 @@ def calculate_wavelength_drift(raster):
     table.sort("time")
     seconds = (table["time"] - table["time"][0]).to_value(u.s)
     for drift, (name, outlier) in _DRIFTS.items():
-        table[drift] = _fit_drift(seconds, table[name].to_value(u.AA), outlier, drift) * u.AA
+        fitted = _fit_drift(seconds, table[name].to_value(u.AA), outlier, drift) if windows[name] else np.nan
+        table[drift] = fitted * u.AA
     return table
 
 
@@ -140,16 +141,20 @@ def _line_shifts(cube, wavelength, rest, fit_range, min_intensity, sign):
     """
     The shift of one reference line in each exposure of a raster, in Å.
     """
-    check_scaled(cube)
     shifts = np.full(len(cube.data), np.nan)
     bins = np.flatnonzero((wavelength >= fit_range[0]) & (wavelength <= fit_range[1]))
     if 0 < bins.size < 5:  # as IDL, fit at least 5 bins
         bins = np.arange(bins[0], min(bins[0] + 5, wavelength.size))
     if bins.size < 4:  # fewer bins than Gaussian parameters
         return shifts
-    # Slit mean with bad, masked and negative pixels as zero, as in IDL
-    data = np.ma.MaskedArray(cube.data, cube.mask)[..., bins].filled(0)
-    profiles = np.nan_to_num(np.clip(data, 0, None)).mean(axis=1)
+    # The fit bins in DN, which memmap=True leaves as the FITS integers, averaged along the slit
+    # with bad, masked and negative pixels as zero, as in IDL
+    data = cube.data[..., bins]
+    if np.issubdtype(data.dtype, np.integer):
+        data = data.astype(np.float32) * cube.meta["BSCALE"] + cube.meta["BZERO"]
+    if cube.mask is not None:
+        data[np.broadcast_to(cube.mask, cube.data.shape)[..., bins]] = 0
+    profiles = np.clip(np.nan_to_num(data, copy=False), 0, None, out=data).mean(axis=1, dtype=float)
     offset = wavelength[bins] - rest
     for step in np.flatnonzero(profiles.mean(axis=1) > min_intensity):
         amplitude, centre = _fit_gaussian(offset, profiles[step], background_order=int(bins.size >= 7))

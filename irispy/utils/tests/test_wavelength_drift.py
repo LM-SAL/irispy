@@ -218,15 +218,17 @@ def test_window_chosen_by_its_wavelengths():
     )
 
 
-def test_unscaled_data():
-    with pytest.raises(ValueError, match="unscaled"):
-        calculate_wavelength_drift(read_spectrograph_lvl2(CROP, memmap=True))
+def test_memmap_data_give_the_same_table():
+    # memmap=True leaves the FITS integers, which are scaled to DN for the fit ranges only
+    table = calculate_wavelength_drift(read_spectrograph_lvl2(CROP))
+    memmap = calculate_wavelength_drift(read_spectrograph_lvl2(CROP, memmap=True))
+    for name in [*LINES, "nuv", "fuv"]:
+        np.testing.assert_array_equal(memmap[name], table[name])
 
 
 def test_missing_lines():
     nuv_only = read_spectrograph_lvl2(CROP, spectral_windows="Mg II k 2796")
-    with pytest.warns(UserWarning, match="Too few shifts to fit the FUV drift"):
-        table = calculate_wavelength_drift(nuv_only)
+    table = calculate_wavelength_drift(nuv_only)  # no warning: the FUV lines are in no window
     assert np.isnan(table["O I"]).all()
     assert np.isnan(table["fuv"]).all()
     assert np.isfinite(table["nuv"]).all()
