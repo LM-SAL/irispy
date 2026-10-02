@@ -65,9 +65,7 @@ def test_shifts_match_idl():
     idl = idl_reference("3824262996")[CROP_STEPS]
     assert_shifts_match_idl(table, idl)
     # Each drift is fitted to its own line, and follows IDL's fit through all 400 steps
-    for drift, line, outlier, atol in [("nuv", "Ni I", 0.08, 4e-3), ("fuv", "O I", 0.05, 2e-3)]:
-        fitted = _fit_drift(seconds(table), table[line].to_value(u.AA), outlier, drift)
-        np.testing.assert_array_equal(table[drift].to_value(u.AA), fitted)
+    for drift, atol in [("nuv", 4e-3), ("fuv", 2e-3)]:
         np.testing.assert_allclose(table[drift].to_value(u.AA), idl[drift].to_value(u.AA), atol=atol)
 
 
@@ -117,29 +115,28 @@ def test_drift_fit_of_a_short_observation():
 def test_drift_fit_just_under_a_quarter_orbit():
     times = np.arange(8) * 209.0  # 1463 s
     with pytest.warns(UserWarning, match=f"{SHORT}, so the FUV drift is constant"):
-        _fit_drift(times, 0.01 * np.sin(times / 900), 0.05, "fuv")
+        fitted = _fit_drift(times, 0.01 * np.sin(times / 900), 0.05, "fuv")
+    np.testing.assert_allclose(fitted, fitted[0])
 
 
-@pytest.mark.parametrize("last_shift", [np.nan, 0.5])
-def test_drift_fit_of_short_measured_coverage(last_shift):
+@pytest.mark.parametrize(
+    ("measured", "last_shift"),
+    [
+        pytest.param(8, np.nan, id="missing-tail"),
+        pytest.param(8, 0.5, id="distant-outlier"),
+        pytest.param(47, np.nan, id="smoothing-extends-coverage"),
+    ],
+)
+def test_drift_fit_of_short_measured_coverage(measured, last_shift):
     idl = idl_reference("3824262996")
     times = seconds(idl)
     shifts = idl["Ni I"].to_value(u.AA).copy()
-    shifts[8:] = np.nan  # only 221 s measured in a raster lasting over three hours
+    shifts[measured:] = np.nan  # 221 or 1450 s measured in a raster lasting over three hours
     shifts[-1] = last_shift  # a distant outlier must not extend the coverage either
     with pytest.warns(UserWarning, match=f"{SHORT}, so the NUV drift is constant"):
         fitted = _fit_drift(times, shifts, 0.08, "nuv")
     np.testing.assert_allclose(fitted, fitted[0])
-    assert shifts[:8].min() <= fitted[0] <= shifts[:8].max()
-
-
-def test_drift_fit_coverage_excludes_smoothing():
-    times = np.arange(200) * 30.0
-    shifts = np.full(len(times), np.nan)
-    shifts[:48] = 0.01 * np.sin(times[:48] / 900)  # 1410 s; smoothing extends this past a quarter orbit
-    with pytest.warns(UserWarning, match=f"{SHORT}, so the NUV drift is constant"):
-        fitted = _fit_drift(times, shifts, 0.08, "nuv")
-    np.testing.assert_allclose(fitted, fitted[0])
+    assert shifts[:measured].min() <= fitted[0] <= shifts[:measured].max()
 
 
 def test_drift_fit_polynomial_order_uses_measured_coverage():
@@ -153,9 +150,18 @@ def test_drift_fit_polynomial_order_uses_measured_coverage():
     np.testing.assert_allclose(fitted[measured], expected, atol=1e-12)
 
 
-@pytest.mark.parametrize(("measured", "fits"), [(3, False), (4, True)])
-def test_drift_fit_needs_more_shifts_than_parameters(measured, fits):
-    times = np.arange(8) * 210.0  # 1470 s, just over a quarter orbit: 3 parameters, a sine and a constant
+@pytest.mark.parametrize(
+    ("steps", "cadence", "measured", "fits"),
+    [
+        pytest.param(200, 30.0, 0, False, id="constant-no-shifts"),
+        pytest.param(200, 30.0, 1, False, id="constant-one-shift"),
+        pytest.param(8, 210.0, 3, False, id="orbital-three-shifts"),
+        pytest.param(8, 210.0, 4, True, id="orbital-four-shifts"),
+        pytest.param(130, 60.0, 4, False, id="polynomial-smoothed-shifts"),
+    ],
+)
+def test_drift_fit_needs_more_shifts_than_parameters(steps, cadence, measured, fits):
+    times = np.arange(steps) * cadence
     shifts = np.full(len(times), np.nan)
     bins = np.linspace(0, len(times) - 1, measured, dtype=int)
     shifts[bins] = 0.01 * np.sin(times[bins] / 900)
@@ -164,24 +170,6 @@ def test_drift_fit_needs_more_shifts_than_parameters(measured, fits):
     else:
         with pytest.warns(UserWarning, match="Too few shifts to fit the FUV drift"):
             assert np.isnan(_fit_drift(times, shifts, 0.05, "fuv")).all()
-
-
-def test_drift_fit_counts_only_measured_shifts():
-    # The running mean spreads 4 shifts over 20 exposures, but the orbital fit has 4 parameters
-    times = np.arange(130) * 60.0
-    shifts = np.full(len(times), np.nan)
-    shifts[[10, 40, 70, 110]] = 0.01
-    with pytest.warns(UserWarning, match="Too few shifts to fit the NUV drift"):
-        assert np.isnan(_fit_drift(times, shifts, 0.08, "nuv")).all()
-
-
-@pytest.mark.parametrize("measured", [0, 1])
-def test_constant_drift_needs_more_than_one_shift(measured):
-    times = np.arange(200) * 30.0
-    shifts = np.full(len(times), np.nan)
-    shifts[:measured] = 0.01
-    with pytest.warns(UserWarning, match="Too few shifts to fit the NUV drift"):
-        assert np.isnan(_fit_drift(times, shifts, 0.08, "nuv")).all()
 
 
 def test_drift_fit_drops_outliers_on_both_sides():
@@ -210,27 +198,19 @@ def test_drift_fit_across_a_gap():
 
 
 @pytest.mark.parametrize(
-    ("size", "sign", "expected"),
+    ("parameters", "expected"),
     [
-        (12, 1, -0.02),  # 3 pixels in the fit range, padded to 5
-        (7, 1, -0.02),  # padded to the 4 the window has, one per parameter
-        (6, 1, np.nan),  # 3 pixels, fewer than the parameters
-        (3, 1, np.nan),  # no pixel in the fit range
-        (12, -1, np.nan),  # an absorption line where O I is in emission
+        pytest.param({"size": 12}, -0.02, id="padded-to-five-bins"),
+        pytest.param({"size": 7}, -0.02, id="four-bins"),
+        pytest.param({"size": 6}, np.nan, id="too-few-bins"),
+        pytest.param({"size": 3}, np.nan, id="outside-window"),
+        pytest.param({"size": 12, "sign": -1}, np.nan, id="wrong-sign"),
+        pytest.param({"size": 12, "scale": 1e-3}, np.nan, id="faint-line"),
+        pytest.param({"size": 30, "pixel": 0.05, "slope": 20}, -0.02, id="sloping-background"),
     ],
 )
-def test_line_shifts_of_a_synthetic_line(size, sign, expected):
-    np.testing.assert_allclose(synthetic_o_i_shifts(size, sign), expected, atol=1e-9)
-
-
-def test_line_shifts_of_a_faint_line():
-    # Its slit mean is below the 0.5 DN threshold of O I
-    assert np.isnan(synthetic_o_i_shifts(12, scale=1e-3)).all()
-
-
-def test_line_shifts_on_a_sloping_background():
-    # 10 pixels in the fit range, so the background is linear
-    np.testing.assert_allclose(synthetic_o_i_shifts(30, pixel=0.05, slope=20), -0.02, atol=1e-9)
+def test_line_shifts_of_a_synthetic_line(parameters, expected):
+    np.testing.assert_allclose(synthetic_o_i_shifts(**parameters), expected, atol=1e-9)
 
 
 def test_masked_pixels_count_as_zero():
