@@ -5,19 +5,14 @@ Apply Radiometric Calibration
 
 In this example we will show how to perform radiometric calibration on IRIS data.
 
-IRIS level 2 data are provided in units of Data Number (DN). To convert these to a flux
+IRIS Level 2 data are provided in units of Data Number (DN). To convert these to a flux
 in physical units (e.g., :math:`erg s^{-1} sr^{-1} cm^{-2} Å^{-1}`) one must perform a
 radiometric calibration.
 
-The calibration output has been confirmed to provide the same results as those provided
-by the SolarSoft IDL routine `IRIS_CALIB <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/nrl/iris_calib.pro>`__.
-
-The major difference being that the output here is accounting for the wavelength, which is why the units
-here are :math:`erg s^{-1} sr^{-1} cm^{-2} Å^{-1}` and not :math:`erg s^{-1} sr^{-1} cm^{-2}`.
-Notice the extra :math:`Å^{-1}` in the units.
-
-Please refer to
-`ITN26 for more information on the calibration process <https://iris.lmsal.com/itn26/calibration.html>`__.
+The output matches the SolarSoft IDL routine
+`IRIS_CALIB <https://hesperia.gsfc.nasa.gov/ssw/iris/idl/nrl/iris_calib.pro>`__, except that it is
+per unit wavelength, hence the extra :math:`Å^{-1}` in the units. See
+`ITN26 <https://iris.lmsal.com/itn26/calibration.html>`__ for the calibration process.
 """
 
 import matplotlib.pyplot as plt
@@ -78,17 +73,14 @@ del raster
 # :math:`t_\mathrm{exp}` is the exposure time in seconds and
 # :math:`W_\mathrm{slit}` is the slit width in radians (:math:`W_\mathrm{slit} \equiv \pi/(180\cdot3600\cdot3)`).
 #
-# This is a complex equation and requires careful attention to units.
-# Within `irispy`, there is a function called `irispy.utils.spectrograph.radiometric_calibration` that handles this process.
+# `irispy.utils.spectrograph.radiometric_calibration` does this calculation, with the units handled.
 
 calibrated_mg_ii_k_2796 = radiometric_calibration(mg_ii_k_2796)
 calibrated_si_iv_1394 = radiometric_calibration(si_iv_1394)
 
 ###############################################################################
-# We will now plot both the before and after spectrums at a single spatial
-# pixel to see the difference.
-#
-# We will apply the cube's mask when plotting, which removes bad pixels.
+# We will now plot the spectra before and after at a single spatial pixel,
+# applying the cube's mask to remove bad pixels.
 
 
 def plot_before_after(cube, calibrated_cube, title, spectral_slice=slice(None)):
@@ -122,12 +114,9 @@ plot_before_after(mg_ii_k_2796, calibrated_mg_ii_k_2796, "Mg II k 2796 Spectrum"
 ###############################################################################
 # Now the same spatial pixel for the Si IV 1394 (FUV) window.
 #
-# This spectral window extends blueward of the nominal FUV spectral range
-# (~1389-1408 Å) within which the response file defines the effective area.
-#
-# `irispy` returns NaN for those wavelengths,
-# which is why the calibrated (blue) curve stops at ~1389 Å while the uncalibrated
-# counts (red) continue to the edge of the window.
+# This window extends blueward of the nominal FUV range (~1389-1408 Å) over which the
+# response file defines the effective area, so the calibrated (blue) curve stops at
+# ~1389 Å while the counts (red) continue to the edge of the window.
 
 plot_before_after(si_iv_1394, calibrated_si_iv_1394, "Si IV 1394 Spectrum")
 

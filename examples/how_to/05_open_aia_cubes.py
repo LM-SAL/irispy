@@ -32,24 +32,10 @@ sdo_aia_file = pooch.retrieve(
 )
 
 ###############################################################################
-# We will now open the AIA dataset.
-#
-# It is provided as a compressed archive, with each AIA wavelength as a separate
-# file.
-#
-# In this example, they are:
-#
-# - aia_l2_20250519_165924_3640107442_171.fits
-# - aia_l2_20250519_165924_3640107442_94.fits
-# - aia_l2_20250519_165924_3640107442_304.fits
-# - aia_l2_20250519_165924_3640107442_193.fits
-# - aia_l2_20250519_165924_3640107442_335.fits
-# - aia_l2_20250519_165924_3640107442_211.fits
-# - aia_l2_20250519_165924_3640107442_1700.fits
-# - aia_l2_20250519_165924_3640107442_131.fits
-# - aia_l2_20250519_165924_3640107442_1600.fits
+# We will now open the AIA dataset. It is a compressed archive with one file per AIA
+# channel, for example ``aia_l2_20250519_165924_3640107442_171.fits``, and reading it
+# returns a collection of the AIA cubes keyed by channel.
 
-# This returns a collection of the AIA cubes, keyed by channel.
 aia_collection = read_files(sdo_aia_file)
 
 ###############################################################################
@@ -65,9 +51,6 @@ print(aia_collection["304_THIN"])
 ###############################################################################
 # We will now plot the AIA data in the same manner as the SJI data, with the AIA 304
 # color map. ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
-#
-# You can also change the axis labels and ticks if you so desire.
-# `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
 
 fig = plt.figure()
 animation = aia_collection["304_THIN"].plot(fig=fig, cmap="sdoaia304").get_animation()

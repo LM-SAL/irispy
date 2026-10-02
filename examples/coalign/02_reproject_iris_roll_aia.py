@@ -5,10 +5,10 @@ Reproject IRIS SJI (rolled) to SDO/AIA
 
 In this example we will show how to reproject a rolled IRIS dataset to SDO/AIA.
 
-The IRIS team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV for
+The IRIS team at LMSAL provides AIA data cubes which are co-aligned to the IRIS FOV for
 each observation via the `IRIS data search page <https://iris.lmsal.com/search/>`__.
 
-Therefore this example is more a showcase of functionality.
+Therefore this example is more of a showcase of functionality.
 """
 
 import matplotlib.pyplot as plt
@@ -50,13 +50,10 @@ sji_2832 = read_files(sji_filename)
 # Printing will give us an overview of the file.
 
 print(sji_2832)
-# ``.meta`` contains the entire FITS header from the primary HDU.
-# Since it is very long, we won't actually print it here.
-# print(sji_2832.meta)
+# ``.meta`` holds the full primary FITS header, which is too long to print here.
 
 ###############################################################################
-# Can't remember what is OBSID 3860608353?
-# **irispy** has an utility function that will provide more information.
+# Can't remember what OBSID 3860608353 is? ``irispy.obsid.ObsID`` describes it.
 
 print(ObsID(sji_2832.meta["OBSID"]))
 
@@ -77,30 +74,25 @@ sji_cut = sji_2832[time_index]
 print(sji_cut)
 
 ###############################################################################
-# We need to get the coordinate frame for the IRIS data.
-# While this is stored in the WCS, getting a coordinate frame is a little more involved.
+# We will need the coordinate frame of the IRIS data, which the cube provides as
+# ``celestial_frame``.
 
 sji_frame = sji_cut.celestial_frame
 
 ###############################################################################
-# This dataset has a peculiarity: the observation has a 45 degree roll.
-# The image does not have a 45 degree rotation because plotting shows the data
-# in the way they are written in the file.
-# We will add a coordinate grid to make this clear.
-# You can also change the axis labels and ticks if you so desire.
-# `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
+# This observation has a 45 degree roll. The image is not rotated because plotting
+# shows the data as they are stored in the file, so we add a coordinate grid to make
+# the roll clear.
 
 plt.figure()
 ax = sji_cut.plot()
 plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']:.0f} Å", pad=20)
-# You have to specify the grid type to be contours for WCSAxes to plot it correctly.
-# This is due to a quirk of how gWCS interacts with WCSAxes.
+# WCSAxes needs ``grid_type="contours"`` to draw the grid of this WCS correctly.
 ax.coords.grid(grid_type="contours")
 
 ###############################################################################
-# The fact that it is rolled 45 degrees makes manual alignment tricky
-# and will illustrate the usefulness of working with WCS.
-# We need the AIA 170 nm image closest to that time, which you can find and
+# The 45 degree roll makes manual alignment tricky and shows the usefulness of working
+# with WCS. We need the AIA 170 nm image closest to that time, which you can find and
 # download from the VSO with `sunpy.net.Fido`:
 #
 # .. code-block:: python
@@ -129,19 +121,13 @@ pointing_table = get_pointing_table(
     time_range=(Time(time_stamp) - TimeDelta(5 * 60 * u.minute), Time(time_stamp) + TimeDelta(1 * u.minute)),
 )
 aia_map = update_pointing(aia_map, pointing_table=pointing_table)
-# You don't need to register AIA images unless you need them aligned to other AIA images.
-# otherwise you are degrading the data as the affine transform is not perfect.
-# But it is the last step to get a level 1.5 image.
+# We skip registering the image, the last step to level 1.5, which is only needed to
+# align AIA images with each other and resamples the data.
 
 ###############################################################################
-# Now let's plot the IRIS field of view on the AIA image.
-#
-# This IRIS data has no observer coordinate information
-# **irispy** will set this to be at Earth.
-# This will allow us to transform from IRIS to any another observer.
-#
-# Using `sunpy.visualization.drawing.extent`, drawing the IRIS field of view on the AIA image
-# is straightforward.
+# Now let us draw the IRIS field of view on the AIA image with
+# `sunpy.visualization.drawing.extent`. This IRIS file has no observer information, so
+# ``irispy`` places the observer at Earth, which lets us transform to other observers.
 
 aia_bottom_left = SkyCoord(-850 * u.arcsec, -50 * u.arcsec, frame=aia_map.coordinate_frame)
 aia_top_right = SkyCoord(-650 * u.arcsec, 150 * u.arcsec, frame=aia_map.coordinate_frame)
@@ -153,13 +139,10 @@ aia_sub.plot()
 extent(ax, sji_cut.fits_wcs)
 
 ###############################################################################
-# The outline shows the region of the IRIS observation, rotated by its 45 degree roll.
-# To work with both IRIS and AIA data, it helps if the image axes are aligned,
-# and for this we need to rotate one of them. We can either rotate SDO/AIA to the
-# IRIS frame, or vice-versa.
-#
-# We will rotate the AIA data, using `sunpy.map.GenericMap.reproject_to`.
-# As `sunpy` does not support gWCS (yet), we have to use the basic WCS.
+# The outline shows the IRIS field of view, rotated by its 45 degree roll. To work with
+# both datasets, it helps to align the image axes, so we rotate the AIA data onto the
+# IRIS grid with `sunpy.map.GenericMap.reproject_to`. As `sunpy` does not support gWCS
+# (yet), we use ``fits_wcs``.
 
 aia_reprojected = aia_sub.reproject_to(sji_cut.fits_wcs)
 
@@ -176,10 +159,8 @@ ax1.set_title("IRIS SJI with AIA contours")
 plt.show()
 
 ###############################################################################
-# As one can see, the reprojection has not aligned the two images.
-# Since the WCS information was not 100% accurate to begin with, this means that
-# reprojecting alone is not sufficient to get a perfect alignment.
-#
-# If you want to align, you can check out the following :ref:`sphx_glr_generated_gallery_coalign_01_coalign_iris_aia.py`
+# The reprojection alone does not align the two images, because the pointing was not
+# accurate to begin with. :ref:`sphx_glr_generated_gallery_coalign_01_coalign_iris_aia.py`
+# shows how to co-align them.
 
 # sphinx_gallery_thumbnail_number = 3

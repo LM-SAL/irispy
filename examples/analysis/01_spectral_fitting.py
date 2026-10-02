@@ -6,9 +6,8 @@ Fit Spectral Models to Spectra
 In this example, we are going to fit Si IV 1403 from IRIS with a single Gaussian.
 Then we will use the fitted values to calculate the Gaussian moments.
 
-This is in direct contrast to taking the spectral moments of the data cube, which is done in
-the following example, :ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
-where we calculate the spectral moments of the data cube directly.
+For a model-independent alternative, the spectral moments, see
+:ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`.
 
 If you want to see a similar example but with a double Gaussian fit to the Mg II k line,
 see :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py`.
@@ -57,7 +56,7 @@ raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 si_iv_1403 = raster["Si IV 1403"][0]
 
 ###############################################################################
-# However, before we get to fitting, we will shrink the data cube to make it easier to work with.
+# Before we get to fitting, we will shrink the data cube to make it easier to work with.
 # This is done primarily to speed up the fitting process on the online documentation build.
 
 iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
@@ -85,19 +84,12 @@ spatial_mean = si_iv_1403.rebin((*si_iv_1403.data.shape[:-1], 1))[0, 0, :]
 wavelength_coords = spatial_mean.axis_world_coords("em.wl")[0].to(u.nm)
 
 ###############################################################################
-# This example uses the non-radiometric calibrated data to fit a model to
-# the IRIS Si IV spectral line.
-#
-# There can be cases when the radiometric calibrated data gives
-# spurious values for regions that are not directly relevant around the
-# main spectral line.
-#
-# One way to address this is to do the following:
+# We fit the data in DN, without radiometric calibration. The initial model is a
+# constant plus a Gaussian. You can pick any constant such that spurious values
+# in the core do not skew the first guess. Here, we use amplitude that is the 10th
+# percentile of the non-core window.
 
-si_iv_core_window = np.abs(wavelength_coords - si_iv_core) < 0.15 * u.nm  # Adjusting to half-width of the line width
-# We then use this window to define the initial model and change the amplitude to the 10th
-# percentile of the non-core window. This will give a better initial guess for the amplitude if
-# the core window contains spurious values.
+si_iv_core_window = np.abs(wavelength_coords - si_iv_core) < 0.15 * u.nm
 initial_model = m.Const1D(
     amplitude=np.nanpercentile(spatial_mean.data[~si_iv_core_window], 10) * si_iv_1403.unit
 ) + m.Gaussian1D(
@@ -105,11 +97,8 @@ initial_model = m.Const1D(
 )
 
 ###############################################################################
-# To improve our initial conditions we now fit the initial model to the spatially averaged spectra.
-# For this we use ``wavelength_coords``, which we got above with the `ndcube.NDCube.axis_world_coords`
-# method. It returns all, or a subset of the world coordinates along however many array axes they are
-# correlated with. For the wavelength it returns a single `astropy.coordinates.SpectralCoord` object,
-# for the last array axis of the cube.
+# To improve the initial guess, we fit the initial model to the spatially averaged
+# spectrum, using the wavelengths from `ndcube.NDCube.axis_world_coords`.
 
 fitter = TRFLSQFitter()
 average_fit = fitter(
@@ -119,7 +108,7 @@ average_fit = fitter(
 )
 
 ###############################################################################
-# Now we check, the initial model and the model fitted to the average spectra.
+# Now we compare the initial model with the model fitted to the average spectrum.
 
 fig = plt.figure()
 ax = spatial_mean.plot(label="Spatial average")
@@ -128,47 +117,25 @@ ax.plot(average_fit(wavelength_coords), linestyle="--", label="Spatial average f
 plt.legend()
 
 ###############################################################################
-# The function `~astropy.modeling.fitting.parallel_fit_dask` will map a model
-# to each element of a cube along one (or more) "fitting axes", in this case our
-# fitting axis is our wavelength axis (array axis -1). So we want to fit each
-# slice of the data array along the 3rd axis.
-#
-# The key arguments to the parallel_fit_dask function are:
-#
-# * A data array: This can be a numpy array or a dask array, or a NDData (or subclass like NDCube)
-#   object. If it's a NDData object then the data, wcs, mask, data_unit and uncertainty
-#   are all extracted from the NDData object and used in place of their respective keyword
-#   arguments.
-# * A model to fit
-# * A fitter instance.
-# * The fitting axis (or axes).
-#
-# What is returned from `~astropy.modeling.fitting.parallel_fit_dask` is a model with array
-# parameters with the shape of the non-fitting axes of the data.
+# `~astropy.modeling.fitting.parallel_fit_dask` fits the model to every spectrum
+# along the fitting axis, here the wavelength axis, and returns a model whose
+# parameters are arrays with the shape of the other axes. Its documentation
+# describes the arguments; the data can be an array or an `~astropy.nddata.NDData`,
+# whose WCS, mask and unit are then used.
 
-# We want to do some basic data sanitization.
-# Remove negative values and set them to zero and remove non-finite values.
+# Basic data sanitization: set negative and non-finite values to zero.
 filtered_data = np.where(si_iv_1403.data < 0, 0, si_iv_1403.data)
 filtered_data = np.where(np.isfinite(filtered_data), filtered_data, 0)
 
 ###############################################################################
-# Before we fit the data cube, I want to briefly talk about errors during the
-# fitting process.
-#
-# It is possible that the fitting process will fail for some pixels.
-# This can be for a variety of reasons, but most commonly it is because the
-# fitting algorithm cannot converge to a solution. When this happens the
-# fitting algorithm will raise a warning/exception. However, when using
-# `~astropy.modeling.fitting.parallel_fit_dask`, these warnings/exceptions are caught and not raised.
-# Instead, the parameter values for that pixel are set to NaN.
-#
-# If you want to diagnose why, you can set the
-# ``diagnostics`` and ``diagnostics_path`` keyword arguments.
+# Fits that fail, usually because they do not converge, do not raise:
+# `~astropy.modeling.fitting.parallel_fit_dask` sets the parameters of that pixel
+# to NaN. To see why, set the ``diagnostics`` and ``diagnostics_path`` keyword arguments.
 
 diag_path = Path("./diag")
 shutil.rmtree(diag_path, ignore_errors=True)
 
-# We can therefore fit the cube
+# Now we fit the cube.
 iris_model_fit = parallel_fit_dask(
     data=filtered_data,
     data_unit=si_iv_1403.unit,
@@ -177,8 +144,8 @@ iris_model_fit = parallel_fit_dask(
     # along this axis. The input has to be a tuple of length equal to the number of fitting axes.
     world=(wavelength_coords,),
     model=average_fit,
-    # You can replace this with TRFLSQFitter, LMLSQFitter is faster in a single thread
-    # which is why we use it here in this example.
+    # You can replace this with TRFLSQFitter; LMLSQFitter is faster in a single thread,
+    # which is why we use it here.
     fitter=LMLSQFitter(),
     scheduler="single-threaded",
     # See above for the error handling discussion
@@ -187,25 +154,16 @@ iris_model_fit = parallel_fit_dask(
 )
 
 ###############################################################################
-# Note that this example is done in a single thread. If you want to use multiple cores,
-# you can create a dask client and pass it to the parallel_fit_dask function.
-#
-# For example:
+# This example fits in a single thread. To use several cores, pass a dask client
+# as the scheduler instead:
 #
 # .. code-block:: python
 #
 #     from dask.distributed import Client
 #
-#     client = Client()
+#     scheduler=Client(),
 #
-# Then pass this to the parallel_fit_dask function by replacing the scheduler line above with:
-#
-# .. code-block:: python
-#
-#     scheduler=client,
-#
-# Now let us check if there were any errors during the fitting process.
-# If there were any, you would find them in the "diag" folder.
+# Now let us check for errors during the fit, which are written to the "diag" folder.
 
 errors = [p.read_text() for p in diag_path.rglob("error.log")]
 print(f"{len(errors)} errors occurred")
@@ -214,15 +172,11 @@ if errors:
     print(errors[0])
 
 ###############################################################################
-# Let us see the fitted output. The model parameters are now 2D arrays with
-# the same shape as the spatial dimensions of the data cube.
-#
-# Below is a lot of custom code to make a decent looking plot.
-#
-# We also need to convert the fitted parameters into physical quantities.
+# The fitted parameters are 2D arrays with the shape of the spatial axes. We convert
+# them into physical quantities and wrap them in `~irispy.spectrograph.SpectrogramCube`
+# objects with the WCS of the line-core image, so that they plot with the same
+# orientation and coordinates.
 
-# The fitted parameters are plain arrays, so we wrap them in `~irispy.spectrograph.SpectrogramCube`
-# objects with the WCS of the line-core image; they then plot with the same orientation and coordinates.
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "net_flux"], ["velocity", "sigma"]],
     subplot_kw={"projection": si_iv_spec_crop.wcs},

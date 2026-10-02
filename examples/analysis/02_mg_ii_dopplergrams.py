@@ -78,9 +78,8 @@ vmin, vmax = np.nanpercentile(before, [1, 99])
 # The shifts can be measured from photospheric lines of known rest wavelength:
 # this window holds the Ni I 279.9474, Mn I 280.1902 and Fe I 280.5346 nm
 # absorption lines. `~irispy.utils.wavelength_drift.calculate_wavelength_drift`
-# fits each of them in the spectrum averaged along the slit at every step, then
-# fits a sine with the orbital period, plus a slow polynomial, to the Ni I shifts.
-# It reads only the fit ranges, so the memory-mapped data are fine. The table
+# measures them at every step and fits a sine with the orbital period, plus a slow
+# polynomial, to the Ni I shifts; see its documentation for the details. The table
 # has one row per step.
 
 drift = calculate_wavelength_drift(raster)
@@ -142,13 +141,13 @@ for ax in axes:
 axes[0].set_ylabel("Position along the slit (pixel)")
 
 ###############################################################################
-# We can use the corrected data for example to calculate Dopplergrams. A
+# We can use the corrected data, for example, to calculate Dopplergrams. A
 # Dopplergram is here defined as the difference between the intensities at
 # two wavelength positions at the same (and opposite) distance from the
-# line core. For example, at +/- 50 km/s from the Mg II k3 core. To do
+# line core. For example, at ±50 km/s from the Mg II k3 core. To do
 # this, let us first calculate a velocity scale for the k line and find
 # the indices of the -50 and +50 km/s velocity positions (here using the
-# convention of negative velocities for up flows):
+# convention of negative velocities for upflows):
 
 mg_k_centre = 279.6351 * u.nm
 pos = 50 * u.km / u.s  # Around the line centre

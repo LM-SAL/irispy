@@ -3,8 +3,7 @@
 Study umbral flashes
 ====================
 
-In this tutorial, we are going to work with IRIS data to study an example of a dynamical
-phenomena called umbral flashes :cite:p:`moore1973`.
+In this tutorial, we are going to work with IRIS data to study umbral flashes :cite:p:`moore1973`.
 """
 
 import matplotlib.dates as mdates
@@ -69,9 +68,9 @@ mg_crop.plot(axes=ax, aspect="auto")
 # the vertical axis is really time: the small change in longitude along it is the slit
 # following the solar rotation.
 #
-# The middle section between 60"-75" is on the umbra of a sunspot, even though
-# it is not obvious from this image. One can see very clearly the umbral oscillations,
-# with a clear regular pattern of dark/bright streaks.
+# The middle section between 60"-75" is on the umbra of a sunspot, even though it is
+# not obvious from this image. The umbral oscillations show as a regular pattern of
+# dark and bright streaks.
 #
 # Let us now load the 1400 SJI for context.
 
@@ -80,7 +79,7 @@ sji_1400[0].plot(vmin=-32000, vmax=-30000)
 plt.title("1400 SJI")
 
 ###############################################################################
-# The slit pixel, "220" is a location on the sunspot's umbra.
+# Slit pixel 220 is on the sunspot's umbra.
 # We will compare the k3 intensity (spectral pixel 103 of ``mg_ii``), the
 # core of the brightest C II line (spectral pixel 90 of ``c_ii``), and the
 # SJI intensity against time (showing the first ~10 minutes only).

@@ -41,14 +41,12 @@ raster_filename = pooch.retrieve(
 raster = read_files(raster_filename)
 
 ###############################################################################
-# Let us now explore what was returned.
-#
-# Provides an overview of the Spectrograph object
+# Let us now explore what was returned. Printing gives an overview of the raster collection.
 
 print(raster)
 
 ###############################################################################
-# Will give us all the keys that corresponds to all the wavelength windows.
+# The keys are the spectral windows.
 
 print(raster.keys())
 
@@ -59,9 +57,9 @@ mg_ii = raster["Mg II k 2796"]
 print(mg_ii)
 
 ###############################################################################
-# This is a `irispy.spectrograph.SpectrogramCubeSequence` which contains each
+# This is an `irispy.spectrograph.SpectrogramCubeSequence` which contains each
 # complete raster as one individual `irispy.spectrograph.SpectrogramCube` object.
-# In this case, it was only one complete raster, so the first axis is only length 1.
+# In this case, there was only one complete raster, so the first axis is only length 1.
 #
 # So we will index to get the first raster and work with that.
 
@@ -100,22 +98,18 @@ wavelength_animation = mg_ii_k_line.plot(fig=fig, plot_axes=["x", "y", None], vm
 fig, ax = plt.subplots()
 # The array still holds the fill values (-200) that the cube masks, so we hide them as well.
 ax.plot(mg_wave.to("AA"), np.where(mg_ii.mask[120, 200], np.nan, mg_ii.data[120, 200]))
+ax.set_xlabel("Wavelength [Å]")
 ax.set_ylabel(f"Intensity [{mg_ii.unit}]")
 
 ###############################################################################
-# When we use the underlying data directly, we lose all the metadata, the mask and the WCS information.
-# So the main workflow for most code in ``irispy`` is to use provided WCS wherever possible
-# , and only use the underlying data when you need to do some custom processing.
+# Using the data directly loses the metadata, the mask and the WCS, so prefer the WCS
+# wherever possible and only use the data for custom processing.
 #
-# If you are unfamiliar with WCS, the following links are quite useful:
+# If you are unfamiliar with WCS, see the `astropy WCS <https://docs.astropy.org/en/stable/wcs/index.html>`__
+# and `WCSAxes <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__ documentation, and
+# `ndcube's guide to coordinates <https://docs.sunpy.org/projects/ndcube/en/stable/explaining_ndcube/coordinates.html>`__.
 #
-# * https://docs.astropy.org/en/stable/wcs/index.html
-# * https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html
-#
-# Some of the higher-level utilities are via ndcube, e.g., coordinate transformations: https://docs.sunpy.org/projects/ndcube/en/stable/explaining_ndcube/coordinates.html.
-#
-# Now, let's take a look at the WCS information.
-# For example, what is the wavelength position that corresponds to Mg II k core (279.63 nm)?
+# For example, which wavelength pixel corresponds to the Mg II k core (279.63 nm)?
 
 iris_observer = wcs_to_celestial_frame(mg_ii.wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
@@ -127,18 +121,18 @@ mg_index = int(np.round(wcs_loc[0]))
 print(mg_index)
 
 ###############################################################################
-# Now we will plot spectroheliogram for Mg II k core wavelength.
-# We can use the ``crop`` method to get this information, this will
-# require a `astropy.coordinates.SpectralCoord` object from `astropy.coordinates`.
+# Now we will plot a spectroheliogram at the Mg II k core wavelength, by cropping
+# with a `~astropy.coordinates.SpectralCoord`.
 
-# Note that this has to be in axis order and that None, means that the axis is not cropped
+# The bounds are in world axis order and ``None`` means that axis is not cropped.
 lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
 upper_corner = [SpectralCoord(279.63, unit=u.nm), None]
 mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_spec_crop.wcs)
-mg_spec_crop.plot(axes=ax)
+# Put the raster steps along x, so that longitude runs horizontally.
+mg_spec_crop.plot(axes=ax, plot_axes=["x", "y"])
 
 ###############################################################################
 # Imagine there's a really cool feature at (-338", 275"), how can you plot
@@ -155,16 +149,14 @@ mg_ii_cut.plot(axes=ax)
 plt.show()
 
 ###############################################################################
-#  Now, you may also be interested in knowing the time that was this observation taken.
-# There is some information in ``.meta``.
+# You may also want to know when this observation was taken. ``.meta`` describes the
+# observation as a whole.
 
 print(mg_ii.meta)
 
 ###############################################################################
-# But this is mostly about the observation in general.
-# The time of each exposure (raster step) is saved in .extra_coords['time'].
-# Getting access to it can be done in the following  way:
+# The time of each exposure (raster step) is available as ``.time``.
 
-print(mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords))
+print(mg_ii.time)
 
 # sphinx_gallery_thumbnail_number = 4

@@ -5,13 +5,9 @@ Remove Cosmic Rays from IRIS SG data
 
 This example illustrates how to remove cosmic ray hits from IRIS spectrograph data.
 
-We will use ``rsliding`` backend, which has to be installed separately using ``pip`` or ``conda``.
-We select ``rsliding`` for the SG data because it is considered the better solution for spectral data.
-
-To understand ``rsliding``, how it works and what are allowed parameters, we suggest you read the original
-documentation:
-
-* `rsliding documentation <https://git.ias.u-psud.fr/avoyeux/rsliding>`__
+We will use the ``rsliding`` backend, which has to be installed separately with ``pip`` or ``conda``
+and is the better choice for spectral data. See the
+`rsliding documentation <https://git.ias.u-psud.fr/avoyeux/rsliding>`__ for how it works and its parameters.
 """
 
 import matplotlib.pyplot as plt
@@ -28,10 +24,8 @@ quantity_support()
 # The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2026/02/09/20260209_215233_3602506433/iris_l2_20260209_215233_3602506433_raster.tar.gz>`__.
 # To keep the download small, we use a cutout of it that only has the eleventh raster scan of the Si IV 1403 window.
 #
-# This dataset is during the South Atlantic Anomaly (SAA) passage, which is known to cause a large
-# number of cosmic ray hits in the data.
-#
-# This is what we call, a worst-case scenario for cosmic ray removal, which is good for testing the algorithms but not ideal for science.
+# This dataset was taken during a South Atlantic Anomaly (SAA) passage, so it has many
+# cosmic ray hits: a worst case, good for testing the algorithm but not ideal for science.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -52,42 +46,17 @@ raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 raster = raster["Si IV 1403"][0][4]
 
 ###############################################################################
-# Now we use ``remove_cosmic_rays`` on IRIS Level 2 spectrograph data, with a few
-# parameters changed from their defaults (see below).
+# Now we use ``remove_cosmic_rays`` with the ``rsliding`` backend, the default, which the
+# SPICE team uses for their data. Its defaults are not tuned for IRIS and no single setting
+# suits every dataset, so read its documentation and experiment.
 #
-# ``rsliding`` is the default backend, which is used by the SPICE team for
-# their cosmic ray removal.
-#
-# ``rsliding`` has a set of default parameters that are not necessarily
-# optimal for IRIS data.
-# In addition, there is a lot of optional parameters that can be tweaked, which might
-# improve the results for your data and science case or make it worse.
-# Unfortunately, there is no one-size-fits-all solution for cosmic ray removal,
-# and you will need to read the documentation and experiment with the parameters
-# to find the best solution for your data.
-#
-# What we can say that is for ``rsliding``, the main parameter to change is the kernel
-# size, which controls how aggressive the algorithm is in removing spikes.
-# The size will depend on the spectral resolution of the data.
-#
-# A few other notes about ``rsliding``:
-#
-# ``rsliding`` seems to perform better on spectra, with the key controlling argument being
-# "kernel" and the values found to work the best assuming ~0.0254 :math:`\AA` spectral resolution
-# are 3 and 5 (this dataset is binned to ~0.051 :math:`\AA` per pixel).
-#
-# * 5 is more aggressive, effectively detecting and replacing most of the spikes. A slight
-#   disadvantage is that it sometimes designates "real" jumps in the continuum as "spikes" and
-#   replaces them.
-#
-# * 3 works the opposite, it can miss some real spikes but is more tolerant of
-#   irregularities in the continuum. This is also the default value used by ``rsliding``.
-#
-# One more parameter you might look for is "threads" which controls how much of the CPU is used
-# for the despiking. The despiking should take few minutes to run on a cropped intensity cube.
+# The main parameter is the ``kernel`` size, which sets how aggressive the despiking is and
+# depends on the spectral sampling. For ~0.0254 Å pixels, 3 (the default) misses some spikes
+# but tolerates real jumps in the continuum, while 5 catches most spikes but sometimes replaces
+# real features; this dataset is binned to ~0.051 Å per pixel. ``threads`` sets how many CPU
+# cores are used.
 
-# For example, these set of parameters was shown to show better treatment of values around
-# any spikes, basically to smooth more around each spike. (Thanks to Juraj).
+# These settings smooth more around each spike (thanks to Juraj).
 method_kwargs = {"kernel": 5, "center_choice": "median", "borders": "reflect"}
 raster_rsliding = raster.remove_cosmic_rays(method="rsliding", sigma=3, method_kwargs=method_kwargs)
 
@@ -108,6 +77,11 @@ axes[1].set_title("rsliding")
 
 for ax in axes:
     ax.axhline(si_iv_idx, color="white", linestyle="--", linewidth=1)
+    # Longitude barely changes along the slit, so we hide its axis.
+    longitude = ax.coords["custom:pos.helioprojective.lon"]
+    longitude.set_ticks_visible(False)
+    longitude.set_ticklabel_visible(False)
+    longitude.set_axislabel("")
 
 ###############################################################################
 # Finally, compare the line profile along the marked row.

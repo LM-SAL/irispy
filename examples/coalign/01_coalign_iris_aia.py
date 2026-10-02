@@ -5,10 +5,10 @@ Co-align IRIS SJI to SDO/AIA
 
 In this example we will show how to co-align an IRIS dataset to SDO/AIA.
 
-The IRIS instrument team at LMSAL provides AIA data cubes which are coaligned to the IRIS FOV for
+The IRIS instrument team at LMSAL provides AIA data cubes which are co-aligned to the IRIS FOV for
 each observation via the `IRIS data search page <https://iris.lmsal.com/search/>`__.
 
-Therefore this example is more a showcase of functionality.
+Therefore this example is more of a showcase of functionality.
 """
 
 import matplotlib.pyplot as plt
@@ -54,7 +54,7 @@ sji_2832 = read_files(sji_filename)
 (time_sji,) = sji_2832.axis_world_coords("time")
 sji_index = 8
 sji_time = Time(time_sji[sji_index])
-# We need to get a sunpy map as the coalignment works on sunpy maps only for now.
+# We need a sunpy map, as the co-alignment works on sunpy maps only for now.
 sji_map = sji_2832.to_maps(sji_index)
 
 ###############################################################################
@@ -74,8 +74,8 @@ pointing_table = get_pointing_table(
 )
 aia_map = update_pointing(aia_map, pointing_table=pointing_table)
 
-# Crop the AIA FOV to be similar to IRIS but larger to ensure full coverage.
-# It needs to be at least as large as an expected shift, otherwise you will contend with edge effects
+# Crop the AIA FOV to the IRIS FOV plus a margin at least as large as the expected shift,
+# otherwise you will contend with edge effects.
 aia_crop = aia_map.submap(
     bottom_left=SkyCoord(
         sji_map.bottom_left_coord.Tx - 50 * u.arcsec,
@@ -92,24 +92,13 @@ aia_crop = aia_map.submap(
 )
 
 ###############################################################################
-# One way to visualize the alignment is to plot the AIA contours on the IRIS SJI image.
-#
-# As one will see, the alignment is not perfect. Creating a pixel perfect WCS
-# is very difficult due to uncertainties in locations and the pointing information.
-#
-# So what we can do is a cross-correlation between IRIS and SDO/AIA to see if we can
-# improve this. The following uses ``sunkit-image`` and currently only works on sunpy Maps,
-# so we will use the SJI Map for this case and not the cube.
-#
-# Before co-aligning the images, we have to make sure that both images have the
-# same image scale, as this is important for the routine.
-#
-# Now we can co-align them by cross-correlation, using the "match_template" method.
-# For details of the implementation refer to the documentation of
-# `~sunkit_image.coalignment.match_template.match_template_coalign`.
+# The pointing information is not accurate to the pixel, so the IRIS and AIA images are
+# slightly misaligned. We improve this by cross-correlating IRIS with AIA.
+# ``sunkit-image`` works on sunpy maps, so we use the SJI map rather than the cube. Both
+# images need the same plate scale, so we first resample AIA to the IRIS pixel size, then
+# co-align with the ``match_template`` method; see
+# `~sunkit_image.coalignment.match_template.match_template_coalign` for the details.
 
-# Before co-aligning the images, we first resample the AIA image to the same plate
-# scale as the IRIS image. This will ensure better results from our coalignment.
 nx = (aia_crop.scale.axis1 * aia_crop.dimensions.x) / sji_map.scale.axis1.to(u.arcsec / u.pix)
 ny = (aia_crop.scale.axis2 * aia_crop.dimensions.y) / sji_map.scale.axis2.to(u.arcsec / u.pix)
 aia_upsampled = aia_crop.resample(u.Quantity([nx, ny]))

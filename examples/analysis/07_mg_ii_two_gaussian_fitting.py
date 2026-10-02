@@ -3,18 +3,14 @@
 Fit Spectral Models to Spectra - Double Gaussian Fitting
 ========================================================
 
-In this example, we are going to fit spectral lines from IRIS, using the raster data
-with a double Gaussian model. Then we will use the fitted values to make maps of the total flux,
+In this example, we are going to fit spectral lines from IRIS raster data with a double
+Gaussian model. Then we will use the fitted values to make maps of the total flux,
 the blue-red flux asymmetry and the separation of the two components.
 
-If you want to see a similar example but with a single Gaussian fit to the Si IV 1403 line,
-see :ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py`.
-This example also has more detailed comments on the fitting process, so it may be worth
-looking at that example first before this one.
-
-This is in direct contrast to taking the spectral moments of the data cube, which is done in
-:ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`
-where we calculate the spectral moments of the data cube directly.
+:ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py` fits a single Gaussian to
+Si IV 1403 and explains the fitting in more detail, so it is worth reading first.
+For a model-independent alternative, the spectral moments, see
+:ref:`sphx_glr_generated_gallery_analysis_04_spectral_moments.py`.
 """
 
 import matplotlib.pyplot as plt
@@ -99,7 +95,7 @@ average_fit = fitter(
 )
 
 ###############################################################################
-# Now we check the initial model and the model fitted to the average spectra.
+# Now we compare the initial model with the model fitted to the average spectrum.
 
 plt.figure()
 ax = spatial_mean.plot(label="Spatial average")
@@ -125,14 +121,10 @@ mg_ii_model_fit = parallel_fit_dask(
 # Now we will produce maps of the total fitted flux, the blue-red flux asymmetry of the
 # two components, (blue - red) / total, and the separation of their peaks.
 #
-# These maps are motivated by the Mg II h/k diagnostics described by
-# :cite:t:`leenaarts2013`.
-#
-# In that work, the Mg II k2 peak intensities, blue-red peak imbalance, and
-# peak separation were shown to trace chromospheric temperature, upper-chromospheric
-# velocities, and velocity gradients. Here the two Gaussian components provide a
-# simple fitted proxy for the k2v/k2r profile diagnostics, rather than a full
-# radiative-transfer inversion.
+# These follow the Mg II k diagnostics of :cite:t:`leenaarts2013`, where the k2 peak
+# intensities, their imbalance and their separation trace the chromospheric temperature,
+# velocity and velocity gradient. The two Gaussian components are a simple proxy for the
+# k2v and k2r peaks, not a radiative-transfer inversion.
 
 mg_ii_core = 279.6351 * u.nm
 line_core = mg_ii_k.crop([SpectralCoord(mg_ii_core), None], [SpectralCoord(mg_ii_core), None])

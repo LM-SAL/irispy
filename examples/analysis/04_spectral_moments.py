@@ -10,9 +10,8 @@ Moments provide a model-independent way to characterize spectral lines:
 * 1st moment gives the centroid (Doppler shift)
 * 2nd moment gives the line width
 
-This is in direct contrast to fitting a model to the data which is done in example
-:ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py` where we fit a Gaussian to the
-line profile and extract the same information from the fit parameters.
+For the model-based alternative, fitting a Gaussian to each profile, see
+:ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py`.
 """
 
 import matplotlib.pyplot as plt
@@ -55,7 +54,7 @@ raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 # There is only one complete scan, so we index that away.
 si_iv_1403 = raster["Si IV 1403"][0]
 
-# However, before we get to that, we will shrink the data cube to make it easier to work with.
+# We first crop the field of view to keep the example light.
 iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
 iris_frame = Helioprojective(observer=iris_observer)
 top_left = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
@@ -71,41 +70,24 @@ upper_corner = [SpectralCoord(si_iv_core), None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
 ###############################################################################
-# Now we can calculate the spectral moments using the `~irispy.utils.moments.calculate_moments` function.
-#
-# This helper function automatically extracts the wavelength coordinates from the cube's
-# WCS and computes the moments along the spectral axis for every spatial pixel.
-#
-# We will restrict the calculation to a narrow window around the rest wavelength
-# (0.05 nm = 0.5 Å on each side) to isolate the Si IV line from its neighbors.
-#
-# While ``wings`` is not required, it is often a good idea to restrict the
-# calculation to a window around the line of interest to avoid contamination
-# from other lines or noise in the continuum.
-#
-# The same goes for ``rest_wavelength``, which is used to calculate the velocity
-# from the wavelength shift in the 1st moment, otherwise you get the ``centroid``
-# in wavelength units instead of velocity units and the same goes for the line
-# width from the 2nd moment.
-#
-# Where the line is faint, the window is mostly noise and the moments say little about
-# the line (noise alone gives a width of about 60 km/s here). With ``min_intensity`` we
-# only keep pixels with a total intensity of at least 200 DN, and the others are left blank.
+# `~irispy.utils.moments.calculate_moments` computes the moments along the spectral
+# axis for every spatial pixel. We restrict it to 0.05 nm either side of the rest
+# wavelength (``wings``) to keep out neighboring lines, give ``rest_wavelength`` so
+# that the centroid and width come out as velocities, and with ``min_intensity``
+# blank pixels whose total intensity is below 200 DN, where the window is mostly
+# noise (noise alone gives a width of about 60 km/s here).
 
 moments = calculate_moments(
     si_iv_1403, rest_wavelength=si_iv_core, wings=0.05 * u.nm, integrated=False, min_intensity=200 * si_iv_1403.unit
 )
-# The return is a RasterCollection of 2D maps, one for each moment; it also has the
-# "centroid" and "width" in wavelength units.
+# The result is a `~irispy.spectrograph.RasterCollection` of 2D maps with the spatial
+# WCS of the input, one per moment; it also has the "centroid" and "width" in wavelength units.
 intensity = moments["intensity"]
 velocity = moments["velocity"]
 velocity_width = moments["velocity_width"]
 
 ###############################################################################
-# We will now visualize the moments. Note that the output is a
-# `~irispy.spectrograph.RasterCollection` which contains 2D
-# `~irispy.spectrograph.SpectrogramCube` objects with the spatial WCS preserved
-# from the input cube.
+# We will now visualize the moments.
 
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "intensity"], ["velocity", "width"]],

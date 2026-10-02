@@ -23,12 +23,9 @@ from irispy.spectrograph import SpectrogramCube
 from irispy.utils.mg_features import calculate_mg_features
 
 ###############################################################################
-# We will start by getting some data from the IRIS archive.
-#
-# Using the url: https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20200402_224709_3610108077_2020-04-02T22%3A47%3A092020-04-02T22%3A47%3A09.xml
-#
+# `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20200402_224709_3610108077_2020-04-02T22%3A47%3A092020-04-02T22%3A47%3A09.xml>`__.
 # The full observation is available as a `Level 2 raster tarball <https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2020/04/02/20200402_224709_3610108077/iris_l2_20200402_224709_3610108077_raster.tar.gz>`__.
-# To keep the download small, we use a cutout.
+# To keep the download small, we use a cutout with only the Mg II k 2796 window.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -75,11 +72,10 @@ inside = {name: (np.abs(solar_x - x) <= 5) & (np.abs(solar_y - y) <= 5) for name
 
 ###############################################################################
 # The top row shows the maps with the regions outlined, and the bottom row the
-# distribution of each quantity within each region. The curves are drawn as in
-# the paper: each is scaled by its share of the pixels, so the three integrate to
-# one together, smoothed with a third of Scott's bandwidth, and evaluated at 200
-# points over the full range of its sample, which is why the k-h separation,
-# whose range is set by a few outliers, is drawn in straight segments.
+# distribution of each quantity within each region, drawn as in the paper: each
+# curve is scaled by its share of the pixels, so the three integrate to one together,
+# and spans the full range of its sample, which is why the k-h separation, whose
+# range is set by a few outliers, is drawn in straight segments.
 # The k2 peaks are furthest apart in the emerging flux and closest in the
 # leading polarity, and the k3 velocities, k-h separations and asymmetries
 # are mostly small and positive.

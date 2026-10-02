@@ -3,7 +3,7 @@
 Remove Dust from IRIS Slit-Jaw Imager
 =====================================
 
-This example shows how to remove dust from IRIS slit-jaw imager (SJI).
+This example shows how to remove dust from IRIS slit-jaw imager (SJI) images.
 """
 
 import matplotlib.pyplot as plt
@@ -25,11 +25,10 @@ sji_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# Now we just read it and apply the `irispy.utils.dust.remove_dust` method to
-# the cube.
+# Now we read it and apply `~irispy.sji.SJICube.remove_dust`.
 
 sji_2832 = read_files(sji_filename)
-# We crop the cube to reduce memory usage for the online documentation build.
+# We keep two frames to reduce memory usage for the online documentation build.
 sji_subset = sji_2832[44:46]
 clean_subset = sji_subset.remove_dust()
 
