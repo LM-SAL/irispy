@@ -1,11 +1,3 @@
-"""
-IDL references are ``iris_prep_wavecorr_l2`` output (IDL 9.2, SolarSoft of 2026-09-28)
-for whole level 2 files.
-
-``CROP`` holds steps ``CROP_STEPS`` of the 3824262996 file, with the full slit and its
-three reference-line windows cut to the fit ranges plus 5 pixels (see overview.txt).
-"""
-
 import numpy as np
 import pooch
 import pytest
