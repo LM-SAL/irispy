@@ -1,4 +1,3 @@
-import warnings
 from pathlib import Path
 from functools import wraps
 
@@ -15,14 +14,7 @@ from astropy.wcs import WCS
 from irispy.meta import SGMeta
 from irispy.spectrograph import SpectrogramCube
 
-__all__ = ["make_test_spectrogram_cube", "warnings_as_errors"]
-
-
-@pytest.fixture
-def warnings_as_errors():
-    warnings.simplefilter("error")
-    yield
-    warnings.resetwarnings()
+__all__ = ["make_test_spectrogram_cube"]
 
 
 def get_hash_library_name():

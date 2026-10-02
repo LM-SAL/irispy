@@ -19,6 +19,7 @@ def test_spectral_windows_order_read_spectrograph_lvl2(sns_sg_file):
     # Requesting windows in an order different from the file order must not swap the data.
     all_windows = read_spectrograph_lvl2(sns_sg_file)
     subset = read_spectrograph_lvl2(sns_sg_file, spectral_windows=["Mg II k 2796", "Si IV 1394"])
+    assert set(subset) == {"Mg II k 2796", "Si IV 1394"}
     for key in subset:
         np.testing.assert_array_equal(subset[key][0].data, all_windows[key][0].data)
 
@@ -170,10 +171,9 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert meta.rsun_meters is None
 
 
-def test_smoke_read_spectrograph_lvl2(sns_sg_file, raster_sg_file, raster_sg_files):
-    read_spectrograph_lvl2(sns_sg_file)
-    read_spectrograph_lvl2(raster_sg_file)
-    read_spectrograph_lvl2(raster_sg_files)
+@pytest.mark.parametrize("file_fixture", ["sns_sg_file", "raster_sg_file", "raster_sg_files"])
+def test_smoke_read_spectrograph_lvl2(request, file_fixture):
+    assert read_spectrograph_lvl2(request.getfixturevalue(file_fixture))
 
 
 def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):

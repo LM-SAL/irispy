@@ -11,14 +11,6 @@ OBSIDS = [
     3880903651,
     4050607445,
 ]
-INVALID_OBSID = [
-    4643502010,
-    4050607495,
-    3880903650,
-    3680903685,
-    335987081297,
-    40,
-]
 TEST_DATA = {}
 TEST_DATA["exptime"] = [
     8 * u.s,
@@ -83,7 +75,17 @@ def test_options_keep_description_whitespace(obsid):
     assert all(type(key) is str and type(value) is int for key, value in options["sjis"].items())
 
 
-@pytest.mark.parametrize("test_input", [INVALID_OBSID])
-def test_invalid_obsid(test_input):
-    with pytest.raises(ValueError, match=r"Invalid OBS ID: must have 10 digits."):
+@pytest.mark.parametrize(
+    ("test_input", "message"),
+    [
+        (4643502010, "two first digits"),
+        (4050607495, "last two numbers must be between 10 and 72"),
+        (3880903650, "last two numbers must be between 1 and 99"),
+        (3680903685, "last two numbers must be between 1 and 80"),
+        (335987081297, "must have 10 digits"),
+        (40, "must have 10 digits"),
+    ],
+)
+def test_invalid_obsid(test_input, message):
+    with pytest.raises(ValueError, match=f"Invalid OBS ID: .*{message}"):
         ObsID(test_input)

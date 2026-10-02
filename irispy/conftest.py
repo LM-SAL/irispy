@@ -1,14 +1,10 @@
-import os
 import logging
 import importlib
 from pathlib import Path
 
-import numpy as np
 import pooch
 import pytest
 from scipy.io import readsav
-
-from astropy.io import fits
 
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
@@ -124,16 +120,6 @@ def sns_sjicube_2832():
 
 
 @pytest.fixture
-def sns_sji_filelist():
-    return [
-        get_test_filepath("sns/iris_l2_20210905_001833_3620258102_SJI_1330_t000_test.fits"),
-        get_test_filepath("sns/iris_l2_20210905_001833_3620258102_SJI_1400_t000_test.fits"),
-        get_test_filepath("sns/iris_l2_20210905_001833_3620258102_SJI_2796_t000_test.fits"),
-        get_test_filepath("sns/iris_l2_20210905_001833_3620258102_SJI_2832_t000_test.fits"),
-    ]
-
-
-@pytest.fixture
 def raster_sg_file():
     return get_test_filepath(
         "raster/iris_l2_20140329_140938_3860258481_raster/iris_l2_20140329_140938_3860258481_raster_t000_r00000_test.fits"
@@ -151,15 +137,6 @@ def raster_sg_files():
 
 
 @pytest.fixture
-def raster_sji_filelist():
-    return [
-        get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_1400_t000_test.fits"),
-        get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_2796_t000_test.fits"),
-        get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_2832_t000_test.fits"),
-    ]
-
-
-@pytest.fixture
 def raster_sji_1400_file():
     return get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_1400_t000_test.fits")
 
@@ -172,21 +149,6 @@ def raster_sji_2796_file():
 @pytest.fixture
 def raster_sji_2832_file():
     return get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_2832_t000_test.fits")
-
-
-@pytest.fixture
-def raster_sjicube_1400():
-    return read_sji_lvl2(get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_1400_t000_test.fits"))
-
-
-@pytest.fixture
-def raster_sjicube_2796():
-    return read_sji_lvl2(get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_2796_t000_test.fits"))
-
-
-@pytest.fixture
-def raster_sjicube_2832():
-    return read_sji_lvl2(get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_2832_t000_test.fits"))
 
 
 @pytest.fixture
@@ -209,20 +171,3 @@ def bursts_si_iv_raster():
 @pytest.fixture(scope="module")
 def bursts_sjicube_1400():
     return read_sji_lvl2(get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits"))
-
-
-@pytest.fixture(scope="session")
-def fake_long_sns_obs(tmp_path_factory):
-    header = fits.getheader(get_test_filepath("raster/iris_l2_20230408_110821_3880012095_SJI_2832_t000_test.fits"))
-    header["STARTOBS"] = "2017-05-02T05:25:51.000"
-    header["ENDOBS"] = "2017-05-02T08:25:51.000"
-    header["NAXIS3"] = 100
-    if header["CUNIT3"] == "seconds":
-        header["CUNIT3"] = "s"
-    rng = np.random.default_rng(12345)
-    data = rng.random((header["NAXIS3"], header["NAXIS2"], header["NAXIS1"]))
-    temp_dir = tmp_path_factory.mktemp("IRIS")
-    hdu = fits.PrimaryHDU(data=data, header=header, do_not_scale_image_data=True, scale_back=True)
-    fits_file = os.fspath(temp_dir.joinpath("iris_l2_20230408_110821_3880012095_SJI_2832_t000_test.fits"))
-    hdu.writeto(fits_file)
-    return [fits_file]

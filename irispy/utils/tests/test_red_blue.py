@@ -206,6 +206,9 @@ def test_calculate_red_blue_asymmetry_centers_profiles_on_peak():
     )
     assert result["red_blue_asymmetry"].data[0, 0] > 0
     assert np.isfinite(result["red_blue_asymmetry"].data[0, 0])
+    centered_profile = result["interpolated_profile"][0, 0]
+    centered_velocity = centered_profile.axis_world_coords(0)[0]
+    assert centered_velocity[np.nanargmax(centered_profile.data)].to_value(u.km / u.s) == pytest.approx(0, abs=1e-6)
 
 
 def test_calculate_red_blue_asymmetry_return_profiles():

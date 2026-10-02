@@ -26,24 +26,14 @@ AXIS = [
 ]
 
 
-def test_world_axis_physical_types_sjicube_2832(sns_sjicube_2832):
-    assert np.all(sns_sjicube_2832.shape == (10, 40, 37))
-    assert sns_sjicube_2832.array_axis_physical_types == AXIS
-
-
-def test_world_axis_physical_types_sjicube_2796(sns_sjicube_2796):
-    assert np.all(sns_sjicube_2796.shape == (62, 40, 37))
-    assert sns_sjicube_2796.array_axis_physical_types == AXIS
-
-
-def test_world_axis_physical_types_sjicube_1400(sns_sjicube_1400):
-    assert np.all(sns_sjicube_1400.shape == (62, 40, 37))
-    assert sns_sjicube_1400.array_axis_physical_types == AXIS
-
-
-def test_world_axis_physical_types_sjicube_1330(sns_sjicube_1330):
-    assert np.all(sns_sjicube_1330.shape == (52, 40, 37))
-    assert sns_sjicube_1330.array_axis_physical_types == AXIS
+@pytest.mark.parametrize(
+    ("cube_fixture", "n_frames"),
+    [("sns_sjicube_2832", 10), ("sns_sjicube_2796", 62), ("sns_sjicube_1400", 62), ("sns_sjicube_1330", 52)],
+)
+def test_world_axis_physical_types_sjicube(request, cube_fixture, n_frames):
+    cube = request.getfixturevalue(cube_fixture)
+    assert cube.shape == (n_frames, 40, 37)
+    assert cube.array_axis_physical_types == AXIS
 
 
 def test_sji_plotter_does_not_expose_plot_rgb(sns_sjicube_1400):
@@ -80,19 +70,11 @@ def test_to_map(sns_sjicube_1330):
     assert np.all([output.reference_date is not None for output in output])
 
 
-def test_sji_plot_uses_short_slider_label(sns_sjicube_1330):
+@pytest.mark.parametrize(("kwargs", "expected"), [({}, ["Time"]), ({"slider_labels": ["Frame"]}, ["Frame"])])
+def test_sji_plot_slider_labels(sns_sjicube_1330, kwargs, expected):
     fig = plt.figure()
-    animator = sns_sjicube_1330.plot(fig=fig)
-
-    assert animator.slider_labels == ["Time"]
-    plt.close(fig)
-
-
-def test_sji_plot_accepts_custom_slider_label(sns_sjicube_1330):
-    fig = plt.figure()
-    animator = sns_sjicube_1330.plot(fig=fig, slider_labels=["Frame"])
-
-    assert animator.slider_labels == ["Frame"]
+    animator = sns_sjicube_1330.plot(fig=fig, **kwargs)
+    assert animator.slider_labels == expected
     plt.close(fig)
 
 

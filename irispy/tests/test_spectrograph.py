@@ -120,7 +120,11 @@ def test_wavelength_axis():
     assert cube.wavelength_axis == 2
 
 
-def test_wavelength_axis_raises_without_wave():
+@pytest.mark.parametrize(
+    ("property_name", "message"),
+    [("wavelength_axis", "wavelength axis"), ("spectral_dispersion", "no WAVE ctype")],
+)
+def test_spectral_properties_raise_without_wave(property_name, message):
     header = fits.Header()
     header["NAXIS"] = 2
     header["NAXIS1"] = 5
@@ -137,29 +141,8 @@ def test_wavelength_axis_raises_without_wave():
     header["CUNIT2"] = "arcsec"
     wcs = WCS(header)
     cube = SpectrogramCube(np.ones((2, 5)), wcs=wcs, uncertainty=None, unit=u.DN, meta={}, mask=None)
-    with pytest.raises(ValueError, match="wavelength axis"):
-        _ = cube.wavelength_axis
-
-
-def test_spectral_dispersion_missing_wave_raises():
-    header = fits.Header()
-    header["NAXIS"] = 2
-    header["NAXIS1"] = 5
-    header["NAXIS2"] = 2
-    header["CTYPE1"] = "HPLT-TAN"
-    header["CTYPE2"] = "HPLN-TAN"
-    header["CDELT1"] = 0.1
-    header["CRVAL1"] = 0
-    header["CRPIX1"] = 1
-    header["CUNIT1"] = "arcsec"
-    header["CDELT2"] = 0.1
-    header["CRVAL2"] = 0
-    header["CRPIX2"] = 1
-    header["CUNIT2"] = "arcsec"
-    wcs = WCS(header)
-    cube = SpectrogramCube(np.ones((2, 5)), wcs=wcs, uncertainty=None, unit=u.DN, meta={}, mask=None)
-    with pytest.raises(ValueError, match="no WAVE ctype"):
-        _ = cube.spectral_dispersion
+    with pytest.raises(ValueError, match=message):
+        getattr(cube, property_name)
 
 
 def test_solid_angle_missing_hplt_raises():

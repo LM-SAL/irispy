@@ -94,33 +94,6 @@ def cube_2d():
 
 
 @pytest.fixture
-def cube_1d():
-    header_1d = {
-        "CTYPE1": "Time    ",
-        "CUNIT1": "s",
-        "CDELT1": 0.4,
-        "CRPIX1": 0,
-        "CRVAL1": 0,
-        "NAXIS1": 2,
-    }
-    exposure_times = 2 * np.ones((2), float) * u.s
-    wcs_1d = WCS(header=header_1d, naxis=1)
-    data_1d = np.array([1, 2])
-    cube_1d = SJICube(
-        data_1d,
-        wcs_1d,
-        uncertainty=np.sqrt(np.array([1, 2])),
-        mask=data_1d >= 0,
-        unit=utils.constants.DN_UNIT["SJI"],
-        meta=NDMeta(
-            {"exposure time": exposure_times, "scaled": True}, axes={"exposure time": 0}, data_shape=data_1d.shape
-        ),
-    )
-    cube_1d.extra_coords.add(*EXTRA_COORDS[0])
-    return cube_1d
-
-
-@pytest.fixture
 def dust_cube():
     data_dust = np.array(
         [
