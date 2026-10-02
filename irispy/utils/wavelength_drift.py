@@ -40,8 +40,8 @@ def calculate_wavelength_drift(raster):
     The NUV and FUV drifts are fitted to the Ni I and O I shifts: shifts more than 0.08 Å (NUV)
     or 0.05 Å (FUV) from the median are dropped, a 5-minute running mean removes oscillations,
     and a sine with the 5856 s orbital period plus a polynomial of order min(whole orbits
-    covered, 3) is fitted. An observation shorter than a quarter orbit gets a constant drift,
-    the mean of the smoothed shifts, with a warning.
+    spanned by the surviving measurements, 3) is fitted. Measured coverage shorter than a
+    quarter orbit gets a constant drift, the mean of the smoothed shifts, with a warning.
 
     Parameters
     ----------
@@ -200,18 +200,20 @@ def _fit_drift(seconds, shifts, outlier, name):
     if width < np.count_nonzero(~outliers):
         with warnings.catch_warnings(action="ignore", category=AstropyUserWarning):  # windows with no shift
             smoothed = convolve(smoothed, Box1DKernel(width | 1), boundary="extend")
-    if np.ptp(seconds) < _ORBIT / 4:
+    measured = finite & ~outliers
+    coverage = np.ptp(seconds[measured]) if measured.any() else 0
+    if coverage < _ORBIT / 4:
         design = np.ones((len(seconds), 1))
     else:
         phase = 2 * np.pi * seconds / _ORBIT
-        order = min(int(np.ptp(seconds) // _ORBIT), 3)
+        order = min(int(coverage // _ORBIT), 3)
         design = np.column_stack([np.sin(phase), np.cos(phase), *((seconds / _ORBIT) ** np.arange(order + 1)[:, None])])
-    if np.count_nonzero(finite & ~outliers) <= design.shape[1]:
+    if np.count_nonzero(measured) <= design.shape[1]:
         msg = f"Too few shifts to fit the {name.upper()} drift"
         warnings.warn(msg, UserWarning, stacklevel=3)
         return np.full(len(seconds), np.nan)
     if design.shape[1] == 1:
-        msg = f"The observation is too short for an orbital fit, so the {name.upper()} drift is constant"
+        msg = f"The measured coverage is too short for an orbital fit, so the {name.upper()} drift is constant"
         warnings.warn(msg, UserWarning, stacklevel=3)
     fitted = ~outliers & np.isfinite(smoothed)
     coefficients = np.linalg.lstsq(design[fitted], smoothed[fitted])[0]

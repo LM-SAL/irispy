@@ -23,6 +23,7 @@ from astropy.coordinates import SpectralCoord
 
 from irispy.io import read_files
 from irispy.utils import image_clipping
+from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 from irispy.utils.wavelength_drift import calculate_wavelength_drift
 
 ###############################################################################
@@ -71,7 +72,7 @@ mg_crop = mg_ii.crop(lower_corner, upper_corner)
 # Save the on-disk part of the slit (roughly its first 600 pixels) before modifying
 # the data, masking the raw fill value (-32768). We will compare this below.
 before = mg_crop.data[:, :600].astype(float)
-before[before == -32768] = np.nan
+before[before == BAD_PIXEL_VALUE_UNSCALED] = np.nan
 vmin, vmax = np.nanpercentile(before, [1, 99])
 
 ###############################################################################
@@ -107,12 +108,17 @@ fig.legend(loc="outside upper center", ncols=5)
 ###############################################################################
 # Adding the drift to the wavelengths of a step corrects them. To look at the
 # whole image at a given wavelength, we instead interpolate each step back onto
-# the original wavelength grid.
+# the original wavelength grid. Unsupported wavelengths and interpolation through
+# bad pixels stay invalid. We work on one floating-point step at a time and store
+# invalid results as the FITS fill value in the integer array.
 
 for i, shift in enumerate(drift["nuv"]):
-    mg_ii.data[i] = make_interp_spline((mg_wave + shift).to_value(u.nm), mg_ii.data[i], k=1, axis=-1)(
-        mg_wave.to_value(u.nm)
+    data = mg_ii.data[i].astype(float)
+    data[data == BAD_PIXEL_VALUE_UNSCALED] = np.nan
+    corrected = make_interp_spline((mg_wave + shift).to_value(u.nm), data, k=1, axis=-1, check_finite=False)(
+        mg_wave.to_value(u.nm), extrapolate=False
     )
+    mg_ii.data[i] = np.where(np.isfinite(corrected), corrected, BAD_PIXEL_VALUE_UNSCALED)
 
 ###############################################################################
 # Before the correction, the Mn I intensity shows a regular bright-dark pattern
@@ -124,7 +130,7 @@ for i, shift in enumerate(drift["nuv"]):
 # Since we changed the underlying data, we need to re-crop
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 after = mg_crop.data[:, :600].astype(float)
-after[after == -32768] = np.nan
+after[after == BAD_PIXEL_VALUE_UNSCALED] = np.nan
 difference = after - before
 limit = np.nanpercentile(np.abs(difference), 99)
 
@@ -154,13 +160,16 @@ pos = 50 * u.km / u.s  # Around the line centre
 velocity = ((mg_wave - mg_k_centre) * constants.c / mg_k_centre).to(u.km / u.s)
 index_p = np.argmin(np.abs(velocity - pos))
 index_m = np.argmin(np.abs(velocity + pos))
-doppler = mg_ii.data[..., index_m] - mg_ii.data[..., index_p]
+# Use floats for the subtraction and leave the result invalid if either wing is bad.
+wings = mg_ii.data[..., [index_m, index_p]].astype(float)
+wings[wings == BAD_PIXEL_VALUE_UNSCALED] = np.nan
+doppler = wings[..., 0] - wings[..., 1]
 
 ###############################################################################
 # And now we can plot this as before (intensity units are again arbitrary
 # because of the unscaled DNs).
 
-vmin, vmax = image_clipping(doppler)
+vmin, vmax = image_clipping(doppler[np.isfinite(doppler)])
 # A diverging colour map needs limits centred on zero.
 limit = max(abs(vmin), abs(vmax))
 plt.figure()

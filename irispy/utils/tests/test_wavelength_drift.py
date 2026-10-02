@@ -120,11 +120,45 @@ def test_drift_fit_just_under_a_quarter_orbit():
         _fit_drift(times, 0.01 * np.sin(times / 900), 0.05, "fuv")
 
 
+@pytest.mark.parametrize("last_shift", [np.nan, 0.5])
+def test_drift_fit_of_short_measured_coverage(last_shift):
+    idl = idl_reference("3824262996")
+    times = seconds(idl)
+    shifts = idl["Ni I"].to_value(u.AA).copy()
+    shifts[8:] = np.nan  # only 221 s measured in a raster lasting over three hours
+    shifts[-1] = last_shift  # a distant outlier must not extend the coverage either
+    with pytest.warns(UserWarning, match=f"{SHORT}, so the NUV drift is constant"):
+        fitted = _fit_drift(times, shifts, 0.08, "nuv")
+    np.testing.assert_allclose(fitted, fitted[0])
+    assert shifts[:8].min() <= fitted[0] <= shifts[:8].max()
+
+
+def test_drift_fit_coverage_excludes_smoothing():
+    times = np.arange(200) * 30.0
+    shifts = np.full(len(times), np.nan)
+    shifts[:48] = 0.01 * np.sin(times[:48] / 900)  # 1410 s; smoothing extends this past a quarter orbit
+    with pytest.warns(UserWarning, match=f"{SHORT}, so the NUV drift is constant"):
+        fitted = _fit_drift(times, shifts, 0.08, "nuv")
+    np.testing.assert_allclose(fitted, fitted[0])
+
+
+def test_drift_fit_polynomial_order_uses_measured_coverage():
+    times = np.arange(100) * 300.0
+    orbits = times / 5856
+    shifts = np.full(len(times), np.nan)
+    measured = slice(20, 60)  # less than two measured orbits in a five-orbit observation
+    shifts[measured] = 0.01 * np.sin(2 * np.pi * orbits[measured] + 0.3) + 5e-4 * orbits[measured] ** 2
+    fitted = _fit_drift(times, shifts, 0.08, "nuv")
+    expected = _fit_drift(times[measured], shifts[measured], 0.08, "nuv")
+    np.testing.assert_allclose(fitted[measured], expected, atol=1e-12)
+
+
 @pytest.mark.parametrize(("measured", "fits"), [(3, False), (4, True)])
 def test_drift_fit_needs_more_shifts_than_parameters(measured, fits):
     times = np.arange(8) * 210.0  # 1470 s, just over a quarter orbit: 3 parameters, a sine and a constant
     shifts = np.full(len(times), np.nan)
-    shifts[:measured] = 0.01 * np.sin(times[:measured] / 900)
+    bins = np.linspace(0, len(times) - 1, measured, dtype=int)
+    shifts[bins] = 0.01 * np.sin(times[bins] / 900)
     if fits:
         assert np.isfinite(_fit_drift(times, shifts, 0.05, "fuv")).all()
     else:
@@ -134,9 +168,18 @@ def test_drift_fit_needs_more_shifts_than_parameters(measured, fits):
 
 def test_drift_fit_counts_only_measured_shifts():
     # The running mean spreads 4 shifts over 20 exposures, but the orbital fit has 4 parameters
-    times = np.arange(100) * 60.0
+    times = np.arange(130) * 60.0
     shifts = np.full(len(times), np.nan)
-    shifts[[10, 40, 60, 90]] = 0.01
+    shifts[[10, 40, 70, 110]] = 0.01
+    with pytest.warns(UserWarning, match="Too few shifts to fit the NUV drift"):
+        assert np.isnan(_fit_drift(times, shifts, 0.08, "nuv")).all()
+
+
+@pytest.mark.parametrize("measured", [0, 1])
+def test_constant_drift_needs_more_than_one_shift(measured):
+    times = np.arange(200) * 30.0
+    shifts = np.full(len(times), np.nan)
+    shifts[:measured] = 0.01
     with pytest.warns(UserWarning, match="Too few shifts to fit the NUV drift"):
         assert np.isnan(_fit_drift(times, shifts, 0.08, "nuv")).all()
 
