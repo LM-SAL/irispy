@@ -55,7 +55,10 @@ To use less memory:
 
 * Read only the spectral windows you need with ``spectral_windows``; the memory goes down in proportion.
 * Leave ``uncertainty=False`` (the default); ``uncertainty=True`` adds a 64-bit array, twice the size of the data.
-* Pass ``memmap=True``, which maps the file instead of loading it and uses almost no memory.
-  The data are then the raw, unscaled integers stored in the file rather than data numbers (DN), there is no mask of fill values, and no uncertainty is computed.
+* Pass ``memmap=True``, which maps the raw, unscaled integers instead of allocating scaled data numbers (DN).
+  A mask marks both fill values and takes one byte per pixel; creating it reads the data without modifying them.
+  No uncertainty is computed in this mode.
+
+Compressed SJI files are decompressed into memory once, so ``memmap=True`` cannot provide disk-backed arrays for them.
 
 Loading the scaled and masked data lazily, only when they are used, is tracked in `#14 <https://github.com/LM-SAL/irispy/issues/14>`__.

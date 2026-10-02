@@ -305,6 +305,25 @@ def test_read_spectrograph_memmap_has_no_uncertainty(raster_sg_file):
     assert scaled["C II 1336"][0].uncertainty is not None
 
 
+@pytest.mark.parametrize("memmap", [False, True])
+def test_read_spectrograph_masks_both_fill_values(tmp_path, sns_sg_file, memmap):
+    filename = tmp_path / "raster_fill.fits"
+    with fits.open(sns_sg_file, memmap=False) as hdulist:
+        data = np.full(hdulist[1].data.shape, 7.0)
+        data.flat[:4] = [-200, -199, -198, 7]
+        expected_mask = np.isin(data, [-200, -199])
+        hdulist[1].data = data
+        hdulist[1].scale("int16", bscale=0.25, bzero=7992)
+        raw = hdulist[1].data.copy()
+        hdulist.writeto(filename)
+
+    cube = read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=memmap)["C II 1336"].data[0]
+
+    np.testing.assert_array_equal(cube.mask, expected_mask)
+    if memmap:
+        np.testing.assert_array_equal(cube.data, raw)
+
+
 def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
     # A bare array would be stored as an UnknownUncertainty (issue #57).
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)["C II 1336"][0]

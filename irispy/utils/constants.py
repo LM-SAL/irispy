@@ -5,6 +5,7 @@ This module provides constants used elsewhere.
 import astropy.units as u
 
 __all__ = [
+    "BAD_PIXEL_VALUES_SCALED",
     "BAD_PIXEL_VALUE_SCALED",
     "BAD_PIXEL_VALUE_UNSCALED",
     "DN_UNIT",
@@ -16,6 +17,8 @@ __all__ = [
 
 # The following value is only appropriate for byte scaled images
 BAD_PIXEL_VALUE_SCALED = -200
+# Both Level 2 fill values represent missing samples.
+BAD_PIXEL_VALUES_SCALED = (BAD_PIXEL_VALUE_SCALED, -199)
 # The following value is only appropriate for unscaled images
 BAD_PIXEL_VALUE_UNSCALED = -32768
 # Define some properties of IRIS detectors.

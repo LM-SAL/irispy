@@ -1,0 +1,4 @@
+Level 2 readers now mask both -200 and -199 fill values, including their raw FITS equivalents.
+Analysis that uses the mask, such as burst detection, now leaves -199 out of its statistics.
+Memory-mapped SJI data retain their original pixel values instead of replacing fill values with zeros.
+SJI gzip files are opened and decompressed once when loaded through `~irispy.io.read_files`.

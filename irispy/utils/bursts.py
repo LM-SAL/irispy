@@ -216,13 +216,12 @@ def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):
     Notes
     -----
     Port of `iris_sji_burst_check.pro <https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/nrl/iris_sji_burst_check.pro>`__,
-    which fixes the parameters at their defaults. It finds the same burst pixels and events on the
-    IDL reference data, with these deliberate differences:
+    which fixes the parameters at their defaults. These differences from IDL are deliberate:
 
     * Edge pixels can belong to events; IDL's ``REGION_GROW`` leaves them out of every region,
       and an above-threshold edge pixel makes the IDL loop never end.
-    * Masked pixels, not only the -200 fill, are left out of the statistics and are never burst
-      pixels.
+    * Masked pixels, including both -200 and -199 fill values, are left out of the statistics
+      and are never burst pixels. IDL excludes only -200, so the frame thresholds can differ.
     * The median of an even number of pixels is the mean of the two middle values, not IDL's
       upper one, and the standard deviation is accumulated in double precision.
     * Labels are unique through the cube; IDL numbers the events of each frame from 1, in bytes

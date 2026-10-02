@@ -18,7 +18,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, READOUT_NOISE
+from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, READOUT_NOISE
 
 __all__ = ["read_spectrograph_lvl2"]
 
@@ -254,9 +254,11 @@ def read_spectrograph_lvl2(
                 data = hdulist[window_fits_indices[i]].data[steps]
                 times = t_obs[steps]
                 out_uncertainty = None
-                data_mask = None
-                if not memmap:
-                    data_mask = data == BAD_PIXEL_VALUE_SCALED
+                if memmap:
+                    raw_fill = (np.asarray(BAD_PIXEL_VALUES_SCALED) - meta["BZERO"]) / meta["BSCALE"]
+                    data_mask = np.isin(data, raw_fill)
+                else:
+                    data_mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
                     # memmap data are unscaled integers, so the photon noise would be wrong
                     if uncertainty:
                         out_uncertainty = StdDevUncertainty(calculate_uncertainty(data, readout_noise, dn_unit))

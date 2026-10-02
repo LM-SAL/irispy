@@ -146,16 +146,20 @@ def test_bright_spectral_events_nuv():
         find_bright_spectral_events(mg_ii, 100, rest_wavelength=1402.77 * u.AA)
 
 
-def test_sji_matches_idl(bursts_sjicube_1400):
+def test_sji_matches_idl_with_updated_fill_mask(bursts_sjicube_1400):
     idl = Table.read(get_test_filepath("bursts/iris_sji_burst_check_4000255147_pixels.ecsv"))
     summary = Table.read(SJI_SUMMARY)
     labels, events = find_sji_bursts(bursts_sjicube_1400)
     for frame in range(len(bursts_sjicube_1400.data)):
         pixels = idl[idl["frame"] == frame]
+        if frame == 0:
+            # IDL included -199 in its statistics: its threshold was 927.1769 DN.
+            # Excluding that fill lowers it to 926.9041 DN, adding the 927 DN pixel at (291, 93) to group 9.
+            pixels.add_row({"pixel": 113001, "group": 9})
         assert_same_events(labels.data[frame].ravel(), pixels["pixel"], pixels["group"])
         idl_npix = np.unique(pixels["group"], return_counts=True)[1]
         assert sorted(events["npix"][events["frame"] == frame]) == sorted(idl_npix)
-    # Frame 1 (69 in the file) holds a 2100.50 DN pixel 0.04 DN below the threshold; IDL rejects it too.
+    # Frame 1 (69 in the file) holds a 2100.50 DN pixel below both thresholds; IDL rejects it too.
     idl_frames = np.unique(idl["idl_frame"])
     np.testing.assert_array_equal(np.bincount(events["frame"], minlength=3), summary["nevents"][idl_frames])
     np.testing.assert_array_equal(

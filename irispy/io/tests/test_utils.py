@@ -1,13 +1,45 @@
 import io
 import os
+import gzip
 import tarfile
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from astropy.io import fits
 
+from irispy.data.test import get_test_filepath
+from irispy.io.sji import read_sji_lvl2
 from irispy.io.utils import _extract_tarfile, _get_spec_group_key, fits_info, read_files
+
+
+@pytest.mark.parametrize("memmap", [False, True])
+@pytest.mark.parametrize("reader", [read_files, read_sji_lvl2], ids=["read-files", "sji-reader"])
+def test_decompresses_sji_once(tmp_path, monkeypatch, memmap, reader):
+    source = get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits")
+    filename = tmp_path / "sji.fits.gz"
+    with Path(source).open("rb") as original, gzip.open(filename, "wb") as compressed:
+        compressed.write(original.read())
+    expected = read_files(source, memmap=memmap)
+    opens = []
+    real_open = gzip.GzipFile.__init__
+
+    def tracked_open(self, *args, **kwargs):
+        opens.append(1)
+        return real_open(self, *args, **kwargs)
+
+    def unexpected_rewind(_self):
+        pytest.fail("The gzip stream was rewound and decompressed again")
+
+    monkeypatch.setattr(gzip.GzipFile, "__init__", tracked_open)
+    monkeypatch.setattr(gzip._GzipReader, "_rewind", unexpected_rewind)
+
+    cube = reader(filename, memmap=memmap)
+
+    assert opens == [1]
+    np.testing.assert_array_equal(cube.data, expected.data)
+    np.testing.assert_array_equal(cube.mask, expected.mask)
 
 
 @pytest.mark.parametrize(
