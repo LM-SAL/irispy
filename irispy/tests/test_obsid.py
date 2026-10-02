@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 import astropy.units as u
@@ -9,14 +10,6 @@ OBSIDS = [
     3677508065,
     3880903651,
     4050607445,
-]
-INVALID_OBSID = [
-    4643502010,
-    4050607495,
-    3880903650,
-    3680903685,
-    335987081297,
-    40,
 ]
 TEST_DATA = {}
 TEST_DATA["exptime"] = [
@@ -71,7 +64,28 @@ def test_attribute(attr_name, test_input, expected_output):
     assert ObsID(test_input)[attr_name] == expected_output
 
 
-@pytest.mark.parametrize("test_input", [INVALID_OBSID])
-def test_invalid_obsid(test_input):
-    with pytest.raises(ValueError, match=r"Invalid OBS ID: must have 10 digits."):
+@pytest.mark.parametrize("obsid", OBSIDS)
+def test_options_keep_description_whitespace(obsid):
+    decoded = ObsID(obsid)
+    options = decoded.options
+    assert options["sjis"]["C II   Si IV   Mg II h/k   Mg II w   "] == 0
+    assert options["exptime"][1 * u.s] == 0
+    assert type(decoded["raster_fov"]) is str
+    assert type(decoded["raster_step"]) is (str if str(obsid).startswith("40") else np.float64)
+    assert all(type(key) is str and type(value) is int for key, value in options["sjis"].items())
+
+
+@pytest.mark.parametrize(
+    ("test_input", "message"),
+    [
+        (4643502010, "two first digits"),
+        (4050607495, "last two numbers must be between 10 and 72"),
+        (3880903650, "last two numbers must be between 1 and 99"),
+        (3680903685, "last two numbers must be between 1 and 80"),
+        (335987081297, "must have 10 digits"),
+        (40, "must have 10 digits"),
+    ],
+)
+def test_invalid_obsid(test_input, message):
+    with pytest.raises(ValueError, match=f"Invalid OBS ID: .*{message}"):
         ObsID(test_input)

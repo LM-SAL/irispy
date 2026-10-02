@@ -10,26 +10,13 @@ from astropy.io import fits
 from irispy.io.utils import _extract_tarfile, _get_spec_group_key, fits_info, read_files
 
 
-def test_fits_info(capsys, sns_sg_file, sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
-    fits_info(sns_sg_file)
-    captured = capsys.readouterr()
-    assert sns_sg_file in captured.out
-
-    fits_info(sns_sji_1330_file)
-    captured = capsys.readouterr()
-    assert sns_sji_1330_file in captured.out
-
-    fits_info(sns_sji_1400_file)
-    captured = capsys.readouterr()
-    assert sns_sji_1400_file in captured.out
-
-    fits_info(sns_sji_2796_file)
-    captured = capsys.readouterr()
-    assert sns_sji_2796_file in captured.out
-
-    fits_info(sns_sji_2832_file)
-    captured = capsys.readouterr()
-    assert sns_sji_2832_file in captured.out
+@pytest.mark.parametrize(
+    "file_fixture", ["sns_sg_file", "sns_sji_1330_file", "sns_sji_1400_file", "sns_sji_2796_file", "sns_sji_2832_file"]
+)
+def test_fits_info(capsys, request, file_fixture):
+    filename = request.getfixturevalue(file_fixture)
+    fits_info(filename)
+    assert filename in capsys.readouterr().out
 
 
 def test_read_files_with_mix(sns_sg_file, sns_sji_1330_file):
@@ -37,10 +24,13 @@ def test_read_files_with_mix(sns_sg_file, sns_sji_1330_file):
     assert len(returns) == 2
 
 
-def test_read_files_raster(sns_sg_file):
-    # Simple test to ensure it does not error
-    assert read_files(sns_sg_file)
-    assert read_files([sns_sg_file])
+@pytest.mark.parametrize(
+    "file_fixture", ["sns_sg_file", "sns_sji_1330_file", "sns_sji_1400_file", "sns_sji_2796_file", "sns_sji_2832_file"]
+)
+@pytest.mark.parametrize("as_list", [False, True])
+def test_read_files_single_file(request, file_fixture, as_list):
+    filename = request.getfixturevalue(file_fixture)
+    assert read_files([filename] if as_list else filename)
 
 
 def test_read_files_raster_file_list(raster_sg_files):
@@ -109,15 +99,6 @@ def test_read_files_grouped_spectrograph_honors_allow_errors(
     returns = read_files([sns_sji_1330_file, sns_sji_1400_file, *raster_sg_files], allow_errors=True)
 
     assert list(returns.keys()) == list(expected.keys())
-
-
-def test_read_files_sji(sns_sji_1330_file, sns_sji_1400_file, sns_sji_2796_file, sns_sji_2832_file):
-    # Simple test to ensure it does not error
-    assert read_files(sns_sji_1330_file)
-    assert read_files(sns_sji_1400_file)
-    assert read_files(sns_sji_2796_file)
-    assert read_files(sns_sji_2832_file)
-    assert read_files([sns_sji_2832_file])
 
 
 def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):

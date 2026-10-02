@@ -60,7 +60,7 @@ def test_density_diagnostic(monkeypatch):
     )
 
     result = density_diagnostic(
-        [1.0, 1.5] * u.ct,
+        [1.2, 1.5] * u.ct,
         [2.0, 2.0] * u.ct,
         [1e10, 1e11] * u.cm**-3,
         ion=fake_ion,
@@ -70,11 +70,15 @@ def test_density_diagnostic(monkeypatch):
         intensity_denominator_uncertainty=[0.2, 0.2] * u.ct,
     )
 
-    np.testing.assert_allclose(result["ratio"].value, [0.5, 0.75])
-    assert result["ratio_uncertainty"] is not None
-    assert result["density_lower"] is not None
-    assert result["density_upper"] is not None
-    assert u.allclose(result["density"], [1e10, 5.5e10] * u.cm**-3)
+    np.testing.assert_allclose(result["ratio"].value, [0.6, 0.75])
+    # Hand-calculated ratio variances; the linear density curve has slope 1.8e11 cm^-3.
+    ratio_error = np.sqrt([0.0061, 0.008125]) * u.one
+    expected_density = [2.8e10, 5.5e10] * u.cm**-3
+    density_error = ratio_error.value * 1.8e11 * u.cm**-3
+    assert u.allclose(result["ratio_uncertainty"], ratio_error)
+    assert u.allclose(result["density"], expected_density)
+    assert u.allclose(result["density_lower"], expected_density - density_error)
+    assert u.allclose(result["density_upper"], expected_density + density_error)
 
 
 def test_density_diagnostic_builds_theoretical_ratio_with_fiasco(monkeypatch):
@@ -103,6 +107,8 @@ def test_density_diagnostic_builds_theoretical_ratio_with_fiasco(monkeypatch):
     )
 
     assert calls["ion"] is fake_ion
+    assert calls["numerator"] == 1399.78 * u.angstrom
+    assert calls["denominator"] == 1401.16 * u.angstrom
     assert u.allclose(calls["density_grid"], density_grid)
     assert calls["line_ratio_kwargs"] == {"use_two_ion_model": False}
     np.testing.assert_allclose(result["theoretical_ratio"].value, [0.2, 0.4, 0.6])

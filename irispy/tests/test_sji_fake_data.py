@@ -94,33 +94,6 @@ def cube_2d():
 
 
 @pytest.fixture
-def cube_1d():
-    header_1d = {
-        "CTYPE1": "Time    ",
-        "CUNIT1": "s",
-        "CDELT1": 0.4,
-        "CRPIX1": 0,
-        "CRVAL1": 0,
-        "NAXIS1": 2,
-    }
-    exposure_times = 2 * np.ones((2), float) * u.s
-    wcs_1d = WCS(header=header_1d, naxis=1)
-    data_1d = np.array([1, 2])
-    cube_1d = SJICube(
-        data_1d,
-        wcs_1d,
-        uncertainty=np.sqrt(np.array([1, 2])),
-        mask=data_1d >= 0,
-        unit=utils.constants.DN_UNIT["SJI"],
-        meta=NDMeta(
-            {"exposure time": exposure_times, "scaled": True}, axes={"exposure time": 0}, data_shape=data_1d.shape
-        ),
-    )
-    cube_1d.extra_coords.add(*EXTRA_COORDS[0])
-    return cube_1d
-
-
-@pytest.fixture
 def dust_cube():
     data_dust = np.array(
         [
@@ -265,21 +238,14 @@ def test_sjicube_2d_slice(cube_2d):
 def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
     captured = {}
 
-    def fake_remove_cosmic_rays(cube, *, method, sigma, max_iters, method_kwargs):
-        captured["method"] = method
-        captured["mask"] = cube.mask.copy()
+    def fake_remove_cosmic_rays(data, mask, *, sigma, max_iters, method_kwargs):
+        captured["mask"] = mask.copy()
         captured["sigma"] = sigma
         captured["max_iters"] = max_iters
         captured["method_kwargs"] = method_kwargs
-        return cube.to_nddata(
-            data=cube.data + 1,
-            mask="copy",
-            nddata_type=type(cube),
-            extra_coords="copy",
-            global_coords="copy",
-        )
+        return data + 1
 
-    monkeypatch.setattr("irispy.sji.remove_cosmic_rays", fake_remove_cosmic_rays)
+    monkeypatch.setattr("irispy.utils.cosmic_rays._remove_cosmic_rays_astroscrappy", fake_remove_cosmic_rays)
 
     original_data = cube_2d.data.copy()
     cleaned_cube = cube_2d.remove_cosmic_rays(
@@ -295,7 +261,6 @@ def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
     assert cleaned_cube.meta["scaled"] == cube_2d.meta["scaled"]
     assert cleaned_cube.dust_masked == cube_2d.dust_masked
     assert list(cleaned_cube.extra_coords.keys()) == list(cube_2d.extra_coords.keys())
-    assert captured["method"] == "astroscrappy"
     assert captured["sigma"] == 2.0
     assert captured["max_iters"] == 3
     assert captured["method_kwargs"] == {"readnoise": 4.0}

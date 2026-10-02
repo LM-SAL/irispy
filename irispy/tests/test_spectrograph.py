@@ -63,21 +63,14 @@ def test_spectrogram_cube_negative_indices(sns_sg_file):
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     captured = {}
 
-    def fake_remove_cosmic_rays(cube, *, method, sigma, max_iters, method_kwargs):
-        captured["method"] = method
-        captured["mask"] = cube.mask.copy()
+    def fake_remove_cosmic_rays(data, mask, *, sigma, max_iters, method_kwargs):
+        captured["mask"] = mask.copy()
         captured["sigma"] = sigma
         captured["max_iters"] = max_iters
         captured["method_kwargs"] = method_kwargs
-        return cube.to_nddata(
-            data=cube.data + 2,
-            mask="copy",
-            nddata_type=type(cube),
-            extra_coords="copy",
-            global_coords="copy",
-        )
+        return data + 2
 
-    monkeypatch.setattr("irispy.spectrograph.remove_cosmic_rays", fake_remove_cosmic_rays)
+    monkeypatch.setattr("irispy.utils.cosmic_rays._remove_cosmic_rays_astroscrappy", fake_remove_cosmic_rays)
 
     raster = read_spectrograph_lvl2(sns_sg_file)
     key = next(iter(raster.keys()))
@@ -92,7 +85,6 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     np.testing.assert_array_equal(cleaned_cube.data, cube.data + 2)
     np.testing.assert_array_equal(cleaned_cube.mask, cube.mask)
     assert list(cleaned_cube.extra_coords.keys()) == list(cube.extra_coords.keys())
-    assert captured["method"] == "astroscrappy"
     assert captured["sigma"] == 5.0
     assert captured["max_iters"] == 5
     assert captured["method_kwargs"]["batch_size"] == 16
@@ -128,7 +120,11 @@ def test_wavelength_axis():
     assert cube.wavelength_axis == 2
 
 
-def test_wavelength_axis_raises_without_wave():
+@pytest.mark.parametrize(
+    ("property_name", "message"),
+    [("wavelength_axis", "wavelength axis"), ("spectral_dispersion", "no WAVE ctype")],
+)
+def test_spectral_properties_raise_without_wave(property_name, message):
     header = fits.Header()
     header["NAXIS"] = 2
     header["NAXIS1"] = 5
@@ -145,29 +141,8 @@ def test_wavelength_axis_raises_without_wave():
     header["CUNIT2"] = "arcsec"
     wcs = WCS(header)
     cube = SpectrogramCube(np.ones((2, 5)), wcs=wcs, uncertainty=None, unit=u.DN, meta={}, mask=None)
-    with pytest.raises(ValueError, match="wavelength axis"):
-        _ = cube.wavelength_axis
-
-
-def test_spectral_dispersion_missing_wave_raises():
-    header = fits.Header()
-    header["NAXIS"] = 2
-    header["NAXIS1"] = 5
-    header["NAXIS2"] = 2
-    header["CTYPE1"] = "HPLT-TAN"
-    header["CTYPE2"] = "HPLN-TAN"
-    header["CDELT1"] = 0.1
-    header["CRVAL1"] = 0
-    header["CRPIX1"] = 1
-    header["CUNIT1"] = "arcsec"
-    header["CDELT2"] = 0.1
-    header["CRVAL2"] = 0
-    header["CRPIX2"] = 1
-    header["CUNIT2"] = "arcsec"
-    wcs = WCS(header)
-    cube = SpectrogramCube(np.ones((2, 5)), wcs=wcs, uncertainty=None, unit=u.DN, meta={}, mask=None)
-    with pytest.raises(ValueError, match="no WAVE ctype"):
-        _ = cube.spectral_dispersion
+    with pytest.raises(ValueError, match=message):
+        getattr(cube, property_name)
 
 
 def test_solid_angle_missing_hplt_raises():

@@ -112,9 +112,6 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
             """,
         )
 
-    def plot(self, *args, **kwargs):
-        return self.plotter.plot(*args, **kwargs)
-
     def apply_dust_mask(self, *, undo=False):
         """
         Applies or undoes an update of the mask with the dust particles positions.
@@ -139,86 +136,8 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
             self.mask[dust_mask] = True
             self.dust_masked = True
 
-    def remove_cosmic_rays(
-        self,
-        *,
-        method="rsliding",
-        sigma: float | None = None,
-        max_iters: int | None = None,
-        method_kwargs=None,
-    ):
-        """
-        Return a cleaned copy of the cube with cosmic rays removed.
-
-        This is a convenience wrapper around `irispy.utils.cosmic_rays.remove_cosmic_rays`.
-
-        Parameters
-        ----------
-        method : ``{"rsliding", "astroscrappy"}``, optional
-            Backend used to detect and clean cosmic rays.
-        sigma : `float`, optional
-            Shared clipping threshold override for the selected backend.
-        max_iters : `int`, optional
-            Shared iteration-count override for the selected backend.
-        method_kwargs : `dict`, optional
-            Additional keyword arguments passed to the selected backend.
-
-        Returns
-        -------
-        `irispy.sji.SJICube`
-            Cleaned cube with the same metadata and coordinates as the original.
-        """
-        return remove_cosmic_rays(
-            self,
-            method=method,
-            sigma=sigma,
-            max_iters=max_iters,
-            method_kwargs=method_kwargs,
-        )
-
-    def remove_dust(
-        self,
-        *,
-        dust_mask=None,
-        temporal_window=2,
-        exposure_normalize=True,
-        fallback="spatial",
-        spatial_box=5,
-    ):
-        """
-        Return a new cube with dust-darkened pixels repaired.
-
-        This is a convenience wrapper around `irispy.utils.dust.remove_dust`.
-
-        Parameters
-        ----------
-        dust_mask : `numpy.ndarray`, optional
-            Boolean mask marking pixels to repair. If omitted, a mask is derived
-            from data values.
-        temporal_window : `int`, optional
-            Number of neighboring frames on either side to use for temporal
-            replacement.
-        exposure_normalize : `bool`, optional
-            If `True`, normalize temporal candidate pixels by exposure time when
-            metadata are available.
-        fallback : {``"spatial"``, None}, optional
-            Fallback behavior when temporal replacement is unavailable.
-        spatial_box : `int`, optional
-            Size of the local median filter used by the spatial fallback.
-
-        Returns
-        -------
-        `irispy.sji.SJICube`
-            Cleaned cube with dust-darkened pixels repaired.
-        """
-        return _remove_dust(
-            self,
-            dust_mask=dust_mask,
-            temporal_window=temporal_window,
-            exposure_normalize=exposure_normalize,
-            fallback=fallback,
-            spatial_box=spatial_box,
-        )
+    remove_cosmic_rays = remove_cosmic_rays
+    remove_dust = _remove_dust
 
     celestial_frame = property(_celestial_frame_from_cube)
 

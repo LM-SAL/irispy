@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -128,22 +129,20 @@ def test_read_sji_lvl2_masks_explicit_float_bad_pixels(tmp_path, sns_sji_1330_fi
     assert cube.mask.sum() == expected_bad_pixels
 
 
-def test_smoke_read_sji_lvl2(
-    sns_sji_1330_file,
-    sns_sji_1400_file,
-    sns_sji_2796_file,
-    sns_sji_2832_file,
-    raster_sji_1400_file,
-    raster_sji_2796_file,
-    raster_sji_2832_file,
-):
-    read_sji_lvl2(sns_sji_1330_file)
-    read_sji_lvl2(sns_sji_1400_file)
-    read_sji_lvl2(sns_sji_2796_file)
-    read_sji_lvl2(sns_sji_2832_file)
-    read_sji_lvl2(raster_sji_1400_file)
-    read_sji_lvl2(raster_sji_2796_file)
-    read_sji_lvl2(raster_sji_2832_file)
+@pytest.mark.parametrize(
+    "file_fixture",
+    [
+        "sns_sji_1330_file",
+        "sns_sji_1400_file",
+        "sns_sji_2796_file",
+        "sns_sji_2832_file",
+        "raster_sji_1400_file",
+        "raster_sji_2796_file",
+        "raster_sji_2832_file",
+    ],
+)
+def test_smoke_read_sji_lvl2(request, file_fixture):
+    assert read_sji_lvl2(request.getfixturevalue(file_fixture)).data.ndim == 3
 
 
 def test_read_sji_lvl2_unrotated_pointing(tmp_path, sns_sji_1330_file):

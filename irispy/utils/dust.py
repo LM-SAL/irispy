@@ -93,7 +93,7 @@ def remove_dust(
 
     Parameters
     ----------
-    cube : `irispy.sji.SJICube`
+    cube : `~irispy.sji.SJICube`
         The image cube to clean. Two-dimensional image slices are also supported.
     dust_mask : `numpy.ndarray`, optional
         Boolean mask marking the pixels to repair. If omitted, the mask is derived
@@ -117,7 +117,7 @@ def remove_dust(
 
     Returns
     -------
-    `irispy.sji.SJICube`
+    `~irispy.sji.SJICube`
         A new cube with repaired dust pixels.
 
     Notes

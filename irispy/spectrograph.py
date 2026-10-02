@@ -98,45 +98,7 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
             """,
         )
 
-    def plot(self, *args, **kwargs):
-        return self.plotter.plot(*args, **kwargs)
-
-    def remove_cosmic_rays(
-        self,
-        *,
-        method="rsliding",
-        sigma: float | None = None,
-        max_iters: int | None = None,
-        method_kwargs=None,
-    ):
-        """
-        Return a cleaned copy of the cube with cosmic rays removed.
-
-        This is a convenience wrapper around `irispy.utils.cosmic_rays.remove_cosmic_rays`.
-
-        Parameters
-        ----------
-        method : ``{"rsliding", "astroscrappy"}``, optional
-            Backend used to detect and clean cosmic rays.
-        sigma : `float`, optional
-            Shared clipping threshold override for the selected backend.
-        max_iters : `int`, optional
-            Shared iteration-count override for the selected backend.
-        method_kwargs : `dict`, optional
-            Additional keyword arguments passed to the selected backend.
-
-        Returns
-        -------
-        `irispy.spectrograph.SpectrogramCube`
-            Cleaned cube with the same metadata and coordinates as the original.
-        """
-        return remove_cosmic_rays(
-            self,
-            method=method,
-            sigma=sigma,
-            max_iters=max_iters,
-            method_kwargs=method_kwargs,
-        )
+    remove_cosmic_rays = remove_cosmic_rays
 
     @property
     def _fits_wcs(self):
@@ -214,13 +176,6 @@ class SpectrogramCubeSequence(SpecSeq):
             msg = "Constituent SpectrogramCube objects must have same value of 'OBSID' in its meta."
             raise ValueError(msg)
         super().__init__(data_list, meta=meta, common_axis=common_axis, **kwargs)
-
-    def __str__(self) -> str:
-        # Overload it get the class name in the string
-        return super().__str__()
-
-    def plot(self, *args, **kwargs):
-        return self.plotter.plot(*args, **kwargs)
 
 
 class RasterCollection(NDCollection):
