@@ -265,21 +265,14 @@ def test_sjicube_2d_slice(cube_2d):
 def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
     captured = {}
 
-    def fake_remove_cosmic_rays(cube, *, method, sigma, max_iters, method_kwargs):
-        captured["method"] = method
-        captured["mask"] = cube.mask.copy()
+    def fake_remove_cosmic_rays(data, mask, *, sigma, max_iters, method_kwargs):
+        captured["mask"] = mask.copy()
         captured["sigma"] = sigma
         captured["max_iters"] = max_iters
         captured["method_kwargs"] = method_kwargs
-        return cube.to_nddata(
-            data=cube.data + 1,
-            mask="copy",
-            nddata_type=type(cube),
-            extra_coords="copy",
-            global_coords="copy",
-        )
+        return data + 1
 
-    monkeypatch.setattr("irispy.sji.remove_cosmic_rays", fake_remove_cosmic_rays)
+    monkeypatch.setattr("irispy.utils.cosmic_rays._remove_cosmic_rays_astroscrappy", fake_remove_cosmic_rays)
 
     original_data = cube_2d.data.copy()
     cleaned_cube = cube_2d.remove_cosmic_rays(
@@ -295,7 +288,6 @@ def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
     assert cleaned_cube.meta["scaled"] == cube_2d.meta["scaled"]
     assert cleaned_cube.dust_masked == cube_2d.dust_masked
     assert list(cleaned_cube.extra_coords.keys()) == list(cube_2d.extra_coords.keys())
-    assert captured["method"] == "astroscrappy"
     assert captured["sigma"] == 2.0
     assert captured["max_iters"] == 3
     assert captured["method_kwargs"] == {"readnoise": 4.0}

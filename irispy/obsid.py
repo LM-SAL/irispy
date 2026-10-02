@@ -1,12 +1,9 @@
 import importlib.resources
-from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 from astropy import units as u
-
-dir_path = Path(__file__).parent
+from astropy.io import ascii as ascii_io
 
 __all__ = ["ObsID"]
 
@@ -115,53 +112,52 @@ class ObsID(dict):
             msg = f"Invalid OBS ID: two first digits must one of {versions}"
             raise ValueError(msg)
         obsid = int(str(obsid)[2:])  # version digits are no longer needed
+        reader = ascii_io.get_reader(reader_cls=ascii_io.Csv)
+        # Option descriptions are also dictionary keys, so keep their trailing spaces.
+        reader.data.splitter.process_val = None
         with importlib.resources.as_file(importlib.resources.files("irispy") / f"data/v{version}-table10.csv") as path:
-            table1 = pd.read_csv(path)
+            table1 = reader.read(path)
         with importlib.resources.as_file(
             importlib.resources.files("irispy") / f"data/v{version}-table2000.csv"
         ) as path:
-            table2 = pd.read_csv(path)
+            table2 = reader.read(path)
         id_raster = int(str(obsid)[-2:])
         try:
-            meta = table1.where(table1["OBS-ID"] == id_raster).dropna().iloc[0]
+            meta = table1[table1["OBS-ID"] == id_raster][0]
         except IndexError:
             msg = f"Invalid OBS ID: last two numbers must be between {table1['OBS-ID'].min()} and {table1['OBS-ID'].max()}"
             raise ValueError(
                 msg,
             ) from None
 
-        data["raster_step"] = meta["Raster step"]
-        data["raster_fov"] = meta["Raster FOV"]
-        data["spec_cadence"] = meta["Spectral cadence"]
-        data["sji_fov"] = meta["SJI FOV"]
-        data["raster_desc"] = meta["Description"]
+        raster_step = meta["Raster step"]
+        data["raster_step"] = str(raster_step) if isinstance(raster_step, str) else raster_step
+        data["raster_fov"] = str(meta["Raster FOV"])
+        data["spec_cadence"] = str(meta["Spectral cadence"])
+        data["sji_fov"] = str(meta["SJI FOV"])
+        data["raster_desc"] = str(meta["Description"])
         data["raster_fulldesc"] = f"{data['raster_desc']} {data['raster_fov']} {data['spec_cadence']}"
-        field_ranges = np.concatenate(
-            [  # find all dividers between fields
-                table2.where(table2["OBS ID"] == 0).dropna(how="all").index,
-                np.array([len(table2)]),
-            ],
-        )
+        field_ranges = np.r_[np.flatnonzero(table2["OBS ID"] == 0), len(table2)]
         # field indices, start from largest and subtract
         for start, end in zip(field_ranges[-2::-1], field_ranges[:0:-1], strict=True):
-            table = table2.iloc[start:end]
+            table = table2[start:end]
             for i in np.arange(start, end)[::-1]:
                 index = i
-                tmp = table["OBS ID"].loc[i]
+                tmp = table2["OBS ID"][i]
                 if (obsid - tmp) >= 0:
                     obsid -= tmp
                     break
-            desc = table["Size + description"]
+            desc = table["Size + description"].tolist()
             # Save values for attributes but also table options as function of OBS ID
-            if desc.iloc[0] in field_keys:
-                attr_name = field_keys[desc.iloc[0]]
+            if desc[0] in field_keys:
+                attr_name = field_keys[desc[0]]
                 if attr_name == "exptime":
-                    opt = (self._exptime_to_quant(a) for a in list(desc.values))
-                    opt = dict(zip(opt, table["OBS ID"], strict=True))
-                    attr_value = self._exptime_to_quant(desc.loc[index])
+                    opt = (self._exptime_to_quant(a) for a in desc)
+                    opt = dict(zip(opt, table["OBS ID"].tolist(), strict=True))
+                    attr_value = self._exptime_to_quant(desc[index - start])
                 else:
-                    opt = dict(zip(desc, table["OBS ID"], strict=True))
-                    attr_value = desc.loc[index].strip()
+                    opt = dict(zip(desc, table["OBS ID"].tolist(), strict=True))
+                    attr_value = desc[index - start].strip()
                 data[attr_name] = attr_value
                 options[attr_name] = opt
         return data, options

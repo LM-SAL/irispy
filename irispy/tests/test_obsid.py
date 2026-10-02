@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 import astropy.units as u
@@ -69,6 +70,17 @@ TEST_DATA["linelist"] = [
 )
 def test_attribute(attr_name, test_input, expected_output):
     assert ObsID(test_input)[attr_name] == expected_output
+
+
+@pytest.mark.parametrize("obsid", OBSIDS)
+def test_options_keep_description_whitespace(obsid):
+    decoded = ObsID(obsid)
+    options = decoded.options
+    assert options["sjis"]["C II   Si IV   Mg II h/k   Mg II w   "] == 0
+    assert options["exptime"][1 * u.s] == 0
+    assert type(decoded["raster_fov"]) is str
+    assert type(decoded["raster_step"]) is (str if str(obsid).startswith("40") else np.float64)
+    assert all(type(key) is str and type(value) is int for key, value in options["sjis"].items())
 
 
 @pytest.mark.parametrize("test_input", [INVALID_OBSID])

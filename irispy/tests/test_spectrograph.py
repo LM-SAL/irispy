@@ -63,21 +63,14 @@ def test_spectrogram_cube_negative_indices(sns_sg_file):
 def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     captured = {}
 
-    def fake_remove_cosmic_rays(cube, *, method, sigma, max_iters, method_kwargs):
-        captured["method"] = method
-        captured["mask"] = cube.mask.copy()
+    def fake_remove_cosmic_rays(data, mask, *, sigma, max_iters, method_kwargs):
+        captured["mask"] = mask.copy()
         captured["sigma"] = sigma
         captured["max_iters"] = max_iters
         captured["method_kwargs"] = method_kwargs
-        return cube.to_nddata(
-            data=cube.data + 2,
-            mask="copy",
-            nddata_type=type(cube),
-            extra_coords="copy",
-            global_coords="copy",
-        )
+        return data + 2
 
-    monkeypatch.setattr("irispy.spectrograph.remove_cosmic_rays", fake_remove_cosmic_rays)
+    monkeypatch.setattr("irispy.utils.cosmic_rays._remove_cosmic_rays_astroscrappy", fake_remove_cosmic_rays)
 
     raster = read_spectrograph_lvl2(sns_sg_file)
     key = next(iter(raster.keys()))
@@ -92,7 +85,6 @@ def test_spectrogram_cube_remove_cosmic_rays(sns_sg_file, monkeypatch):
     np.testing.assert_array_equal(cleaned_cube.data, cube.data + 2)
     np.testing.assert_array_equal(cleaned_cube.mask, cube.mask)
     assert list(cleaned_cube.extra_coords.keys()) == list(cube.extra_coords.keys())
-    assert captured["method"] == "astroscrappy"
     assert captured["sigma"] == 5.0
     assert captured["max_iters"] == 5
     assert captured["method_kwargs"]["batch_size"] == 16
