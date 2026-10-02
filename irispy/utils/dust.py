@@ -91,10 +91,10 @@ def remove_dust(
     neighboring frames at the same pixel location first, and falls back to a local
     spatial median when temporal replacements is not available.
 
-    The input is an `~irispy.sji.SJICube`; two-dimensional image slices are also supported.
-
     Parameters
     ----------
+    cube : `~irispy.sji.SJICube`
+        The image cube to clean. Two-dimensional image slices are also supported.
     dust_mask : `numpy.ndarray`, optional
         Boolean mask marking the pixels to repair. If omitted, the mask is derived
         from `irispy.utils.calculate_dust_mask`.
@@ -117,7 +117,7 @@ def remove_dust(
 
     Returns
     -------
-    `irispy.sji.SJICube`
+    `~irispy.sji.SJICube`
         A new cube with repaired dust pixels.
 
     Notes

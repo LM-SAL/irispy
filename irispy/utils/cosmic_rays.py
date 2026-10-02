@@ -89,11 +89,10 @@ def remove_cosmic_rays(
     """
     Remove cosmic rays from a cube and return a cleaned cube.
 
-    The input cube can be an `~irispy.sji.SJICube` or a
-    `~irispy.spectrograph.SpectrogramCube`.
-
     Parameters
     ----------
+    cube : `~irispy.sji.SJICube` or `~irispy.spectrograph.SpectrogramCube`
+        Cube object to clean.
     method : ``{"rsliding", "astroscrappy"}``, optional
         Cosmic ray removal backend.
     sigma : `float`, optional
@@ -109,7 +108,7 @@ def remove_cosmic_rays(
 
     Returns
     -------
-    irispy.sji.SJICube or irispy.spectrograph.SpectrogramCube
+    `~irispy.sji.SJICube` or `~irispy.spectrograph.SpectrogramCube`
         A new cube with cleaned data and copied metadata/coordinates.
     """
     method = method.lower()
