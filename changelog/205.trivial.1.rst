@@ -1,0 +1,1 @@
+Reduced temporary memory use in `~irispy.utils.cosmic_rays.remove_cosmic_rays` when using ``method="astroscrappy"``.

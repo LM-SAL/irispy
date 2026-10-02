@@ -1,0 +1,2 @@
+Removed ``irispy.data.test.FILE_LIST`` and ``irispy.data.test.get_test_data_filenames``.
+Use ``irispy.data.test.ROOTDIR`` with `pathlib.Path.glob` or `pathlib.Path.rglob` to list packaged test data.
