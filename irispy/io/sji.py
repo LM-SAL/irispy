@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import numpy as np
 
 import astropy.units as u
@@ -13,7 +15,7 @@ from irispy._interpolation import _time_lookup
 from irispy.meta import SJIMeta
 from irispy.sji import AIACube, SJICube
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUE_UNSCALED, DN_UNIT, READOUT_NOISE
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUES_SCALED, DN_UNIT, READOUT_NOISE
 
 __all__ = ["read_sji_lvl2"]
 
@@ -56,6 +58,8 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
     valid_rows = np.flatnonzero(np.any(pointing != 0, axis=1))
     if dropped_rows.size == 0 or valid_rows.size == 0:
         return
+    if not hdulist[1].data.flags["W"]:
+        hdulist[1].data = hdulist[1].data.copy()
     right = np.clip(np.searchsorted(valid_rows, dropped_rows), 0, valid_rows.size - 1)
     left = np.clip(right - 1, 0, valid_rows.size - 1)
     for column in columns:
@@ -181,8 +185,9 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
 
     Parameters
     ----------
-    filename: `str`
-        Filename to read.
+    filename : `str`, `pathlib.Path`, file-like, `bytes` or `astropy.io.fits.HDUList`
+        File or decompressed FITS data to read. A supplied HDU list is left open;
+        open it with ``do_not_scale_image_data=True`` when using ``memmap=True``.
     uncertainty : `bool`, optional
         If `True` (not the default), will compute the uncertainty for the data (slower and
         uses more memory). If ``memmap=True``, the uncertainty is never computed.
@@ -191,13 +196,23 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         the file into memory when needed. This option is faster and uses a
         lot less memory. However, because FITS scaling is not done on-the-fly,
         the data units will be unscaled, not the usual data numbers (DN).
+        When ``memmap=True``, missing pixels retain their original values and are marked in the mask.
+        With ``memmap=False``, missing pixels are marked in the mask and replaced with ``NaN`` for
+        floating-point data or ``-200`` for integer data.
+        Compressed filenames are decompressed into memory once and cannot be memory-mapped.
 
     Returns
     -------
     `irispy.sji.SJICube`
         The data cube, using a gWCS.
     """
-    with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
+    if isinstance(filename, fits.HDUList):
+        context = nullcontext(filename)
+    elif isinstance(filename, bytes):
+        context = fits.HDUList.fromstring(filename, do_not_scale_image_data=memmap)
+    else:
+        context = fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
+    with context as hdulist:
         hdulist.verify("silentfix")
         instrume = hdulist[0].header["INSTRUME"]
         t_obs = _t_obs(hdulist)
@@ -237,19 +252,24 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         data_nan_masked = hdulist[0].data
         out_uncertainty = None
         if memmap:
-            data_nan_masked[data == BAD_PIXEL_VALUE_UNSCALED] = 0
-            mask = None
+            header = hdulist[0].header
+            raw_fill = (np.asarray(BAD_PIXEL_VALUES_SCALED) - header.get("BZERO", 0)) / header.get("BSCALE", 1)
+            mask = np.isin(data, raw_fill)
             scaled = False
             unit = DN_UNIT["SJI_UNSCALED"]
         else:
             # This is a workaround for the AIA cubes being in int and not float
-            mask = data == BAD_PIXEL_VALUE_SCALED
+            mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
             mask_value = BAD_PIXEL_VALUE_SCALED if np.issubdtype(data.dtype, np.integer) else np.nan
-            data_nan_masked[data == BAD_PIXEL_VALUE_SCALED] = mask_value
+            if not data_nan_masked.flags["W"]:
+                data_nan_masked = data_nan_masked.copy()
+            data_nan_masked[mask] = mask_value
             scaled = True
             unit = DN_UNIT["SJI"]
             if uncertainty and instrume in ["IRIS", "SJI"]:
-                out_uncertainty = StdDevUncertainty(calculate_uncertainty(data, READOUT_NOISE["SJI"], DN_UNIT["SJI"]))
+                out_uncertainty = StdDevUncertainty(
+                    calculate_uncertainty(data_nan_masked, READOUT_NOISE["SJI"], DN_UNIT["SJI"])
+                )
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
         meta = SJIMeta(hdulist[0].header)
         meta["frame_wcs_headers"] = _create_headers_wcs(hdulist, t_obs)  # root-relative, not axis-aware

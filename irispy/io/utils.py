@@ -2,6 +2,7 @@ import sys
 import json
 import tarfile
 from pathlib import Path
+from contextlib import nullcontext
 
 from astropy.io import fits
 from astropy.table import Table
@@ -21,17 +22,20 @@ def _get_simple_metadata(file):
 
     Parameters
     ----------
-    file : `pathlib.Path`
-        The FITS file to read.
+    file : `pathlib.Path` or `astropy.io.fits.HDUList`
+        The FITS file or open HDU list to inspect.
 
     Returns
     -------
     `tuple`
         A tuple containing the instrument name and description.
     """
-    if not file.name.endswith(".fits") and not file.name.endswith(".fits.gz"):
-        return "", ""
-    header = fits.getheader(file)
+    if isinstance(file, fits.HDUList):
+        header = file[0].header
+    else:
+        if not file.name.endswith((".fits", ".fits.gz")):
+            return "", ""
+        header = fits.getheader(file)
     instrume = header.get("INSTRUME", "")
     describe = header.get("TDESC1", "")
     return instrume, describe
@@ -210,25 +214,38 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
         try:
             sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
             raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
-            instrume, describe = _get_simple_metadata(filename)
-            log.debug(f"Processing file: {filename} with instrume: {instrume}")
-            if sdo_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith("AIA"):
-                file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
-                for f in file:
-                    if sdo_tarfile:
-                        instrume, describe = _get_simple_metadata(f)
-                    returns[f"{describe}"] = read_sji_lvl2(f, memmap=memmap, uncertainty=uncertainty, **kwargs)
-            elif raster_tarfile:
-                file = _extract_tarfile([filename]) if raster_tarfile else [filename]
-                instrume, describe = _get_simple_metadata(file[0])
-                returns[f"{describe}"] = read_spectrograph_lvl2(
-                    file, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
-                )
-            elif instrume == "SPEC":
-                group_key = _get_spec_group_key(filename)
-                spec_groups.setdefault(group_key, []).append(filename)
-            else:
-                log.warning(f"File {filename} has unrecognized INSTRUME={instrume!r} and was not loaded")
+            context = (
+                fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
+                if filename.name.endswith((".fits", ".fits.gz"))
+                else nullcontext()
+            )
+            with context as hdulist:
+                instrume, describe = _get_simple_metadata(hdulist if hdulist is not None else filename)
+                log.debug(f"Processing file: {filename} with instrume: {instrume}")
+                if sdo_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith("AIA"):
+                    file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
+                    for f in file:
+                        sji_context = (
+                            fits.open(f, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
+                            if sdo_tarfile
+                            else nullcontext(hdulist)
+                        )
+                        with sji_context as sji_hdulist:
+                            instrume, describe = _get_simple_metadata(sji_hdulist)
+                            returns[f"{describe}"] = read_sji_lvl2(
+                                sji_hdulist, memmap=memmap, uncertainty=uncertainty, **kwargs
+                            )
+                elif raster_tarfile:
+                    file = _extract_tarfile([filename]) if raster_tarfile else [filename]
+                    instrume, describe = _get_simple_metadata(file[0])
+                    returns[f"{describe}"] = read_spectrograph_lvl2(
+                        file, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
+                    )
+                elif instrume == "SPEC":
+                    group_key = _get_spec_group_key(filename)
+                    spec_groups.setdefault(group_key, []).append(filename)
+                else:
+                    log.warning(f"File {filename} has unrecognized INSTRUME={instrume!r} and was not loaded")
         except Exception as e:
             if allow_errors:
                 log.warning(f"File {filename} failed to load with {e}")

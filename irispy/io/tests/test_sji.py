@@ -1,3 +1,6 @@
+import io
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -11,9 +14,9 @@ from astropy.wcs import WCS
 from sunpy.coordinates import Helioprojective, get_body_heliographic_stonyhurst
 from sunpy.map.header_helper import make_fitswcs_header
 
+from irispy.data.test import get_test_filepath
 from irispy.io.sji import _create_headers_wcs, _fill_dropped_pointing_rows, _t_obs, read_sji_lvl2
 from irispy.sji import AIACube
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
 def test_sns_read_sji_lvl2(sns_sji_2832_file):
@@ -105,28 +108,77 @@ def test_raster_read_sji_lvl2(raster_sji_1400_file):
     assert [wcs.wcs.dateobs for wcs in sji_1400_cube.fits_wcs] == observation_times.isot.tolist()
 
 
-def test_read_sji_lvl2_masks_scaled_float_bad_pixels(sns_sji_1330_file):
-    expected_bad_pixels = np.count_nonzero(fits.getdata(sns_sji_1330_file, 0) == BAD_PIXEL_VALUE_SCALED)
-
-    cube = read_sji_lvl2(sns_sji_1330_file)
-
-    assert expected_bad_pixels > 0
-    assert cube.mask.sum() == expected_bad_pixels
-
-
-def test_read_sji_lvl2_masks_explicit_float_bad_pixels(tmp_path, sns_sji_1330_file):
+@pytest.mark.parametrize("from_bytes", [False, True])
+def test_read_sji_lvl2_masks_explicit_float_bad_pixels(tmp_path, sns_sji_1330_file, from_bytes):
     with fits.open(sns_sji_1330_file) as hdul:
         data = hdul[0].data.astype("float32")
-        data.flat[:2] = BAD_PIXEL_VALUE_SCALED
-        expected_bad_pixels = np.count_nonzero(data == BAD_PIXEL_VALUE_SCALED)
+        data.flat[:3] = [-200, -199, -198]
+        expected_mask = np.isin(data, [-200, -199])
         hdul[0].data = data
         float_file = tmp_path / "sji_float_bad_pixels.fits"
         hdul.writeto(float_file)
 
-    cube = read_sji_lvl2(float_file)
+    cube = read_sji_lvl2(float_file.read_bytes() if from_bytes else float_file)
 
-    assert expected_bad_pixels > 0
-    assert cube.mask.sum() == expected_bad_pixels
+    np.testing.assert_array_equal(cube.mask, expected_mask)
+    assert np.isnan(cube.data[cube.mask]).all()
+    assert cube.data.flat[2] == -198
+
+
+@pytest.mark.parametrize("memmap", [False, True])
+def test_read_sji_lvl2_masks_both_fill_values_without_changing_raw_data(memmap):
+    filename = get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits")
+    with fits.open(filename, memmap=False, do_not_scale_image_data=True) as hdulist:
+        raw = hdulist[0].data.copy()
+        scale, offset = hdulist[0].header["BSCALE"], hdulist[0].header["BZERO"]
+    expected_mask = np.isin(raw, [-32768, -32764])
+    assert np.any(raw == -32768)
+    assert np.any(raw == -32764)
+
+    cube = read_sji_lvl2(filename, memmap=memmap, uncertainty=True)
+
+    np.testing.assert_array_equal(cube.mask, expected_mask)
+    assert cube.meta["scaled"] is not memmap
+    if memmap:
+        np.testing.assert_array_equal(cube.data, raw)
+        assert cube.uncertainty is None
+    else:
+        expected = raw.astype(float) * scale + offset
+        expected[expected_mask] = np.nan
+        np.testing.assert_allclose(cube.data, expected)
+        assert isinstance(cube.uncertainty, StdDevUncertainty)
+        assert cube.uncertainty.array.shape == cube.data.shape
+
+
+@pytest.mark.parametrize("input_kind", ["bytes", "file-like", "hdulist"])
+@pytest.mark.parametrize("memmap", [False, True])
+def test_read_sji_lvl2_accepts_decompressed_data(input_kind, memmap):
+    filename = get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits")
+    expected = read_sji_lvl2(filename, memmap=memmap)
+    content = Path(filename).read_bytes()
+    if input_kind == "hdulist":
+        with fits.open(filename, mode="denywrite", memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
+            original = hdulist[0].data
+            cube = read_sji_lvl2(hdulist, memmap=memmap)
+            assert not hdulist.fileinfo(0)["file"].closed
+            if memmap:
+                assert np.shares_memory(cube.data, original)
+                assert not cube.data.flags["W"]
+    else:
+        cube = read_sji_lvl2(content if input_kind == "bytes" else io.BytesIO(content), memmap=memmap)
+
+    np.testing.assert_array_equal(cube.data, expected.data)
+    np.testing.assert_array_equal(cube.mask, expected.mask)
+    assert cube.unit == expected.unit
+    assert cube.meta["scaled"] == expected.meta["scaled"]
+    np.testing.assert_allclose(cube.wcs.pixel_to_world_values(2, 3, 0), expected.wcs.pixel_to_world_values(2, 3, 0))
+
+
+def test_read_sji_lvl2_is_exported():
+    import irispy.io as iris_io  # NOQA: PLC0415
+
+    assert iris_io.read_sji_lvl2 is read_sji_lvl2
+    assert "read_sji_lvl2" in iris_io.__all__
 
 
 @pytest.mark.parametrize(
@@ -158,7 +210,8 @@ def test_read_sji_lvl2_unrotated_pointing(tmp_path, sns_sji_1330_file):
             assert header[f"PC{key[2]}_{key[4]}"] == 0.0
 
 
-def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file):
+@pytest.mark.parametrize("from_bytes", [False, True])
+def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file, from_bytes):
     # A dropped exposure zeroes its whole pointing row; those rows are filled
     # with the average of the neighbouring exposures.
     keys = ("XCENIX", "YCENIX", "PC1_1IX", "PC1_2IX", "PC2_1IX", "PC2_2IX")
@@ -169,7 +222,7 @@ def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file):
         hdulist[1].data[1, columns] = 0.0
         hdulist.writeto(filename)
 
-    cube = read_sji_lvl2(filename)
+    cube = read_sji_lvl2(filename.read_bytes() if from_bytes else filename)
     header = cube.meta["frame_wcs_headers"][1]
     np.testing.assert_allclose(header["CRVAL1"], expected["XCENIX"])
     np.testing.assert_allclose(header["CRVAL2"], expected["YCENIX"])
@@ -257,9 +310,3 @@ def test_frame_wcs_headers_match_per_frame_make_fitswcs_header(sns_sji_1400_file
                 unit=u.DN,
             )
             assert dict(headers[i]) == dict(expected)
-
-
-def test_read_sji_lvl2_uncertainty_is_a_standard_deviation(sns_sji_1330_file):
-    cube = read_sji_lvl2(sns_sji_1330_file, uncertainty=True)
-    assert isinstance(cube.uncertainty, StdDevUncertainty)
-    assert cube.uncertainty.array.shape == cube.data.shape

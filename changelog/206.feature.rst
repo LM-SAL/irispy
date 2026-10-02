@@ -1,0 +1,2 @@
+`~irispy.io.read_sji_lvl2` is now exported from ``irispy.io`` and accepts decompressed FITS bytes and open `~astropy.io.fits.HDUList` objects as well as filenames and file-like objects.
+A supplied HDU list remains open after reading.
