@@ -28,4 +28,6 @@ The `irispy.utils` module provides functions useful for ``irispy`` users or deve
 
 .. automodapi:: irispy.utils.spectrograph
 
+.. automodapi:: irispy.utils.wavelength_drift
+
 .. automodapi:: irispy.utils.wobble

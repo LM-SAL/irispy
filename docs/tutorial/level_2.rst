@@ -120,6 +120,7 @@ Let us retrieve the header of the raster file and display the description of the
     By default, this will load the data into memory.
     You can pass ``memmap=True`` to avoid this; the data array will be a `numpy.memmap` instead.
     In this case, the data are not loaded into system memory, but written to a temporary file.
+    Memmapped data are the raw, unscaled integers stored in the file, not data numbers (DN).
 
 We can print the ``raster`` object to get some basic information about the raster file: what spectral windows were observed, the size of the cube, and the wavelength keys.
 

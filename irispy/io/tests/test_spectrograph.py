@@ -10,6 +10,7 @@ from astropy.time import Time
 
 from sunpy.coordinates import Helioprojective
 
+from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
@@ -309,3 +310,15 @@ def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)["C II 1336"][0]
     assert isinstance(cube.uncertainty, StdDevUncertainty)
     assert cube.uncertainty.array.shape == cube.data.shape
+
+
+def test_memmap_records_the_window_scaling():
+    # memmap=True keeps the FITS integers, so the window's BSCALE and BZERO go in the metadata
+    filename = get_test_filepath(
+        "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
+    )
+    cube = read_spectrograph_lvl2(filename, memmap=True, spectral_windows="Mg II k 2796")["Mg II k 2796"].data[0]
+    assert np.issubdtype(cube.data.dtype, np.integer)
+    with fits.open(filename) as hdulist:
+        header = hdulist[3].header
+    assert (cube.meta["BSCALE"], cube.meta["BZERO"]) == (header["BSCALE"], header["BZERO"])

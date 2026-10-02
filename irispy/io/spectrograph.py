@@ -234,6 +234,8 @@ def read_spectrograph_lvl2(
                 meta.add("observer radial velocity", obs_vrix[steps], None, 0)
                 meta.add("orbital phase", ophaseix[steps], None, 0)
                 header = hdulist[window_fits_indices[i]].header
+                if memmap:  # the data stay the FITS integers, which these scale to DN
+                    meta["BSCALE"], meta["BZERO"] = header.get("BSCALE", 1), header.get("BZERO", 0)
                 try:
                     wcs = _create_tabular_wcs(
                         header,

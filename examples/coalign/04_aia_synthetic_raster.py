@@ -159,7 +159,7 @@ ax.set(xlabel="Raster step in cutout", ylabel="Pointing correction (arcsec)", ti
 ax.legend()
 
 ###############################################################################
-# We can also draw the bright AIA 1700 Å features, at half of its display range,
+# We can also draw the bright AIA 1700 Å features, at half of their display range,
 # as contours on the IRIS raster. They should outline its brighter patches.
 
 fig, ax = plt.subplots(figsize=(4, 7), layout="constrained")

@@ -36,17 +36,15 @@ sji_2832 = read_files(sji_filename)
 print(sji_2832)
 
 ###############################################################################
-# We will now plot the IRIS SJI data.
-#
-# You can also change the axis labels and ticks if you so desire.
-# `WCSAxes provides us an API we can use. <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__
+# We will now plot the IRIS SJI data. The axis labels and ticks can be changed through the
+# `WCSAxes API <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__.
 
-# Note that the .get_animation() is used to animate this example and is not required normally.
-ax = sji_2832.plot().get_animation()
+# ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
+animation = sji_2832.plot().get_animation()
 plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']:.0f} Å", pad=25)
 
 ###############################################################################
-# Finally we will output a frame of the SJI into a sunpy Map.
+# Next, we will output a frame of the SJI as a sunpy Map.
 
 sji_map = sji_2832.to_maps(0)
 print(sji_map)
@@ -54,7 +52,7 @@ print(sji_map)
 ###############################################################################
 # We can now plot the SJI Map using sunpy Map's plotting capabilities.
 
-fig = plt.figure()
+fig = plt.figure(layout="constrained")
 ax = fig.add_subplot(projection=sji_map.wcs)
 sji_map.plot(axes=ax)
 

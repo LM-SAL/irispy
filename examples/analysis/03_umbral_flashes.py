@@ -3,8 +3,7 @@
 Study umbral flashes
 ====================
 
-In this tutorial, we are going to work with IRIS data to study an example of a dynamical
-phenomena called umbral flashes :cite:p:`moore1973`.
+In this tutorial, we are going to work with IRIS data to study umbral flashes :cite:p:`moore1973`.
 """
 
 import matplotlib.dates as mdates
@@ -69,9 +68,9 @@ mg_crop.plot(axes=ax, aspect="auto")
 # the vertical axis is really time: the small change in longitude along it is the slit
 # following the solar rotation.
 #
-# The middle section between 60"-75" is on the umbra of a sunspot, even though
-# it is not obvious from this image. One can see very clearly the umbral oscillations,
-# with a clear regular pattern of dark/bright streaks.
+# The middle section between 60"-75" is on the umbra of a sunspot, even though it is
+# not obvious from this image. The umbral oscillations show as a regular pattern of
+# dark and bright streaks.
 #
 # Let us now load the 1400 SJI for context.
 
@@ -80,33 +79,18 @@ sji_1400[0].plot(vmin=-32000, vmax=-30000)
 plt.title("1400 SJI")
 
 ###############################################################################
-# The slit pixel, "220" is a location on the sunspot's umbra.
-# Let us plot the k3 intensity (spectral pixel 103 of ``mg_ii``) and the
-# core of the brightest C II line (spectral pixel 90 of ``c_ii``) against
-# time (showing the first ~10 minutes only).
+# Slit pixel 220 is on the sunspot's umbra.
+# We will compare the k3 intensity (spectral pixel 103 of ``mg_ii``), the
+# core of the brightest C II line (spectral pixel 90 of ``c_ii``), and the
+# SJI intensity against time (showing the first ~10 minutes only).
 
 # Matplotlib's date formatting works with numpy datetimes, so we convert the times.
 mg_ii_times = mg_ii.time[:200].datetime64
 c_ii_times = c_ii.time[:200].datetime64
 
-plt.figure()
-plt.plot(mg_ii_times, mg_ii.data[:200, 220, 103], label="Mg II k3")
-(ax,) = plt.plot(c_ii_times, c_ii.data[:200, 220, 90], label="C II")
-plt.legend()
-plt.ylabel("DN (Memory Mapped Value)")
-plt.xlabel("Time (UTC)")
-ax.axes.xaxis.set_major_formatter(mdates.ConciseDateFormatter(ax.axes.xaxis.get_major_locator()))
-# Rotates and right-aligns the x labels so they don't crowd each other.
-for label in ax.axes.get_xticklabels(which="major"):
-    label.set(rotation=30, horizontalalignment="right")
-
-plt.tight_layout()
-
 ###############################################################################
-# Imagine now you wanted to compare these oscillations with
-# the intensity from the SJI. The SJI images are typically
-# taken at a different cadence, so you need get the corresponding
-# times for the 1400 SJI.
+# The SJI images are typically taken at a different cadence, so we also
+# need the corresponding times for the 1400 SJI.
 #
 # We will take the first 50 to cut down on the size of the data for this example.
 
@@ -135,3 +119,5 @@ plt.show()
 ###############################################################################
 # You are now ready to explore all the correlations, anti-correlations,
 # and phase differences.
+
+# sphinx_gallery_thumbnail_number = 3

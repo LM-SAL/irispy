@@ -5,13 +5,9 @@ Remove Cosmic Rays from IRIS SJI data
 
 This example illustrates how to remove cosmic ray hits from IRIS SJI data.
 
-We will use the ``astroscrappy`` backend, which has to be installed separately using ``pip`` or ``conda``.
-We select ``astroscrappy`` for the SJI data because it is considered the better solution for imaging data.
-
-To understand ``astroscrappy``, how it works and what are allowed parameters, we suggest you read the original
-documentation:
-
-* `astroscrappy documentation <https://astroscrappy.readthedocs.io/en/latest/>`__
+We will use the ``astroscrappy`` backend, which has to be installed separately with ``pip`` or ``conda``
+and is the better choice for imaging data. See the
+`astroscrappy documentation <https://astroscrappy.readthedocs.io/en/latest/>`__ for how it works and its parameters.
 """
 
 import matplotlib.pyplot as plt
@@ -27,10 +23,8 @@ quantity_support()
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20260206_210853_3460104433_2026-02-06T21%3A08%3A532026-02-06T21%3A08%3A53.xml>`__.
 #
-# This dataset is during the South Atlantic Anomaly (SAA) passage, which is known to cause a large
-# number of cosmic ray hits in the data.
-#
-# This is what we call, a worst-case scenario for cosmic ray removal, which is good for testing the algorithms but not ideal for science.
+# This dataset was taken during a South Atlantic Anomaly (SAA) passage, so it has many
+# cosmic ray hits: a worst case, good for testing the algorithm but not ideal for science.
 #
 # In this case, we will use ``pooch`` to keep this example self-contained
 # but you can download the data manually using your browser as well.
@@ -51,41 +45,22 @@ sji_frame = sji_2832[5]
 del sji_2832
 
 ###############################################################################
-# Now we use `~irispy.SJICube.remove_cosmic_rays` on IRIS Level 2 SJI data, with the
-# ``astroscrappy`` backend and some of its parameters changed from their defaults (see below).
-#
-# ``astroscrappy`` is a more general-purpose cosmic ray removal algorithm that
-# is widely used in the astronomy community for imaging data. Note that this is
-# not the default backend used for `~irispy.SJICube.remove_cosmic_rays`.
-#
-# ``astroscrappy`` has a set of default parameters that are not necessarily
-# optimal for IRIS data.
-# In addition, there is a lot of optional parameters that can be tweaked, which might
-# improve the results for your data and science case or make it worse.
-# Unfortunately, there is no one-size-fits-all solution for cosmic ray removal,
-# and you will need to read the documentation and experiment with the parameters
-# to find the best solution for your data.
-#
-# For ``astroscrappy``, the parameters used below were found to work well for SJI data.
-#
-# A few other notes about ``astroscrappy``, found running on spectra data:
-#
-# ``astroscrappy`` does not remove small negative dips "flanking" positive spikes, which happens
-# commonly.
-#
-# ``astroscrappy`` can not deal with cosmic ray hits that cause purely negative intensity spikes
-# in a safe, straightforward way.
+# Now we use `~irispy.SJICube.remove_cosmic_rays` with the ``astroscrappy`` backend, a
+# general-purpose algorithm widely used for imaging data; it is not the default. As with
+# ``rsliding``, its defaults are not tuned for IRIS, so read its documentation and experiment.
+# On spectra, it does not remove the small negative dips that often flank positive spikes,
+# nor purely negative spikes.
 
-# For example, these set of parameters was shown to show better treatment of values around
-# any spikes, basically to smooth more around each spike. (Thanks to Juraj).
+# These settings were found to work well for SJI data (thanks to Juraj).
 method_kwargs = {"sigclip": 3, "objlim": 5, "readnoise": 3.1, "satlevel": np.inf, "cleantype": "medmask"}
 sji_astroscrappy = sji_frame.remove_cosmic_rays(method="astroscrappy", method_kwargs=method_kwargs)
 
 ###############################################################################
-# One reason to always be cautious when removing cosmic rays is that you can
-# easily remove real features in the data if you are too aggressive.
+# Be cautious: an aggressive setting also removes real features.
 
-fig, axes = plt.subplots(1, 2, figsize=(16, 8), subplot_kw={"projection": sji_frame.wcs}, sharex=True, sharey=True)
+fig, axes = plt.subplots(
+    1, 2, figsize=(12, 6), subplot_kw={"projection": sji_frame.wcs}, sharex=True, sharey=True, layout="constrained"
+)
 
 sji_frame.plot(axes=axes[0], aspect="auto", vmin=0, vmax=500, origin="lower")
 axes[0].set_title("Original")

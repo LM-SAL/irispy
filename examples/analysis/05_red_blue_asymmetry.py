@@ -45,9 +45,8 @@ raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 si_iv = raster["Si IV 1403"][0]
 
 ###############################################################################
-# Now we will calculate the red-blue asymmetry on a small cutout around the
-# selected feature. This keeps the example light enough for documentation builds
-# while still showing the full workflow.
+# Now we will calculate the red-blue asymmetry on a small cutout around the pixel
+# we will examine below, to keep the example light enough for the documentation build.
 
 full_raster_pixel_index = (499, 148)
 raster_cutout = slice(450, 550)
