@@ -18,7 +18,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time, TimeDelta
-from astropy.wcs.utils import wcs_to_celestial_frame
 
 import sunpy.map
 from aiapy.calibrate import update_pointing
@@ -81,7 +80,7 @@ print(sji_cut)
 # We need to get the coordinate frame for the IRIS data.
 # While this is stored in the WCS, getting a coordinate frame is a little more involved.
 
-sji_frame = wcs_to_celestial_frame(sji_cut.fits_wcs)
+sji_frame = sji_cut.celestial_frame
 
 ###############################################################################
 # This dataset has a peculiarity: the observation has a 45 degree roll.
@@ -165,19 +164,6 @@ extent(ax, sji_cut.fits_wcs)
 aia_reprojected = aia_sub.reproject_to(sji_cut.fits_wcs)
 
 ###############################################################################
-# Now we can see the results.
-
-fig = plt.figure()
-ax1 = fig.add_subplot(1, 2, 1, projection=aia_reprojected.wcs)
-aia_reprojected.plot(axes=ax1)
-ax1.set_title("")
-
-ax2 = fig.add_subplot(1, 2, 2, projection=sji_cut.fits_wcs)
-sji_cut.plot(axes=ax2)
-
-fig.tight_layout()
-
-###############################################################################
 # Finally, one way to visualize the alignment is to plot the AIA contours on the IRIS SJI image.
 
 fig = plt.figure()
@@ -195,3 +181,5 @@ plt.show()
 # reprojecting alone is not sufficient to get a perfect alignment.
 #
 # If you want to align, you can check out the following :ref:`sphx_glr_generated_gallery_coalign_01_coalign_iris_aia.py`
+
+# sphinx_gallery_thumbnail_number = 3
