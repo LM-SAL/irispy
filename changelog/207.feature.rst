@@ -1,0 +1,1 @@
+With ``memmap=True``, `~irispy.io.read_files` now returns a lazy fill mask, a ``dask.array.Array`` computed only for the slices that are used, so opening a file no longer reads any of the pixel data.

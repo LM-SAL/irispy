@@ -17,7 +17,7 @@ __all__ = [
 
 # The following value is only appropriate for byte scaled images
 BAD_PIXEL_VALUE_SCALED = -200
-# Both Level 2 fill values represent missing samples.
+# Both Level 2 fill values represent missing samples; -199 is an IRIS SolarSoft convention.
 BAD_PIXEL_VALUES_SCALED = (BAD_PIXEL_VALUE_SCALED, -199)
 # The following value is only appropriate for unscaled images
 BAD_PIXEL_VALUE_UNSCALED = -32768

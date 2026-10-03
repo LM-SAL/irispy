@@ -8,16 +8,16 @@ from matplotlib import animation
 
 from astropy.io import fits
 
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
+from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED
 from irispy.utils.wobble import generate_wobble_movie
 
 
-@pytest.mark.parametrize("trim", [False, True])
-def test_generate_wobble_movie(sns_sji_2832_file, tmp_path, trim):
+@pytest.mark.parametrize(("trim", "fill"), [(False, -200), (True, -200), (True, -199)])
+def test_generate_wobble_movie(sns_sji_2832_file, tmp_path, trim, fill):
     header = fits.getheader(sns_sji_2832_file)
     header["CUNIT3"] = "s"
     header["CDELT3"] = 180
-    data = np.full((3, 8, 8), BAD_PIXEL_VALUE_SCALED, dtype=float)
+    data = np.full((3, 8, 8), fill, dtype=float)
     data[:, 1:-1, 1:-1] = np.arange(108).reshape(3, 6, 6) + 1
     filename = tmp_path / "sji.fits"
     fits.PrimaryHDU(data=data, header=header).writeto(filename)
@@ -54,7 +54,7 @@ def test_generate_wobble_movie(sns_sji_2832_file, tmp_path, trim):
     if trim:
         assert rendered.shape[0] < data.shape[1]
         assert rendered.shape[1] < data.shape[2]
-        assert np.all(rendered > BAD_PIXEL_VALUE_SCALED)
+        assert np.all(rendered > max(BAD_PIXEL_VALUES_SCALED))
     else:
         np.testing.assert_array_equal(rendered, data[-1])
     plt.close(fig)

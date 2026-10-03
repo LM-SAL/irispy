@@ -9,6 +9,7 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
+from irispy.utils._spectral import check_scaled
 from irispy.utils.constants import RADIANCE_UNIT
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
@@ -65,6 +66,7 @@ def radiometric_calibration(
     """
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiometric_calibration(c) for c in cube])
+    check_scaled(cube)
     detector_type = cube.meta.detector_band
     spectral_dispersion_per_pixel = cube.spectral_dispersion
     solid_angle = cube.solid_angle

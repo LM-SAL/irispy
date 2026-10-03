@@ -65,9 +65,8 @@ Compressed SJI files are decompressed into memory once, so ``memmap=True`` canno
 Loading the scaled and masked data lazily, only when they are used, is tracked in `#14 <https://github.com/LM-SAL/irispy/issues/14>`__.
 
 SJI burst detection and IDL
---------------------------
+===========================
 
 The Level 2 readers mask both ``-200`` and ``-199`` as missing data, including in AIA cutouts.
 The ``-199`` convention comes from IRIS SolarSoft, including ``iris_make_fits_level3`` v1.29 and ``iris_raster_browser``.
 The IDL SJI burst reference includes ``-199`` in its statistics, so excluding it can lower the detection threshold slightly.
-For the first 50 frames of observation 4000255147, frames 0, 37 and 49 each gain one pixel in an existing event; the event counts are unchanged.

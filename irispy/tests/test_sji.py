@@ -7,6 +7,7 @@ import astropy.units as u
 
 import sunpy.map
 
+
 def test_apply_dust_mask_with_lazy_mask(sns_sjicube_1330):
     cube = sns_sjicube_1330[:1, :5, :5]
     cube.data[:] = 10

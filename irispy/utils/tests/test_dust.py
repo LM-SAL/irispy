@@ -11,6 +11,15 @@ from irispy.tests.helpers import figure_test
 from irispy.utils.dust import _local_median_fill, remove_dust
 
 
+@pytest.mark.parametrize("method", [False, True])
+def test_remove_dust_rejects_unscaled_data(sns_sji_1330_file, method):
+    from irispy.io import read_files  # NOQA: PLC0415
+
+    cube = read_files(sns_sji_1330_file, memmap=True)
+    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
+        cube.remove_dust() if method else remove_dust(cube)
+
+
 def test_remove_dust_repairs_pixels_from_neighboring_frames(sns_sjicube_1330):
     cube = sns_sjicube_1330[:4, :3, :3]
     cube.data[...] = np.array(

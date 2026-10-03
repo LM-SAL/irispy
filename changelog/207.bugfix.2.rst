@@ -1,1 +1,1 @@
-Update the SJI burst reference test and documentation for the lower detection thresholds caused by excluding ``-199`` fill values from the statistics.
+`~irispy.utils.calculate_dust_mask`, `~irispy.utils.mg_features.calculate_mg_features` and `~irispy.utils.wobble.generate_wobble_movie` now treat ``-199`` as a fill value like ``-200``, so such pixels are no longer taken for dust or used as data.

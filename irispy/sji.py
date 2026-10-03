@@ -10,7 +10,6 @@ from astropy.wcs import WCS
 from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube.visualization import PlotterDescriptor
-from sunpy.map import Map
 from sunpy.util import MetaDict
 from sunpy.util.exceptions import SunpyMetadataWarning
 from sunraster import SpectrogramCube
@@ -175,6 +174,8 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         `sunpy.map.Map` or `sunpy.map.MapSequence`
             A single Map if index is an int, otherwise a MapSequence.
         """
+        from sunpy.map import Map  # NOQA: PLC0415
+
         if self.fits_wcs is None:
             msg = "This cube has no FITS WCS (for example, it was rebinned), so it cannot be converted to maps."
             raise ValueError(msg)

@@ -8,8 +8,10 @@ import gwcs.coordinate_frames as cf
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.time import Time
+from astropy.wcs.utils import celestial_frame_to_wcs
 
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
+from sunpy.util import MetaDict
 
 from irispy._interpolation import _time_lookup
 from irispy.io._mask import _memmap_fill_mask
@@ -132,25 +134,35 @@ def _create_headers_wcs(hdulist, t_obs):
     """
     from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst  # NOQA: PLC0415
     from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
-    from sunpy.map.header_helper import make_fitswcs_header  # NOQA: PLC0415
 
     aux = {key: hdulist[1].data[:, hdulist[1].header[key]] for key in ("XCENIX", "YCENIX", "EXPTIMES")}
     pc = [hdulist[1].data[:, hdulist[1].header[key]] for key in ("PC1_1IX", "PC1_2IX", "PC2_1IX", "PC2_2IX")]
     # Earth is looked up at millisecond precision, as t_obs[i].isot would for each frame.
     earth = get_body_heliographic_stonyhurst("Earth", Time(t_obs.isot))
     pointing = Helioprojective(aux["XCENIX"] * u.arcsec, aux["YCENIX"] * u.arcsec, observer=earth, obstime=t_obs)
-    # make_fitswcs_header takes ~2 ms, so build frame 0 once and swap in the keys that vary per frame.
-    template = make_fitswcs_header(
-        data=hdulist[0].data.shape[1:],
-        coordinate=pointing[0],
-        scale=[hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]] * u.arcsec / u.pixel,
-        rotation_matrix=np.asanyarray([[pc[0][0], pc[1][0]], [pc[2][0], pc[3][0]]]),
-        instrument="SJI",
-        telescope="IRIS",
-        observatory="IRIS",
-        wavelength=int(hdulist[0].header["TWAVE1"]) * u.AA,
-        exposure=aux["EXPTIMES"][0] * u.second,
-        unit=u.DN,
+    # Build the same SJI header using Astropy's registered solar WCS converter,
+    # without importing sunpy.map just to prepare headers at open.
+    template = MetaDict(celestial_frame_to_wcs(pointing[0], "TAN").to_header())
+    height, width = hdulist[0].data.shape[1:]
+    template.update(
+        {
+            "naxis": 2,
+            "naxis1": width,
+            "naxis2": height,
+            "crpix1": (width + 1) / 2,
+            "crpix2": (height + 1) / 2,
+            "cunit1": "arcsec",
+            "cunit2": "arcsec",
+            "cdelt1": hdulist[0].header["CDELT1"],
+            "cdelt2": hdulist[0].header["CDELT2"],
+            "lonpole": 180.0 if pointing[0].spherical.lat.to_value(u.deg) < 90 else 0.0,
+            "instrume": "SJI",
+            "telescop": "IRIS",
+            "obsrvtry": "IRIS",
+            "wavelnth": int(hdulist[0].header["TWAVE1"]),
+            "waveunit": "Angstrom",
+            "bunit": "DN",
+        }
     )
     per_frame = {
         "crval1": pointing.spherical.lon.to_value(template["cunit1"]),
@@ -215,7 +227,6 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
     else:
         context = fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
     with context as hdulist:
-        hdulist.verify("silentfix")
         instrume = hdulist[0].header["INSTRUME"]
         t_obs = _t_obs(hdulist)
         _fill_dropped_pointing_rows(hdulist)

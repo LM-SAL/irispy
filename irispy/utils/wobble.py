@@ -14,7 +14,7 @@ from astropy.wcs import WCS
 from sunpy.time import parse_time
 from sunpy.visualization.colormaps.color_tables import iris_sji_color_table
 
-from .constants import BAD_PIXEL_VALUE_SCALED
+from .constants import BAD_PIXEL_VALUES_SCALED
 
 __all__ = ["generate_wobble_movie"]
 
@@ -99,7 +99,7 @@ def generate_wobble_movie(
             if trim:
                 # TODO: improve this, it trims a bit but not fully
                 dmin = np.min(data, axis=0)
-                dmask = dmin > BAD_PIXEL_VALUE_SCALED
+                dmask = dmin > max(BAD_PIXEL_VALUES_SCALED)
                 dmx = np.sum(dmask, axis=1)
                 dmy = np.sum(dmask, axis=0)
                 (subx,) = np.where(dmx > (np.max(dmx) * 0.8))

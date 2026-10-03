@@ -8,6 +8,7 @@ import numpy as np
 
 import astropy.units as u
 
+from ._spectral import check_scaled
 from .utils import calculate_dust_mask
 
 __all__ = ["remove_dust"]
@@ -130,6 +131,7 @@ def remove_dust(
         msg = "fallback must be 'spatial' or None."
         raise ValueError(msg)
 
+    check_scaled(cube)
     clean_data = np.asarray(cube.data, dtype=float).copy()
     if cube.mask is None:
         original_mask = np.zeros(cube.data.shape, dtype=bool)

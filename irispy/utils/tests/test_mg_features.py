@@ -118,11 +118,12 @@ def test_skips_uncovered_line(raster):
         calculate_mg_features(raster["Mg II k 2796"][0], lines=("h",))
 
 
-def test_missing_data(raster):
+@pytest.mark.parametrize("fill", [-200, -199])
+def test_missing_data(raster, fill):
     cube = copy.deepcopy(raster["Mg II k 2796"][0])
     cube.data[1, 100, 10] = np.nan
     cube.mask[1, 200, 10] = True  # a finite pixel
-    cube.data[1, 300, 10] = -200
+    cube.data[1, 300, 10] = fill
     velocity = calculate_mg_features(cube, lines=("k",))["k3_velocity"].data
     assert np.isnan(velocity[1, [100, 200, 300]]).all()
     assert np.isfinite(velocity[1, [99, 199, 299]]).all()

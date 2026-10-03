@@ -1,2 +1,1 @@
-Keep memory-mapped Level 2 reads lazy by computing fill masks only for the Dask slices that are used.
-Both ``-200`` and ``-199`` remain masked, and SJI dust-mask updates support lazy masks.
+`~irispy.utils.dust.remove_dust` and `~irispy.utils.spectrograph.radiometric_calibration` now raise a `ValueError` for unscaled data read with ``memmap=True``, instead of returning wrong results.

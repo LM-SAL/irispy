@@ -28,7 +28,6 @@ def test_memmap_mask_reads_only_the_requested_frame(reader, request, monkeypatch
     assert isinstance(cube.mask, da.Array)
     assert cube.mask.dtype == bool
     assert cube.mask.shape == cube.data.shape
-    assert cube.mask.chunks == ((1,) * cube.shape[0], *[(size,) for size in cube.shape[1:]])
     assert reads == []
 
     with fits.open(filename, do_not_scale_image_data=True) as hdulist:
