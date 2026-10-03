@@ -15,6 +15,7 @@ from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
+from irispy.io._mask import _memmap_fill_mask
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils import calculate_uncertainty
@@ -141,6 +142,7 @@ def read_spectrograph_lvl2(
         the file into memory when needed. This option is faster and uses a
         lot less memory. However, because FITS scaling is not done on-the-fly,
         the data units will be unscaled, not the usual data numbers (DN).
+        The fill mask is a lazy Dask array, computed only for the slices that are used.
     revert_v34 : `bool`, optional.
         Will undo the flipping of the raster step axis made to V34 observations
         (data, mask, uncertainty, WCS, times and per-step metadata).
@@ -153,41 +155,38 @@ def read_spectrograph_lvl2(
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
-    # Collecting the window observations
-    with fits.open(filenames[0], memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
-        # After a discussion with the IRIS team, it was decided that instead of the
-        # OBSID, we will use STEPS_AV less than -0.01 to identify V34 observations.
-        v34 = hdulist[0].header["STEPS_AV"] < -0.01
-        # V34 rasters are flipped along the step axis: everything indexed by step must follow.
-        steps = slice(None, None, -1) if v34 and not revert_v34 else slice(None)
-        hdulist.verify("silentfix")
-        windows_in_obs = np.array(
-            [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)],
-        )
-        # If spectral_window is not set then get every window.
-        # Else take the appropriate windows
-        if not spectral_windows:
-            spectral_windows_req = windows_in_obs
-            window_fits_indices = range(1, len(hdulist) - 2)
-        else:
-            spectral_windows_req = [spectral_windows] if isinstance(spectral_windows, str) else spectral_windows
-            spectral_windows_req = np.asarray(spectral_windows_req, dtype="U")
-            window_is_in_obs = np.asarray([window in windows_in_obs for window in spectral_windows_req])
-            if not all(window_is_in_obs):
-                missing_windows = spectral_windows_req[~window_is_in_obs]
-                msg = f"Spectral windows {missing_windows.tolist()} not in file {filenames[0]}"
-                raise ValueError(msg)
-            # Indices must follow the order of the requested windows, not the file order,
-            # since they are zipped with ``spectral_windows_req`` below.
-            window_fits_indices = [
-                int(np.nonzero(windows_in_obs == window)[0][0]) + 1 for window in spectral_windows_req
-            ]
-        data_dict = {window_name: [] for window_name in spectral_windows_req}
-        base_time = Time(hdulist[0].header["DATE_OBS"])
-        observer = get_body_heliographic_stonyhurst("Earth", base_time)
-    for filename in filenames:
+    for file_index, filename in enumerate(filenames):
         with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
-            hdulist.verify("silentfix")
+            if file_index == 0:
+                # After a discussion with the IRIS team, it was decided that instead of the
+                # OBSID, we will use STEPS_AV less than -0.01 to identify V34 observations.
+                v34 = hdulist[0].header["STEPS_AV"] < -0.01
+                # V34 rasters are flipped along the step axis: everything indexed by step must follow.
+                steps = slice(None, None, -1) if v34 and not revert_v34 else slice(None)
+                windows_in_obs = np.array(
+                    [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)],
+                )
+                # If spectral_window is not set then get every window.
+                # Else take the appropriate windows
+                if not spectral_windows:
+                    spectral_windows_req = windows_in_obs
+                    window_fits_indices = range(1, len(hdulist) - 2)
+                else:
+                    spectral_windows_req = [spectral_windows] if isinstance(spectral_windows, str) else spectral_windows
+                    spectral_windows_req = np.asarray(spectral_windows_req, dtype="U")
+                    window_is_in_obs = np.asarray([window in windows_in_obs for window in spectral_windows_req])
+                    if not all(window_is_in_obs):
+                        missing_windows = spectral_windows_req[~window_is_in_obs]
+                        msg = f"Spectral windows {missing_windows.tolist()} not in file {filenames[0]}"
+                        raise ValueError(msg)
+                    # Indices must follow the order of the requested windows, not the file order,
+                    # since they are zipped with ``spectral_windows_req`` below.
+                    window_fits_indices = [
+                        int(np.nonzero(windows_in_obs == window)[0][0]) + 1 for window in spectral_windows_req
+                    ]
+                data_dict = {window_name: [] for window_name in spectral_windows_req}
+                base_time = Time(hdulist[0].header["DATE_OBS"])
+                observer = get_body_heliographic_stonyhurst("Earth", base_time)
             # Extract axis-aligned metadata.
             aux_times = Time(hdulist[0].header["STARTOBS"]) + TimeDelta(
                 hdulist[-2].data[:, hdulist[-2].header["TIME"]],
@@ -255,8 +254,7 @@ def read_spectrograph_lvl2(
                 times = t_obs[steps]
                 out_uncertainty = None
                 if memmap:
-                    raw_fill = (np.asarray(BAD_PIXEL_VALUES_SCALED) - meta["BZERO"]) / meta["BSCALE"]
-                    data_mask = np.isin(data, raw_fill)
+                    data_mask = _memmap_fill_mask(data, header)
                 else:
                     data_mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
                     # memmap data are unscaled integers, so the photon noise would be wrong

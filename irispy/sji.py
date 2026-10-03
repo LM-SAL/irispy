@@ -10,7 +10,6 @@ from astropy.wcs import WCS
 from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube.visualization import PlotterDescriptor
-from sunpy.map import Map
 from sunpy.util import MetaDict
 from sunpy.util.exceptions import SunpyMetadataWarning
 from sunraster import SpectrogramCube
@@ -128,12 +127,12 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         dust_mask = calculate_dust_mask(self.data)
         if undo:
             if self.mask is not None:
-                self.mask[dust_mask] = False
+                self.mask = self.mask & ~dust_mask
             self.dust_masked = False
         else:
             if self.mask is None:
                 self.mask = np.zeros(self.shape, dtype=bool)
-            self.mask[dust_mask] = True
+            self.mask = self.mask | dust_mask
             self.dust_masked = True
 
     remove_cosmic_rays = remove_cosmic_rays
@@ -175,6 +174,8 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         `sunpy.map.Map` or `sunpy.map.MapSequence`
             A single Map if index is an int, otherwise a MapSequence.
         """
+        from sunpy.map import Map  # NOQA: PLC0415
+
         if self.fits_wcs is None:
             msg = "This cube has no FITS WCS (for example, it was rebinned), so it cannot be converted to maps."
             raise ValueError(msg)

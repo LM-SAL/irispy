@@ -16,6 +16,16 @@ from irispy.utils.response import get_latest_response
 from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiometric_calibration
 
 
+@pytest.mark.parametrize("sequence", [False, True])
+def test_radiometric_calibration_rejects_unscaled_data(sequence):
+    filename = get_test_filepath(
+        "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
+    )
+    cubes = read_files(filename, memmap=True)["Mg II k 2796"]
+    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
+        radiometric_calibration(cubes if sequence else cubes[0])
+
+
 @pytest.fixture
 def idl_input_rad_cal():
     # Has 'input_spectrum' and 'wavelength' keys

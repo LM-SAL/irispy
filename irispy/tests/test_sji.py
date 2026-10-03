@@ -1,3 +1,4 @@
+import dask.array as da
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -5,6 +6,28 @@ import pytest
 import astropy.units as u
 
 import sunpy.map
+
+
+def test_apply_dust_mask_with_lazy_mask(sns_sjicube_1330):
+    cube = sns_sjicube_1330[:1, :5, :5]
+    cube.data[:] = 10
+    cube.data[0, 2, 2] = 0
+    original_mask = np.zeros(cube.shape, dtype=bool)
+    original_mask[0, 0, 0] = True
+    cube.mask = da.from_array(original_mask, chunks=(1, 5, 5))
+
+    cube.apply_dust_mask()
+    expected = original_mask.copy()
+    expected[0, 1:4, 1:4] = True
+    assert isinstance(cube.mask, da.Array)
+    np.testing.assert_array_equal(cube.mask.compute(), expected)
+    assert cube.dust_masked
+
+    cube.apply_dust_mask(undo=True)
+    assert isinstance(cube.mask, da.Array)
+    np.testing.assert_array_equal(cube.mask.compute(), original_mask)
+    assert not cube.dust_masked
+
 
 AXIS = [
     (

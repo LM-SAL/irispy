@@ -47,6 +47,14 @@ def test_calculate_dust_mask_2d():
     np_test.assert_array_equal(utils.calculate_dust_mask(data), np.ones((3, 3), dtype=bool))
 
 
+@pytest.mark.parametrize("fill", [-200, -199])
+@pytest.mark.parametrize("shape", [(5, 5), (2, 5, 5)])
+def test_calculate_dust_mask_ignores_fill(fill, shape):
+    data = np.full(shape, 10.0)
+    data[..., 2, 2] = fill
+    assert not utils.calculate_dust_mask(data).any()
+
+
 def test_import_optional_missing_module_names_the_extra():
     with pytest.raises(ImportError, match=r"pip install 'irispy-lmsal\[rgb\]'"):
         utils.utils._import_optional("definitely_not_a_module", reason="testing", extra="rgb")

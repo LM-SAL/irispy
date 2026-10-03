@@ -1,0 +1,1 @@
+Reading Level 2 files is faster: the readers no longer run FITS verification, and the spectrograph reader opens each raster file once.

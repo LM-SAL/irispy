@@ -1,0 +1,1 @@
+Added a known-issues note on why `~irispy.utils.bursts.find_sji_bursts` can find slightly lower thresholds than IDL: ``-199`` fill pixels are excluded from its statistics.
