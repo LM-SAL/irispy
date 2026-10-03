@@ -1,0 +1,1 @@
+Update the SJI burst reference test and documentation for the lower detection thresholds caused by excluding ``-199`` fill values from the statistics.

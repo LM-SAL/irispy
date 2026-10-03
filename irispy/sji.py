@@ -128,12 +128,12 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         dust_mask = calculate_dust_mask(self.data)
         if undo:
             if self.mask is not None:
-                self.mask[dust_mask] = False
+                self.mask = self.mask & ~dust_mask
             self.dust_masked = False
         else:
             if self.mask is None:
                 self.mask = np.zeros(self.shape, dtype=bool)
-            self.mask[dust_mask] = True
+            self.mask = self.mask | dust_mask
             self.dust_masked = True
 
     remove_cosmic_rays = remove_cosmic_rays

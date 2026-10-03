@@ -1,0 +1,2 @@
+Keep memory-mapped Level 2 reads lazy by computing fill masks only for the Dask slices that are used.
+Both ``-200`` and ``-199`` remain masked, and SJI dust-mask updates support lazy masks.

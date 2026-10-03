@@ -226,13 +226,22 @@ def test_si_iv_whole_file_matches_idl(idl_si_iv):
 
 
 @pytest.mark.remote_data
-def test_sji_first_frames_match_idl():
+def test_sji_first_frames_match_idl_with_updated_fill_mask():
     # The first 50 of the 400 frames; IDL treats each frame on its own
     filename = pooch.retrieve(
         f"{IRISPY_DATA}/iris_l2_20130902_163935_4000255147_SJI_1400_t000_f050.fits.gz",
         known_hash="b9a0b8cf2d98f5e1121000a14168079b113fdb0b169668ec1213411915afdb8f",
     )
     summary = Table.read(SJI_SUMMARY)[:50]
-    labels, events = find_sji_bursts(read_sji_lvl2(filename))
+    cube = read_sji_lvl2(filename)
+    labels, events = find_sji_bursts(cube)
     np.testing.assert_array_equal(np.bincount(events["frame"], minlength=50), summary["nevents"])
-    np.testing.assert_array_equal(np.count_nonzero(labels.data, axis=(1, 2)), summary["npix"])
+    # IDL included -199 in the statistics. Excluding it lowers the thresholds in
+    # frames 0, 37 and 49 from 927.1769, 1115.0644 and 936.1964 DN to
+    # 926.9041, 1114.8519 and 935.9868 DN, adding one pixel to an existing event.
+    expected_npix = summary["npix"].copy()
+    expected_npix[[0, 37, 49]] += 1
+    np.testing.assert_array_equal(np.count_nonzero(labels.data, axis=(1, 2)), expected_npix)
+    added_pixels = ([0, 37, 49], [291, 290, 52], [93, 86, 126])
+    assert labels.data[added_pixels].all()
+    np.testing.assert_array_equal(cube.data[added_pixels], [927, 1115, 936])

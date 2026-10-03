@@ -15,6 +15,7 @@ from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
+from irispy.io._mask import _memmap_fill_mask
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils import calculate_uncertainty
@@ -141,6 +142,7 @@ def read_spectrograph_lvl2(
         the file into memory when needed. This option is faster and uses a
         lot less memory. However, because FITS scaling is not done on-the-fly,
         the data units will be unscaled, not the usual data numbers (DN).
+        The fill mask is a lazy Dask array, computed only for the slices that are used.
     revert_v34 : `bool`, optional.
         Will undo the flipping of the raster step axis made to V34 observations
         (data, mask, uncertainty, WCS, times and per-step metadata).
@@ -255,8 +257,7 @@ def read_spectrograph_lvl2(
                 times = t_obs[steps]
                 out_uncertainty = None
                 if memmap:
-                    raw_fill = (np.asarray(BAD_PIXEL_VALUES_SCALED) - meta["BZERO"]) / meta["BSCALE"]
-                    data_mask = np.isin(data, raw_fill)
+                    data_mask = _memmap_fill_mask(data, header)
                 else:
                     data_mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
                     # memmap data are unscaled integers, so the photon noise would be wrong

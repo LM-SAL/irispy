@@ -12,6 +12,7 @@ from astropy.time import Time
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 
 from irispy._interpolation import _time_lookup
+from irispy.io._mask import _memmap_fill_mask
 from irispy.meta import SJIMeta
 from irispy.sji import AIACube, SJICube
 from irispy.utils import calculate_uncertainty
@@ -196,7 +197,8 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         the file into memory when needed. This option is faster and uses a
         lot less memory. However, because FITS scaling is not done on-the-fly,
         the data units will be unscaled, not the usual data numbers (DN).
-        When ``memmap=True``, missing pixels retain their original values and are marked in the mask.
+        When ``memmap=True``, missing pixels retain their original values and are marked in a
+        lazy Dask mask, computed only for the slices that are used.
         With ``memmap=False``, missing pixels are marked in the mask and replaced with ``NaN`` for
         floating-point data or ``-200`` for integer data.
         Compressed filenames are decompressed into memory once and cannot be memory-mapped.
@@ -252,9 +254,7 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         data_nan_masked = hdulist[0].data
         out_uncertainty = None
         if memmap:
-            header = hdulist[0].header
-            raw_fill = (np.asarray(BAD_PIXEL_VALUES_SCALED) - header.get("BZERO", 0)) / header.get("BSCALE", 1)
-            mask = np.isin(data, raw_fill)
+            mask = _memmap_fill_mask(data, hdulist[0].header)
             scaled = False
             unit = DN_UNIT["SJI_UNSCALED"]
         else:
