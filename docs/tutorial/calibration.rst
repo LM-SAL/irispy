@@ -68,3 +68,45 @@ A detailed discussion of the radiometric calibration steps for IRIS and how to u
    The sequence-dependent exposure times are available in the auxiliary metadata in the FITS files (see :ref:`irispy-tutorial-lev2`), with table index given by ``EXPTIMEF``, ``EXPTIMEN``, and ``EXPTIME`` for FUV, NUV, and slit-jaw, respectively.
 
 The routine that converts DN to physical units is described in this example :ref:`sphx_glr_generated_gallery_calibration_03_radiometric_calibration.py`.
+
+Radiation Temperature
+=====================
+
+Mg II h & k and other NUV intensities are often given as a radiation (or brightness) temperature :math:`T_\mathrm{rad}`, the temperature of the blackbody whose Planck function equals the observed intensity, :math:`I_\nu = B_\nu(T_\mathrm{rad})` (:cite:t:`rybicki1985`, Section 1.5), as in :cite:t:`leenaarts2013` and :cite:t:`pereira2013`.
+`irispy.utils.spectrograph.radiation_temperature` inverts the Planck function at each wavelength of a radiometrically calibrated cube or sequence,
+
+.. math::
+
+   T_\mathrm{rad} = \frac{h \nu / k}{\ln \left( 1 + 2 h \nu^3 / (c^2 I_\nu) \right)},
+
+and returns it in K with the uncertainty propagated.
+Radiance per unit wavelength is converted to per unit frequency with the cube's own wavelengths.
+Samples with zero or negative radiance, common in faint FUV windows, are NaN and masked.
+A cube still in DN raises an error, so calibrate it first:
+
+.. code-block:: python
+
+   from irispy.io import read_files
+   from irispy.utils.spectrograph import radiation_temperature, radiometric_calibration
+
+   raster = read_files("iris_l2_20260308_051050_3893012099_raster.tar.gz")
+   temperature = radiation_temperature(radiometric_calibration(raster["Mg II k 2796"]))
+
+Do not use astropy's `~astropy.units.brightness_temperature` equivalency for this.
+It is the Rayleigh-Jeans limit, :math:`T = c^2 I_\nu / (2 k \nu^2)`, which holds in the radio but not in the ultraviolet:
+
+.. code-block:: python
+
+   >>> import astropy.units as u
+
+   >>> radiance = 1e-6 * u.erg / u.cm**2 / u.s / u.sr / u.Hz
+   >>> radiance.to(u.K, equivalencies=u.brightness_temperature(2796 * u.AA))  # doctest: +FLOAT_CMP
+   <Quantity 2.83113811 K>
+
+while the Planck inversion gives 5247 K for the same radiance at 2796 Å.
+
+Radiation temperature is a way of expressing intensity, not a measured gas temperature.
+The two are equal only for optically thick radiation whose source function is the Planck function (:cite:t:`rybicki1985`, Sections 1.4 and 1.5).
+That is not the case for Mg II h & k: :cite:t:`leenaarts2013` find that the k\ :sub:`2` and h\ :sub:`2` peaks track the gas temperature where they form only above about 6 kK, and even then the gas is typically 500 K hotter.
+Optically thin lines fall far below their formation temperature: Si IV is usually optically thin :cite:p:`young2018` and forms around 65 kK :cite:p:`depontieu2014`, yet comes out at several thousand kelvin.
+Noise just above zero also comes out at several thousand kelvin, and the uncertainty is unreliable where it is comparable to the radiance.

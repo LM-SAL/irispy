@@ -11,19 +11,23 @@ from sunpy.time import parse_time
 from irispy.data.test import get_test_filepath
 from irispy.io.utils import read_files
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
-from irispy.utils.constants import SLIT_WIDTH
+from irispy.tests.helpers import make_test_spectrogram_cube
+from irispy.utils.constants import RADIANCE_UNIT, SLIT_WIDTH
 from irispy.utils.response import get_latest_response
-from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiometric_calibration
+from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiation_temperature, radiometric_calibration
+
+RADIANCE_PER_HZ = u.erg / u.cm**2 / u.s / u.sr / u.Hz
 
 
+@pytest.mark.parametrize("function", [radiometric_calibration, radiation_temperature])
 @pytest.mark.parametrize("sequence", [False, True])
-def test_radiometric_calibration_rejects_unscaled_data(sequence):
+def test_rejects_unscaled_data(function, sequence):
     filename = get_test_filepath(
         "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
     )
     cubes = read_files(filename, memmap=True)["Mg II k 2796"]
     with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
-        radiometric_calibration(cubes if sequence else cubes[0])
+        function(cubes if sequence else cubes[0])
 
 
 @pytest.fixture
@@ -159,3 +163,54 @@ def test_radiometric_calibration_keeps_a_standard_deviation(sns_sg_file):
     new_cube = radiometric_calibration(cube)
     assert isinstance(new_cube.uncertainty, StdDevUncertainty)
     assert new_cube.uncertainty.array.shape == cube.data.shape
+
+
+def make_radiance_cube(radiance, *, uncertainty=None, mask=None):
+    wavelengths = (2796 + np.arange(radiance.shape[-1])) * u.AA
+    template = make_test_spectrogram_cube(np.zeros(radiance.shape), wavelengths)
+    equivalencies = u.spectral_density(wavelengths)
+    radiance = radiance.to(RADIANCE_UNIT, equivalencies=equivalencies)
+    if uncertainty is not None:
+        uncertainty = StdDevUncertainty(uncertainty.to_value(RADIANCE_UNIT, equivalencies=equivalencies))
+    return SpectrogramCube(radiance.value, template.wcs, uncertainty, radiance.unit, template.meta, mask=mask)
+
+
+@pytest.mark.parametrize("unit", [RADIANCE_PER_HZ, RADIANCE_UNIT])
+def test_radiation_temperature_is_planck_not_rayleigh_jeans(unit):
+    radiance = np.full((1, 1, 3), 1e-6) * RADIANCE_PER_HZ
+    # astropy's brightness_temperature is the Rayleigh-Jeans limit, which fails in the UV
+    rayleigh_jeans = radiance[0, 0, 0].to(u.K, equivalencies=u.brightness_temperature(2796 * u.AA))
+    assert_quantity_allclose(rayleigh_jeans, 2.831 * u.K, rtol=1e-3)
+    cube = make_radiance_cube(radiance)
+    if unit == RADIANCE_PER_HZ:
+        cube = cube.to(unit, equivalencies=u.spectral_density(cube.axis_world_coords("em.wl")[0]))
+    temperature = radiation_temperature(cube)
+    assert temperature.unit == u.K
+    assert_quantity_allclose(temperature.data[0, 0, 0] * u.K, 5246.6 * u.K, rtol=1e-4)
+
+
+def test_radiation_temperature_uncertainty_and_mask():
+    radiance = [[[1e-6, 2e-6, 0, -1e-6]]] * RADIANCE_PER_HZ
+    mask = np.array([[[False, True, False, False]]])
+    temperature = radiation_temperature(make_radiance_cube(radiance, uncertainty=1e-8 * radiance.unit, mask=mask))
+    # The input mask is kept and samples without a positive radiance are NaN and masked
+    assert np.array_equal(temperature.mask, [[[False, True, True, True]]])
+    assert np.isfinite(temperature.data[0, 0, :2]).all()
+    assert np.isnan(temperature.data[0, 0, 2:]).all()
+    # First-order error against a central difference
+    step = 1e-12 * RADIANCE_PER_HZ
+    finite_difference = (
+        radiation_temperature(make_radiance_cube(radiance + step)).data[0, 0, 0]
+        - radiation_temperature(make_radiance_cube(radiance - step)).data[0, 0, 0]
+    ) / 2e-12
+    np.testing.assert_allclose(temperature.uncertainty.array[0, 0, 0], finite_difference * 1e-8, rtol=1e-6)
+
+
+def test_radiation_temperature_needs_calibrated_data(sns_sg_file):
+    cube = read_files(sns_sg_file)["C II 1336"][0]
+    with pytest.raises(ValueError, match="radiometric_calibration"):
+        radiation_temperature(cube)
+    temperature = radiation_temperature(radiometric_calibration(cube))
+    assert temperature.unit == u.K
+    assert temperature.data.shape == cube.data.shape
+    assert np.all(temperature.mask[cube.mask])
