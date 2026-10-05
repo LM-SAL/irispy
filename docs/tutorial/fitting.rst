@@ -101,6 +101,21 @@ The velocities are against the rest wavelength of the one documented line in the
 
     >>> good_fit = maps["quality"].data == FitQualityFlag.OK  # doctest: +REMOTE_DATA
 
+Non-thermal velocities
+======================
+
+A fitted width holds the instrumental and thermal broadening of the line as well.
+`~irispy.utils.fitting.non_thermal_velocity` removes both from a map of the full width at half maximum, using the spectral resolution of the passband and, for the thermal width, the ion's mass and a temperature, here the peak of Si IV in CHIANTI's ionisation equilibrium :cite:p:`dere2023`:
+
+.. code-block:: python
+
+    >>> from irispy.utils.fitting import non_thermal_velocity
+    >>> non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv, ion="Si IV", temperature=10**4.9 * u.K)  # doctest: +REMOTE_DATA
+    >>> non_thermal["non_thermal_velocity"].unit  # doctest: +REMOTE_DATA
+    Unit("km / s")
+
+Where the observed width is not above the other two, the velocity is NaN and ``non_thermal["quality"]`` says so.
+
 Things to know
 ==============
 

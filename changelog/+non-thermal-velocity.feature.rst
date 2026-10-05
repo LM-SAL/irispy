@@ -1,0 +1,1 @@
+Added `irispy.utils.fitting.non_thermal_velocity`, which removes the instrumental and thermal widths from a map of line widths, and the constants ``irispy.utils.constants.INSTRUMENTAL_FWHM`` (the spectral resolution of each passband), ``irispy.utils.constants.PASSBAND_LIMITS`` and ``irispy.utils.constants.ATOMIC_MASS`` (standard atomic weights).
