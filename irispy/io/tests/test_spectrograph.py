@@ -118,8 +118,8 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     si_iv = raster_collection["Si IV 1403"]
     # Simple repr check
     assert str(si_iv)
-    # Test data only has a sequence of 13 long
-    assert len(si_iv) == 13
+    # One raster per file.
+    assert len(si_iv) == len(raster_sg_files)
     # The primary fits header is attached to the sequence
     assert si_iv.meta is not None
     # Meta is attached one level down to the individual cube for now.
