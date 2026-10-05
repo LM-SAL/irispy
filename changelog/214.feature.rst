@@ -1,0 +1,1 @@
+Add `irispy.utils.spectrograph.radiation_temperature`, which converts a radiometrically calibrated cube to radiation temperature by inverting the Planck function.

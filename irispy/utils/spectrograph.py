@@ -9,13 +9,14 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
-from irispy.utils._spectral import check_scaled
-from irispy.utils.constants import RADIANCE_UNIT
+from irispy.utils._spectral import check_scaled, make_map_cube, standard_deviation
+from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
 __all__ = [
     "calculate_dn_to_radiance_factor",
     "convert_photons_per_sec_to_radiance",
+    "radiation_temperature",
     "radiometric_calibration",
     "reshape_1d_wavelength_dimensions_for_broadcast",
 ]
@@ -104,6 +105,75 @@ def radiometric_calibration(
     )
     new_cube._extra_coords = cube.extra_coords
     return new_cube
+
+
+def radiation_temperature(
+    cube: SpectrogramCube | SpectrogramCubeSequence,
+) -> SpectrogramCube | SpectrogramCubeSequence:
+    r"""
+    Converts a radiometrically calibrated cube or cube sequence to radiation temperature.
+
+    The radiation (or brightness) temperature is the temperature of the blackbody whose
+    Planck function equals the observed specific intensity, :math:`I_\nu = B_\nu(T_\mathrm{rad})`
+    (:cite:t:`rybicki1985`, Section 1.5). Inverting the Planck function at each wavelength gives
+
+    .. math::
+
+       T_\mathrm{rad} = \frac{h \nu / k}{\ln \left( 1 + 2 h \nu^3 / (c^2 I_\nu) \right)}.
+
+    :cite:t:`leenaarts2013` and :cite:t:`pereira2013` express Mg II h & k and NUV
+    intensities this way.
+
+    Parameters
+    ----------
+    cube : `irispy.spectrograph.SpectrogramCube` | `irispy.spectrograph.SpectrogramCubeSequence`
+        Cube in radiance per unit wavelength or frequency, e.g. the output of
+        `~irispy.utils.spectrograph.radiometric_calibration`.
+
+    Returns
+    -------
+    `irispy.spectrograph.SpectrogramCube` or `irispy.spectrograph.SpectrogramCubeSequence`
+        New cube in K, with a `~astropy.nddata.StdDevUncertainty` if ``cube`` has an uncertainty.
+
+    Notes
+    -----
+    * Do not use the `astropy.units.brightness_temperature` equivalency for this: it is the
+      Rayleigh-Jeans limit, which is wrong by orders of magnitude in the UV.
+    * The radiation temperature is not the gas temperature. They are equal only for optically thick
+      radiation whose source function is the Planck function (:cite:t:`rybicki1985`, Sections 1.4
+      and 1.5), which holds only approximately for Mg II h & k :cite:p:`leenaarts2013` and not at
+      all for optically thin lines.
+    * Samples with zero, negative or non-finite radiance are NaN and masked; the input mask is kept.
+      Noise just above zero still gives several thousand kelvin.
+    * The uncertainty is propagated to first order, so it is unreliable where it is comparable to the radiance.
+    """
+    if isinstance(cube, SpectrogramCubeSequence):
+        return SpectrogramCubeSequence([radiation_temperature(c) for c in cube])
+    check_scaled(cube)
+    wavelength = reshape_1d_wavelength_dimensions_for_broadcast(
+        cube.axis_world_coords(cube.wavelength_axis)[0], cube.data.ndim
+    )
+    try:
+        to_radiance = cube.unit.to(RADIANCE_UNIT_PER_HZ, equivalencies=u.spectral_density(wavelength))
+    except u.UnitConversionError:
+        msg = (
+            f"The cube must be in radiance per unit wavelength or frequency, not {cube.unit}; "
+            "convert it with radiometric_calibration first"
+        )
+        raise ValueError(msg) from None
+    frequency = wavelength.to(u.Hz, equivalencies=u.spectral())
+    temperature_scale = (constants.h * frequency / constants.k_B).to_value(u.K)
+    planck_scale = (2 * constants.h * frequency**3 / constants.c**2 / u.sr).to_value(RADIANCE_UNIT_PER_HZ)
+    radiance = np.asarray(cube.data, dtype=float) * to_radiance
+    sigma = standard_deviation(cube)
+    uncertainty = None
+    with np.errstate(divide="ignore", invalid="ignore"):
+        temperature = np.where(radiance > 0, temperature_scale / np.log1p(planck_scale / radiance), np.nan)
+        if sigma is not None:
+            # First-order propagation with dT/dI from differentiating the expression above.
+            derivative = temperature**2 * planck_scale / (temperature_scale * radiance * (radiance + planck_scale))
+            uncertainty = StdDevUncertainty(derivative * sigma * to_radiance)
+    return make_map_cube(cube, temperature, u.K, mask_invalid=True, uncertainty=uncertainty)
 
 
 def convert_photons_per_sec_to_radiance(

@@ -10,6 +10,7 @@ __all__ = [
     "BAD_PIXEL_VALUE_UNSCALED",
     "DN_UNIT",
     "RADIANCE_UNIT",
+    "RADIANCE_UNIT_PER_HZ",
     "READOUT_NOISE",
     "SLIT_WIDTH",
     "SPECTRAL_BAND",
@@ -37,6 +38,7 @@ READOUT_NOISE = {
     "SJI": 1.2 * DN_UNIT["SJI"],
 }
 RADIANCE_UNIT = u.erg / u.cm**2 / u.s / u.steradian / u.Angstrom
+RADIANCE_UNIT_PER_HZ = u.erg / u.cm**2 / u.s / u.steradian / u.Hz
 SLIT_WIDTH = 0.33 * u.arcsec
 SPECTRAL_BAND = {
     "1330": "FUV",

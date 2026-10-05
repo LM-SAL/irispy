@@ -3,6 +3,7 @@ import pytest
 from scipy.io import readsav
 
 import astropy.units as u
+from astropy.modeling.physical_models import BlackBody
 from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 
@@ -11,19 +12,21 @@ from sunpy.time import parse_time
 from irispy.data.test import get_test_filepath
 from irispy.io.utils import read_files
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
-from irispy.utils.constants import SLIT_WIDTH
+from irispy.tests.helpers import make_test_spectrogram_cube
+from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ, SLIT_WIDTH
 from irispy.utils.response import get_latest_response
-from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiometric_calibration
+from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiation_temperature, radiometric_calibration
 
 
+@pytest.mark.parametrize("function", [radiometric_calibration, radiation_temperature])
 @pytest.mark.parametrize("sequence", [False, True])
-def test_radiometric_calibration_rejects_unscaled_data(sequence):
+def test_rejects_unscaled_data(function, sequence):
     filename = get_test_filepath(
         "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
     )
     cubes = read_files(filename, memmap=True)["Mg II k 2796"]
     with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
-        radiometric_calibration(cubes if sequence else cubes[0])
+        function(cubes if sequence else cubes[0])
 
 
 @pytest.fixture
@@ -159,3 +162,50 @@ def test_radiometric_calibration_keeps_a_standard_deviation(sns_sg_file):
     new_cube = radiometric_calibration(cube)
     assert isinstance(new_cube.uncertainty, StdDevUncertainty)
     assert new_cube.uncertainty.array.shape == cube.data.shape
+
+
+WAVELENGTHS = (2796 + np.arange(4)) * u.AA
+
+
+def make_radiance_cube(radiance, *, unit=RADIANCE_UNIT, uncertainty=None, mask=None):
+    equivalencies = u.spectral_density(WAVELENGTHS)
+    if uncertainty is not None:
+        uncertainty = StdDevUncertainty(uncertainty.to_value(unit, equivalencies=equivalencies))
+    return make_test_spectrogram_cube(
+        radiance.to_value(unit, equivalencies=equivalencies), WAVELENGTHS, uncertainty=uncertainty, unit=unit, mask=mask
+    )
+
+
+@pytest.mark.parametrize("unit", [RADIANCE_UNIT_PER_HZ, RADIANCE_UNIT])
+def test_radiation_temperature_inverts_planck(unit):
+    radiance = BlackBody(5000 * u.K)(WAVELENGTHS)[np.newaxis, np.newaxis]
+    temperature = radiation_temperature(make_radiance_cube(radiance, unit=unit))
+    assert temperature.unit == u.K
+    np.testing.assert_allclose(temperature.data, 5000, rtol=1e-6)
+
+
+def test_radiation_temperature_uncertainty_and_mask():
+    radiance = [[[1e-6, 2e-6, 0, -1e-6]]] * RADIANCE_UNIT_PER_HZ
+    mask = np.array([[[False, True, False, False]]])
+    temperature = radiation_temperature(make_radiance_cube(radiance, uncertainty=1e-8 * radiance.unit, mask=mask))
+    # The input mask is kept and samples without a positive radiance are NaN and masked
+    assert np.array_equal(temperature.mask, [[[False, True, True, True]]])
+    assert np.isfinite(temperature.data[0, 0, :2]).all()
+    assert np.isnan(temperature.data[0, 0, 2:]).all()
+    # First-order error against a central difference
+    step = 1e-12 * RADIANCE_UNIT_PER_HZ
+    finite_difference = (
+        radiation_temperature(make_radiance_cube(radiance + step)).data[0, 0, 0]
+        - radiation_temperature(make_radiance_cube(radiance - step)).data[0, 0, 0]
+    ) / 2e-12
+    np.testing.assert_allclose(temperature.uncertainty.array[0, 0, 0], finite_difference * 1e-8, rtol=1e-6)
+
+
+def test_radiation_temperature_on_level_2_cube(sns_sg_file):
+    cube = read_files(sns_sg_file, uncertainty=True)["C II 1336"][0]
+    with pytest.raises(ValueError, match="radiometric_calibration"):
+        radiation_temperature(cube)
+    temperature = radiation_temperature(radiometric_calibration(cube))
+    assert np.all(temperature.mask[cube.mask])
+    assert np.isfinite(temperature.data[~temperature.mask]).all()
+    assert (temperature.uncertainty.array[~temperature.mask] > 0).all()

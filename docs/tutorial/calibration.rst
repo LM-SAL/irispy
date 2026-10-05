@@ -68,3 +68,18 @@ A detailed discussion of the radiometric calibration steps for IRIS and how to u
    The sequence-dependent exposure times are available in the auxiliary metadata in the FITS files (see :ref:`irispy-tutorial-lev2`), with table index given by ``EXPTIMEF``, ``EXPTIMEN``, and ``EXPTIME`` for FUV, NUV, and slit-jaw, respectively.
 
 The routine that converts DN to physical units is described in this example :ref:`sphx_glr_generated_gallery_calibration_03_radiometric_calibration.py`.
+
+Radiation Temperature
+=====================
+
+`irispy.utils.spectrograph.radiation_temperature` converts a radiometrically calibrated cube or sequence to radiation temperature by inverting the Planck function.
+Its docstring gives the formula and the caveats.
+A cube still in DN raises an error, so calibrate it first:
+
+.. code-block:: python
+
+   from irispy.io import read_files
+   from irispy.utils.spectrograph import radiation_temperature, radiometric_calibration
+
+   raster = read_files("iris_l2_20260308_051050_3893012099_raster.tar.gz")
+   temperature = radiation_temperature(radiometric_calibration(raster["Mg II k 2796"]))
