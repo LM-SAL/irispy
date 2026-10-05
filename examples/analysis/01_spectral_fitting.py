@@ -20,7 +20,6 @@ import numpy as np
 import pooch
 
 import astropy.units as u
-from astropy import constants
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.modeling.fitting import TRFLSQFitter, parallel_fit_dask
 from astropy.wcs.utils import wcs_to_celestial_frame
@@ -28,8 +27,7 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
-from irispy.spectrograph import SpectrogramCube
-from irispy.utils.fitting import si_iv_1403_model
+from irispy.utils.fitting import fit_to_maps, si_iv_1403_model
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
@@ -93,25 +91,33 @@ si_iv_spec_crop = si_iv_1403.crop([SpectralCoord(si_iv_core), None], [SpectralCo
 model = si_iv_1403_model(si_iv_1403)
 wavelength = si_iv_1403.axis_world_coords("em.wl")[0].to(u.AA)
 good = np.isfinite(si_iv_1403.data) & ~si_iv_1403.mask
+fitter = TRFLSQFitter()
 iris_model_fit = parallel_fit_dask(
     model=model,
-    fitter=TRFLSQFitter(),
+    fitter=fitter,
     data=np.where(good, si_iv_1403.data, 0),
     data_unit=si_iv_1403.unit,
     weights=np.where(good, 1 / si_iv_1403.uncertainty.array, 0),
     world=(wavelength,),
     fitting_axes=2,
+    fit_info=True,
     scheduler="single-threaded",
 )
 
 ###############################################################################
-# The fitted parameters are 2D arrays with the shape of the spatial axes. We convert
-# them into physical quantities and wrap them in `~irispy.spectrograph.SpectrogramCube`
-# objects with the WCS of the line-core image, so that they plot with the same
-# orientation and coordinates.
+# `~irispy.utils.fitting.fit_to_maps` turns the fitted parameters into maps with the
+# spatial coordinates of the cube and uncertainties from the fit, and derives the
+# Doppler velocity, width and integrated intensity of the line, against the Si IV
+# rest wavelength.
+
+maps = fit_to_maps(iris_model_fit, si_iv_1403, fitter=fitter)
+print(list(maps.keys()))
+
+###############################################################################
+# Now we plot them next to the line-core image.
 
 fig, ax_dict = plt.subplot_mosaic(
-    [["fov", "net_flux"], ["velocity", "sigma"]],
+    [["fov", "intensity"], ["velocity", "width"]],
     subplot_kw={"projection": si_iv_spec_crop.wcs},
     figsize=(12, 10),
 )
@@ -120,36 +126,23 @@ si_iv_spec_crop.plot(axes=ax_dict["fov"], plot_axes=["x", "y"], vmin=0, vmax=200
 ax_dict["fov"].set_title(f"Si IV {si_iv_core.to_value(u.AA)} Å")
 fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]", shrink=0.8)
 
-gaussian_width = iris_model_fit.stddev_1.quantity
-net_flux = (
-    np.sqrt(2 * np.pi) * iris_model_fit.amplitude_1.quantity * gaussian_width / np.mean(np.diff(wavelength))
-).to(si_iv_1403.unit)
-amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
-SpectrogramCube(net_flux, si_iv_spec_crop.wcs).plot(
-    axes=ax_dict["net_flux"], plot_axes=["x", "y"], vmin=0, vmax=amp_max
-)
-cbar = fig.colorbar(ax_dict["net_flux"].images[0], ax=ax_dict["net_flux"])
-cbar.set_label(label=f"Intensity [{net_flux.unit.to_string()}]", fontsize=8)
-cbar.ax.tick_params(labelsize=8)
-ax_dict["net_flux"].set_title("Gaussian Net Flux")
-
-core_shift = ((iris_model_fit.mean_1.quantity - si_iv_core) / si_iv_core * constants.c).to(u.km / u.s)
-shift_max = np.nanpercentile(np.abs(core_shift.value), 95)
-SpectrogramCube(core_shift, si_iv_spec_crop.wcs).plot(
-    axes=ax_dict["velocity"], plot_axes=["x", "y"], cmap="coolwarm", vmin=-shift_max, vmax=shift_max
-)
-cbar = fig.colorbar(ax_dict["velocity"].images[0], ax=ax_dict["velocity"], extend="both")
-cbar.set_label(label=f"Doppler shift [{core_shift.unit.to_string()}]", fontsize=8)
-cbar.ax.tick_params(labelsize=8)
-ax_dict["velocity"].set_title("Velocity from Gaussian shift")
-
-sigma = (gaussian_width / si_iv_core * constants.c).to(u.km / u.s)
-line_max = np.nanpercentile(np.abs(sigma.value), 95)
-SpectrogramCube(sigma, si_iv_spec_crop.wcs).plot(axes=ax_dict["sigma"], plot_axes=["x", "y"], vmax=line_max)
-cbar = fig.colorbar(ax_dict["sigma"].images[0], ax=ax_dict["sigma"])
-cbar.set_label(label=f"Line Width [{sigma.unit.to_string()}]", fontsize=8)
-cbar.ax.tick_params(labelsize=8)
-ax_dict["sigma"].set_title("Gaussian Sigma")
+for key, name, label, symmetric in [
+    ("intensity", "integrated_intensity_1", "Integrated intensity", False),
+    ("velocity", "velocity_1", "Doppler shift", True),
+    ("width", "fwhm_velocity_1", "Line width (FWHM)", False),
+]:
+    limit = np.nanpercentile(np.abs(maps[name].data), 95)
+    maps[name].plot(
+        axes=ax_dict[key],
+        plot_axes=["x", "y"],
+        cmap="coolwarm" if symmetric else None,
+        vmin=-limit if symmetric else 0,
+        vmax=limit,
+    )
+    cbar = fig.colorbar(ax_dict[key].images[0], ax=ax_dict[key], extend="both" if symmetric else "max")
+    cbar.set_label(label=f"{label} [{maps[name].unit.to_string()}]", fontsize=8)
+    cbar.ax.tick_params(labelsize=8)
+    ax_dict[key].set_title(label)
 
 for ax in ax_dict.values():
     # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).

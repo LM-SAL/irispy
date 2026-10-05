@@ -1,0 +1,1 @@
+Added `irispy.utils.fitting.fit_to_maps`, which turns a model fitted with `astropy.modeling.fitting.parallel_fit_dask` into a `~irispy.spectrograph.RasterCollection` of parameter, velocity, width, intensity, quality and residual maps with uncertainties.

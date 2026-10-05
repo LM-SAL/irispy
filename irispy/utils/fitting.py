@@ -9,11 +9,14 @@ import numpy as np
 import astropy.units as u
 from astropy import constants
 from astropy.modeling import models
+from astropy.modeling.fitting import FitInfoArrayContainer
+from astropy.nddata import StdDevUncertainty
 
-from irispy.utils._spectral import check_scaled
+from irispy.spectrograph import RasterCollection, SpectrogramCube
+from irispy.utils._spectral import _QualityFlag, check_scaled, make_map_cube, make_spatial_template
 from irispy.utils.mg_features import calculate_mg_features
 
-__all__ = ["gaussians_on_background", "mg_ii_model", "si_iv_1403_model"]
+__all__ = ["FitQualityFlag", "fit_to_maps", "gaussians_on_background", "mg_ii_model", "si_iv_1403_model"]
 
 _PROFILES = {"gaussian": (models.Gaussian1D, "mean", "stddev"), "lorentzian": (models.Lorentz1D, "x_0", "fwhm")}
 _BACKGROUNDS = ("constant", "linear")
@@ -340,3 +343,196 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
             "amplitude_2": (0, None),
         },
     )
+
+
+class FitQualityFlag(_QualityFlag):
+    """
+    Quality flags for the per-spectrum fits in `fit_to_maps`, most severe first.
+    """
+
+    OK = (0, "ok")
+    NO_FIT = (1, "no fit: NaN parameters")
+    NOT_CONVERGED = (2, "the fitter reports no success")
+    AT_BOUND = (3, "a parameter stopped at one of its bounds")
+    MASKED_INPUT = (4, "the spectrum has masked samples")
+
+
+def _fit_property(fit_info, name, fill):
+    """
+    The ``name`` property of each fit in a ``FitInfoArrayContainer``, ``fill`` where
+    there is none.
+
+    `~astropy.modeling.fitting.FitInfoArrayContainer.get_property_as_array` fails when a
+    spectrum is all NaN, as `~astropy.modeling.fitting.parallel_fit_dask` then leaves a 0 in
+    place of its fit information.
+    """
+    found = [fit_info[index] for index in np.ndindex(fit_info.shape)]
+    found = [info.get(name) if isinstance(info, dict) else None for info in found]
+    template = next((np.asarray(value) for value in found if value is not None), None)
+    if template is None:
+        return None
+    values = [np.full(template.shape, fill) if value is None else value for value in found]
+    return np.reshape(np.asarray(values, dtype=float), fit_info.shape + template.shape)
+
+
+def fit_to_maps(fitted_model, cube, *, fitter=None, rest_wavelength=None):
+    r"""
+    Maps of the parameters of a model fitted to every spectrum of a cube.
+
+    Parameters
+    ----------
+    fitted_model : `~astropy.modeling.Model`
+        The model returned by `astropy.modeling.fitting.parallel_fit_dask`, with parameters shaped
+        like the spatial axes of ``cube``, such as one started from `gaussians_on_background`. Its
+        parameters must have units, as they do after a fit with ``data_unit``.
+    cube : `~irispy.spectrograph.SpectrogramCube`
+        The cube that was fitted.
+    fitter : `~astropy.modeling.fitting.Fitter`, optional
+        The fitter passed to `~astropy.modeling.fitting.parallel_fit_dask` with ``fit_info=True``.
+        Without it the maps have no uncertainties and the quality ignores the fitter's status.
+    rest_wavelength : `~astropy.units.Quantity`, optional
+        The rest wavelength for the Doppler velocities. Defaults to the one documented line that
+        the cube covers.
+
+    Returns
+    -------
+    `~irispy.spectrograph.RasterCollection`
+        Maps with the spatial WCS of ``cube``, each with a `~astropy.nddata.StdDevUncertainty`
+        if ``fitter`` is given:
+
+        * one per model parameter, keyed by its name, such as ``"mean_1"``;
+        * for each Gaussian or Lorentzian component ``i``, ``"velocity_i"``, the Doppler velocity of
+          its centre in km/s, ``"fwhm_i"``, its full width at half maximum in Å, ``"fwhm_velocity_i"``,
+          that width in km/s, and ``"integrated_intensity_i"``, its integral in the unit of ``cube``
+          times Å;
+        * ``"quality"``, a `FitQualityFlag` for each spectrum, the most severe that applies;
+        * ``"residual"``, ``cube`` minus the fitted model, a cube with the WCS, uncertainty and
+          mask of ``cube``.
+
+    Notes
+    -----
+    The uncertainties are the square roots of the diagonal of the parameter covariance in the
+    fitter's ``fit_info``, NaN where the fit failed and for fixed or tied parameters, which it does
+    not estimate. The derived maps propagate the covariance to first order. The full width at half
+    maximum is :math:`2\sqrt{2\ln 2}\,\sigma` for a Gaussian and the ``fwhm`` parameter of a
+    Lorentzian, and the integral is :math:`\sqrt{2\pi}\,A\sigma` for a Gaussian and
+    :math:`\pi A\,\mathrm{FWHM}/2` for a Lorentzian.
+    """
+    names = fitted_model.param_names
+    values = {name: getattr(fitted_model, name).quantity for name in names}
+    if unitless := [name for name, value in values.items() if value is None]:
+        msg = f"{', '.join(unitless)} have no unit; fit the model with data_unit or start it with units."
+        raise ValueError(msg)
+    shape = np.broadcast_shapes(*(value.shape for value in values.values()))
+    values = {name: np.broadcast_to(value, shape, subok=True) for name, value in values.items()}
+    failed = np.any([np.isnan(value.value) for value in values.values()], axis=0)
+    # The covariance covers the free parameters only, in the order of the model's.
+    free = [name for name in names if not (fitted_model.fixed[name] or fitted_model.tied[name])]
+    fit_info = getattr(fitter, "fit_info", None)
+    if not isinstance(fit_info, FitInfoArrayContainer):
+        fit_info = None
+    covariance = None if fit_info is None else _fit_property(fit_info, "param_cov", np.nan)
+
+    def variance(gradient):
+        """
+        First-order variance of a function of the free parameters, given its gradient by
+        parameter name.
+        """
+        if covariance is None:
+            return None
+        if any(name not in free for name in gradient):
+            return np.full(shape, np.nan)
+        terms = np.zeros(shape)
+        for first, first_gradient in gradient.items():
+            for second, second_gradient in gradient.items():
+                terms = (
+                    terms + first_gradient * second_gradient * covariance[..., free.index(first), free.index(second)]
+                )
+        return terms
+
+    maps = []
+    for name in names:
+        error = variance({name: np.ones(shape)})
+        maps.append((name, values[name], None if error is None else np.sqrt(error)))
+
+    def scaled(error, scale):
+        return None if error is None else np.abs(scale) * np.sqrt(error)
+
+    compound = fitted_model.n_submodels > 1
+    leaves = [fitted_model[index] for index in range(fitted_model.n_submodels)] if compound else [fitted_model]
+    wavelength = cube.axis_world_coords(cube.wavelength_axis)[0].to(u.AA)
+    for index, leaf in enumerate(leaves):
+        # A tuple, as | composes astropy model classes into a compound model.
+        if not isinstance(leaf, (models.Gaussian1D, models.Lorentz1D)):
+            continue
+        if rest_wavelength is None:
+            lines = _covered(wavelength)
+            if len(lines) != 1:
+                msg = f"The cube covers {len(lines)} documented lines; pass rest_wavelength."
+                raise ValueError(msg)
+            ((_, rest_wavelength),) = lines
+        gaussian = isinstance(leaf, models.Gaussian1D)
+        suffix = f"_{index}" if compound else ""
+        center = ("mean" if gaussian else "x_0") + suffix
+        width = ("stddev" if gaussian else "fwhm") + suffix
+        amplitude = "amplitude" + suffix
+        to_fwhm = 2 * np.sqrt(2 * np.log(2)) if gaussian else 1
+        to_area = np.sqrt(2 * np.pi) if gaussian else np.pi / 2
+        # Doppler velocity per unit of the centre and per Å, and Å per unit of width.
+        speed = (_SPEED_OF_LIGHT / rest_wavelength).to_value(u.km / u.s / values[center].unit)
+        per_angstrom = (_SPEED_OF_LIGHT / rest_wavelength).to_value(u.km / u.s / u.AA)
+        width_scale = values[width].unit.to(u.AA)
+        one = np.ones(shape)
+        velocity = speed * (values[center].value - u.Quantity(rest_wavelength, values[center].unit).value)
+        fwhm = to_fwhm * width_scale * values[width].value
+        area = to_area * values[amplitude] * values[width]
+        area_error = scaled(
+            variance({amplitude: to_area * values[width].value, width: to_area * values[amplitude].value}),
+            (values[amplitude].unit * values[width].unit).to(cube.unit * u.AA),
+        )
+        maps += [
+            (f"velocity_{index}", velocity * u.km / u.s, scaled(variance({center: one}), speed)),
+            (f"fwhm_{index}", fwhm * u.AA, scaled(variance({width: one}), to_fwhm * width_scale)),
+            (
+                f"fwhm_velocity_{index}",
+                fwhm * per_angstrom * u.km / u.s,
+                scaled(variance({width: one}), to_fwhm * width_scale * per_angstrom),
+            ),
+            (f"integrated_intensity_{index}", area.to(cube.unit * u.AA), area_error),
+        ]
+
+    quality = np.full(shape, FitQualityFlag.OK, dtype=np.uint8)
+    if cube.mask is not None:
+        masked = np.any(np.asarray(cube.mask, dtype=bool), axis=cube.wavelength_axis)
+        quality[masked] = FitQualityFlag.MASKED_INPUT
+    for name in free:
+        for bound in fitted_model.bounds[name]:
+            if bound is not None:
+                pinned = np.abs(values[name].value - bound) <= 1e-8 * max(1, abs(bound))
+                quality[pinned] = FitQualityFlag.AT_BOUND
+    success = None if fit_info is None else _fit_property(fit_info, "success", 0)
+    if success is not None:
+        quality[success == 0] = FitQualityFlag.NOT_CONVERGED
+    quality[failed] = FitQualityFlag.NO_FIT
+
+    template = make_spatial_template(cube, cube.wavelength_axis)
+    cubes = [
+        (
+            name,
+            make_map_cube(
+                template,
+                value.value,
+                value.unit,
+                mask_invalid=True,
+                uncertainty=None if error is None else StdDevUncertainty(error),
+            ),
+        )
+        for name, value, error in maps
+    ]
+    cubes.append(("quality", make_map_cube(template, quality, u.dimensionless_unscaled)))
+    model_values = np.moveaxis(fitted_model(wavelength.reshape((-1,) + (1,) * len(shape))), 0, cube.wavelength_axis)
+    residual = np.asarray(cube.data) - u.Quantity(model_values, cube.unit).value
+    cubes.append(
+        ("residual", SpectrogramCube(residual, cube.wcs, cube.uncertainty, cube.unit, cube.meta, mask=cube.mask))
+    )
+    return RasterCollection(cubes, aligned_axes=tuple(range(len(shape))))
