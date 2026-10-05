@@ -113,7 +113,8 @@ Positions that no raster covered are 0 in the data, NaN in the time extension an
 The mosaic is not derotated, so ``meta["time"]`` gives the time of each position.
 `~irispy.spectrograph.MosaicCube.to_map` makes a `sunpy.map.Map` from it; see :ref:`sphx_glr_generated_gallery_how_to_skip_06_full_disk_mosaic.py`.
 
-``AllSDOMaps.tar.gz`` holds SDO pseudo-mosaics sampled at the times IRIS observed each part of the disk; ``irispy`` does not read them yet.
+``AllSDOMaps.tar.gz`` holds SDO pseudo-mosaics, AIA 171, 193, 304, 1600 and 1700 Å and an HMI magnetogram, sampled at the times IRIS observed each part of the disk.
+They are plain FITS images that `sunpy.map.Map` opens directly.
 
 Reading Level 2 Data
 ====================
