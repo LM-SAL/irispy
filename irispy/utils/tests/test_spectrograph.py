@@ -15,7 +15,12 @@ from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ, SLIT_WIDTH
 from irispy.utils.response import get_latest_response
-from irispy.utils.spectrograph import calculate_dn_to_radiance_factor, radiation_temperature, radiometric_calibration
+from irispy.utils.spectrograph import (
+    calculate_dn_to_radiance_factor,
+    radiation_temperature,
+    radiometric_calibration,
+    subtract_background,
+)
 
 
 @pytest.mark.parametrize("function", [radiometric_calibration, radiation_temperature])
@@ -209,3 +214,47 @@ def test_radiation_temperature_on_level_2_cube(sns_sg_file):
     assert np.all(temperature.mask[cube.mask])
     assert np.isfinite(temperature.data[~temperature.mask]).all()
     assert (temperature.uncertainty.array[~temperature.mask] > 0).all()
+
+
+@pytest.mark.parametrize("degree", [0, 1, 2])
+def test_subtract_background(degree):
+    # A line on a polynomial background, with a masked spike in a window and a spectrum
+    # left with too few samples to fit
+    wavelengths = np.linspace(1333, 1337, 81) * u.AA
+    x = wavelengths.to_value(u.AA) - 1335
+    line = 50 * np.exp(-0.5 * ((x - 0.7) / 0.05) ** 2)
+    background = np.polynomial.polynomial.polyval(x, [3, 0.5, -0.2][: degree + 1])
+    data = np.tile(line + background, (2, 3, 1))
+    data[0, 0, 0] = 1e6
+    windows = [[1333, 1334], [1336.5, 1337]] * u.AA
+    window_mask = (wavelengths <= 1334 * u.AA) | (wavelengths >= 1336.5 * u.AA)
+    mask = np.zeros(data.shape, dtype=bool)
+    mask[0, 0, 0] = True
+    mask[1, 2, np.flatnonzero(window_mask)[degree:]] = True
+    cube = make_test_spectrogram_cube(
+        data, wavelengths, uncertainty=StdDevUncertainty(np.full(data.shape, 0.1)), mask=mask
+    )
+    result = subtract_background(cube, windows, degree=degree)
+    expected = np.tile(line, (2, 3, 1))
+    expected[0, 0, 0] = 1e6 - background[0]
+    expected[1, 2] = np.nan
+    np.testing.assert_allclose(result.data, expected, atol=1e-9)
+    np.testing.assert_array_equal(result.mask, cube.mask)
+    np.testing.assert_array_equal(result.uncertainty.array, cube.uncertainty.array)
+    assert result.unit == cube.unit
+
+
+@pytest.mark.parametrize(
+    ("windows", "match"),
+    [([1333, 1334, 1335] * u.AA, r"shape \(2,\) or \(n, 2\)"), ([1340, 1341] * u.AA, "No wavelengths between")],
+)
+def test_subtract_background_rejects_bad_windows(windows, match):
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), np.linspace(1333, 1337, 5) * u.AA)
+    with pytest.raises(ValueError, match=match):
+        subtract_background(cube, windows)
+
+
+def test_subtract_background_rejects_unscaled_data():
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 5), dtype=np.int16), np.linspace(1333, 1337, 5) * u.AA)
+    with pytest.raises(ValueError, match="unscaled"):
+        subtract_background(cube, [1333, 1334] * u.AA)

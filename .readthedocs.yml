@@ -8,11 +8,13 @@ build:
     python: "3.13"
   jobs:
     post_checkout:
-      # Exit code 183 cancels the build, matching the [ci skip] handling of GitHub Actions and CircleCI.
+      # Exit code 183 cancels the build, matching [ci skip] handling
       - if git log -1 --pretty=%B | grep -qE "\[(ci skip|skip ci)\]"; then exit 183; fi
       - git fetch --unshallow || true
     pre_install:
       - git update-index --assume-unchanged docs/conf.py
+    pre_build:
+      - SUNPY_CONFIGDIR=/home/docs/ python -c "from irispy.data.sample import download_all; download_all()"
 
 sphinx:
   builder: html

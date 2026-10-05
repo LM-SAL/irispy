@@ -14,6 +14,46 @@ This means that the light leak is absorbed at a different CCD depth than the FUV
 The light leak effectively acts as an extra "dark current" although it appears to have varying intensity levels for different pointings on the Sun.
 This background has been characterized and is automatically removed by ``iris_prep.pro``, and therefore subtracted in level 1.5 and level 2 data.
 
+A background or continuum left under a line can be removed with `~irispy.utils.spectrograph.subtract_background`.
+The windows are your choice: take them from the spectra of your observation, clear of the lines, their wings and any weaker lines.
+For example, for the C II 1334.53 and 1335.71 Å lines the windows could be 150 to 300 km/s beyond each line.
+
+The plot compares one spectrum from the first raster step before and after a straight-line background is subtracted.
+The shaded regions on either side of the C II lines are the background fit windows.
+Only unmasked, finite samples in these windows determine the straight-line background.
+The fitted background is then evaluated and subtracted at every wavelength, including the C II lines.
+
+.. plot::
+    :include-source:
+
+    import matplotlib.pyplot as plt
+
+    import astropy.units as u
+
+    import irispy.data.sample as sample_data
+    from irispy.io import read_files
+    from irispy.utils.spectrograph import subtract_background
+
+    blue = ([-300, -150] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(1334.53 * u.AA))
+    red = ([150, 300] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(1335.71 * u.AA))
+    windows = u.Quantity([blue, red])
+
+    c_ii = read_files(sample_data.RASTER_TAR, spectral_windows="C II 1336")["C II 1336"][0]
+    spectrum = c_ii[0, 150]
+    corrected = subtract_background(spectrum, windows)
+
+    wavelengths = spectrum.spectral_axis.to_value(u.AA)
+    shown = (wavelengths >= blue[0].value) & (wavelengths <= red[1].value)
+    fig, ax = plt.subplots(figsize=(7, 4), layout="constrained")
+    ax.plot(wavelengths[shown], spectrum.data[shown], label="Original")
+    ax.plot(wavelengths[shown], corrected.data[shown], label="Background subtracted")
+    for low, high in windows.to_value(u.AA):
+        ax.axvspan(low, high, color="gray", alpha=0.2)
+    ax.axhline(0, color="black", linewidth=0.5)
+    ax.set(xlabel="Wavelength [Å]", ylabel=f"Intensity [{spectrum.unit}]")
+    ax.legend()
+    plt.show()
+
 Coalignment between channels and SJI & spectra
 ==============================================
 
