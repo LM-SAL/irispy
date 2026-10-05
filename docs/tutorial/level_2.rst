@@ -307,9 +307,9 @@ The position on the disk is often given as μ, the cosine of the angle between t
 .. code-block:: python
 
     >>> iris_sji.meta.mu  # doctest: +REMOTE_DATA
-    np.float64(0.8493058796193343)
+    np.float64(0.8493051077033886)
     >>> raster["C II 1336"][0].meta.exposure_mu[:4]  # doctest: +REMOTE_DATA
-    array([0.84655404, 0.8469778 , 0.84740006, 0.84782099])
+    array([0.84655326, 0.84697703, 0.84739929, 0.84782021])
 
 Specific coordinates are also provided as part of the cube instead of the metadata.
 These are called extra coordinates, and they are stored in the ``extra_coords`` attribute of the cube.

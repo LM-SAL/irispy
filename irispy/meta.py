@@ -21,8 +21,11 @@ def _mu(center, sun_radius):
     """
     The `BaseMeta.mu` formula at the helioprojective ``center`` (scalar or array).
     """
-    distance_squared = ((center.Tx**2 + center.Ty**2) / sun_radius**2).to_value(u.one)
-    return np.sqrt(np.where(distance_squared <= 1, 1 - distance_squared, np.nan))
+    # sin^2 of the angular distance from disk centre over sin^2 of the solar radius
+    ratio = (
+        (np.sin(center.Tx) ** 2 + (np.cos(center.Tx) * np.sin(center.Ty)) ** 2) / np.sin(sun_radius) ** 2
+    ).to_value(u.one)
+    return np.sqrt(np.where(ratio <= 1, 1 - ratio, np.nan))
 
 
 class BaseMeta(NDMeta):
@@ -268,15 +271,11 @@ class BaseMeta(NDMeta):
         Cosine of the angle between the line of sight and the local vertical at
         `fov_center`.
 
-        :math:`\mu = \sqrt{1 - (\rho / R)^2}`, where :math:`\rho = \sqrt{T_x^2 + T_y^2}` is
-        the angular distance of the field-of-view centre from disk centre and :math:`R` is
-        `sun_angular_radius`. It is 1 at disk centre, 0 at the limb and NaN off the disk.
-
-        This is the small-angle form of the helioprojective geometry in
-        :cite:t:`thompson2006`. The exact form for an observer at 1 AU replaces
-        :math:`\rho / R` by :math:`\sin\rho / \sin R`; the two differ by less than 2e-6
-        anywhere on the disk, while a 1 arcsec pointing offset at :math:`\rho = 0.99 R`
-        changes :math:`\mu` by 0.0075.
+        :math:`\mu = \sqrt{1 - (\sin\rho / \sin R)^2}`, where :math:`\rho` is the angular
+        distance of the field-of-view centre from disk centre,
+        :math:`\cos\rho = \cos T_x \cos T_y` :cite:p:`thompson2006`, and :math:`R` is
+        `sun_angular_radius`. It is 1 at disk centre, 0 at the limb and NaN off the disk,
+        and agrees with `sunpy.coordinates.utils.get_heliocentric_angle`.
 
         `None` when the header lacks the pointing or the solar distance.
         """
