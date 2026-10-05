@@ -120,4 +120,14 @@ plot_before_after(mg_ii_k_2796, calibrated_mg_ii_k_2796, "Mg II k 2796 Spectrum"
 
 plot_before_after(si_iv_1394, calibrated_si_iv_1394, "Si IV 1394 Spectrum")
 
+###############################################################################
+# `~irispy.utils.spectrograph.radiometric_calibration` returns radiance per unit wavelength.
+# `ndcube.NDCube.to` converts the data and uncertainty to other units. Per unit frequency
+# or photon units depend on wavelength, so they also need `astropy.units.spectral_density`
+# with the cube's wavelengths.
+
+wavelength = calibrated_mg_ii_k_2796.axis_world_coords("em.wl")[0]
+per_hz = calibrated_mg_ii_k_2796.to(u.erg / u.cm**2 / u.s / u.sr / u.Hz, equivalencies=u.spectral_density(wavelength))
+print(per_hz.unit)
+
 plt.show()
