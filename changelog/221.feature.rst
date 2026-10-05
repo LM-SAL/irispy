@@ -1,0 +1,1 @@
+Added `irispy.utils.fitting.maps_from_fit` to turn cube fits into parameter and line maps, quality flags and residuals.
