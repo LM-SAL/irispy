@@ -1,0 +1,2 @@
+Added `irispy.utils.fitting.non_thermal_velocity`, which removes the instrumental and thermal widths from a map of line widths, and the constants ``irispy.utils.constants.INSTRUMENTAL_FWHM`` (the spectral resolution of each passband), ``irispy.utils.constants.PASSBAND_LIMITS`` and ``irispy.utils.constants.ATOMIC_MASS`` (standard atomic weights).
+Non-positive widths produce NaN velocities with a ``TOO_NARROW`` quality flag while valid pixels are still processed. Derived spectral maps preserve independent extra and global coordinate containers.

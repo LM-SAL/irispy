@@ -5,7 +5,7 @@ Fit Spectral Models to Spectra
 
 In this example, we are going to fit Si IV 1403 from IRIS with a single Gaussian, starting
 from `~irispy.utils.fitting.si_iv_1403_model`. Then we will use the fitted values to make
-maps of the line's flux, Doppler shift and width.
+maps of the line's flux, Doppler shift, width and non-thermal velocity.
 
 :ref:`irispy-tutorial-fitting` explains the fitting call and what to watch out for.
 For a model-independent alternative, the spectral moments, see
@@ -27,7 +27,7 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
-from irispy.utils.fitting import maps_from_fit, si_iv_1403_model
+from irispy.utils.fitting import maps_from_fit, non_thermal_velocity, si_iv_1403_model
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
@@ -158,14 +158,37 @@ for key, name, label, symmetric in [
     cbar.ax.tick_params(labelsize=8)
     ax_dict[key].set_title(label)
 
-for ax in ax_dict.values():
+
+def label_axes(ax):
     # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
     for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
         coord.set_ticks_position(side)
         coord.set_ticklabel_position(side)
         coord.set_axislabel_position(side)
+
+
+for ax in ax_dict.values():
+    label_axes(ax)
 fig.tight_layout()
+
+###############################################################################
+# The fitted width also holds the instrumental and thermal broadening of the line.
+# `~irispy.utils.fitting.non_thermal_velocity` removes both, taking the thermal width
+# at the temperature we give, here the peak of Si IV in CHIANTI's ionisation
+# equilibrium, log T = 4.9 (Dere et al. 2023). Lines narrower than that have no
+# non-thermal velocity.
+
+non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv_core, ion="Si IV", temperature=10**4.9 * u.K)[
+    "non_thermal_velocity"
+]
+
+fig = plt.figure()
+ax = fig.add_subplot(projection=non_thermal.wcs)
+non_thermal.plot(axes=ax, plot_axes=["x", "y"], vmin=0, vmax=np.nanpercentile(non_thermal.data, 95))
+fig.colorbar(ax.images[0], ax=ax, extend="max", label=f"Non-thermal velocity [{non_thermal.unit.to_string()}]")
+ax.set_title("Si IV non-thermal velocity")
+label_axes(ax)
 
 plt.show()
 

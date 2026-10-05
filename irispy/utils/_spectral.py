@@ -84,6 +84,8 @@ def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False, unce
             continue
         mask_array = np.asarray(next_mask, dtype=bool)
         combined_mask = mask_array.copy() if combined_mask is None else np.logical_or(combined_mask, mask_array)
+    # Coordinates point back to their cube; copy them without copying its data.
+    coordinate_memo = {id(template): None}
     return SpectrogramCube(
         values,
         template.wcs,
@@ -91,7 +93,8 @@ def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False, unce
         unit,
         template.meta,
         mask=combined_mask,
-        extra_coords=template.extra_coords,
+        extra_coords=deepcopy(template.extra_coords, coordinate_memo),
+        global_coords=deepcopy(template.global_coords, coordinate_memo),
     )
 
 

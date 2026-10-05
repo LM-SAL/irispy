@@ -14,10 +14,19 @@ from astropy.modeling.fitting import FitInfoArrayContainer
 from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
-from irispy.utils._spectral import _QualityFlag, check_scaled, make_map_cube, make_spatial_template
+from irispy.utils._spectral import _QualityFlag, check_scaled, make_map_cube, make_spatial_template, standard_deviation
+from irispy.utils.constants import ATOMIC_MASS, INSTRUMENTAL_FWHM, PASSBAND_LIMITS
 from irispy.utils.mg_features import calculate_mg_features
 
-__all__ = ["FitQualityFlag", "maps_from_fit", "mg_ii_model", "profiles_on_background", "si_iv_1403_model"]
+__all__ = [
+    "FitQualityFlag",
+    "NonThermalQualityFlag",
+    "maps_from_fit",
+    "mg_ii_model",
+    "non_thermal_velocity",
+    "profiles_on_background",
+    "si_iv_1403_model",
+]
 
 _PROFILES = {"gaussian": (models.Gaussian1D, "mean", "stddev"), "lorentzian": (models.Lorentz1D, "x_0", "fwhm")}
 _BACKGROUNDS = ("constant", "linear")
@@ -560,3 +569,109 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
     map_axes = tuple(range(len(shape)))
     residual_axes = tuple(axis for axis in range(cube.data.ndim) if axis != cube.wavelength_axis)
     return RasterCollection(cubes, aligned_axes=(map_axes,) * (len(cubes) - 1) + (residual_axes,))
+
+
+class NonThermalQualityFlag(_QualityFlag):
+    """
+    Quality flags for the non-thermal velocities of `non_thermal_velocity`.
+    """
+
+    OK = (0, "ok")
+    NO_DATA = (1, "the width is NaN or masked")
+    TOO_NARROW = (2, "the width is not above the instrumental and thermal widths")
+
+
+def non_thermal_velocity(fwhm, wavelength, *, instrumental_fwhm=None, thermal_fwhm=None, temperature=None, ion=None):
+    r"""
+    The non-thermal velocity of a line from a map of its full width at half maximum.
+
+    The observed width :math:`W` is taken as the instrumental and thermal widths and a
+    non-thermal broadening added in quadrature, as in ``eis_width2velocity``
+    :cite:p:`warren_eis_width2velocity`, with :math:`v_\mathrm{nt}` and the thermal speed
+    :math:`\sqrt{2k_\mathrm{B}T/m}` the speeds at which the profile falls to :math:`1/e`:
+
+    .. math::
+
+        v_\mathrm{nt} = \frac{c}{\lambda\sqrt{4\ln 2}}\sqrt{W^2 - W_\mathrm{inst}^2 - W_\mathrm{th}^2},
+        \qquad
+        W_\mathrm{th} = \frac{\sqrt{4\ln 2}\,\lambda}{c}\sqrt{\frac{2k_\mathrm{B}T}{m}}.
+
+    Parameters
+    ----------
+    fwhm : `~irispy.spectrograph.SpectrogramCube`
+        A map of the Gaussian full width at half maximum, such as ``"fwhm_1"`` from a Gaussian
+        fit processed by `maps_from_fit`.
+    wavelength : `~astropy.units.Quantity`
+        The rest wavelength :math:`\lambda` of the line.
+    instrumental_fwhm : `~astropy.units.Quantity`, optional
+        The instrumental width. Defaults to the spectral resolution of the passband of ``wavelength``
+        in ``irispy.utils.constants.INSTRUMENTAL_FWHM``, 26 mÅ in the FUV and 53 mÅ in the NUV
+        :cite:p:`depontieu2014`.
+    thermal_fwhm : `~astropy.units.Quantity`, optional
+        The thermal width. Defaults to the width above for the mass of ``ion`` and ``temperature``.
+    temperature : `~astropy.units.Quantity`, optional
+        The ion temperature :math:`T`. Needed with ``ion`` unless ``thermal_fwhm`` is given.
+    ion : `str`, optional
+        The ion, such as ``"Si IV"``, for its mass :math:`m`, the standard atomic weight of its element
+        :cite:p:`prohaska2022`. Needed with ``temperature`` unless ``thermal_fwhm`` is given.
+
+    Returns
+    -------
+    `~irispy.spectrograph.RasterCollection`
+        ``"non_thermal_velocity"``, in km/s with the WCS and mask of ``fwhm`` and its uncertainty
+        propagated to first order if ``fwhm`` has one, NaN where the observed width is non-positive
+        or not above the others, and ``"quality"``, a `NonThermalQualityFlag` for each pixel.
+
+    Notes
+    -----
+    Quadrature subtraction assumes Gaussian observed, instrumental and thermal profiles.
+    A Lorentzian full width at half maximum from `maps_from_fit` cannot be used here.
+
+    A temperature of maximum abundance from an ionisation equilibrium, such as CHIANTI's
+    :cite:p:`dere2023`, assumes optically thin lines and does not suit chromospheric lines such as
+    Mg II.
+    """
+    wavelength = u.Quantity(wavelength, u.AA)
+    if instrumental_fwhm is None:
+        band = next((band for band, (low, high) in PASSBAND_LIMITS.items() if low <= wavelength <= high), None)
+        if band is None:
+            msg = f"{wavelength} is outside the IRIS passbands; pass instrumental_fwhm."
+            raise ValueError(msg)
+        instrumental_fwhm = INSTRUMENTAL_FWHM[band]
+    if thermal_fwhm is None:
+        if ion is None or temperature is None:
+            msg = "Pass ion and temperature, for the thermal width, or thermal_fwhm."
+            raise ValueError(msg)
+        element = ion.split()[0]
+        if element not in ATOMIC_MASS:
+            msg = f"No atomic mass for {ion!r}; pass thermal_fwhm."
+            raise ValueError(msg)
+        speed = np.sqrt(2 * constants.k_B * u.Quantity(temperature, u.K) / ATOMIC_MASS[element])
+        thermal_fwhm = np.sqrt(4 * np.log(2)) * wavelength * speed / constants.c
+    width = u.Quantity(fwhm.data, fwhm.unit).to_value(u.AA)
+    radicand = (
+        width**2 - u.Quantity(instrumental_fwhm).to_value(u.AA) ** 2 - u.Quantity(thermal_fwhm).to_value(u.AA) ** 2
+    )
+    scale = (constants.c / (wavelength * np.sqrt(4 * np.log(2)))).to_value(u.km / u.s / u.AA)
+    broadened = (width > 0) & (radicand > 0)
+    with np.errstate(invalid="ignore"):
+        velocity = np.where(broadened, scale * np.sqrt(radicand), np.nan)
+    missing = ~np.isfinite(width) | (False if fwhm.mask is None else np.asarray(fwhm.mask, dtype=bool))
+    quality = np.where(missing, NonThermalQualityFlag.NO_DATA, NonThermalQualityFlag.OK).astype(np.uint8)
+    quality[~missing & ~broadened] = NonThermalQualityFlag.TOO_NARROW
+    uncertainty = None
+    if (sigma := standard_deviation(fwhm)) is not None:
+        width_error = sigma * fwhm.unit.to(u.AA)
+        # dv/dW = scale**2 W / v
+        with np.errstate(invalid="ignore", divide="ignore"):
+            uncertainty = StdDevUncertainty(scale**2 * width * width_error / velocity)
+    return RasterCollection(
+        [
+            (
+                "non_thermal_velocity",
+                make_map_cube(fwhm, velocity, u.km / u.s, mask_invalid=True, uncertainty=uncertainty),
+            ),
+            ("quality", make_map_cube(fwhm, quality, u.dimensionless_unscaled)),
+        ],
+        aligned_axes=tuple(range(fwhm.data.ndim)),
+    )

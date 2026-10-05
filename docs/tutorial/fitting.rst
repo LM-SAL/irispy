@@ -98,6 +98,24 @@ The velocities are against the rest wavelength of the one documented line in the
 ``"quality"`` holds a `~irispy.utils.fitting.FitQualityFlag` for each spectrum: whether its fit failed or did not converge, stopped at a bound, or used a spectrum with masked samples.
 ``"residual"`` is the cube minus the fitted model, to check the fits. It retains the cube's uncertainty and coordinates.
 
+Non-thermal velocities
+======================
+
+A Gaussian fitted width holds the instrumental and thermal broadening of the line as well.
+The quadrature subtraction assumes Gaussian profiles; do not pass the width of a Lorentzian fit.
+
+`~irispy.utils.fitting.non_thermal_velocity` removes both from a map of the full width at half maximum, using the spectral resolution of the passband and, for the thermal width, the ion's mass and a temperature, here the peak of Si IV in CHIANTI's ionisation equilibrium :cite:p:`dere2023`:
+
+.. code-block:: python
+
+    >>> from irispy.utils.fitting import non_thermal_velocity
+    >>> non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv, ion="Si IV", temperature=10**4.9 * u.K)  # doctest: +REMOTE_DATA
+    >>> non_thermal["non_thermal_velocity"].unit  # doctest: +REMOTE_DATA
+    Unit("km / s")
+
+Where the observed width is non-positive or not above the other two, the velocity is NaN and ``non_thermal["quality"]`` is `~irispy.utils.fitting.NonThermalQualityFlag.TOO_NARROW`.
+Valid pixels are still processed, and missing or masked widths retain the `~irispy.utils.fitting.NonThermalQualityFlag.NO_DATA` flag.
+
 Things to know
 ==============
 
