@@ -29,8 +29,11 @@ def _mu(center, sun_radius):
 
 
 class BaseMeta(NDMeta):
+    _iwin = 1
+
     def __init__(self, header, **kwargs) -> None:
         super().__init__(header, **kwargs)
+        self._fits_header = header
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -256,8 +259,10 @@ class BaseMeta(NDMeta):
     @property
     def fov_center(self):
         """
-        Location of the center of the field of view.
+        Location of the center of the field of view, `None` when the header lacks it.
         """
+        if self.get("XCEN") is None:
+            return None
         return SkyCoord(
             Tx=self.get("XCEN"),
             Ty=self.get("YCEN"),
@@ -481,11 +486,6 @@ class SJIMeta(BaseMeta, RemoteSensorMetaABC):
     Metadata class for IRIS slit-jaw images.
     """
 
-    def __init__(self, header, **kwargs) -> None:
-        super().__init__(header, **kwargs)
-        self._iwin = 1
-        self._fits_header = header
-
     def __str__(self) -> str:
         return textwrap.dedent(
             f"""
@@ -537,7 +537,6 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
                 msg,
             )
         self._iwin = np.arange(len(spectral_windows))[window_mask][0] + 1
-        self._fits_header = header
 
     @cached_property
     def observer(self):
@@ -722,44 +721,32 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
 class MosaicMeta(BaseMeta, SlitSpectrographMetaABC):
     """
     Metadata class for IRIS full-disk mosaics.
-
-    The mosaic headers keep only a few Level 2 keywords: ``DATE_OBS`` and
-    ``DATE_END``, ``OBSID``, ``EXPTIME``, ``SUMSPAT``, ``SUMSPTRN``, ``SUMSPTRF``
-    and ``LAMREF``. `irispy.io.read_mosaic` adds the time of each mosaic position
-    as ``meta["time"]``.
     """
-
-    def __init__(self, header, **kwargs) -> None:
-        super().__init__(header, **kwargs)
-        self._iwin = 1
-        self._fits_header = header
 
     def __str__(self) -> str:
         return textwrap.dedent(
             f"""
                 MosaicMeta
                 ----------
-                Detector:             {self.detector}
-                Reference wavelength: {self.reference_wavelength}
-                Dimensions:           {self.data_shape}
-                Date:                 {self.date_start} -- {self.date_end}
-                OBS ID:               {self.observing_mode_id}
+                Detector:        {self.detector}
+                Rest wavelength: {self.rest_wavelength}
+                Dimensions:      {self.data_shape}
+                Date:            {self.date_start} -- {self.date_end}
+                OBS ID:          {self.observing_mode_id}
                 """,
         )
 
     @property
-    def reference_wavelength(self):
+    def rest_wavelength(self):
         """
-        Reference wavelength of the mosaic window (``LAMREF``).
+        Rest wavelength of the mosaic window (``LAMREF``).
         """
-        return self._quantity("LAMREF", u.AA)
+        wavelength = self._quantity("LAMREF", u.AA)
+        return None if wavelength is None else wavelength.to(u.nm)
 
     @property
     def detector(self):
         """
-        ``'FUV'`` or ``'NUV'``, from the reference wavelength.
-
-        The FUV passbands are 1332-1358 Å and 1389-1407 Å, the NUV passband 2783-2834 Å
-        :cite:p:`depontieu2014`.
+        ``'FUV'`` or ``'NUV'``, from the rest wavelength.
         """
-        return "NUV" if self.reference_wavelength > 2000 * u.AA else "FUV"
+        return "NUV" if self.rest_wavelength > 200 * u.nm else "FUV"

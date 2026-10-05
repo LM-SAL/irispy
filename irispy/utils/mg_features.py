@@ -78,7 +78,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
     if not isinstance(cube, SpectrogramCube):
         msg = f"cube must be a SpectrogramCube, not a {type(cube).__name__}; index it, e.g. raster['Mg II k 2796'][0]"
         raise TypeError(msg)
-    if cube.data.ndim != 3:
+    if cube.data.ndim != 3 or cube.wavelength_axis != 2:
         msg = "cube must have axes (step, slit, wavelength); slice it with ranges, e.g. cube[:, 300:301]"
         raise ValueError(msg)
     check_scaled(cube)

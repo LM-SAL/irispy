@@ -1,5 +1,4 @@
 import textwrap
-import warnings
 
 import numpy as np
 
@@ -60,19 +59,6 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
 
     def __init__(self, data, wcs, uncertainty=None, unit=None, meta=None, *, mask=None, copy=False, **kwargs) -> None:
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
-
-    def __getitem__(self, item):
-        result = super().__getitem__(item)
-        return type(self)(
-            result.data,
-            result.wcs,
-            result.uncertainty,
-            result.unit,
-            result.meta,
-            mask=result.mask,
-            extra_coords=result.extra_coords,
-            global_coords=result.global_coords,
-        )
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -152,13 +138,32 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
             raise ValueError(msg) from None
 
 
+def _wavelength_indices(wavelengths, wavelength_range):
+    """
+    Indices of the ``wavelengths`` between two wavelengths, inclusive.
+
+    The bounds are widened by 1e-6 Å, so that a wavelength typed from the grid is kept
+    despite the rounding of the WCS unit conversion.
+    """
+    wavelength_range = u.Quantity(wavelength_range, u.AA)
+    if wavelength_range.shape != (2,):
+        msg = f"Expected two wavelengths, got {wavelength_range}"
+        raise ValueError(msg)
+    low, high = wavelength_range + [-1e-6, 1e-6] * u.AA
+    indices = np.flatnonzero((wavelengths >= low) & (wavelengths <= high))
+    if not indices.size:
+        msg = f"No wavelengths between {wavelength_range[0]} and {wavelength_range[1]}"
+        raise ValueError(msg)
+    return indices
+
+
 class MosaicCube(SpectrogramCube):
     """
     An IRIS full-disk mosaic of one spectral window, read by `irispy.io.read_mosaic`.
 
-    The array axes are (wavelength, solar Y, solar X), the order of the mosaic files.
-    The mosaic is put together from rasters taken over about 18 hours
-    :cite:p:`irismosaics`, so ``meta["time"]`` holds the time of each position.
+    The array axes are (wavelength, solar Y, solar X), the reverse of a Level 2 raster,
+    so the raster analysis helpers reject it; use `to_map` and
+    `~irispy.utils.moments.calculate_moments`.
     """
 
     def __str__(self) -> str:
@@ -166,28 +171,26 @@ class MosaicCube(SpectrogramCube):
             f"""
             MosaicCube
             ----------
-            Obs ID:               {self.meta.get("OBSID")}
-            Reference wavelength: {self.meta.get("LAMREF")} Angstrom
-            Obs Date:             {self.meta.get("DATE_OBS")} -- {self.meta.get("DATE_END")}
-            Data shape:           {self.shape}
-            Axis Types:           {self.array_axis_physical_types}
+            Obs ID:          {self.meta.get("OBSID")}
+            Rest wavelength: {self.meta.get("LAMREF")} Angstrom
+            Obs Date:        {self.meta.get("DATE_OBS")} -- {self.meta.get("DATE_END")}
+            Data shape:      {self.shape}
+            Axis Types:      {self.array_axis_physical_types}
             """,
         )
 
-    def to_maps(self, wavelength):
+    def to_map(self, wavelength):
         """
-        Return a SunPy Map of the mosaic at one wavelength or averaged over a range.
+        Return a `sunpy.map.Map` at one wavelength or averaged over a range.
 
-        The map has the observer and date (``DATE_OBS``) of the cube's WCS, the
-        ``EXPTIME`` of the mosaic and the colour map of the nearest slit-jaw passband
-        (1330, 1400, 2796 or 2832 Å, :cite:t:`depontieu2014`).
-        Masked values are left out of the average; positions with no unmasked value are NaN.
+        The colour map is that of the nearest slit-jaw passband. Masked values are left
+        out of the average.
 
         Parameters
         ----------
         wavelength : `astropy.units.Quantity`
-            One wavelength, for the map at the nearest mosaic wavelength, or two,
-            for the mean over the mosaic wavelengths between them (inclusive).
+            One wavelength, for the nearest mosaic wavelength, or two, for the mean
+            between them (inclusive).
 
         Returns
         -------
@@ -201,25 +204,19 @@ class MosaicCube(SpectrogramCube):
         if wavelength.isscalar:
             indices = [np.argmin(np.abs(wavelengths - wavelength))]
         else:
-            indices = np.flatnonzero((wavelengths >= wavelength[0]) & (wavelengths <= wavelength[1]))
-            if not indices.size:
-                msg = f"The mosaic has no wavelengths between {wavelength[0]} and {wavelength[1]}"
-                raise ValueError(msg)
+            indices = _wavelength_indices(wavelengths, wavelength)
         data = np.take(self.data, indices, axis=axis)
         if self.mask is not None:
             data = np.where(np.take(self.mask, indices, axis=axis), np.nan, data)
-        with warnings.catch_warnings():
-            # Positions no raster covered have no unmasked value to average.
-            warnings.simplefilter("ignore", RuntimeWarning)
-            data = np.nanmean(data, axis=axis)
+        # A masked mean leaves positions with no unmasked value NaN, without a warning.
+        data = np.ma.masked_invalid(data).mean(axis=axis).filled(np.nan)
         header = unwrap_wcs_to_fitswcs(self.wcs)[0].celestial.to_header()
         mean_wavelength = wavelengths[indices].mean()
         header.update(
             {
                 "TELESCOP": "IRIS",
                 "OBSRVTRY": "IRIS",
-                # The mosaics are built from spectrograph rasters, Level 2 INSTRUME "SPEC".
-                "INSTRUME": "SPEC",
+                "INSTRUME": "SPEC",  # the Level 2 spectrograph value
                 "EXPTIME": self.meta.get("EXPTIME"),
                 "DATE-END": self.meta.get("DATE_END"),
                 "WAVELNTH": mean_wavelength.to_value(u.AA),
