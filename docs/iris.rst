@@ -20,11 +20,11 @@ IRIS obtains UV spectra and images in two main passbands around 1400 Å and 2800
    Schematic view of IRIS showing the 20 cm telescope, with and without solar panels (for clarity).
    Light from the Cassegrain telescope (green) is fed into the spectrograph box (light blue).
 
-The IRIS telescope feeds light from three passbands into the spectrograph box:
+The IRIS telescope feeds light from three passbands into the spectrograph box (Table 2 of :cite:t:`depontieu2014`):
 
-* Far Ultraviolet (FUV1): 1331.56 -- 1358.40 Å
-* Far Ultraviolet (FUV2): 1390.00 -- 1406.79 Å
-* Near Ultraviolet (NUV): 2782.56 -- 2833.89 Å
+* Far Ultraviolet (FUV1): 1331.7 -- 1358.4 Å
+* Far Ultraviolet (FUV2): 1389.0 -- 1407.0 Å
+* Near Ultraviolet (NUV): 2782.7 -- 2835.1 Å
 
 In the spectrograph, the light can travel several paths:
 
@@ -51,7 +51,7 @@ The IRIS spectral lines cover temperatures from 4,500 K to 10 MK, with the image
    =====  ==============  ===================  =============================  ===================
    FUV 1  1331.7--1358.4  12.98                1.6                            3.7--7.0
    FUV 2  1389.0--1407.0  12.72                2.2                            3.7--5.2
-   NUV    2782.7--2851.1  25.46                0.2                            3.7--4.2
+   NUV    2782.7--2835.1  25.46                0.2                            3.7--4.2
    =====  ==============  ===================  =============================  ===================
 
 

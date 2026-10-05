@@ -20,6 +20,8 @@ The `irispy.utils` module provides functions useful for ``irispy`` users or deve
 
 .. automodapi:: irispy.utils.fitting
 
+.. automodapi:: irispy.utils.lines
+
 .. automodapi:: irispy.utils.mg_features
 
 .. automodapi:: irispy.utils.moments

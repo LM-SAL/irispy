@@ -49,6 +49,7 @@ These classes also provide methods for applying a number of calibration routines
           :maxdepth: 1
 
           known_issues
+          line_database
           contributing
           reference/index
           changelog

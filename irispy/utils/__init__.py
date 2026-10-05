@@ -5,6 +5,7 @@ from . import density as density
 from . import dust as dust
 from . import fiducials as fiducials
 from . import fitting as fitting
+from . import lines as lines
 from . import mg_features as mg_features
 from . import moments as moments
 from . import red_blue as red_blue

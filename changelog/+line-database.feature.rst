@@ -1,0 +1,2 @@
+Add `irispy.utils.lines.get_lines`, an offline database of the atomic lines in the three IRIS spectrograph passbands: every NIST line, with solar strengths predicted from CHIANTI for the quiet Sun, active regions and flares, the lines documented in the IRIS literature with their references, and formation categories.
+The table ships as ``irispy/data/iris_lines.ecsv`` and is regenerated with ``tools/make_line_database.py``.
