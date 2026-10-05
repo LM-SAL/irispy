@@ -21,7 +21,7 @@ def _mu(center, sun_radius):
     """
     The `BaseMeta.mu` formula at the helioprojective ``center`` (scalar or array).
     """
-    # sin^2 of the angular distance from disk centre over sin^2 of the solar radius
+    # sin^2(rho) / sin^2(R), with sin^2(rho) = 1 - cos^2(Tx) cos^2(Ty) = sin^2(Tx) + cos^2(Tx) sin^2(Ty)
     ratio = (
         (np.sin(center.Tx) ** 2 + (np.cos(center.Tx) * np.sin(center.Ty)) ** 2) / np.sin(sun_radius) ** 2
     ).to_value(u.one)
