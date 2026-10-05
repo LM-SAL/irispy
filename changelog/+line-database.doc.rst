@@ -1,1 +1,1 @@
-Add a page on the IRIS spectral line database, with the references behind its passbands, documented lines and formation categories, and a gallery example that identifies the lines in an IRIS raster.
+Add a page on the IRIS spectral line database with the sources behind its passbands, curated lines and catalog categories, explicit limits on reference-model intensity predictions, and a gallery example that finds candidates in an IRIS raster using published solar identifications.

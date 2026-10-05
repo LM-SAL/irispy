@@ -15,7 +15,8 @@ __all__ = ["get_lines"]
 
 _REGIONS = ("quiet_sun", "active_region", "flare")
 _ABUNDANCES = ("coronal", "photospheric")
-_CATEGORIES = ("flare", "coronal", "transition_region", "chromospheric", "photospheric")
+_CATEGORIES = ("flare", "coronal", "transition_region", "chromospheric", "cool_metal")
+_PASSBANDS = ("FUV1", "FUV2", "NUV")
 
 
 @cache
@@ -35,19 +36,21 @@ def get_lines(
         Two endpoints in any spectral unit, in either order; both are included.
         Wavelengths are in vacuum.
     region : `str`, optional
-        Rank lines by their predicted strength in ``'quiet_sun'``,
-        ``'active_region'``, or ``'flare'``, strongest first and unranked lines
-        last. Requires ``abundance``. By default, lines are sorted by wavelength.
+        Rank lines by their reference-model strength in ``'quiet_sun'``,
+        ``'active_region'``, or ``'flare'``. Results are grouped as FUV1, FUV2,
+        then NUV, with strongest first and unranked lines last within each
+        passband. Requires ``abundance``. By default, lines are sorted by wavelength.
     abundance : `str`, optional
         ``'coronal'`` or ``'photospheric'`` abundances for ranking. Requires
         ``region``.
     main_only : `bool`, optional
-        Return only the lines documented in the IRIS literature; their
+        Return a curated selection of lines documented in the IRIS literature; their
         ``reference`` column names the citing paper in the documentation's
         bibliography.
     categories : `str` or iterable of `str`, optional
         Keep only ``'flare'``, ``'coronal'``, ``'transition_region'``,
-        ``'chromospheric'``, or ``'photospheric'`` lines.
+        ``'chromospheric'``, or ``'cool_metal'`` lines. These are catalog labels,
+        not measurements of the formation height in an observation.
     include_unranked : `bool`, optional
         If `False`, drop lines with no predicted strength in the ranking model,
         or in every model when ``region`` is not given.
@@ -57,14 +60,15 @@ def get_lines(
     `~astropy.table.QTable`
         A copy of the selected lines. The predicted strengths
         (``intensity_<region>_<abundance>``) are normalized to the strongest
-        line in each passband, so compare them only within one passband and
+        predicted line in each passband, so compare them only within one passband and
         model.
 
     Notes
     -----
-    Predicted strengths are optically thin estimates for ranking lines, not
-    a synthetic spectrum; see the line database documentation for their
-    assumptions.
+    Strengths are normalized, integrated optically thin intensities for fixed
+    reference atmospheres. Neutral and singly ionized lines have no prediction.
+    Density, opacity, and ionization effects can invalidate the remaining
+    predictions; see the line database documentation before comparing observations.
     """
     if region is not None and region not in _REGIONS:
         msg = f"region must be one of {_REGIONS}."
@@ -108,6 +112,7 @@ def get_lines(
     result = table[selected].copy()
     if intensity_column:
         intensity = result[intensity_column]
-        order = np.lexsort((result["wavelength"].value, np.where(np.isfinite(intensity), -intensity, np.inf)))
+        passband = np.array([_PASSBANDS.index(band) for band in result["passband"]])
+        order = np.lexsort((result["wavelength"].value, np.where(np.isfinite(intensity), -intensity, np.inf), passband))
         return result[order]
     return result

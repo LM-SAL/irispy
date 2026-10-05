@@ -3,12 +3,13 @@
 Identify lines in IRIS spectra
 ==============================
 
-In this example, we will use the irispy line database to identify lines in an IRIS observation.
+In this example, we use the irispy line database to find candidate transitions near features in an IRIS observation.
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pooch
+from matplotlib.lines import Line2D
 
 import astropy.units as u
 
@@ -30,8 +31,10 @@ print(raster.keys())
 
 ###############################################################################
 # `~irispy.utils.lines.get_lines` returns the lines within a wavelength range.
-# Given a ``region`` and an ``abundance``, it sorts them by their predicted strength.
-# These are the five strongest lines predicted for a flare in the C II window.
+# Given a ``region`` and an ``abundance``, it sorts them by reference-model strength
+# within each passband. These are the five strongest eligible predictions in the
+# C II window for the flare reference atmosphere. C II itself is retained without a
+# prediction because its optically thick formation is outside this model's scope.
 
 c_ii = raster["C II 1336"][0]
 (wavelength,) = c_ii.axis_world_coords("wl")
@@ -40,46 +43,68 @@ lines["intensity_flare_coronal"].info.format = ".3f"
 print(lines["ion", "wavelength", "wavelength_source", "intensity_flare_coronal"][:5])
 
 ###############################################################################
-# To compare the predictions with the data, we take the 99th percentile of each
+# To display bright features, we take the 99th percentile of each
 # window over the cutout at every wavelength. This picks out the bright ribbon
 # and loops and ignores cosmic-ray spikes, which hit far fewer than 1% of the pixels.
+# Different wavelengths can select different spatial pixels, so this composite
+# spectrum cannot validate the intensity ratios of one reference atmosphere.
 #
 # IRIS Level 2 data and the database both use vacuum wavelengths, so we mark the lines
-# predicted above 1 % of each passband's strongest line, and the documented IRIS lines,
-# in each window directly.
+# predicted above 1 % of each passband's strongest prediction, and the documented IRIS lines,
+# in each window directly. Blue marks the curated lines and grey marks other
+# reference-model candidates. Normalizing within the eligible subset can give a
+# large score to a line much fainter than an unranked Mg II line; it does not establish detectability.
 
 fig, axes = plt.subplots(3, 1, figsize=(10, 11), layout="constrained")
 for ax, window in zip(axes, raster.keys(), strict=True):
     cube = raster[window][0]
     (wavelength,) = cube.axis_world_coords("wl")
-    spectrum = np.nanpercentile(np.where(cube.mask, np.nan, cube.data), 99, axis=(0, 1))
+    data = np.where(cube.mask | ~np.isfinite(cube.data), np.nan, cube.data)
+    valid = np.isfinite(data).any(axis=(0, 1))
+    spectrum = np.full(len(wavelength), np.nan)
+    spectrum[valid] = np.nanpercentile(data[..., valid], 99, axis=(0, 1))
     ax.plot(wavelength.to_value(u.AA), spectrum, color="black", linewidth=0.8)
     lines = get_lines(wavelength[[0, -1]])
     lines = lines[(lines["intensity_flare_coronal"] >= 0.01) | lines["main"]]
     # Labels alternate between the top and bottom edges so that neighbouring lines do not overlap.
     for i, line in enumerate(lines):
         position = line["wavelength"].to_value(u.AA)
-        ax.axvline(position, color="tab:blue", linestyle="--", linewidth=0.8)
+        color = "tab:blue" if line["main"] else "0.5"
+        ax.axvline(position, color=color, linestyle="--", linewidth=0.8)
         y, va = (0.98, "top") if i % 2 else (0.02, "bottom")
         ax.text(
-            position, y, line["ion"], transform=ax.get_xaxis_transform(), rotation=90, ha="right", va=va, fontsize=8
+            position,
+            y,
+            line["ion"],
+            transform=ax.get_xaxis_transform(),
+            rotation=90,
+            ha="right",
+            va=va,
+            fontsize=8,
+            color=color,
         )
     ax.set(title=window, yscale="log", ylabel=f"Intensity [{cube.unit}]", ymargin=0.25)
 axes[-1].set_xlabel("Vacuum wavelength [Å]")
+fig.legend(
+    handles=[
+        Line2D([], [], color="tab:blue", linestyle="--", label="Curated IRIS line"),
+        Line2D([], [], color="0.5", linestyle="--", label="Reference-model candidate"),
+    ],
+    loc="outside upper center",
+    ncols=2,
+)
 
 plt.show()
 
 ###############################################################################
-# The predictions identify the bright emission lines, including the broad Fe XXI
-# 1354.08 Å line from the hot loops. The flare model predicts O I to be weak, because
-# its temperature distribution starts above where O I forms, so O I, Cl I and C I are
-# labelled here only as documented lines: they have no predictions because CHIANTI
-# has no Cl I data and its C I model has no transitions in this range.
+# The predicted candidates include the broad Fe XXI 1354.08 Å line from the hot loops.
+# C II, O I, Cl I, C I, and Mg II are labelled as documented lines without strength
+# predictions. Their chromospheric formation requires physics outside the model:
+# radiative transfer for C II and Mg II, and recombination and charge exchange for O I.
 #
-# The predictions also fail in the other direction. The only NUV prediction away from
-# Mg II is Al II 2817 Å, at 6 % of Mg II k in the flare model, and nothing is there:
-# an optically thin estimate for a singly ionized ion, set by the coolest DEM bin,
-# cannot be compared with the optically thick Mg II lines.
+# The remaining predictions are conditional too. They use a fixed DEM and pressure;
+# a region label does not infer the conditions of this raster. Si IV can become
+# optically thick in flares, so its predicted doublet ratio is not guaranteed here.
 #
 # Two bright lines near 1357 Å are still unlabelled. Lines without a prediction are in
 # the database too, so a narrow range around each peak lists the candidates. The
@@ -91,15 +116,17 @@ for peak in [1357.14, 1357.66]:
     print(f"{peak} Å:", ", ".join(f"{line['ion']} {line['wavelength'].value:.3f}" for line in candidates))
 
 ###############################################################################
-# Apart from C I, the candidates are laboratory lines of heavy elements such as
-# tungsten and iridium, or iron-group lines with laboratory intensities a thousand
-# times weaker than those of C I. So these peaks are C I 1357.13 and 1357.66 Å, two
-# more lines of the C I multiplet that the documented 1354.28 and 1355.84 Å lines belong to.
+# `Peter Young's IRIS line list <https://pyoung.org/iris/iris_line_list.pdf>`__, Table 1,
+# identifies solar C I lines at 1357.134 and 1357.659 Å, consistent with these features.
+# The four C I lines near 1354, 1355, and 1357 Å share a lower level but have different
+# upper configurations or terms; they are not all one multiplet.
+# Laboratory intensities cannot distinguish candidates from different elements or
+# ionization stages because they have no common scale and depend on the excitation source.
 #
 # Most of the NUV features away from Mg II are photospheric absorption lines. The
-# database lists their candidates in the ``photospheric`` category, but without
-# predicted strengths, and there are many in every Angstrom; identifying them needs
-# a solar atlas.
+# database lists cool-metal candidates without assigning them a photospheric formation
+# height. The same ions can produce chromospheric emission in flares. Identifying the
+# transitions and whether they appear in absorption requires a solar atlas and the data.
 
-photospheric = get_lines([2812, 2818] * u.AA, categories="photospheric")
-print(f"{len(photospheric)} photospheric candidates between 2812 and 2818 Å")
+cool_metals = get_lines([2812, 2818] * u.AA, categories="cool_metal")
+print(f"{len(cool_metals)} cool-metal candidates between 2812 and 2818 Å")

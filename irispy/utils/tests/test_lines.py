@@ -1,4 +1,7 @@
+import io
+import csv
 import importlib.util
+from types import SimpleNamespace
 from pathlib import Path
 
 import numpy as np
@@ -55,14 +58,14 @@ def test_documented_lines():
     np.testing.assert_array_equal(full["main"], full["reference"].filled("") != "")
 
 
-def test_mg_ii_prediction_goes_to_e1_channel():
+def test_mg_ii_channels_are_unranked():
     # NIST lists Mg II 2798.75 as a strong E1 and a weak M2 channel between the same levels.
     mg_ii = get_lines([2798.75, 2798.76] * u.angstrom)
     mg_ii = mg_ii[mg_ii["ion"] == "Mg II"]
     e1, m2 = mg_ii[np.argsort(mg_ii["nist_transition_probability"].value)[::-1]]
     assert e1["main"]
     assert m2["transition_type"] == "M2"
-    assert np.isfinite(e1["intensity_quiet_sun_coronal"])
+    assert np.isnan(e1["intensity_quiet_sun_coronal"])
     assert np.isnan(m2["intensity_quiet_sun_coronal"])
 
 
@@ -81,12 +84,11 @@ def test_normalized_per_passband():
             assert np.nanmax(table[table["passband"] == passband][column]) == pytest.approx(1)
 
 
-def test_iron_peak_metals_unranked():
+def test_neutral_and_singly_ionized_lines_unranked():
     table = get_lines()
-    for ion in ("Fe I", "Fe II", "Cr II"):
-        reference_only = table[table["ion"] == ion]
-        assert len(reference_only) > 0
-        assert np.all(np.isnan([reference_only[column] for column in INTENSITY_COLUMNS]))
+    excluded = table[table["ion_stage"] <= 2]
+    assert {"Mg II", "C II", "O I", "Fe II", "Al II"} <= set(excluded["ion"])
+    assert np.all(np.isnan([excluded[column] for column in INTENSITY_COLUMNS]))
 
 
 def test_categories():
@@ -97,12 +99,15 @@ def test_categories():
     assert set(categories[table["ion"] == "Si IV"]) == {"transition_region"}
     assert set(categories[table["ion"] == "Fe XII"]) == {"coronal"}
     assert set(categories[table["ion"] == "Fe XXI"]) == {"flare"}
-    # Photospheric lines are unranked light metals such as Fe I, not laboratory lines of heavy elements.
-    photospheric = table[categories == "photospheric"]
-    assert {"Fe I", "Fe II"} <= set(photospheric["ion"])
-    assert not set(photospheric["element"]) & {"W", "Pt", "Th", "Pu"}
-    assert np.all(np.isnan([photospheric[column] for column in INTENSITY_COLUMNS]))
-    assert set(get_lines(categories="photospheric")["category"]) == {"photospheric"}
+    # These metals may appear in photospheric absorption or chromospheric emission.
+    cool_metals = table[categories == "cool_metal"]
+    assert {"Si II", "Fe I", "Fe II"} <= set(cool_metals["ion"])
+    assert not set(cool_metals["element"]) & {"W", "Pt", "Th", "Pu"}
+    assert np.all(np.isnan([cool_metals[column] for column in INTENSITY_COLUMNS]))
+    assert set(get_lines(categories="cool_metal")["category"]) == {"cool_metal"}
+    chromospheric = get_lines(categories="chromospheric", main_only=True)
+    assert {"Mg II", "C II", "C I", "O I", "Cl I"} <= set(chromospheric["ion"])
+    assert np.isnan([chromospheric[column] for column in INTENSITY_COLUMNS]).all()
     assert set(get_lines(categories=["flare", "transition_region"], main_only=True)["category"]) == {
         "flare",
         "transition_region",
@@ -129,14 +134,19 @@ def test_range_includes_endpoints():
 @pytest.mark.parametrize("region", REGIONS)
 @pytest.mark.parametrize("abundance", ABUNDANCES)
 def test_ranking(region, abundance):
-    intensity = get_lines(region=region, abundance=abundance)[f"intensity_{region}_{abundance}"]
-    ranked = np.isfinite(intensity)
-    # Strongest first, then the unranked lines.
-    assert np.all(np.diff(intensity[ranked]) <= 0)
-    assert np.all(ranked[: ranked.sum()])
-    assert not np.any(ranked[ranked.sum() :])
+    table = get_lines(region=region, abundance=abundance)
+    intensity = table[f"intensity_{region}_{abundance}"]
+    band_order = np.array([("FUV1", "FUV2", "NUV").index(band) for band in table["passband"]])
+    assert np.all(np.diff(band_order) >= 0)
+    # Strengths are comparable only within one passband, including the placement of unranked lines.
+    for band in ("FUV1", "FUV2", "NUV"):
+        values = intensity[table["passband"] == band]
+        ranked = np.isfinite(values)
+        assert np.all(np.diff(values[ranked]) <= 0)
+        assert np.all(ranked[: ranked.sum()])
+        assert not np.any(ranked[ranked.sum() :])
     ranked_only = get_lines(region=region, abundance=abundance, include_unranked=False)
-    assert len(ranked_only) == ranked.sum()
+    assert len(ranked_only) == np.isfinite(intensity).sum()
 
 
 def test_include_unranked_without_region():
@@ -160,6 +170,20 @@ def test_results_are_independent():
     fresh = get_lines()
     assert fresh["wavelength"][0] != 1 * u.angstrom
     assert fresh.meta["passband_limits_angstrom"]["FUV1"][0] != 0
+
+
+def test_wavelength_provenance():
+    table = get_lines()
+    assert table["wavelength_is_theoretical"].dtype.kind == "b"
+    assert table["wavelength_is_theoretical"].unit is None
+    (c_i,) = table[(table["ion"] == "C I") & (abs(table["wavelength"].value - 1354.28888) < 1e-5)]
+    assert c_i["wavelength_source"] == "ritz"
+    assert c_i["wavelength_uncertainty"] == c_i["ritz_wavelength_uncertainty"]
+    assert c_i["wavelength_uncertainty"] < c_i["observed_wavelength_uncertainty"]
+    chianti = table[table["wavelength_source"] == "chianti"]
+    assert chianti["wavelength_is_theoretical"].any()
+    assert (~chianti["wavelength_is_theoretical"]).any()
+    assert not table["wavelength_is_theoretical"][table["wavelength_source"] != "chianti"].any()
 
 
 @pytest.mark.parametrize(
@@ -293,8 +317,8 @@ def test_merge_lines(monkeypatch):
     assert np.isfinite(merged["Mg II", 2798.754, ""]["intensity_quiet_sun_coronal"])
     assert merged["Mg II", 2798.754, ""]["reference"] == "pereira2015"
     assert np.isnan(merged["Mg II", 2798.754, "M2"]["intensity_quiet_sun_coronal"])
-    # Weak CHIANTI-only lines are dropped unless documented; undocumented catalog gaps are filled from the reference.
-    assert ("O IV", 1343.5, "") not in merged
+    # Catalog inclusion is independent of strength; undocumented catalog gaps are filled from the reference.
+    assert ("O IV", 1343.5, "") in merged
     assert merged["Mn XVIII", 1355.014, ""]["wavelength_source"] == "chianti"
     fe_ii = merged["Fe II", 1392.817, ""]
     assert fe_ii["wavelength_source"] == "literature"
@@ -302,14 +326,117 @@ def test_merge_lines(monkeypatch):
     assert np.isnan([fe_ii[column] for column in tool.INTENSITY_COLUMNS]).all()
     categories = {key[0]: row["category"] for key, row in merged.items()}
     assert categories == {
-        "C II": "transition_region",
-        "Ca II": "chromospheric",
+        "C II": "chromospheric",
+        "Ca II": "cool_metal",
         "Fe XII": "coronal",
         "Fe XXI": "flare",
         "Si IV": "transition_region",
         "O IV": "transition_region",
         "Mg II": "chromospheric",
         "Mn XVIII": "coronal",
-        "Fe II": "photospheric",
-        "Fe I": "photospheric",
+        "Fe II": "cool_metal",
+        "Fe I": "cool_metal",
     }
+
+
+@pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
+def test_nist_wavelength_selection(monkeypatch):
+    pytest.importorskip("plasmapy")
+    spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    fields = [
+        "element",
+        "sp_num",
+        "obs_wl_vac(A)",
+        "ritz_wl_vac(A)",
+        "unc_obs_wl",
+        "unc_ritz_wl",
+        "Type",
+        "conf_i",
+        "term_i",
+        "J_i",
+        "conf_k",
+        "term_k",
+        "J_k",
+        "Ei(cm-1)",
+        "Ek(cm-1)",
+        "intens",
+        "Aki(s^-1)",
+        "line_ref",
+    ]
+    content = io.StringIO()
+    writer = csv.DictWriter(content, fieldnames=fields)
+    writer.writeheader()
+    for element, stage, observed, ritz, obs_unc, ritz_unc in [
+        ("C", 1, "1354.284", "1354.28888", "0.003", "0.00006"),
+        ("Si", 4, "1393.76", "1393.7546", "0.001", "0.003"),
+        ("Si", 4, "", "1402.7697", "", ""),
+        ("Mg", 2, "2796.352", "2796.352", "", ""),
+    ]:
+        writer.writerow(dict(zip(fields[:6], (element, stage, observed, ritz, obs_unc, ritz_unc), strict=True)))
+    monkeypatch.setattr(tool, "urlopen", lambda *_args, **_kwargs: io.BytesIO(content.getvalue().encode()))
+    rows, _ = tool.download_nist()
+    assert [(row["wavelength"], row["wavelength_source"]) for row in rows] == [
+        (1354.28888, "ritz"),
+        (1393.76, "observed"),
+        (1402.7697, "ritz"),
+        (2796.352, "observed"),
+    ]
+    assert rows[0]["wavelength_uncertainty"] == 0.00006
+    assert rows[0]["observed_wavelength"] == 1354.284
+    assert not any(row["wavelength_is_theoretical"] for row in rows)
+
+
+@pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
+@pytest.mark.parametrize("ion_stage", [2, 3])
+def test_unpredicted_ion_retains_catalog_transition(monkeypatch, ion_stage):
+    pytest.importorskip("plasmapy")
+    fiasco = pytest.importorskip("fiasco")
+    spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    ion_name = f"Mg {tool.roman.to_roman(ion_stage)}"
+    raw_name = f"mg_{ion_stage}"
+    ion = SimpleNamespace(
+        ion_name_roman=ion_name,
+        atomic_symbol="Mg",
+        atomic_number=12,
+        ionization_stage=ion_stage,
+        n_levels=2,
+        ionization_fraction=np.ones(1),
+        formation_temperature=1e4 * u.K,
+        transitions=SimpleNamespace(
+            is_bound_bound=np.array([True]),
+            is_observed=np.array([False]),
+            wavelength=np.array([2796.35]) * u.AA,
+            lower_level=np.array([1]),
+            upper_level=np.array([3]),
+        ),
+        levels=SimpleNamespace(
+            level=np.array([1, 3]),
+            energy=np.array([0, 35761]) / u.cm,
+            total_angular_momentum=np.array([0.5, 1.5]) * u.dimensionless_unscaled,
+            label=np.array(["ground", "upper"]),
+        ),
+    )
+    # Excluded ions must not solve populations; missing excitation data must also retain the catalog row.
+    if ion_stage == 3:
+
+        def unavailable_contribution(*_args, **_kwargs):
+            msg = "No excitation data."
+            raise fiasco.util.exceptions.MissingDatasetException(msg)
+
+        ion.contribution_function = unavailable_contribution
+    monkeypatch.setattr(fiasco, "list_ions", lambda **_kwargs: [raw_name])
+    monkeypatch.setattr(fiasco, "Ion", lambda *_args, **_kwargs: ion)
+    model = {"temperature_bin_center": np.array([1e4]) * u.K}
+    monkeypatch.setattr(fiasco.io, "Parser", lambda *_args: SimpleNamespace(parse=lambda: model))
+    rows, formation, unranked = tool.predict_lines()
+    (row,) = rows
+    assert row["ion"] == ion_name
+    assert row["upper"] == "upper"  # Non-contiguous level identifiers still resolve correctly.
+    assert row["wavelength_is_theoretical"]
+    assert np.isnan([row[column] for column in INTENSITY_COLUMNS]).all()
+    assert formation == {ion_name: 4.0}
+    assert raw_name in unranked

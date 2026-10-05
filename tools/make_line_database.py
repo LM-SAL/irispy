@@ -1,7 +1,7 @@
 """
 Update irispy/data/iris_lines.ecsv.
 
-Needs ``pip install -e '.[density]'`` and a full CHIANTI database in fiasco's configured
+Needs ``pip install -e '.[density]'``, fiasco 0.8.2 or later, and a full CHIANTI database in fiasco's configured
 location (https://fiasco.readthedocs.io/en/latest/quick_start.html). Run it, then review
 the changes with ``git diff``. docs/line_database.rst explains the science.
 
@@ -33,7 +33,7 @@ NIST_URL = "https://physics.nist.gov/cgi-bin/ASD/lines1.pl"
 PASSBANDS = {"FUV1": [1331.7, 1358.4], "FUV2": [1389.0, 1407.0], "NUV": [2782.7, 2835.1]}
 PRESSURES = {"quiet_sun": 3e15, "active_region": 3e15, "flare": 1e16}  # n_e T in K cm^-3
 ABUNDANCES = {"coronal": "sun_coronal_2021_chianti", "photospheric": "sun_photospheric_2021_asplund"}
-# IRIS lines documented in the literature: ion, vacuum wavelength, and the key of the reference
+# A curated selection of IRIS lines: ion, vacuum wavelength, and the key of the reference
 # in docs/references.bib. Wavelengths are the NIST values where NIST lists the line, else
 # CHIANTI's, else the reference's; a line in neither catalog is added from the reference.
 DOCUMENTED = [
@@ -63,19 +63,21 @@ DOCUMENTED = [
     ("Ni I", 2799.47, "wulser2018"),
     ("Mg II", 2803.530, "depontieu2014"),
 ]
-# Formation-temperature boundaries of the categories, in log10 K. Tian (2017) defines the
+# Equilibrium ion-fraction peak boundaries for the categories, in log10 K. Tian (2017) defines the
 # transition region as 0.02-0.8 MK; the Fe XXI flare line forms at 10 MK and above
 # (De Pontieu et al. 2021).
 CATEGORY_BOUNDARIES = [("flare", 7.0), ("coronal", 5.9), ("transition_region", 4.3)]
 INTENSITY_COLUMNS = [f"intensity_{region}_{abundance}" for region in PRESSURES for abundance in ABUNDANCES]
 LEVELS = ("lower", "upper", "lower_energy", "upper_energy", "lower_j", "upper_j")
-# CHIANTI-only lines are kept if they reach this fraction of their passband's strongest line.
-THRESHOLD = 1e-3
 # Catalog identity tolerance for level energies and transition wavenumbers, in cm^-1.
 # Accommodates Fe XII's 2 cm^-1 catalog difference; not a measurement uncertainty.
 ENERGY_TOLERANCE = 5.0
-# Neutral or singly ionized metals that can appear as photospheric lines.
-PHOTOSPHERIC_METALS = {"Li", "Be", "Na", "Mg", "Al", "Si", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"}
+# Literature-established chromospheric diagnostics, independent of prediction coverage.
+# Mg II: Leenaarts et al. (2013); C II: Rathore & Carlsson (2015);
+# O I: Lin & Carlsson (2015); C I: Lin et al. (2017); Cl I: IRIS Technical Note 38.
+CHROMOSPHERIC_IONS = {"Mg II", "C II", "O I", "C I", "Cl I"}
+# Cool metals may be seen in absorption or chromospheric emission; this is not a formation-height label.
+COOL_METALS = {"Li", "Be", "Na", "Mg", "Al", "Si", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"}
 # Vacuum wavelengths in Angstrom for all spectra, with levels, A-values, and references.
 NIST_PARAMETERS = {
     "spectra": "",
@@ -117,6 +119,7 @@ CHIANTI_ONLY = {
 LITERATURE_ONLY = {
     **CHIANTI_ONLY,
     "wavelength_source": "literature",
+    "wavelength_is_theoretical": False,
     **dict.fromkeys(("lower", "upper"), ""),
     **dict.fromkeys(("lower_energy", "upper_energy", "lower_j", "upper_j", "log_t_max"), np.nan),
     **dict.fromkeys(INTENSITY_COLUMNS, np.nan),
@@ -164,7 +167,17 @@ def download_nist():
         for record in csv.DictReader(io.StringIO(content)):
             observed = _number(record["obs_wl_vac(A)"])
             ritz = _number(record["ritz_wl_vac(A)"])
-            source = "observed" if np.isfinite(observed) else "ritz"
+            observed_uncertainty = _number(record["unc_obs_wl"])
+            ritz_uncertainty = _number(record["unc_ritz_wl"])
+            # Use the better quantified wavelength; retain observed values when neither uncertainty is known.
+            prefer_ritz = np.isfinite(ritz) and (
+                not np.isfinite(observed)
+                or (
+                    np.isfinite(ritz_uncertainty)
+                    and (not np.isfinite(observed_uncertainty) or ritz_uncertainty < observed_uncertainty)
+                )
+            )
+            source = "ritz" if prefer_ritz else "observed"
             wavelength = observed if source == "observed" else ritz
             if not low <= wavelength <= high:
                 continue
@@ -177,11 +190,12 @@ def download_nist():
                     "ion_stage": stage,
                     "wavelength": wavelength,
                     "wavelength_source": source,
-                    "wavelength_uncertainty": _number(record["unc_obs_wl" if source == "observed" else "unc_ritz_wl"]),
+                    "wavelength_is_theoretical": False,
+                    "wavelength_uncertainty": observed_uncertainty if source == "observed" else ritz_uncertainty,
                     "observed_wavelength": observed,
-                    "observed_wavelength_uncertainty": _number(record["unc_obs_wl"]),
+                    "observed_wavelength_uncertainty": observed_uncertainty,
                     "ritz_wavelength": ritz,
-                    "ritz_wavelength_uncertainty": _number(record["unc_ritz_wl"]),
+                    "ritz_wavelength_uncertainty": ritz_uncertainty,
                     "transition_type": _text(record["Type"]),
                     "lower": " ".join(_text(record[key]) for key in ("conf_i", "term_i", "J_i")).strip(),
                     "upper": " ".join(_text(record[key]) for key in ("conf_k", "term_k", "J_k")).strip(),
@@ -205,8 +219,9 @@ def download_nist():
 
 def predict_lines():
     """
-    Predict optically thin intensities of IRIS-band transitions for each DEM and
-    abundance set.
+    Predict reference optically thin intensities for eligible IRIS-band transitions.
+
+    Retain excluded transitions and those missing excitation data without predictions.
     """
     import fiasco  # noqa: PLC0415
     from fiasco.util.exceptions import MissingDatasetException  # noqa: PLC0415
@@ -215,7 +230,7 @@ def predict_lines():
     formation_grid = 10 ** np.arange(3.0, 8.55, 0.01) * u.K
     predictions, formation, unranked = [], {}, {}
     for name in fiasco.list_ions(sort=True):
-        ion = fiasco.Ion(name, formation_grid)
+        ion = fiasco.Ion(name, formation_grid, ionization_fraction="chianti")
         try:
             formation[ion.ion_name_roman] = float(np.log10(ion.formation_temperature.to_value(u.K)))
             transitions = ion.transitions
@@ -228,41 +243,42 @@ def predict_lines():
         indices = np.flatnonzero([_passband(wavelength) is not None for wavelength in wavelengths])
         if not len(indices):
             continue
-        # Neutral and singly ionized iron-peak metals (Sc-Zn) are reference data:
-        # their optically thin predictions are dominated by the coolest DEM bin.
-        if ion.ionization_stage <= 2 and 21 <= ion.atomic_number <= 30:
-            unranked[name] = "Neutral and singly ionized iron-peak metals are intentionally unranked."
-            continue
-        print(f"Computing {name}: {len(indices)} transitions, {ion.n_levels} levels", flush=True)  # noqa: T201
-        intensity = {column: np.zeros(len(indices)) for column in INTENSITY_COLUMNS}
-        try:
-            for region, model in dem.items():
-                temperature = model["temperature_bin_center"]
-                fraction = fiasco.Ion(name, temperature).ionization_fraction
-                if not np.all(np.isfinite(fraction)):
-                    msg = f"Non-finite ionization fractions for {name}, {region}."
-                    raise ValueError(msg)
-                # Bins without the ion contribute nothing; skip their population solves.
-                keep = fraction > 0
-                if not keep.any():
-                    continue
-                density = PRESSURES[region] * u.K / u.cm**3 / temperature[keep]
-                for abundance, dataset in ABUNDANCES.items():
-                    # The abundance set also sets fiasco's proton/electron ratio for proton collisions.
-                    region_ion = fiasco.Ion(name, temperature[keep], abundance=dataset)
-                    contribution = region_ion.contribution_function(density, couple_density_to_temperature=True)
-                    # I = sum(G * DEM * dT) / 4 pi; CHIANTI DEMs and fiasco's G both use n_e*n_H.
-                    integrated = np.sum(contribution[:, 0, indices] * model["em"][keep, None], axis=0) / (
-                        4 * np.pi * u.sr
-                    )
-                    values = integrated.to_value(u.erg / u.cm**2 / u.s / u.sr)
-                    if not np.all(np.isfinite(values)) or np.any(values < 0):
-                        msg = f"Invalid predicted intensities for {name}, {region}, {abundance}."
+        intensity = {column: np.full(len(indices), np.nan) for column in INTENSITY_COLUMNS}
+        if ion.ionization_stage <= 2:
+            unranked[name] = "Neutral and singly ionized lines are outside the prediction model's scope."
+        else:
+            print(f"Computing {name}: {len(indices)} transitions, {ion.n_levels} levels", flush=True)  # noqa: T201
+            try:
+                for region, model in dem.items():
+                    temperature = model["temperature_bin_center"]
+                    fraction = fiasco.Ion(name, temperature, ionization_fraction="chianti").ionization_fraction
+                    if not np.all(np.isfinite(fraction)):
+                        msg = f"Non-finite ionization fractions for {name}, {region}."
                         raise ValueError(msg)
-                    intensity[f"intensity_{region}_{abundance}"] = values
-        except MissingDatasetException as exc:
-            unranked[name] = str(exc)
-            continue
+                    # Bins without the ion contribute nothing; skip their population solves.
+                    keep = fraction > 0
+                    for abundance, dataset in ABUNDANCES.items():
+                        if not keep.any():
+                            intensity[f"intensity_{region}_{abundance}"] = np.zeros(len(indices))
+                            continue
+                        density = PRESSURES[region] * u.K / u.cm**3 / temperature[keep]
+                        # The abundance set also sets fiasco's proton/electron ratio for proton collisions.
+                        region_ion = fiasco.Ion(
+                            name, temperature[keep], abundance=dataset, ionization_fraction="chianti"
+                        )
+                        contribution = region_ion.contribution_function(density, couple_density_to_temperature=True)
+                        # I = sum(G * DEM * dT) / 4 pi; CHIANTI DEMs and fiasco's G both use n_e*n_H.
+                        integrated = np.sum(contribution[:, 0, indices] * model["em"][keep, None], axis=0) / (
+                            4 * np.pi * u.sr
+                        )
+                        values = integrated.to_value(u.erg / u.cm**2 / u.s / u.sr)
+                        if not np.all(np.isfinite(values)) or np.any(values < 0):
+                            msg = f"Invalid predicted intensities for {name}, {region}, {abundance}."
+                            raise ValueError(msg)
+                        intensity[f"intensity_{region}_{abundance}"] = values
+            except MissingDatasetException as exc:
+                unranked[name] = str(exc)
+                intensity = {column: np.full(len(indices), np.nan) for column in INTENSITY_COLUMNS}
         # CHIANTI level numbers are not always contiguous (e.g. S II), so look them up.
         level_index = {int(level): index for index, level in enumerate(levels.level)}
         energy = levels.energy.to_value(u.cm**-1, equivalencies=u.spectral())
@@ -276,6 +292,7 @@ def predict_lines():
                     "element": ion.atomic_symbol,
                     "ion_stage": ion.ionization_stage,
                     "wavelength": float(wavelengths[index]),
+                    "wavelength_is_theoretical": not bool(transitions.is_observed[bound][index]),
                     "passband": _passband(wavelengths[index]),
                     "lower": str(levels.label[lower]),
                     "upper": str(levels.label[upper]),
@@ -311,8 +328,8 @@ def _same_transition(nist, model):
 
 def merge_lines(rows, predictions, formation):
     """
-    Attach predictions to NIST lines of the same transition and keep strong unmatched
-    predictions.
+    Attach predictions to NIST lines of the same transition and keep all unmatched
+    CHIANTI transitions, independent of strength or prediction availability.
 
     Then normalize each passband and model, attach the documented lines' references, and
     assign categories.
@@ -374,25 +391,18 @@ def merge_lines(rows, predictions, formation):
             ),
         )
         line["reference"], line["main"] = reference, True
-    rows = [
-        row
-        for row in rows
-        if row["wavelength_source"] != "chianti"
-        or row["main"]
-        or any(row[column] >= THRESHOLD for column in INTENSITY_COLUMNS)
-    ]
     # Categories describe ions, so every row of an ion shares one category.
-    ranked_ions = {row["ion"] for row in rows if any(np.isfinite(row[column]) for column in INTENSITY_COLUMNS)}
     for row in rows:
         # Round away floating-point drift from the 0.01-dex grid before applying boundaries.
         row["log_t_max"] = round(formation.get(row["ion"], np.nan), 2)
+        if row["ion"] in CHROMOSPHERIC_IONS:
+            row["category"] = "chromospheric"
+            continue
         row["category"] = next((name for name, boundary in CATEGORY_BOUNDARIES if row["log_t_max"] >= boundary), "")
         if row["category"]:
             continue
-        if row["ion"] in ranked_ions:
-            row["category"] = "chromospheric"
-        elif row["ion_stage"] <= 2 and row["element"].lstrip("0123456789") in PHOTOSPHERIC_METALS:
-            row["category"] = "photospheric"
+        if row["ion_stage"] <= 2 and row["element"].lstrip("0123456789") in COOL_METALS:
+            row["category"] = "cool_metal"
     return rows
 
 
@@ -433,7 +443,7 @@ def main():
     rows.sort(key=lambda row: (row["wavelength"], row["ion"], row["lower"], row["upper"]))
     table = QTable(rows=rows)
     for name in table.colnames:
-        if "wavelength" in name and name != "wavelength_source":
+        if "wavelength" in name and name not in ("wavelength_source", "wavelength_is_theoretical"):
             table[name] = table[name] * u.angstrom
     table["nist_transition_probability"] = table["nist_transition_probability"] / u.s
     for name in ("lower_energy", "upper_energy"):
@@ -448,7 +458,9 @@ def main():
         "passband_limits_angstrom": PASSBANDS,
         "passband_reference": "De Pontieu et al. (2014) Table 2",
         "category_boundaries_log_t": dict(CATEGORY_BOUNDARIES),
-        "chianti_only_relative_threshold": THRESHOLD,
+        "prediction_excluded_ion_stages": [1, 2],
+        "ionization_fraction_dataset": "chianti",
+        "chianti_catalog_strength_threshold": None,
         "unranked_ions": unranked,
     }
     output = DATA_DIR / "iris_lines.ecsv"
