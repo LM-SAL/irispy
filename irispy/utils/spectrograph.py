@@ -10,7 +10,7 @@ from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils._spectral import check_scaled, make_map_cube, standard_deviation
-from irispy.utils.constants import RADIANCE_UNIT
+from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
 __all__ = [
@@ -141,7 +141,8 @@ def radiation_temperature(
       Rayleigh-Jeans limit, which is wrong by orders of magnitude in the UV.
     * The radiation temperature is not the gas temperature. They are equal only for optically thick
       radiation whose source function is the Planck function (:cite:t:`rybicki1985`, Sections 1.4
-      and 1.5), which excludes Mg II h & k :cite:p:`leenaarts2013` and optically thin lines.
+      and 1.5), which holds only approximately for Mg II h & k :cite:p:`leenaarts2013` and not at
+      all for optically thin lines.
     * Samples with zero, negative or non-finite radiance are NaN and masked; the input mask is kept.
       Noise just above zero still gives several thousand kelvin.
     * The uncertainty is propagated to first order, so it is unreliable where it is comparable to the radiance.
@@ -149,12 +150,11 @@ def radiation_temperature(
     if isinstance(cube, SpectrogramCubeSequence):
         return SpectrogramCubeSequence([radiation_temperature(c) for c in cube])
     check_scaled(cube)
-    radiance_unit = u.erg / u.cm**2 / u.s / u.sr / u.Hz
     wavelength = reshape_1d_wavelength_dimensions_for_broadcast(
         cube.axis_world_coords(cube.wavelength_axis)[0], cube.data.ndim
     )
     try:
-        to_radiance = cube.unit.to(radiance_unit, equivalencies=u.spectral_density(wavelength))
+        to_radiance = cube.unit.to(RADIANCE_UNIT_PER_HZ, equivalencies=u.spectral_density(wavelength))
     except u.UnitConversionError:
         msg = (
             f"The cube must be in radiance per unit wavelength or frequency, not {cube.unit}; "
@@ -163,7 +163,7 @@ def radiation_temperature(
         raise ValueError(msg) from None
     frequency = wavelength.to(u.Hz, equivalencies=u.spectral())
     temperature_scale = (constants.h * frequency / constants.k_B).to_value(u.K)
-    planck_scale = (2 * constants.h * frequency**3 / constants.c**2 / u.sr).to_value(radiance_unit)
+    planck_scale = (2 * constants.h * frequency**3 / constants.c**2 / u.sr).to_value(RADIANCE_UNIT_PER_HZ)
     radiance = np.asarray(cube.data, dtype=float) * to_radiance
     sigma = standard_deviation(cube)
     uncertainty = None

@@ -64,7 +64,7 @@ def figure_test(test_function):
     return test_wrapper
 
 
-def make_test_spectrogram_cube(data, wavelengths, *, uncertainty=None):
+def make_test_spectrogram_cube(data, wavelengths, *, uncertainty=None, unit=u.DN, mask=None):
     """
     Build a minimal 3-D SpectrogramCube for unit tests.
 
@@ -81,6 +81,10 @@ def make_test_spectrogram_cube(data, wavelengths, *, uncertainty=None):
         1-D wavelength grid.
     uncertainty : `astropy.nddata.NDUncertainty`, optional
         Uncertainty of ``data``.
+    unit : `astropy.units.Unit`, optional
+        Unit of ``data``, DN by default.
+    mask : array-like, optional
+        Mask of ``data``.
 
     Returns
     -------
@@ -118,4 +122,4 @@ def make_test_spectrogram_cube(data, wavelengths, *, uncertainty=None):
     meta_header["TWMAX1"] = float(wavelengths.to(u.AA).value[-1])
     meta_header["TDET1"] = "FUV"
     meta = SGMeta(meta_header, "test")
-    return SpectrogramCube(data, wcs=wcs, uncertainty=uncertainty, unit=u.DN, meta=meta, mask=None)
+    return SpectrogramCube(data, wcs=wcs, uncertainty=uncertainty, unit=unit, meta=meta, mask=mask)
