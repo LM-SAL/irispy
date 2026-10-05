@@ -17,6 +17,17 @@ from irispy.utils.constants import SPECTRAL_BAND
 __all__ = ["BaseMeta", "SGMeta", "SJIMeta"]
 
 
+def _mu(center, sun_radius):
+    """
+    The `BaseMeta.mu` formula at the helioprojective ``center`` (scalar or array).
+    """
+    # sin^2(rho) / sin^2(R), with sin^2(rho) = 1 - cos^2(Tx) cos^2(Ty) = sin^2(Tx) + cos^2(Tx) sin^2(Ty)
+    ratio = (
+        (np.sin(center.Tx) ** 2 + (np.cos(center.Tx) * np.sin(center.Ty)) ** 2) / np.sin(sun_radius) ** 2
+    ).to_value(u.one)
+    return np.sqrt(np.where(ratio <= 1, 1 - ratio, np.nan))
+
+
 class BaseMeta(NDMeta):
     def __init__(self, header, **kwargs) -> None:
         super().__init__(header, **kwargs)
@@ -79,7 +90,7 @@ class BaseMeta(NDMeta):
         dsun = self._quantity("DSUN_OBS", u.m)
         if dsun is None:
             return None
-        return np.arctan(_R_SUN / dsun).to(u.arcsec)
+        return np.arcsin(_R_SUN / dsun).to(u.arcsec)
 
     @property
     def observer_radial_velocity(self):
@@ -253,6 +264,24 @@ class BaseMeta(NDMeta):
             unit=u.arcsec,
             frame=Helioprojective,
         )
+
+    @property
+    def mu(self):
+        r"""
+        Cosine of the angle between the line of sight and the local vertical at
+        `fov_center`.
+
+        :math:`\mu = \sqrt{1 - (\sin\rho / \sin R)^2}`, where :math:`\rho` is the angular
+        distance of the field-of-view centre from disk centre,
+        :math:`\cos\rho = \cos T_x \cos T_y` :cite:p:`thompson2006`, and :math:`R` is
+        `sun_angular_radius`. It is 1 at disk centre, 0 at the limb and NaN off the disk,
+        and agrees with `sunpy.coordinates.utils.get_heliocentric_angle`.
+
+        `None` when the header lacks the pointing or the solar distance.
+        """
+        if self.get("XCEN") is None or self.sun_angular_radius is None:
+            return None
+        return _mu(self.fov_center, self.sun_angular_radius)
 
     @property
     def automatic_exposure_control_enabled(self):
@@ -516,6 +545,20 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
         The IRIS observer location at the observation start, assumed to be at Earth.
         """
         return get_earth(self.date_reference or self.observing_campaign_start)
+
+    @property
+    def exposure_mu(self):
+        """
+        `~irispy.meta.BaseMeta.mu` at the field-of-view centre of each exposure.
+
+        Computed from the per-exposure ``"exposure FOV center"`` entry, so it follows
+        slicing and V34 flipping of the raster step axis. `None` when that entry or the
+        solar distance is missing.
+        """
+        center = self.get("exposure FOV center")
+        if center is None or self.sun_angular_radius is None:
+            return None
+        return _mu(center, self.sun_angular_radius)
 
     @property
     def number_of_spectral_windows(self):

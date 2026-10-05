@@ -1,5 +1,12 @@
+import numpy as np
+import pytest
+
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
+
+from sunpy.coordinates import Helioprojective, get_earth
+from sunpy.coordinates.utils import get_heliocentric_angle
 
 from irispy.io.utils import read_files
 from irispy.meta import SGMeta, SJIMeta
@@ -107,6 +114,40 @@ def test_sgmeta_sun_angular_radius_from_dsun():
     assert radius.unit.is_equivalent(u.arcsec)
 
 
+@pytest.mark.parametrize(
+    ("xcen", "ycen", "expected"),
+    [(0, 0, 1), (0, 960, 0), (-1000, 0, np.nan)],
+    ids=["disk centre", "limb", "off disk"],
+)
+def test_meta_mu(xcen, ycen, expected):
+    header = _make_sg_header()
+    header["RSUN_OBS"] = 960.0
+    header["XCEN"], header["YCEN"] = xcen, ycen
+    np.testing.assert_allclose(SGMeta(header, "Si IV 1403").mu, expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("fraction", [0.5, 0.999])
+def test_meta_mu_matches_sunpy(fraction):
+    observer = get_earth("2021-10-01T06:09:25")
+    header = _make_sg_header()
+    header["DSUN_OBS"] = observer.radius.to_value(u.m)
+    # On the diagonal, where the angular distance from disk centre is not sqrt(Tx**2 + Ty**2)
+    offset = fraction * SGMeta(header, "Si IV 1403").sun_angular_radius / np.sqrt(2)
+    header["XCEN"] = header["YCEN"] = offset.to_value(u.arcsec)
+    point = SkyCoord(offset, offset, frame=Helioprojective(observer=observer, obstime=observer.obstime))
+    expected = np.cos(get_heliocentric_angle(point)).to_value(u.one)
+    np.testing.assert_allclose(SGMeta(header, "Si IV 1403").mu, expected, atol=1e-8)
+
+
+def test_sgmeta_exposure_mu(raster_sg_file):
+    cube = read_files(raster_sg_file)["C II 1336"][0]
+    exposure_mu = cube.meta.exposure_mu
+    assert exposure_mu.shape == cube.data.shape[:1]
+    # The raster steps across its centre, so mu at the centre lies within the per-step range
+    assert exposure_mu.min() < cube.meta.mu < exposure_mu.max()
+    np.testing.assert_array_equal(cube[1:3].meta.exposure_mu, exposure_mu[1:3])
+
+
 def test_sgmeta_observer_radial_velocity():
     header = _make_sg_header()
     header["OBS_VR"] = 3500.0
@@ -148,6 +189,7 @@ def test_sjimeta_aia_cutout_header():
         "observer_radial_velocity",
         "distance_to_sun",
         "sun_angular_radius",
+        "mu",
         "satellite_rotation",
         "exposure_time",
         "processing_level",

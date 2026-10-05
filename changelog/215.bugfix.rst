@@ -1,0 +1,1 @@
+`irispy.meta.BaseMeta.sun_angular_radius` now uses ``arcsin(R_sun / DSUN_OBS)``, the angular radius of a sphere and what `sunpy.coordinates.sun.angular_radius` uses, instead of ``arctan``, when the header has no ``RSUN_OBS``; the radius grows by about 0.01 arcsec.
