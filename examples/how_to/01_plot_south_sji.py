@@ -42,6 +42,7 @@ print(sji_2832)
 # ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
 animation = sji_2832.plot().get_animation()
 plt.title(f"IRIS SJI {sji_2832.meta['TWAVE1']:.0f} Å", pad=25)
+# ``animation.save("sji_2832.mp4")`` saves it as a movie, which needs FFmpeg.
 
 ###############################################################################
 # Next, we will output a frame of the SJI as a sunpy Map.
