@@ -12,7 +12,7 @@
 
 ## Development Commands
 
-The project supports Python 3.12-3.14; Python 3.14 matches the primary CI job.
+The project supports Python 3.13-3.14; Python 3.14 matches the primary CI job.
 
 ```bash
 micromamba create -n irispy python=3.14
@@ -38,7 +38,7 @@ run `make clean` from `docs/`.
 
 ## Style and Tests
 
-- Target Python 3.12 syntax. Ruff formats with 120-column lines, double quotes, spaces, and NumPy docstrings.
+- Target Python 3.13 syntax. Ruff formats with 120-column lines, double quotes, spaces, and NumPy docstrings.
 - Let the `isort` pre-commit hook order imports; Ruff's import-sorting rules are disabled.
 - Run `pre-commit run --all-files` before opening a PR.
 - Warnings are errors. The default suite excludes `mpl_image_compare` tests and enables RST doctests.

@@ -1,0 +1,1 @@
+Following SPEC 0, the minimum supported Python version is now 3.13, and the minimum required versions of dependencies are now ``dask>=2024.10.0`` and, for the ``density`` extra, ``fiasco>=0.4.0``.
