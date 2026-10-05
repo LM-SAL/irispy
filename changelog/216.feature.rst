@@ -1,0 +1,1 @@
+Add `irispy.io.read_mosaic` and `~irispy.spectrograph.MosaicCube` to read the IRIS full-disk mosaics, and `~irispy.spectrograph.MosaicCube.to_map` to make a `sunpy.map.Map` at one wavelength or averaged over a range.

@@ -14,7 +14,7 @@ from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 
 from irispy.utils.constants import SPECTRAL_BAND
 
-__all__ = ["BaseMeta", "SGMeta", "SJIMeta"]
+__all__ = ["BaseMeta", "MosaicMeta", "SGMeta", "SJIMeta"]
 
 
 def _mu(center, sun_radius):
@@ -29,8 +29,11 @@ def _mu(center, sun_radius):
 
 
 class BaseMeta(NDMeta):
+    _iwin = 1
+
     def __init__(self, header, **kwargs) -> None:
         super().__init__(header, **kwargs)
+        self._fits_header = header
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
@@ -256,8 +259,10 @@ class BaseMeta(NDMeta):
     @property
     def fov_center(self):
         """
-        Location of the center of the field of view.
+        Location of the center of the field of view, `None` when the header lacks it.
         """
+        if self.get("XCEN") is None:
+            return None
         return SkyCoord(
             Tx=self.get("XCEN"),
             Ty=self.get("YCEN"),
@@ -481,11 +486,6 @@ class SJIMeta(BaseMeta, RemoteSensorMetaABC):
     Metadata class for IRIS slit-jaw images.
     """
 
-    def __init__(self, header, **kwargs) -> None:
-        super().__init__(header, **kwargs)
-        self._iwin = 1
-        self._fits_header = header
-
     def __str__(self) -> str:
         return textwrap.dedent(
             f"""
@@ -537,7 +537,6 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
                 msg,
             )
         self._iwin = np.arange(len(spectral_windows))[window_mask][0] + 1
-        self._fits_header = header
 
     @cached_property
     def observer(self):
@@ -717,3 +716,37 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
                 OBS Description: {self.observing_mode_description}
                 """,
         )
+
+
+class MosaicMeta(BaseMeta, SlitSpectrographMetaABC):
+    """
+    Metadata class for IRIS full-disk mosaics.
+    """
+
+    def __str__(self) -> str:
+        return textwrap.dedent(
+            f"""
+                MosaicMeta
+                ----------
+                Detector:        {self.detector}
+                Rest wavelength: {self.rest_wavelength}
+                Dimensions:      {self.data_shape}
+                Date:            {self.date_start} -- {self.date_end}
+                OBS ID:          {self.observing_mode_id}
+                """,
+        )
+
+    @property
+    def rest_wavelength(self):
+        """
+        Rest wavelength of the mosaic window (``LAMREF``).
+        """
+        wavelength = self._quantity("LAMREF", u.AA)
+        return None if wavelength is None else wavelength.to(u.nm)
+
+    @property
+    def detector(self):
+        """
+        ``'FUV'`` or ``'NUV'``, from the rest wavelength.
+        """
+        return "NUV" if self.rest_wavelength > 200 * u.nm else "FUV"

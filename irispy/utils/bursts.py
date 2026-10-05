@@ -141,7 +141,7 @@ def find_bright_spectral_events(
     maps, tables, offset = [], [], 0
     for index, cube in enumerate(cubes):
         check_scaled(cube)
-        if cube.data.ndim != 3:
+        if cube.data.ndim != 3 or cube.wavelength_axis != 2:
             msg = "The spectra must have axes (step, slit, wavelength); slice with a range, not an index"
             raise ValueError(msg)
         if not DN_UNIT[cube.meta.detector_band].is_equivalent(cube.unit):

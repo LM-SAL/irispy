@@ -211,6 +211,9 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
     returns = {}
     spec_groups = {}
     for filename in filenames:
+        if filename.name.startswith("IRISMosaic_"):
+            msg = f"{filename} is a full-disk mosaic; read it with irispy.io.read_mosaic"
+            raise ValueError(msg)
         try:
             sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
             raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
