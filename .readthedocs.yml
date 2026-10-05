@@ -9,7 +9,7 @@ build:
   jobs:
     post_checkout:
       # Exit code 183 cancels the build, matching the [ci skip] handling of GitHub Actions and CircleCI.
-      - if git log -1 --pretty=%B | grep -qE '\[(ci skip|skip ci)\]'; then exit 183; fi
+      - if git log -1 --pretty=%B | grep -qE "\[(ci skip|skip ci)\]"; then exit 183; fi
       - git fetch --unshallow || true
     pre_install:
       - git update-index --assume-unchanged docs/conf.py
