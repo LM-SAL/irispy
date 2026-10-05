@@ -15,7 +15,7 @@ authors = [
   { name = "IRIS Instrument Team  @ LMSAL" },
   { name = "Nabil Freij", email = "nabil.freij@gmail.com" },
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
@@ -24,7 +24,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Physics",
@@ -32,7 +31,7 @@ classifiers = [
 dynamic = [ "version" ]
 dependencies = [
   "astropy>=8.0.0",
-  "dask[array]>=2024.7.0",
+  "dask[array]>=2024.10.0",
   "dkist>=1.17.0",
   "gwcs>=1.0.0",
   "mpl-animators>=1.2.3",
@@ -50,7 +49,7 @@ optional-dependencies.cosmic-rays = [
   "rsliding>=1.0.0",
 ]
 optional-dependencies.density = [
-  "fiasco>=0.3.0",
+  "fiasco>=0.4.0",
 ]
 optional-dependencies.rgb = [
   "colorsynth>=1.1.0",
@@ -60,23 +59,23 @@ optional-dependencies.dev = [
 ]
 optional-dependencies.docs = [
   "irispy-lmsal[all]",
-  "aiapy>=0.9.0",
-  "joblib>=1.4.0",
+  "aiapy>=0.10.0",
+  "joblib>=1.5.0",
   "pooch>=1.9.0",
-  "sphinx-automodapi>=0.18.0",
+  "sphinx-automodapi>=0.19.0",
   "sphinx-changelog>=1.6.0",
   "sphinx-copybutton",
-  "sphinx-design>=0.6.1",
-  "sphinx-gallery>=0.17.0",
-  "sphinx>=7.4.0",
-  "sphinxcontrib-bibtex>=2.6.0",
+  "sphinx-design>=0.7.0",
+  "sphinx-gallery>=0.18.0",
+  "sphinx>=8.1.0",
+  "sphinxcontrib-bibtex>=2.6.4",
   "sunkit-image>=0.6.0",
-  "sunpy-sphinx-theme>=2.0.13",
+  "sunpy-sphinx-theme>=2.0.17",
 ]
 optional-dependencies.tests = [
   "irispy-lmsal[all]",
   "pooch>=1.9.0",
-  "pytest-astropy",
+  "pytest-astropy>=0.12.0",
   "pytest-mpl>=0.18.0",
 ]
 urls.Changelog = "https://irispy.readthedocs.io/en/stable/changelog"
