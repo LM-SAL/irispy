@@ -1,4 +1,5 @@
 import textwrap
+import warnings
 
 import numpy as np
 
@@ -15,7 +16,7 @@ from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.visualization import IRISSequencePlotter, SpectrogramPlotter
 
-__all__ = ["RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
+__all__ = ["MosaicCube", "RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
 
 
 class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
@@ -62,7 +63,7 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
 
     def __getitem__(self, item):
         result = super().__getitem__(item)
-        return SpectrogramCube(
+        return type(self)(
             result.data,
             result.wcs,
             result.uncertainty,
@@ -149,6 +150,87 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         except StopIteration:
             msg = "Could not identify a spectral wavelength axis on the cube"
             raise ValueError(msg) from None
+
+
+class MosaicCube(SpectrogramCube):
+    """
+    An IRIS full-disk mosaic of one spectral window, read by `irispy.io.read_mosaic`.
+
+    The array axes are (wavelength, solar Y, solar X), the order of the mosaic files.
+    The mosaic is put together from rasters taken over about 18 hours
+    :cite:p:`irismosaics`, so ``meta["time"]`` holds the time of each position.
+    """
+
+    def __str__(self) -> str:
+        return textwrap.dedent(
+            f"""
+            MosaicCube
+            ----------
+            Obs ID:               {self.meta.get("OBSID")}
+            Reference wavelength: {self.meta.get("LAMREF")} Angstrom
+            Obs Date:             {self.meta.get("DATE_OBS")} -- {self.meta.get("DATE_END")}
+            Data shape:           {self.shape}
+            Axis Types:           {self.array_axis_physical_types}
+            """,
+        )
+
+    def to_maps(self, wavelength):
+        """
+        Return a SunPy Map of the mosaic at one wavelength or averaged over a range.
+
+        The map has the observer and date (``DATE_OBS``) of the cube's WCS, the
+        ``EXPTIME`` of the mosaic and the colour map of the nearest slit-jaw passband
+        (1330, 1400, 2796 or 2832 Å, :cite:t:`depontieu2014`).
+        Masked values are left out of the average; positions with no unmasked value are NaN.
+
+        Parameters
+        ----------
+        wavelength : `astropy.units.Quantity`
+            One wavelength, for the map at the nearest mosaic wavelength, or two,
+            for the mean over the mosaic wavelengths between them (inclusive).
+
+        Returns
+        -------
+        `sunpy.map.GenericMap`
+        """
+        from sunpy.map import Map  # NOQA: PLC0415
+
+        wavelength = u.Quantity(wavelength, u.AA)
+        axis = self.wavelength_axis
+        wavelengths = u.Quantity(self.axis_world_coords(axis)[0], u.AA)
+        if wavelength.isscalar:
+            indices = [np.argmin(np.abs(wavelengths - wavelength))]
+        else:
+            indices = np.flatnonzero((wavelengths >= wavelength[0]) & (wavelengths <= wavelength[1]))
+            if not indices.size:
+                msg = f"The mosaic has no wavelengths between {wavelength[0]} and {wavelength[1]}"
+                raise ValueError(msg)
+        data = np.take(self.data, indices, axis=axis)
+        if self.mask is not None:
+            data = np.where(np.take(self.mask, indices, axis=axis), np.nan, data)
+        with warnings.catch_warnings():
+            # Positions no raster covered have no unmasked value to average.
+            warnings.simplefilter("ignore", RuntimeWarning)
+            data = np.nanmean(data, axis=axis)
+        header = unwrap_wcs_to_fitswcs(self.wcs)[0].celestial.to_header()
+        mean_wavelength = wavelengths[indices].mean()
+        header.update(
+            {
+                "TELESCOP": "IRIS",
+                "OBSRVTRY": "IRIS",
+                # The mosaics are built from spectrograph rasters, Level 2 INSTRUME "SPEC".
+                "INSTRUME": "SPEC",
+                "EXPTIME": self.meta.get("EXPTIME"),
+                "DATE-END": self.meta.get("DATE_END"),
+                "WAVELNTH": mean_wavelength.to_value(u.AA),
+                "WAVEUNIT": "Angstrom",
+                "BUNIT": "DN",
+            }
+        )
+        sunpy_map = Map(data, header)
+        passband = min((1330, 1400, 2796, 2832), key=lambda band: abs(band - mean_wavelength.to_value(u.AA)))
+        sunpy_map.plot_settings["cmap"] = f"irissji{passband}"
+        return sunpy_map
 
 
 class SpectrogramCubeSequence(SpecSeq):

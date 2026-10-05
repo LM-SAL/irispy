@@ -85,6 +85,39 @@ For slit-jaw data, ``STARTOBS`` plus the auxiliary ``TIME`` value is the exposur
 For spectrograph data, the shared auxiliary ``TIME`` follows the FUV exposure start and is retained as ``meta["auxiliary times"]``.
 The NUV exposure starts at a different time and is calculated from its source-filename midpoint minus half its NUV exposure duration.
 
+Full-disk mosaics
+-----------------
+
+About once a month, outside eclipse season, IRIS rasters the whole disk from about 185 pointings, which takes about 18 hours, and the IRIS team rearranges the rasters into one cube per spectral window :cite:p:`irismosaics`.
+The `IRIS mosaic page <https://iris.lmsal.com/mosaic.html>`__ lists the mosaics, from 2013-09-30 to 2023-09-24 at the time of writing.
+Each date has one ``IRISMosaic_<date>_<window>.fits.gz`` file for each of ``C1334``, ``C1335``, ``MgIIh``, ``MgIIk``, ``Si1393`` and ``Si1403``, and the archives ``AllWindows.tar.gz`` and ``AllSDOMaps.tar.gz``.
+
+.. table:: Structure of mosaic files. ``nx`` is 1002 positions at the raster step (about 2 arcsec), ``ny`` is 6011 slit pixels (about 1/3 arcsec), ``nwave`` is 41 for C II and Si IV and 101 for Mg II.
+
+    ======  ===============  ===================================================  ===========================
+    HDU #   HDU type         Contents                                             Data dimensions
+    ======  ===============  ===================================================  ===========================
+    0       Primary          Main header and data                                 [``nx``, ``ny``, ``nwave``]
+    1       Image Extension  Integrated spectrum (``REF_PROF``)                   [``nwave``]
+    2       Image Extension  Time of each position in seconds from ``DATE_OBS``   [``nx``, ``ny``]
+    3       Image Extension  Y coordinate in the Level 2 frame (``Y_MASK``)       [``nx``, ``ny``]
+    ======  ===============  ===================================================  ===========================
+
+The data are in DN, stored as 16-bit integers scaled like slit-jaw files (``BSCALE`` 0.25, ``BZERO`` 7992).
+The header keeps only a few Level 2 keywords (``DATE_OBS``, ``DATE_END``, ``OBSID``, ``EXPTIME``, ``SUMSPAT``, ``SUMSPTRN``, ``SUMSPTRF``) and adds the reference wavelength ``LAMREF``.
+The axes are named ``'Solar X'``, ``'Solar Y'`` and ``'Wavelength'`` and there is no observer.
+Positions that no raster covered are 0 in the data, NaN in the time extension and -1 in ``Y_MASK``.
+
+`~irispy.io.read_mosaic` reads a mosaic into a `~irispy.spectrograph.MosaicCube`, and `~irispy.spectrograph.MosaicCube.to_maps` makes `sunpy.map.Map` objects from it; see :ref:`sphx_glr_generated_gallery_how_to_skip_06_full_disk_mosaic.py`.
+Keep in mind that:
+
+* the rasters are taken over about 18 hours and the mosaic is not derotated, so there is no single observation time: ``meta["time"]`` gives the time of each position, and the WCS puts the observer at Earth at ``DATE_OBS``, the start of the mosaic;
+* positions no raster covered, and the Level 2 fill values, are masked and NaN;
+* gzipped files cannot be memory-mapped, so ``wavelength_range`` reads only the wavelengths you need, and decompressing a file once makes later reads much faster.
+
+The SDO pseudo-mosaics in ``AllSDOMaps.tar.gz`` show the AIA 171, 193, 304, 1600 and 1700 Å and HMI signal at the times IRIS sampled each part of the disk.
+They are 4096 x 4096 images at 0.6 arcsec per pixel centered on the disk, without ``CTYPE`` or observer keywords; ``irispy`` does not read them yet.
+
 Reading Level 2 Data
 ====================
 

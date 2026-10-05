@@ -14,7 +14,7 @@ from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 
 from irispy.utils.constants import SPECTRAL_BAND
 
-__all__ = ["BaseMeta", "SGMeta", "SJIMeta"]
+__all__ = ["BaseMeta", "MosaicMeta", "SGMeta", "SJIMeta"]
 
 
 def _mu(center, sun_radius):
@@ -717,3 +717,49 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
                 OBS Description: {self.observing_mode_description}
                 """,
         )
+
+
+class MosaicMeta(BaseMeta, SlitSpectrographMetaABC):
+    """
+    Metadata class for IRIS full-disk mosaics.
+
+    The mosaic headers keep only a few Level 2 keywords: ``DATE_OBS`` and
+    ``DATE_END``, ``OBSID``, ``EXPTIME``, ``SUMSPAT``, ``SUMSPTRN``, ``SUMSPTRF``
+    and ``LAMREF``. `irispy.io.read_mosaic` adds the time of each mosaic position
+    as ``meta["time"]``.
+    """
+
+    def __init__(self, header, **kwargs) -> None:
+        super().__init__(header, **kwargs)
+        self._iwin = 1
+        self._fits_header = header
+
+    def __str__(self) -> str:
+        return textwrap.dedent(
+            f"""
+                MosaicMeta
+                ----------
+                Detector:             {self.detector}
+                Reference wavelength: {self.reference_wavelength}
+                Dimensions:           {self.data_shape}
+                Date:                 {self.date_start} -- {self.date_end}
+                OBS ID:               {self.observing_mode_id}
+                """,
+        )
+
+    @property
+    def reference_wavelength(self):
+        """
+        Reference wavelength of the mosaic window (``LAMREF``).
+        """
+        return self._quantity("LAMREF", u.AA)
+
+    @property
+    def detector(self):
+        """
+        ``'FUV'`` or ``'NUV'``, from the reference wavelength.
+
+        The FUV passbands are 1332-1358 Å and 1389-1407 Å, the NUV passband 2783-2834 Å
+        :cite:p:`depontieu2014`.
+        """
+        return "NUV" if self.reference_wavelength > 2000 * u.AA else "FUV"
