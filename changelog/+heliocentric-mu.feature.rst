@@ -1,0 +1,2 @@
+Add `irispy.meta.BaseMeta.mu`, the cosine of the heliocentric angle at the centre of the field of view, and `irispy.meta.SGMeta.exposure_mu`, the same for each raster step, computed from the ``"exposure FOV center"`` entry so it follows slicing.
+Both are NaN off the disk.

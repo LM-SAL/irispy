@@ -1,5 +1,11 @@
+import numpy as np
+import pytest
+
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
+
+from sunpy.coordinates import Heliocentric, Helioprojective, get_earth
 
 from irispy.io.utils import read_files
 from irispy.meta import SGMeta, SJIMeta
@@ -107,6 +113,44 @@ def test_sgmeta_sun_angular_radius_from_dsun():
     assert radius.unit.is_equivalent(u.arcsec)
 
 
+@pytest.mark.parametrize(
+    ("xcen", "ycen", "expected"),
+    [(0, 0, 1), (345.6, -460.8, 0.8), (0, 960, 0), (-1000, 0, np.nan)],
+    ids=["disk centre", "on disk", "limb", "off disk"],
+)
+def test_meta_mu(xcen, ycen, expected):
+    header = _make_sg_header()
+    header["RSUN_OBS"] = 960.0
+    header["XCEN"], header["YCEN"] = xcen, ycen
+    np.testing.assert_allclose(SGMeta(header, "Si IV 1403").mu, expected, atol=1e-12)
+    np.testing.assert_allclose(SJIMeta(header).mu, expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("fraction", [0, 0.5, 0.9, 0.99])
+def test_meta_mu_matches_exact_geometry(fraction):
+    # The exact mu is the cosine between the surface normal and the line of sight to an
+    # observer at a finite distance, at the point sunpy places on the solar surface
+    observer = get_earth("2021-10-01T06:09:25")
+    header = _make_sg_header()
+    header["DSUN_OBS"] = observer.radius.to_value(u.m)
+    offset = fraction * SGMeta(header, "Si IV 1403").sun_angular_radius / np.sqrt(2)
+    header["XCEN"] = header["YCEN"] = offset.to_value(u.arcsec)
+    point = SkyCoord(offset, offset, frame=Helioprojective(observer=observer, obstime=observer.obstime))
+    point = point.transform_to(Heliocentric(observer=observer, obstime=observer.obstime)).cartesian.xyz
+    line_of_sight = [0, 0, 1] * observer.radius - point
+    exact = (point @ line_of_sight) / (np.linalg.norm(point) * np.linalg.norm(line_of_sight))
+    np.testing.assert_allclose(SGMeta(header, "Si IV 1403").mu, exact.to_value(u.one), atol=1e-5)
+
+
+def test_sgmeta_exposure_mu(raster_sg_file):
+    cube = read_files(raster_sg_file)["C II 1336"][0]
+    exposure_mu = cube.meta.exposure_mu
+    assert exposure_mu.shape == cube.data.shape[:1]
+    # The raster steps across its centre, so mu at the centre lies within the per-step range
+    assert exposure_mu.min() < cube.meta.mu < exposure_mu.max()
+    np.testing.assert_array_equal(cube[1:3].meta.exposure_mu, exposure_mu[1:3])
+
+
 def test_sgmeta_observer_radial_velocity():
     header = _make_sg_header()
     header["OBS_VR"] = 3500.0
@@ -148,6 +192,7 @@ def test_sjimeta_aia_cutout_header():
         "observer_radial_velocity",
         "distance_to_sun",
         "sun_angular_radius",
+        "mu",
         "satellite_rotation",
         "exposure_time",
         "processing_level",
