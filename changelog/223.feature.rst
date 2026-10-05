@@ -1,0 +1,1 @@
+Added `~irispy.utils.moments.average_window`, which averages or sums a spectrogram cube over a wavelength window into an intensity map.

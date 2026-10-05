@@ -18,6 +18,7 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
+from irispy.utils.moments import average_window
 
 quantity_support()
 
@@ -133,6 +134,16 @@ fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_spec_crop.wcs)
 # Put the raster steps along x, so that longitude runs horizontally.
 mg_spec_crop.plot(axes=ax, plot_axes=["x", "y"])
+
+###############################################################################
+# `~irispy.utils.moments.average_window` averages the samples in a wavelength window
+# into a map; here 279.4 to 279.9 nm around the Mg II k core.
+
+mg_ii_k_map = average_window(mg_ii, [279.4, 279.9] * u.nm)
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection=mg_ii_k_map.wcs)
+mg_ii_k_map.plot(axes=ax, plot_axes=["x", "y"])
 
 ###############################################################################
 # Imagine there's a really cool feature at (-338", 275"), how can you plot
