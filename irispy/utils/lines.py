@@ -21,7 +21,8 @@ _PASSBANDS = ("FUV1", "FUV2", "NUV")
 
 @cache
 def _load_lines():
-    return QTable.read(ROOTDIR / "iris_lines.ecsv", format="ascii.ecsv")
+    # Keep empty strings as strings rather than masked values.
+    return QTable.read(ROOTDIR / "iris_lines.ecsv", format="ascii.ecsv", fill_values=[])
 
 
 def get_lines(
@@ -37,14 +38,14 @@ def get_lines(
         Wavelengths are in vacuum.
     region : `str`, optional
         Rank by strength in the ``'quiet_sun'``, ``'active_region'``, or
-        ``'flare'`` reference model. Requires ``abundance``. Results are grouped
-        as FUV1, FUV2, NUV, with strongest predictions first and unranked lines
-        last in each passband. The default order is by wavelength.
+        ``'flare'`` reference model, strongest first within each passband and
+        unranked lines last. Requires ``abundance``. Otherwise lines are in
+        wavelength order.
     abundance : `str`, optional
         ``'coronal'`` or ``'photospheric'`` abundances for ranking. Requires
         ``region``.
     main_only : `bool`, optional
-        Select curated IRIS identifications. The ``reference`` column contains
+        Select documented IRIS identifications. The ``reference`` column contains
         their bibliography keys.
     categories : `str` or iterable of `str`, optional
         Filter by ``'flare'``, ``'coronal'``, ``'transition_region'``,
@@ -65,8 +66,7 @@ def get_lines(
     -----
     Strengths provide approximate rankings of integrated optically thin intensities
     from fixed reference atmospheres. Neutral and singly ionized lines are unranked.
-    Density, opacity, and ionization effects can invalidate the remaining
-    predictions; model assumptions are described in :doc:`/line_database`.
+    The model assumptions are described in :doc:`/line_database`.
     """
     if region is not None and region not in _REGIONS:
         msg = f"region must be one of {_REGIONS}."

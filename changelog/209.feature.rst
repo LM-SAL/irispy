@@ -1,0 +1,1 @@
+Add `irispy.utils.lines.get_lines` to query a packaged NIST and CHIANTI catalog of the three IRIS spectrograph passbands by wavelength range, catalog category, documented IRIS line, and approximate strength ranking within each passband.

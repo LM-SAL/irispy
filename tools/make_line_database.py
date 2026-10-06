@@ -96,27 +96,34 @@ NIST_PARAMETERS = {
     "bibrefs": 1,
     "remove_js": "on",
 }
-CHIANTI_ONLY = {
+# Every catalog column with its empty value, in output order; each source overrides what it knows.
+DEFAULTS = {
+    "ion": "",
+    "element": "",
+    "ion_stage": 0,
+    "wavelength": np.nan,
     "wavelength_source": "chianti",
+    "wavelength_is_theoretical": False,
     "wavelength_uncertainty": np.nan,
     "observed_wavelength": np.nan,
     "observed_wavelength_uncertainty": np.nan,
     "ritz_wavelength": np.nan,
     "ritz_wavelength_uncertainty": np.nan,
     "transition_type": "",
+    "lower": "",
+    "upper": "",
+    "lower_energy": np.nan,
+    "upper_energy": np.nan,
+    "lower_j": np.nan,
+    "upper_j": np.nan,
     "nist_intensity": "",
     "nist_transition_probability": np.nan,
     "nist_line_reference": "",
+    "log_t_max": np.nan,
+    "passband": "",
+    "category": "",
     "main": False,
     "reference": "",
-    "category": "",
-}
-LITERATURE_ONLY = {
-    **CHIANTI_ONLY,
-    "wavelength_source": "literature",
-    "wavelength_is_theoretical": False,
-    **dict.fromkeys(("lower", "upper"), ""),
-    **dict.fromkeys(("lower_energy", "upper_energy", "lower_j", "upper_j", "log_t_max"), np.nan),
     **dict.fromkeys(INTENSITY_COLUMNS, np.nan),
 }
 
@@ -148,7 +155,7 @@ def _passband(wavelength):
 
 
 def _nist_version():
-    request = Request(NIST_VERSION_URL, headers={"User-Agent": "Mozilla/5.0 (irispy line database generator)"})  # noqa: S310
+    request = Request(NIST_VERSION_URL, headers={"User-Agent": "Mozilla/5.0 (irispy line database generator)"})
     with urlopen(request, timeout=120) as response:  # noqa: S310
         content = unescape(response.read().decode("utf-8"))
     match = re.search(r"\(version\s+([0-9]+(?:\.[0-9]+)*)\)", content, flags=re.IGNORECASE)
@@ -190,13 +197,13 @@ def download_nist():
             element = _text(record["element"])
             stage = int(record["sp_num"])
             rows.append(
-                {
+                DEFAULTS
+                | {
                     "ion": f"{element} {roman.to_roman(stage)}",
                     "element": element,
                     "ion_stage": stage,
                     "wavelength": wavelength,
                     "wavelength_source": source,
-                    "wavelength_is_theoretical": False,
                     "wavelength_uncertainty": observed_uncertainty if source == "observed" else ritz_uncertainty,
                     "observed_wavelength": observed,
                     "observed_wavelength_uncertainty": observed_uncertainty,
@@ -212,12 +219,7 @@ def download_nist():
                     "nist_intensity": _text(record["intens"]),
                     "nist_transition_probability": _number(record["Aki(s^-1)"]),
                     "nist_line_reference": _text(record["line_ref"]),
-                    "log_t_max": np.nan,
                     "passband": band,
-                    "category": "",
-                    "main": False,
-                    "reference": "",
-                    **dict.fromkeys(INTENSITY_COLUMNS, np.nan),
                 }
             )
     return rows, queries
@@ -292,7 +294,8 @@ def predict_lines():
             lower = level_index[int(transitions.lower_level[bound][index])]
             upper = level_index[int(transitions.upper_level[bound][index])]
             predictions.append(
-                {
+                DEFAULTS
+                | {
                     "ion": ion.ion_name_roman,
                     "element": ion.atomic_symbol,
                     "ion_stage": ion.ionization_stage,
@@ -312,8 +315,10 @@ def predict_lines():
 
 
 def _identity(row):
-    # Wavelength identifies NIST lines lacking level data (e.g. Ca II 1341.89).
-    return tuple(row[key] for key in LEVELS) if np.isfinite(row["lower_energy"]) else row["wavelength"]
+    # Wavelength identifies NIST lines lacking complete level data (e.g. Ca II 1341.89).
+    if np.isfinite(row["lower_energy"]) and np.isfinite(row["upper_energy"]):
+        return tuple(row[key] for key in LEVELS)
+    return row["wavelength"]
 
 
 def _same_transition(nist, model):
@@ -323,9 +328,13 @@ def _same_transition(nist, model):
         # Twice NIST's 0.01 A precision for lines lacking levels, or 3 sigma.
         return abs(nist["wavelength"] - model["wavelength"]) <= np.fmax(0.02, 3 * nist["wavelength_uncertainty"])
     window = np.fmax(ENERGY_TOLERANCE, 3e8 * nist["wavelength_uncertainty"] / nist["wavelength"] ** 2)
+    # NIST can leave one level energy unparsed (e.g. Si X 1344.09); compare the known one.
     return abs(1e8 / nist["wavelength"] - 1e8 / model["wavelength"]) <= window and all(
         nist[f"{level}_j"] == model[f"{level}_j"]
-        and abs(nist[f"{level}_energy"] - model[f"{level}_energy"]) <= ENERGY_TOLERANCE
+        and (
+            np.isnan(nist[f"{level}_energy"])
+            or abs(nist[f"{level}_energy"] - model[f"{level}_energy"]) <= ENERGY_TOLERANCE
+        )
         for level in ("lower", "upper")
     )
 
@@ -361,7 +370,7 @@ def merge_lines(rows, predictions, formation):
             for column in INTENSITY_COLUMNS:
                 matched[column] = np.nan_to_num(matched[column]) + predicted[column]
         else:
-            rows.append(predicted | CHIANTI_ONLY)
+            rows.append(predicted)
     for band in PASSBANDS:
         band_rows = [row for row in rows if row["passband"] == band]
         for column in INTENSITY_COLUMNS:
@@ -375,12 +384,13 @@ def merge_lines(rows, predictions, formation):
             print(f"{ion} {wavelength} ({reference}) is in neither NIST nor CHIANTI; added from the reference.")  # noqa: T201
             element, stage = ion.split()
             candidates = [
-                LITERATURE_ONLY
+                DEFAULTS
                 | {
                     "ion": ion,
                     "element": element,
                     "ion_stage": roman.from_roman(stage),
                     "wavelength": wavelength,
+                    "wavelength_source": "literature",
                     "passband": _passband(wavelength),
                 }
             ]
@@ -389,7 +399,7 @@ def merge_lines(rows, predictions, formation):
         line = min(
             candidates,
             key=lambda row: (
-                round(abs(row["wavelength"] - wavelength), 3),  # noqa: B023
+                round(abs(row["wavelength"] - wavelength), 3),
                 -np.nan_to_num(row["nist_transition_probability"]),
             ),
         )
@@ -462,7 +472,6 @@ def main():
         "category_boundaries_log_t": dict(CATEGORY_BOUNDARIES),
         "prediction_excluded_ion_stages": [1, 2],
         "ionization_fraction_dataset": "chianti",
-        "chianti_catalog_strength_threshold": None,
         "unranked_ions": unranked,
     }
     output = DATA_DIR / "iris_lines.ecsv"

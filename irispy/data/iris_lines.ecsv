@@ -34,7 +34,7 @@
 # - {name: intensity_flare_coronal, datatype: float64}
 # - {name: intensity_flare_photospheric, datatype: float64}
 # meta: !!omap
-# - {generation_date: '2026-10-05T09:15:59.240982+00:00'}
+# - {generation_date: '2026-10-06T07:38:26.948644+00:00'}
 # - versions: {astropy: 8.0.1, chianti: 11.0.2, chianti_hdf5: 11.0.2, chianti_hdf5_built_with_fiasco: 0.8.1, fiasco: 0.8.2, nist_asd: '5.12',
 #     numpy: 2.5.3, python: 3.14.4}
 # - nist_queries:
@@ -42,46 +42,101 @@
 #       parameters: {J_out: 'on', allowed_out: 1, bibrefs: 1, conf_out: 'on', enrg_out: 'on', forbid_out: 1, format: 2, intens_out: 'on',
 #         line_out: 0, low_w: 1331.7, order_out: 0, output: 0, page_size: 50000, remove_js: 'on', show_av: 3, show_calc_wl: 1, show_obs_wl: 1,
 #         spectra: '', term_out: 'on', unc_out: 1, unit: 0, upp_w: 1358.4}
-#       query_date: '2026-10-05T06:58:06.504253+00:00'
+#       query_date: '2026-10-06T05:21:27.224385+00:00'
 #       url: https://physics.nist.gov/cgi-bin/ASD/lines1.pl?spectra=&unit=0&format=2&line_out=0&output=0&page_size=50000&show_obs_wl=1&show_calc_wl=1&unc_out=1&order_out=0&show_av=3&allowed_out=1&forbid_out=1&conf_out=on&term_out=on&J_out=on&enrg_out=on&intens_out=on&bibrefs=1&remove_js=on&low_w=1331.7&upp_w=1358.4
 #     FUV2:
 #       parameters: {J_out: 'on', allowed_out: 1, bibrefs: 1, conf_out: 'on', enrg_out: 'on', forbid_out: 1, format: 2, intens_out: 'on',
 #         line_out: 0, low_w: 1389.0, order_out: 0, output: 0, page_size: 50000, remove_js: 'on', show_av: 3, show_calc_wl: 1, show_obs_wl: 1,
 #         spectra: '', term_out: 'on', unc_out: 1, unit: 0, upp_w: 1407.0}
-#       query_date: '2026-10-05T06:58:08.972108+00:00'
+#       query_date: '2026-10-06T05:21:29.649258+00:00'
 #       url: https://physics.nist.gov/cgi-bin/ASD/lines1.pl?spectra=&unit=0&format=2&line_out=0&output=0&page_size=50000&show_obs_wl=1&show_calc_wl=1&unc_out=1&order_out=0&show_av=3&allowed_out=1&forbid_out=1&conf_out=on&term_out=on&J_out=on&enrg_out=on&intens_out=on&bibrefs=1&remove_js=on&low_w=1389.0&upp_w=1407.0
 #     NUV:
 #       parameters: {J_out: 'on', allowed_out: 1, bibrefs: 1, conf_out: 'on', enrg_out: 'on', forbid_out: 1, format: 2, intens_out: 'on',
 #         line_out: 0, low_w: 2782.7, order_out: 0, output: 0, page_size: 50000, remove_js: 'on', show_av: 3, show_calc_wl: 1, show_obs_wl: 1,
 #         spectra: '', term_out: 'on', unc_out: 1, unit: 0, upp_w: 2835.1}
-#       query_date: '2026-10-05T06:58:12.105924+00:00'
+#       query_date: '2026-10-06T05:21:32.863943+00:00'
 #       url: https://physics.nist.gov/cgi-bin/ASD/lines1.pl?spectra=&unit=0&format=2&line_out=0&output=0&page_size=50000&show_obs_wl=1&show_calc_wl=1&unc_out=1&order_out=0&show_av=3&allowed_out=1&forbid_out=1&conf_out=on&term_out=on&J_out=on&enrg_out=on&intens_out=on&bibrefs=1&remove_js=on&low_w=2782.7&upp_w=2835.1
 # - abundance_files:
-#     coronal: {filename: sun_coronal_2021_chianti.abund, reference: 'filename: sun_coronal_2021_chianti.abund This is a general `coronal''
-#         set of abundances for active regions, where the abundances of the low-FIP elements have all been increased by 0.5 dex (as noted
-#         in the fourth column), compared to the photospheric abundances recommended by Asplund, M., Amarsi, A.M., & Grevesse, N. 2021,
-#         A&A, 653, A141 The increase corresponds to a FIP bias=3.16 and is generally consistent with the coronal values recommended by
-#         Feldman, U., Mandelbaum, P., Seely, J.L., Doschek, G.A., Gursky H., 1992, ApJSS, 81, 387 which were based on a series of papers
-#         where the relative abundances in active regions showed such FIP bias, compared to the photospheric relative abundances. Note
-#         that the photospheric abundances accepted in 1992 were quite different than the most recent ones, hence the present revision.
-#         Also note that each solar feature might have different abundances. The present values provide a general set that is applicable
-#         to the hot (T > 1 MK) emission in active regions. Created for the CHIANTI database by Giulio Del Zanna, Apr 2023', sha256: 396f76c5accb9178069ec6e89b78d06f0b8ebb5ec5567e2a10f35eff12ccaa40}
-#     photospheric: {filename: sun_photospheric_2021_asplund.abund, reference: 'filename: sun_photospheric_2021_asplund.abund created
-#         for the CHIANTI atomic database by Enrico Landi, 21-Jul-2022 abundances: Asplund, M., Amarsi, A.M., & Grevesse, N. 2021, A&A,
-#         653, A141 comment: This compilation upgrades Asplund et al. (2009) with the advances in photospheric modeling and atomic data
-#         in the last decade. Notably, it preserves a low O abundance but increases Ne/O to 0.24, in line with Young 2018 and Landi &
-#         Testa 2017 determinations in the solar atmosphere.', sha256: 665f6a911c66d71ffd9def879c9b12836f25986bb4f01a8f054e58af31661a86}
+#     coronal: {filename: sun_coronal_2021_chianti.abund, reference: 'filename: sun_coronal_2021_chianti.abund
+#
+#         This is a general `coronal'' set of abundances for active regions,
+#
+#         where the abundances of the low-FIP elements
+#
+#         have all been increased by 0.5 dex (as noted in the fourth column), compared to the
+#
+#         photospheric abundances recommended by
+#
+#         Asplund, M., Amarsi, A.M., & Grevesse, N. 2021, A&A, 653, A141
+#
+#         The increase corresponds to a FIP bias=3.16 and is generally consistent with the
+#
+#         coronal values recommended by
+#
+#         Feldman, U., Mandelbaum, P., Seely, J.L., Doschek, G.A., Gursky H., 1992, ApJSS, 81, 387
+#
+#         which were based on a series of papers where the relative abundances in active regions
+#
+#         showed such FIP bias, compared to the photospheric relative abundances.
+#
+#         Note that the photospheric abundances accepted in 1992 were quite different
+#
+#         than the most recent ones, hence the present revision.
+#
+#         Also note that each solar feature might have different abundances.
+#
+#         The present values provide a general set that is applicable to the
+#
+#         hot (T > 1 MK) emission in active regions.
+#
+#         Created for the CHIANTI database by Giulio Del Zanna, Apr 2023', sha256: 396f76c5accb9178069ec6e89b78d06f0b8ebb5ec5567e2a10f35eff12ccaa40}
+#     photospheric: {filename: sun_photospheric_2021_asplund.abund, reference: 'filename: sun_photospheric_2021_asplund.abund
+#
+#         created for the CHIANTI atomic database by Enrico Landi, 21-Jul-2022
+#
+#         abundances: Asplund, M., Amarsi, A.M., & Grevesse, N. 2021, A&A, 653, A141
+#
+#         comment: This compilation upgrades Asplund et al. (2009) with the advances in
+#
+#         photospheric modeling and atomic data in the last decade. Notably,
+#
+#         it preserves a low O abundance but increases Ne/O to 0.24, in line
+#
+#         with Young 2018 and Landi & Testa 2017 determinations in the solar
+#
+#         atmosphere.', sha256: 665f6a911c66d71ffd9def879c9b12836f25986bb4f01a8f054e58af31661a86}
 # - dem_files:
-#     active_region: {filename: active_region.dem, reference: 'filename: active_region.dem dem: produced by chianti_dem.pro Comment: the
-#         DEM was derived using the Vernazza & Reeves 1978 ApJSS, 37, 485 average Active Region, the sun_coronal.abund file and a constant
-#         pressure of 3.00e+15 cm-3 K. produced as part of the Arcetri/Cambridge/NRL ''CHIANTI'' atomic data base collaboration K.P.Dere  -
-#         Aug 2002', sha256: e1a8c0f4a39f1efc9a437eb59a5e3025d483c57da058e5891bd16e9c0b8694fa}
-#     flare: {filename: flare.dem, reference: 'filename: flare.dem dem: Dere, K.P., Cook, J.W., 1979, ApJ, 229, 772 comment: composite
-#         of August 9 1553 and 1554 UT data of an M2 X-ray class flare produced as part of the Arcetri/Cambridge/NRL ''CHIANTI'' atomic
-#         data base collaboration K.P.Dere  - Aug 2002', sha256: 9892174d11723b6e544e218eac220c519a42c4c19a93c9f030e7d87d98febff6}
-#     quiet_sun: {filename: quiet_sun.dem, reference: 'filename: quiet_sun.dem dem: produced by chianti_dem.pro Comment: the DEM was derived
-#         using the Vernazza & Reeves 1978 ApJSS, 37, 485 average Quiet Sun, the sun_coronal.abund file and a constant pressure of 3.00e+15
-#         cm-3 K. produced as part of the Arcetri/Cambridge/NRL ''CHIANTI'' atomic data base collaboration K.P.Dere  - Aug 2002', sha256: 4081083f00bb9cabd8816c4e4d74a0d63d15844c6c0737f8954797423e60796b}
+#     active_region: {filename: active_region.dem, reference: 'filename: active_region.dem
+#
+#         dem: produced by chianti_dem.pro
+#
+#         Comment: the DEM was derived using the Vernazza & Reeves 1978 ApJSS, 37, 485 average Active Region,
+#
+#         the sun_coronal.abund file and a constant pressure of 3.00e+15 cm-3 K.
+#
+#         produced as part of the Arcetri/Cambridge/NRL ''CHIANTI'' atomic data base collaboration
+#
+#         K.P.Dere  - Aug 2002', sha256: e1a8c0f4a39f1efc9a437eb59a5e3025d483c57da058e5891bd16e9c0b8694fa}
+#     flare: {filename: flare.dem, reference: 'filename: flare.dem
+#
+#         dem: Dere, K.P., Cook, J.W., 1979, ApJ, 229, 772
+#
+#         comment: composite of August 9 1553 and 1554 UT data of an M2 X-ray class flare
+#
+#         produced as part of the Arcetri/Cambridge/NRL ''CHIANTI'' atomic data base collaboration
+#
+#         K.P.Dere  - Aug 2002', sha256: 9892174d11723b6e544e218eac220c519a42c4c19a93c9f030e7d87d98febff6}
+#     quiet_sun: {filename: quiet_sun.dem, reference: 'filename: quiet_sun.dem
+#
+#         dem: produced by chianti_dem.pro
+#
+#         Comment: the DEM was derived using the Vernazza & Reeves 1978 ApJSS, 37, 485 average Quiet Sun,
+#
+#         the sun_coronal.abund file and a constant pressure of 3.00e+15 cm-3 K.
+#
+#         produced as part of the Arcetri/Cambridge/NRL ''CHIANTI'' atomic data base collaboration
+#
+#         K.P.Dere  - Aug 2002', sha256: 4081083f00bb9cabd8816c4e4d74a0d63d15844c6c0737f8954797423e60796b}
 # - electron_pressure_K_cm-3: {active_region: 3000000000000000.0, flare: 1.0e+16, quiet_sun: 3000000000000000.0}
 # - passband_limits_angstrom:
 #     FUV1: [1331.7, 1358.4]
@@ -91,7 +146,6 @@
 # - category_boundaries_log_t: {coronal: 5.9, flare: 7.0, transition_region: 4.3}
 # - prediction_excluded_ion_stages: [1, 2]
 # - {ionization_fraction_dataset: chianti}
-# - {chianti_catalog_strength_threshold: null}
 # - unranked_ions: {Al 1: _elvlc dataset missing for Al 1., Al 14: _elvlc dataset missing for Al 14., Al 2: Neutral and singly ionized
 #       lines are outside the prediction model's scope., Ar 1: _elvlc dataset missing for Ar 1., Ar 19: _elvlc dataset missing for Ar
 #       19., Ar 2: _elvlc dataset missing for Ar 2., B 1: _elvlc dataset missing for B 1., B 2: _elvlc dataset missing for B 2., B 3: _elvlc
@@ -379,8 +433,7 @@ ion element ion_stage wavelength wavelength_source wavelength_is_theoretical wav
 "Mg IV" Mg 4 1332.782 chianti True nan nan nan nan nan "" "2s 2p5 3p 4D3/2" "2s 2p5 3s 2P3/2" 878821.0 953852.0 1.5 1.5 "" nan "" 5.25 FUV1 transition_region False "" 5.902604779218783e-09 5.902230044679957e-09 9.167462959671701e-10 9.166740743716447e-10 4.742789977010036e-11 4.740772515040371e-11
 "C IV" C 4 1332.799 chianti True nan nan nan nan nan "" "1s 2p(3P) 4p 2D5/2" "1s 2p(3P) 7d 2D5/2" 2866041.6310000005 2941071.693 2.5 2.5 "" nan "" 5.05 FUV1 transition_region False "" 1.2193071339756943e-09 3.855550837510732e-09 6.388882679250245e-10 2.020187827931463e-09 1.15800580308562e-12 3.660382796677795e-12
 "Ni XI" Ni 11 1332.8 chianti True nan nan nan nan nan "" "3s2 3p3 3d3 3S1" "3s2 3p4 3d 4s 5D2" 1700926.0 1775956.0 1.0 2.0 "" nan "" 6.1 FUV1 coronal False "" 2.548940213059415e-09 2.5487836236595785e-09 2.2321824978041535e-09 2.2320120530453707e-09 3.3944956230855483e-12 3.3930559639521157e-12
-"Si VIII" Si 8 1332.8 chianti False nan nan nan nan nan "" "2s 2p3 3s 4S3/2" "2s2 2p2 3d 2S1/2" 1628660.0 1703690.0 1.5 0.5 "" nan "" 5.95 FUV1 coronal False "" 3.024536681384807e-08 3.024404153005852e-08 1.6622822792338553e-08 1.6621877147198423e-08 4.261199359054164e-11 4.259578535967116e-11
-"Si VIII" Si 8 1332.8 ritz False nan nan nan 1332.8 nan "" "2s.2p3.(5S*).3s 4S* 3/2" "2s2.2p2.(1D).3d 2S 1/2" 1628660.0 nan 1.5 0.5 "" 665000.0 "" 5.95 FUV1 coronal False "" nan nan nan nan nan nan
+"Si VIII" Si 8 1332.8 ritz False nan nan nan 1332.8 nan "" "2s.2p3.(5S*).3s 4S* 3/2" "2s2.2p2.(1D).3d 2S 1/2" 1628660.0 nan 1.5 0.5 "" 665000.0 "" 5.95 FUV1 coronal False "" 3.024536681384807e-08 3.024404153005852e-08 1.6622822792338553e-08 1.6621877147198423e-08 4.261199359054164e-11 4.259578535967116e-11
 "Ni V" Ni 5 1332.802 ritz False 0.003 1332.846 0.022 1332.802 0.003 "" "3d5.(2H).4s 3H 4" "3d5.(2H).4p 3H* 5" 240960.21 315990.11 4.0 5.0 92bl 170000000.0 L3912c164,L21210 5.0 FUV1 transition_region False "" nan nan nan nan nan nan
 "Fe XI" Fe 11 1332.836 chianti True nan nan nan nan nan "" "3s2 3p2 3d2 1D2" "3s 3p3 3d2 3F3" 1051842.0000000002 1126870.0000000002 2.0 3.0 "" nan "" 6.1 FUV1 coronal False "" 5.230936294089888e-09 5.230567257291065e-09 4.36329762265781e-09 4.362916870547471e-09 5.4841404271525525e-12 5.481759558888958e-12
 "Ir IV" Ir 4 1332.838 ritz False 0.005 1332.833 0.007 1332.838 0.005 "" "5d5.(2H).6s 3H 4" "5d5.6p 159762* 5" 84734.8 159762.7 4.0 5.0 77 26400000.0 L19451 nan FUV1 "" False "" nan nan nan nan nan nan
@@ -2197,9 +2250,8 @@ ion element ion_stage wavelength wavelength_source wavelength_is_theoretical wav
 "S IX" S 9 1344.077 chianti True nan nan nan nan nan "" "2p5 3p 3D2" "2s 2p4 4p 1P1" 2914157.5 2988558.0 2.0 1.0 "" nan "" 6.05 FUV1 coronal False "" 1.097224318919139e-09 3.4695231795027957e-09 9.820594574024625e-10 3.1053159303973975e-09 2.3561789522723814e-12 7.447742363080257e-12
 "Zn IV" Zn 4 1344.08 observed False nan 1344.08 nan nan nan "" "" "" nan nan nan nan 150 nan L3581 5.0 FUV1 transition_region False "" nan nan nan nan nan nan
 "Cr XIII" Cr 13 1344.086 chianti False nan nan nan nan nan "" "3p 4d 3F3" "3p 4f 3D2" 1870000.0 1944400.0 3.0 2.0 "" nan "" 6.2 FUV1 coronal False "" 9.7971141967608e-10 9.796512329277075e-10 1.2819964285434598e-09 1.2818985379936337e-09 3.5704533963832464e-12 3.568939110782865e-12
-"Si X" Si 10 1344.086 chianti False nan nan nan nan nan "" "2s 2p 3s 2P3/2" "2s 2p 3p 2D5/2" 2035860.0 2110259.9999999995 1.5 2.5 "" nan "" 6.15 FUV1 coronal False "" 2.24736519281523e-05 2.2473014715971165e-05 2.4251861124415425e-05 2.4250997286092975e-05 4.014346467052649e-08 4.01274041949155e-08
 "V II" V 2 1344.08803 ritz False 0.00022 1344.098 0.016 1344.08803 0.00022 "" "3d3.(2G).4s b 3G 5" "3d3.(4F<9/2>).4f 2[11/2]* 5" 16532.9841 90932.873 5.0 5.0 5300h nan L10089c179 4.1 FUV1 cool_metal False "" nan nan nan nan nan nan
-"Si X" Si 10 1344.09 ritz False nan nan nan 1344.09 nan "" "2s.2p.(3P*).3s 2P* 3/2" "2s.2p.(3P*).3p 2D 5/2" nan 2110260.0 1.5 2.5 "" 318000000.0 "" 6.15 FUV1 coronal False "" nan nan nan nan nan nan
+"Si X" Si 10 1344.09 ritz False nan nan nan 1344.09 nan "" "2s.2p.(3P*).3s 2P* 3/2" "2s.2p.(3P*).3p 2D 5/2" nan 2110260.0 1.5 2.5 "" 318000000.0 "" 6.15 FUV1 coronal False "" 2.24736519281523e-05 2.2473014715971165e-05 2.4251861124415425e-05 2.4250997286092975e-05 4.014346467052649e-08 4.01274041949155e-08
 "Fe XXI" Fe 21 1344.104 chianti True nan nan nan nan nan "" "2p3 4p 5P3" "2p3 4d 5D3" 11744382.0 11818781.0 3.0 3.0 "" nan "" 7.05 FUV1 flare False "" 7.090211358754575e-17 7.089776050302433e-17 1.6504670011385945e-12 1.6503411405903365e-12 2.373028507700506e-10 2.3720240027835487e-10
 "Nb IV" Nb 4 1344.1267 ritz False 0.0012 1344.13 0.005 1344.1267 0.0012 "" "4d.5p 3F* 3" "4d.(2D<3/2>).6s 2[3/2] 2" 100386.3 174784.05 3.0 2.0 70000 370000000.0 L12094 nan FUV1 "" False "" nan nan nan nan nan nan
 "Cr II" Cr 2 1344.132 chianti False nan nan nan nan nan "" "3d4 (3G)4s 4G7/2" "3d3 (2H)4s (1H)4p 2G7/2" 33521.09 107918.539 3.5 3.5 "" nan "" 4.15 FUV1 cool_metal False "" nan nan nan nan nan nan
@@ -4270,10 +4322,9 @@ ion element ion_stage wavelength wavelength_source wavelength_is_theoretical wav
 "C IV" C 4 1356.642 chianti True nan nan nan nan nan "" "1s 2p(1P) 4d 2P3/2" "1s 2p(1P) 7f 2D5/2" 2890601.274 2964312.679 1.5 2.5 "" nan "" 5.05 FUV1 transition_region False "" 1.6099358305322607e-09 5.090751351144746e-09 8.471160471265351e-10 2.67861160263358e-09 1.527549780555111e-12 4.828487839105808e-12
 "Co XVI" Co 16 1356.642 chianti True nan nan nan nan nan "" "3d 4f 3D1" "3p 5p 3D1" 3087334.8000000003 3161046.2 1.0 1.0 "" nan "" 6.4 FUV1 coronal False "" 1.8036558563550932e-13 1.8035450521131531e-13 7.556842863504451e-13 7.556265838883799e-13 1.0068807711004894e-14 1.0064537370844388e-14
 "Fe IX" Fe 9 1356.657 chianti True nan nan nan nan nan "" "3s2 3p5 5p 3D1" "3s2 3p4 3d 4p 5P2" 1411386.375 1485097.0 1.0 2.0 "" nan "" 5.9 FUV1 coronal False "" 5.292041384351733e-07 5.291716277634819e-07 2.520600056557843e-07 2.5204075888411364e-07 6.244386519689763e-10 6.241738176877177e-10
-"Mg VII" Mg 7 1356.668 chianti False nan nan nan nan nan "" "2s2 2p 3p 3P0" "2s2 2p 3d 3P1" 1123740.0 1197450.0 0.0 1.0 "" nan "" 5.8 FUV1 transition_region False "" 5.396745402626552e-06 5.396413304174209e-06 2.0522573240626347e-06 2.052100393984778e-06 5.2170718770566405e-09 5.214859029805867e-09
 "Sr IV" Sr 4 1356.6842 ritz False 0.0013 1356.684 0.01 1356.6842 0.0013 "" "4s2.4p4.(3P).4d 2F 5/2" "4s2.4p4.(1D<2>).5p 2[3]* 5/2" 214946.01 288655.13 2.5 2.5 24 nan L3647 nan FUV1 "" False "" nan nan nan nan nan nan
 "Pt IV" Pt 4 1356.692 ritz False 0.003 1356.69 0.006 1356.692 0.003 "" "5d6.6s 72279 5/2" "5d6.6p 145987* 7/2" 72279.1 145987.82 2.5 3.5 2539 191000000.0 L19453 nan FUV1 "" False "" nan nan nan nan nan nan
-"Mg VII" Mg 7 1356.7 ritz False nan nan nan 1356.7 nan "" "2s2.2p.3p 3P 0" "2s2.2p.3d 3P* 1" nan 1197450.0 0.0 1.0 "" 86000000.0 "" 5.8 FUV1 transition_region False "" nan nan nan nan nan nan
+"Mg VII" Mg 7 1356.7 ritz False nan nan nan 1356.7 nan "" "2s2.2p.3p 3P 0" "2s2.2p.3d 3P* 1" nan 1197450.0 0.0 1.0 "" 86000000.0 "" 5.8 FUV1 transition_region False "" 5.396745402626552e-06 5.396413304174209e-06 2.0522573240626347e-06 2.052100393984778e-06 5.2170718770566405e-09 5.214859029805867e-09
 "Ne V" Ne 5 1356.709 chianti True nan nan nan nan nan "" "2s2 2p 4d 3D2" "2s2 2p 5p 3P1" 841000.0 924436.2000000001 2.0 1.0 "" nan "" 5.4 FUV1 transition_region False "" 0.0001083266773133646 0.0003425381404668802 2.052633442005651e-05 6.490504337936584e-05 5.447650913690165e-07 1.7219686271675903e-06
 "K XIV" K 14 1356.714 chianti True nan nan nan nan nan "" "2s2 2p 5p 3D2" "2s 2p2 4p 1P1" 5495015.0 5568722.499999999 2.0 1.0 "" nan "" 6.55 FUV1 coronal False "" 5.8157004091107e-13 5.815343132375833e-13 5.0567953231312e-12 5.056409196880363e-12 1.1748537780011918e-13 1.1743555039835603e-13
 "Ne III" Ne 3 1356.7154 ritz False 0.0021 1356.714 nan 1356.7154 0.0021 "" "2s2.2p3.(4S*).3d 3D* 2" "2s2.2p3.(4S*).5f 3F 3" 398182.766 471890.19 2.0 3.0 240 370000000.0 L11529 4.95 FUV1 transition_region False "" nan nan nan nan nan nan
@@ -6080,9 +6131,8 @@ ion element ion_stage wavelength wavelength_source wavelength_is_theoretical wav
 "Mg II" Mg 2 1398.775 chianti False nan nan nan nan nan "" "3s 2S1/2" "3d 2D3/2" 0.0 71491.10200000001 0.5 1.5 "" nan "" 4.15 FUV2 chromospheric False "" nan nan nan nan nan nan
 "Ta IV" Ta 4 1398.78 observed False nan 1398.78 nan nan nan "" "" "" nan nan nan nan 91 nan L4307 nan FUV2 "" False "" nan nan nan nan nan nan
 "Mg II" Mg 2 1398.7933 ritz False nan nan nan 1398.7933 nan E2 "2p6.3s 2S 1/2" "2p6.3d 2D 5/2" 0.0 71490.19 0.5 2.5 "" 8770.0 "" 4.15 FUV2 chromospheric False "" nan nan nan nan nan nan
-"Mg IV" Mg 4 1398.795 observed False nan 1398.795 nan 1398.805 nan "" "2s2.2p4.(3P).3p * 1/2" "2s2.2p4.(3P).3d 2P 3/2" nan 682472.8 0.5 1.5 1 nan L1965 5.25 FUV2 transition_region False "" nan nan nan nan nan nan
+"Mg IV" Mg 4 1398.795 observed False nan 1398.795 nan 1398.805 nan "" "2s2.2p4.(3P).3p * 1/2" "2s2.2p4.(3P).3d 2P 3/2" nan 682472.8 0.5 1.5 1 nan L1965 5.25 FUV2 transition_region False "" 2.1381676342183624e-06 2.138171167734081e-06 1.7779593252058408e-06 1.777962869014401e-06 9.51105023908968e-07 9.511059560869073e-07
 "Si VIII" Si 8 1398.803 chianti True nan nan nan nan nan "" "2s2 2p2 4p 4D1/2" "2s 2p3 3p 2P3/2" 1970336.9000000001 2041826.6 0.5 1.5 "" nan "" 5.95 FUV2 coronal False "" 6.411287458913153e-11 6.411155454849657e-11 2.1745618780634814e-10 2.1745064547134456e-10 2.6691383097912673e-12 2.6691105716727638e-12
-"Mg IV" Mg 4 1398.804 chianti False nan nan nan nan nan "" "2s2 2p4 3p 2S1/2" "2s2 2p4 3d 2P3/2" 610983.1880000001 682472.8119999999 0.5 1.5 "" nan "" 5.25 FUV2 transition_region False "" 2.1381676342183624e-06 2.138171167734081e-06 1.7779593252058408e-06 1.777962869014401e-06 9.51105023908968e-07 9.511059560869073e-07
 "Si V" Si 5 1398.807 chianti False nan nan nan nan nan "" "2s2 2p5 4d 3P0" "2s2 2p5 5f 3D1" 1163210.0 1234699.5 0.0 1.0 "" nan "" 5.2 FUV2 transition_region False "" 6.346611760982302e-07 6.346611760982299e-07 7.737346567591393e-07 7.737346567591392e-07 1.3174394186896643e-07 1.3174394186896643e-07
 "Fe III" Fe 3 1398.8221 ritz False 0.0012 1398.823 0.005 1398.8221 0.0012 "" "3d5.(4G).4s 5G 4" "3d5.(a 2D).4p 3D* 3" 63487.32 134976.04 4.0 3.0 730 nan L11223 4.45 FUV2 transition_region False "" nan nan nan nan nan nan
 "Fe XIV" Fe 14 1398.837 chianti True nan nan nan nan nan "" "3s 3p 5p 4D5/2" "3s 3d 4f 2F7/2" 2411835.1329999994 2483323.078 2.5 3.5 "" nan "" 6.3 FUV2 coronal False "" 6.070816459993967e-09 6.071215002800071e-09 6.826874344677347e-08 6.827400850594365e-08 2.0007199119350996e-09 2.000948090782152e-09
@@ -8844,10 +8894,9 @@ ion element ion_stage wavelength wavelength_source wavelength_is_theoretical wav
 "Zn I" Zn 1 2801.87557 ritz False 0.00012 2801.87554 0.00016 2801.87557 0.00012 "" "3d10.4s.4p 3P* 2" "3d10.4s.5d 3D 2" 32890.3267 68580.7053 2.0 2.0 530000 nan L9761 4.01 NUV cool_metal False "" nan nan nan nan nan nan
 "Cu II" Cu 2 2801.87561 ritz False 0.00016 2801.8755 0.0006 2801.87561 0.00016 "" "3d8.4s2 1D 2" "3d9.(2D<5/2>).5p 2[5/2]* 3" 85388.772 121079.1501 2.0 3.0 1000 nan L869c171 4.3 NUV transition_region False "" nan nan nan nan nan nan
 "Mn I" Mn 1 2801.89 observed False nan 2801.89 nan 2801.907 nan "" "3d5.4s2 a 6S 5/2" "3d5.(6S).4s.4p.(1P*) y 6P* 3/2" 0.0 35689.98 2.5 1.5 3700 370000000.0 L3475 4.01 NUV cool_metal False "" nan nan nan nan nan nan
-"Si X" Si 10 2801.9 ritz False nan nan nan 2801.9 nan "" "2s.2p.(3P*).3s 2P* 1/2" "2s.2p.(3P*).3p 2P 3/2" nan 2066750.0 0.5 1.5 "" 4930000.0 "" 6.15 NUV coronal False "" nan nan nan nan nan nan
+"Si X" Si 10 2801.9 ritz False nan nan nan 2801.9 nan "" "2s.2p.(3P*).3s 2P* 1/2" "2s.2p.(3P*).3p 2P 3/2" nan 2066750.0 0.5 1.5 "" 4930000.0 "" 6.15 NUV coronal False "" 3.0517342110776827e-06 2.0599874700495098e-06 2.1840800188694032e-06 2.1839982264847416e-06 5.467928277943051e-07 2.863591382340371e-07
 "K XIV" K 14 2801.905 chianti True nan nan nan nan nan "" "2s 2p2 4d 5F4" "2s 2p2 4f 5G5" 5237674.0 5273364.0 4.0 5.0 "" nan "" 6.55 NUV coronal False "" 1.5731728090122894e-11 1.0619213926172334e-11 7.25571855560346e-11 7.255404796147919e-11 5.350235887099011e-10 2.801942248508525e-10
 "N IV" N 4 2801.905 chianti False nan nan nan nan nan "" "2p 3d 1P1" "2s 5d 1D2" 518610.0 554300.0 1.0 2.0 "" nan "" 5.15 NUV transition_region False "" 0.00012474596074347056 0.00026628302220059707 9.455500929574874e-06 2.9899719436826664e-05 0.00019283718312291327 0.0003193576017878417
-"Si X" Si 10 2801.905 chianti False nan nan nan nan nan "" "2s 2p 3s 2P1/2" "2s 2p 3p 2P3/2" 2031060.0 2066749.9999999998 0.5 1.5 "" nan "" 6.15 NUV coronal False "" 3.0517342110776827e-06 2.0599874700495098e-06 2.1840800188694032e-06 2.1839982264847416e-06 5.467928277943051e-07 2.863591382340371e-07
 "S II" S 2 2801.906 observed False 0.009 2801.906 0.009 2801.902 0.009 "" "3s2.3p2.(3P).4p 2D* 3/2" "3s2.3p2.(3P).6s 2P 1/2" 130641.154 166331.2 1.5 0.5 280 nan L5883 4.3 NUV transition_region False "" nan nan nan nan nan nan
 "N V" N 5 2801.958 chianti True nan nan nan nan nan "" "1s 2p(1P) 5s 2P1/2" "1s 2s(1S) 8s 2S1/2" 4141343.813000001 4177033.136999999 0.5 0.5 "" nan "" 5.3 NUV transition_region False "" 4.896928897610577e-09 1.045297078657198e-08 2.862558406783986e-09 9.051813055699416e-09 8.077135013292533e-10 1.3376533822155315e-09
 "Cr I" Cr 1 2801.964 ritz False 0.004 2801.96 0.02 2801.964 0.004 "" "3d4.4s2 a 3F 2" "3d5.(2D1).4p s 3D* 2" 24940.594 60629.84 2.0 2.0 15 nan L808 4.01 NUV cool_metal False "" nan nan nan nan nan nan

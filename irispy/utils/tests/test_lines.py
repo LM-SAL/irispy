@@ -67,7 +67,7 @@ def test_documented_lines():
         assert line["reference"] == reference
     assert set(table["wavelength_source"][table["ion"] == "Ni II"]) == {"literature"}
     full = get_lines()
-    np.testing.assert_array_equal(full["main"], full["reference"].filled("") != "")
+    np.testing.assert_array_equal(full["main"], full["reference"] != "")
 
 
 def test_mg_ii_documented_channel():
@@ -103,7 +103,9 @@ def test_neutral_and_singly_ionized_lines_unranked():
 
 def test_categories():
     table = get_lines()
-    categories = table["category"].filled("")
+    categories = table["category"]
+    # Uncategorised lines hold empty strings, not masked values.
+    assert (categories == "").any()
     assert set(categories[table["ion"] == "Mg II"]) == {"chromospheric"}
     assert set(categories[table["ion"] == "Si IV"]) == {"transition_region"}
     assert set(categories[table["ion"] == "Fe XII"]) == {"coronal"}
@@ -227,6 +229,10 @@ def test_non_spectral_units():
         get_lines([1402, 1404])
 
 
+def test_defaults_match_catalog(tool):
+    assert list(tool.DEFAULTS) == get_lines().colnames
+
+
 def test_merge_lines(monkeypatch, tool):
     monkeypatch.setattr(
         tool,
@@ -241,39 +247,24 @@ def test_merge_lines(monkeypatch, tool):
     )
     levels = {"lower": "a", "upper": "b", "lower_energy": 0.0, "upper_energy": 7e4, "lower_j": 0.5, "upper_j": 1.5}
 
-    def nist(ion, wavelength, a=1e8, kind="", uncertainty=0.001, **overrides):
+    def row(ion, wavelength, **overrides):
         element, stage = ion.split()
-        return {
+        return tool.DEFAULTS | {
             "ion": ion,
             "element": element,
             "ion_stage": tool.roman.from_roman(stage),
             "wavelength": wavelength,
-            "wavelength_source": "observed",
-            "wavelength_uncertainty": uncertainty,
-            "transition_type": kind,
-            "nist_transition_probability": a,
             "passband": tool._passband(wavelength),
-            "log_t_max": np.nan,
-            "category": "",
-            "main": False,
-            "reference": "",
             **levels,
-            **dict.fromkeys(tool.INTENSITY_COLUMNS, np.nan),
             **overrides,
         }
 
+    def nist(ion, wavelength, a=1e8, kind="", uncertainty=0.001, **overrides):
+        source = {"wavelength_source": "observed", "wavelength_uncertainty": uncertainty}
+        return row(ion, wavelength, transition_type=kind, nist_transition_probability=a, **source, **overrides)
+
     def predicted(ion, wavelength, strength, **overrides):
-        element, stage = ion.split()
-        return {
-            "ion": ion,
-            "element": element,
-            "ion_stage": tool.roman.from_roman(stage),
-            "wavelength": wavelength,
-            "passband": tool._passband(wavelength),
-            **levels,
-            **dict.fromkeys(tool.INTENSITY_COLUMNS, strength),
-            **overrides,
-        }
+        return row(ion, wavelength, **(dict.fromkeys(tool.INTENSITY_COLUMNS, strength) | overrides))
 
     no_levels = dict.fromkeys(("lower_energy", "upper_energy", "lower_j", "upper_j"), np.nan)
     rows = [
@@ -281,6 +272,7 @@ def test_merge_lines(monkeypatch, tool):
         nist("Ca II", 1341.89, uncertainty=np.nan, lower="", upper="", **no_levels),
         nist("Fe XII", 1349.4),
         nist("Fe XXI", 1354.08),
+        nist("Si X", 1344.09, lower_energy=np.nan),
         nist("Si IV", 1393.76),
         nist("O IV", 1401.15, upper="c", upper_energy=71300.0),
         nist("O IV", 1401.157),
@@ -293,6 +285,7 @@ def test_merge_lines(monkeypatch, tool):
         predicted("Ca II", 1341.9, 1.0, intensity_flare_photospheric=4.0),
         predicted("O IV", 1343.5, 1e-6),
         predicted("Mn XVIII", 1355.014, 1e-6),
+        predicted("Si X", 1344.086, 3.0),
         predicted("O IV", 1401.157, 2.0),
         predicted("Mg II", 2798.753, 5.0),
     ]
@@ -302,6 +295,7 @@ def test_merge_lines(monkeypatch, tool):
         "Mn XVIII": 6.9,
         "O IV": 5.15,
         "Si IV": 4.9,
+        "Si X": 6.15,
         "Fe XII": 6.15,
         "Fe XXI": 7.05,
         "Mg II": 4.15,
@@ -319,6 +313,10 @@ def test_merge_lines(monkeypatch, tool):
     (ca_ii,) = [row for key, row in merged.items() if key[0] == "Ca II"]
     assert ca_ii["wavelength_source"] == "observed"
     np.testing.assert_allclose([ca_ii[column] for column in INTENSITY_COLUMNS], [0.1, 0.1, 0.1, 0.1, 0.1, 1])
+    # One unparsed level energy still matches on the other level, J values, and wavelength.
+    (si_x,) = [row for key, row in merged.items() if key[0] == "Si X"]
+    assert si_x["wavelength_source"] == "observed"
+    np.testing.assert_allclose([si_x[column] for column in INTENSITY_COLUMNS], [0.3, 0.3, 0.3, 0.3, 0.3, 0.75])
     # Match documented channels by wavelength, then A-value.
     assert merged["O IV", 1401.157, ""]["main"]
     assert not merged["O IV", 1401.15, ""]["main"]
@@ -340,6 +338,7 @@ def test_merge_lines(monkeypatch, tool):
         "Fe XII": "coronal",
         "Fe XXI": "flare",
         "Si IV": "transition_region",
+        "Si X": "coronal",
         "O IV": "transition_region",
         "Mg II": "chromospheric",
         "Mn XVIII": "coronal",
@@ -351,14 +350,11 @@ def test_merge_lines(monkeypatch, tool):
 @pytest.mark.parametrize(("nist_count", "model_count"), [(2, 1), (1, 2)])
 def test_ambiguous_matches_remain_separate(monkeypatch, tool, nist_count, model_count):
     monkeypatch.setattr(tool, "DOCUMENTED", [])
-    transition = tool.LITERATURE_ONLY | {
+    transition = tool.DEFAULTS | {
         "ion": "O IV",
         "element": "O",
         "ion_stage": 4,
         "wavelength": 1401.157,
-        "wavelength_source": "observed",
-        "wavelength_uncertainty": 0.001,
-        "nist_transition_probability": 1e8,
         "passband": "FUV2",
         "lower": "a",
         "upper": "b",
@@ -367,9 +363,10 @@ def test_ambiguous_matches_remain_separate(monkeypatch, tool, nist_count, model_
         "lower_j": 0.5,
         "upper_j": 1.5,
     }
-    rows = [transition | {"upper_energy": 7e4 + index} for index in range(nist_count)]
+    nist = {"wavelength_source": "observed", "wavelength_uncertainty": 0.001, "nist_transition_probability": 1e8}
+    rows = [transition | nist | {"upper_energy": 7e4 + index} for index in range(nist_count)]
     predictions = [
-        transition | {"upper_energy": 7e4 + index} | dict.fromkeys(INTENSITY_COLUMNS, 1.0)
+        transition | dict.fromkeys(INTENSITY_COLUMNS, 1.0) | {"upper_energy": 7e4 + index}
         for index in range(model_count)
     ]
     merged = tool.merge_lines(rows, predictions, {"O IV": 5.15})
@@ -395,56 +392,21 @@ def test_nist_version(monkeypatch, version, tool):
 
 
 def test_nist_wavelength_selection(monkeypatch, tool):
-    fields = [
-        "element",
-        "sp_num",
-        "obs_wl_vac(A)",
-        "ritz_wl_vac(A)",
-        "unc_obs_wl",
-        "unc_ritz_wl",
-        "Type",
-        "conf_i",
-        "term_i",
-        "J_i",
-        "conf_k",
-        "term_k",
-        "J_k",
-        "Ei(cm-1)",
-        "Ek(cm-1)",
-        "intens",
-        "Aki(s^-1)",
-        "line_ref",
+    records = [
+        'C,1,1354.284,1354.28888,0.003,0.00006,,,,"1/2,3/2",,,,[123],123+x,,,',
+        "Si,4,1393.76,1393.7546,0.001,0.003,E1,3s,2S,1/2,3p,2P*,3/2,0,71748.64,1000bl,4.7e8?,T1234",
+        "Si,4,,1402.7697,,,,,,,,,,,,,,",
+        "Mg,2,2796.352,2796.352,,,,,,,,,,,,,,",
     ]
     content = io.StringIO()
-    writer = csv.DictWriter(content, fieldnames=fields)
-    writer.writeheader()
-    for element, stage, observed, ritz, obs_unc, ritz_unc in [
-        ("C", 1, "1354.284", "1354.28888", "0.003", "0.00006"),
-        ("Si", 4, "1393.76", "1393.7546", "0.001", "0.003"),
-        ("Si", 4, "", "1402.7697", "", ""),
-        ("Mg", 2, "2796.352", "2796.352", "", ""),
-    ]:
-        record = dict(zip(fields[:6], (element, stage, observed, ritz, obs_unc, ritz_unc), strict=True))
-        if element == "C":
-            record.update({"Ei(cm-1)": "[123]", "Ek(cm-1)": "123+x", "J_i": "1/2,3/2"})
-        if observed == "1393.76":
-            record.update(
-                {
-                    "Type": "E1",
-                    "conf_i": "3s",
-                    "term_i": "2S",
-                    "J_i": "1/2",
-                    "conf_k": "3p",
-                    "term_k": "2P*",
-                    "J_k": "3/2",
-                    "Ei(cm-1)": "0",
-                    "Ek(cm-1)": "71748.64",
-                    "intens": "1000bl",
-                    "Aki(s^-1)": "4.7e8?",
-                    "line_ref": "T1234",
-                }
-            )
-        writer.writerow({key: value if key == "sp_num" else f'="{value}"' for key, value in record.items()})
+    content.write(
+        "element,sp_num,obs_wl_vac(A),ritz_wl_vac(A),unc_obs_wl,unc_ritz_wl,Type,conf_i,term_i,J_i,conf_k,term_k,J_k,"
+        "Ei(cm-1),Ek(cm-1),intens,Aki(s^-1),line_ref\n"
+    )
+    writer = csv.writer(content)
+    # NIST wraps every field except sp_num in Excel string syntax.
+    for cells in csv.reader(records):
+        writer.writerow([cell if i == 1 else f'="{cell}"' for i, cell in enumerate(cells)])
     monkeypatch.setattr(tool, "urlopen", lambda *_args, **_kwargs: io.BytesIO(content.getvalue().encode()))
     rows, queries = tool.download_nist()
     for band, query in queries.items():

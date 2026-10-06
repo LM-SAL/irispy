@@ -40,13 +40,9 @@ print(lines["ion", "wavelength", "wavelength_source", "intensity_flare_coronal"]
 
 ###############################################################################
 # The 99th percentile at each wavelength highlights the ribbon and loops while
-# reducing sensitivity to isolated cosmic-ray spikes. Different wavelengths can
-# select different pixels, so the composite cannot validate model intensity ratios.
-#
-# Both Level 2 data and the catalog use vacuum wavelengths. Each panel marks the
-# curated lines and candidates at least 1 % of the passband's strongest prediction.
-# Scores normalize only eligible predictions; a high-scoring line can still be
-# much fainter than an unranked Mg II line.
+# suppressing isolated cosmic-ray spikes. Both Level 2 data and the catalog use
+# vacuum wavelengths. Each panel marks the documented lines and the candidates at
+# least 1 % of the passband's strongest prediction.
 
 fig, axes = plt.subplots(3, 1, figsize=(10, 11), layout="constrained")
 for ax, window in zip(axes, raster.keys(), strict=True):
@@ -79,7 +75,7 @@ for ax, window in zip(axes, raster.keys(), strict=True):
 axes[-1].set_xlabel("Vacuum wavelength [Å]")
 fig.legend(
     handles=[
-        Line2D([], [], color="tab:blue", linestyle="--", label="Curated IRIS line"),
+        Line2D([], [], color="tab:blue", linestyle="--", label="Documented IRIS line"),
         Line2D([], [], color="0.5", linestyle="--", label="Reference-model candidate"),
     ],
     loc="outside upper center",
@@ -90,12 +86,8 @@ plt.show()
 
 ###############################################################################
 # Fe XXI 1354.08 Å is the broad line from the hot loops. C II, O I, Cl I, C I, and
-# Mg II are documented lines without predictions.
-# C II and Mg II need radiative transfer; O I needs recombination and charge exchange.
-#
-# Strengths assume a fixed DEM and pressure; ``region="flare"`` does not fit this
-# raster's atmosphere. Si IV can become optically thick in flares, affecting its
-# doublet ratio.
+# Mg II are documented lines without predictions, and the flare model's fixed DEM
+# and pressure do not describe this raster: see :doc:`/line_database`.
 #
 # Search around the two unlabelled peaks near 1357 Å, including unranked candidates.
 # The feature at 1386.7 Å falls below the catalog's FUV2 limit of 1389 Å.
@@ -107,12 +99,10 @@ for peak in [1357.14, 1357.66]:
 ###############################################################################
 # `Peter Young's IRIS line list <https://pyoung.org/iris/iris_line_list.pdf>`__, Table 1,
 # identifies C I lines at 1357.134 and 1357.659 Å, consistent with these features.
-# Laboratory intensities depend on the excitation source and have no common
-# scale across elements and ionization stages.
 #
 # Most NUV features away from Mg II are photospheric absorption lines, but cool
-# metals can also emit in the chromosphere during flares. The ``cool_metal`` label
-# does not assign a formation height; identification requires the spectrum and a solar atlas.
+# metals can also emit in the chromosphere during flares, so identification needs
+# the spectrum and a solar atlas.
 
 cool_metals = get_lines([2812, 2818] * u.AA, categories="cool_metal")
 print(f"{len(cool_metals)} cool-metal candidates between 2812 and 2818 Å")
