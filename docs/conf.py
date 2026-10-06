@@ -157,7 +157,7 @@ bibtex_reference_style = "author_year"
 
 # -- Options for sphinxext-opengraph ------------------------------------------
 
-ogp_image = "https://raw.githubusercontent.com/sunpy/sunpy-logo/master/generated/sunpy_logo_word.png"
+ogp_image = "https://lmsal.com/images/lmsal_logo_highres_small.png"
 ogp_use_first_image = True
 ogp_description_length = 160
 ogp_custom_meta_tags = ('<meta property="og:ignore_canonical" content="true" />',)
@@ -198,7 +198,6 @@ autodoc_preserve_defaults = True
 # -- Other options ------------------------------------------------------------
 
 # Configuration for sphinx-gallery
-from sunpy_sphinx_theme import PNG_ICON
 from sphinx_gallery.sorting import ExplicitOrder
 
 # Enable extra Sphinx-Gallery runtime and memory reporting only for the
@@ -219,7 +218,7 @@ sphinx_gallery_conf = {
     ),
     "within_subsection_order": "FileNameSortKey",
     "gallery_dirs": str(Path("generated") / "gallery"),
-    "default_thumb_file": PNG_ICON,
+    "default_thumb_file": str(DOCS_DIR / "_static" / "images" / "lmsal_logo.png"),
     "abort_on_example_error": False,
     "plot_gallery": "True",
     "remove_config_comments": True,
