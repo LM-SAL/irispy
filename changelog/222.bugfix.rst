@@ -1,0 +1,1 @@
+Fixed concurrent calls to `~irispy.io.read_files` extracting the same archive and reading partially written FITS files.

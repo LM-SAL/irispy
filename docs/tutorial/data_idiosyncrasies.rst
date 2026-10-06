@@ -38,7 +38,7 @@ The fitted background is then evaluated and subtracted at every wavelength, incl
     red = ([150, 300] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(1335.71 * u.AA))
     windows = u.Quantity([blue, red])
 
-    c_ii = read_files(sample_data.RASTER_TAR, spectral_windows="C II 1336")["C II 1336"][0]
+    c_ii = read_files(sample_data.RASTER_FITS, spectral_windows="C II 1336")["C II 1336"][0]
     spectrum = c_ii[0, 150]
     corrected = subtract_background(spectrum, windows)
 
