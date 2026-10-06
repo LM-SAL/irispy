@@ -1,0 +1,1 @@
+Document where the fiducial marks are in Level 2 data and that they are often not visible in the FUV windows, add a known issue on the residual offsets between FUV and NUV windows along the slit, and add a gallery example on finding the marks in the spectral windows.

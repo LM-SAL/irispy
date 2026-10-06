@@ -44,6 +44,14 @@ In spectrograms the fiducial marks appear as solid black lines along the wavelen
 
     Position of fiducial marks on an NUV spectrogram.
 
+The marks are two gaps in the slit, each two pixels (0.33″) long, one in each half of the CCD :cite:p:`depontieu2014`, and the Level 2 pipeline shifts the spectra so that the marks fall on the same rows in every spectral window :cite:p:`wulser2018`.
+In the ten observations from 2013 to 2026 we checked, the marks are 89.7″ apart, at rows 238.0 and 777.1 (counting from 0) of a window that covers the whole slit without spatial summing.
+They are clear in the NUV windows but often not visible in the FUV windows: only three of the ten observations show them there (2014-07-08, 2015-01-30 and 2021-04-29).
+Some FUV windows also show a dark row that is not a mark, about 61 rows (10″) below the lower mark.
+
+`irispy.utils.fiducials.find_fiducials` finds the marks in a spectral window; see :ref:`sphx_glr_generated_gallery_how_to_07_find_fiducials.py`.
+In the observations we checked, the FUV and NUV windows line up to a fraction of a pixel; see :ref:`irspy_known_issues`.
+
 Cosmic rays
 ===========
 
