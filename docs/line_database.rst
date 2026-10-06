@@ -1,31 +1,11 @@
 IRIS spectral line database
 ===========================
 
-``irispy`` ships an offline table of atomic lines in the three IRIS spectrograph passbands, with approximate reference-model strengths for eligible ions.
-Use it to find candidate transitions near a wavelength; a candidate is not a confirmed solar line identification.
-The strength rankings depend on the selected reference atmosphere and help compare candidates within a passband.
-Use `irispy.utils.lines.get_lines`::
+``irispy`` provides an offline catalog of atomic lines in the three IRIS spectrograph passbands, with approximate strengths computed from fixed reference atmospheres.
+Query the strongest FUV2 predictions for the quiet Sun with coronal abundances using `irispy.utils.lines.get_lines`::
 
     >>> import astropy.units as u
     >>> from irispy.utils.lines import get_lines
-    >>> documented = get_lines(main_only=True)
-    >>> len(documented)
-    25
-    >>> lines = get_lines([1402, 1404] * u.angstrom,
-    ...                   region="quiet_sun", abundance="photospheric")
-    >>> str(lines["ion"][0])
-    'Si IV'
-
-Ranges accept any spectral unit and include both endpoints; all wavelengths are in vacuum.
-Supplying ``region`` (``quiet_sun``, ``active_region``, or ``flare``) and ``abundance`` (``coronal`` or ``photospheric``) groups results as FUV1, FUV2, then NUV, sorting strongest first within each passband; otherwise lines are sorted by wavelength.
-Lines without a prediction come last within each passband, and ``include_unranked=False`` removes them.
-``main_only=True`` selects a :ref:`curated set of documented IRIS lines <documented-lines>`, and ``categories`` filters by :ref:`catalog category <line-categories>`.
-
-Lines in each passband
-----------------------
-
-The five strongest predicted FUV2 lines for the quiet Sun with coronal abundances are::
-
     >>> fuv2 = get_lines([1389, 1407] * u.angstrom, region="quiet_sun", abundance="coronal")
     >>> for line in fuv2[:5]:
     ...     print(f"{line['ion']:6} {line['wavelength'].value:8.2f} {line['intensity_quiet_sun_coronal']:5.2f}  {line['wavelength_source']}")
@@ -35,48 +15,51 @@ The five strongest predicted FUV2 lines for the quiet Sun with coronal abundance
     O IV    1404.81  0.08  chianti
     O IV    1399.78  0.07  chianti
 
-For an example of marking candidates on an observation, see :ref:`sphx_glr_generated_gallery_how_to_06_identify_lines.py`.
+Wavelength ranges are inclusive and accept any spectral unit; catalog wavelengths are in vacuum.
+Supplying both ``region`` (``quiet_sun``, ``active_region``, or ``flare``) and ``abundance`` (``coronal`` or ``photospheric``) ranks lines strongest first within each passband, ordered FUV1, FUV2, NUV.
+Unranked lines follow the predictions unless excluded with ``include_unranked=False``.
+Without a ranking model, results are sorted by wavelength.
+``main_only=True`` selects :ref:`documented IRIS lines <documented-lines>`; ``categories`` filters by :ref:`catalog category <line-categories>`.
+
+The :ref:`gallery example <sphx_glr_generated_gallery_how_to_06_identify_lines.py>` marks candidate lines on an observation.
 
 Passbands
 ---------
 
-The passbands are those of Table 2 of :cite:t:`depontieu2014`, without margins: FUV1 1331.7--1358.4, FUV2 1389.0--1407.0, and NUV 2782.7--2835.1 Angstrom.
+Table 2 of :cite:t:`depontieu2014` defines the passbands: FUV1 1331.7--1358.4, FUV2 1389.0--1407.0, and NUV 2782.7--2835.1 Angstrom.
 :cite:t:`wulser2018` give the same FUV ranges, and the full-detector windows of Level 2 files from 2015 and 2026 span 1331.68--1358.28, 1380.66--1406.70, and 2783.23--2835.10 Angstrom.
-The FUV2 detector is therefore read out below 1389 Angstrom, but no documented passband includes that region, so the database stops at 1389.0 Angstrom.
+The FUV2 readout extends below 1389 Angstrom; the catalog follows the published passband limits without margins.
 
 What the table contains
 -----------------------
 
-Every line in the `NIST Atomic Spectra Database <https://physics.nist.gov/PhysRefData/ASD/lines_form.html>`__ within the passbands is included, for all elements and ionization stages, including forbidden lines.
+The catalog includes all `NIST Atomic Spectra Database <https://physics.nist.gov/PhysRefData/ASD/lines_form.html>`__ lines within the passbands, across all elements and ionization stages, including forbidden transitions.
 
 * ``wavelength`` selects the NIST observed or Ritz wavelength with the smaller available uncertainty.
-  When neither uncertainty is known, the observed value is preferred; when only one wavelength exists, it is used.
-  Both values and their uncertainties are retained, and ``wavelength_source`` identifies the selection.
+  Observed values take precedence when neither uncertainty is known; a sole available wavelength is used directly.
+  Both values and uncertainties are retained, with the selection recorded in ``wavelength_source``.
   NIST explains that `Ritz wavelengths are usually more accurate in the vacuum ultraviolet <https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html>`__.
-  This selection is not a recommendation for a Doppler reference: check the original measurement, blends, and the instrument calibration conventions :cite:p:`wulser2018`.
+  Doppler references also require the original measurement, blend assessment, and instrument calibration conventions :cite:p:`wulser2018`.
 * ``lower`` and ``upper`` give the level configurations, terms, and J values, with energies in ``lower_energy`` and ``upper_energy``.
-* ``nist_intensity`` is NIST's laboratory intensity, from arc, spark, or other laboratory sources; it says nothing about solar strengths.
-* ``intensity_<region>_<abundance>`` are the six normalized, integrated reference-model intensities described below.
-  Each column is normalized to 1 for the strongest predicted line in each passband, so values compare lines within one passband and one model only.
+* ``nist_intensity`` records laboratory intensities from arc, spark, or other excitation sources, with no common solar intensity scale.
+* ``intensity_<region>_<abundance>`` contains the six normalized reference-model strengths described below.
 * ``log_t_max`` is the temperature of peak ionization fraction in the default equilibrium model, not the measured formation temperature of a line.
-  ``category`` is a coarse catalog label independent of prediction availability.
-* ``reference`` names the source for a line in the curated selection, and ``main`` is ``True`` for those lines.
+* ``reference`` identifies the publication for a curated line; ``main`` flags membership in that selection.
 * ``wavelength_is_theoretical`` flags CHIANTI wavelengths derived from theoretical energy levels.
-  CHIANTI wavelengths can also come from observed energy levels; ``wavelength_source="chianti"`` alone does not distinguish them.
+  CHIANTI entries can use observed or theoretical energy levels.
 
-CHIANTI bound-bound transitions in the passbands with available level and equilibrium ionization data are included, whether or not they have a prediction.
-Unmatched transitions have ``wavelength_source="chianti"``; catalog inclusion does not depend on a strength threshold.
+CHIANTI bound-bound transitions with available level and equilibrium ionization data are included regardless of strength or prediction availability.
+Transitions unmatched to NIST have ``wavelength_source="chianti"``.
 Theoretical wavelengths can be less accurate: see `CHIANTI's wavelength conventions <https://db.chiantidatabase.org/o/o_4.html>`__.
-Documented lines in neither catalog are added with the wavelength from their reference and ``wavelength_source`` ``literature``.
+Documented lines absent from both catalogs use their published wavelength and ``wavelength_source="literature"``.
 
 .. _documented-lines:
 
 Documented IRIS lines
 ---------------------
 
-This is a curated selection of lines identified in the IRIS literature, not a complete solar atlas.
-Each carries its reference in the ``reference`` column, and ``main_only=True`` selects them.
-Known lines outside this selection remain available in the full catalog, including Si II and Fe II blends near Fe XXI :cite:p:`young2015`.
+``main_only=True`` selects the following published IRIS identifications.
+This selection is not a complete solar atlas; the full catalog also includes lines such as the Si II and Fe II blends near Fe XXI :cite:p:`young2015`.
 
 ======== ========== ===========================
 Ion      Wavelength Reference
@@ -108,16 +91,13 @@ Ni I     2799.47    :cite:t:`wulser2018`
 Mg II    2803.53    :cite:t:`depontieu2014`
 ======== ========== ===========================
 
-Table 4 of :cite:t:`depontieu2014` lists the lines that set the thermal coverage of the spectrograph.
-:cite:t:`depontieu2021` add the Mg II triplet, the O IV and S IV multiplets, and the hot Mn XVIII line that can blend with Fe XXI.
-:cite:t:`itn38` add Cl I 1351.66 and the Ni II 1393.33 blend of Si IV, and :cite:t:`wulser2018` name the Fe II 1392.82 and Ni I 2799.47 wavelength calibration lines.
-The two C I lines are the blend with Fe XXI of :cite:t:`young2015` and the chromospheric diagnostic of :cite:t:`lin2017`.
+The selection combines thermal diagnostics from Table 4 of :cite:t:`depontieu2014`, multiplets and blends from :cite:t:`depontieu2021,itn38,young2015`, calibration lines from :cite:t:`wulser2018`, and the C I diagnostic of :cite:t:`lin2017`.
 O IV 1399.78, O IV 1404.81, and Mn XVIII are absent from NIST and carry CHIANTI's wavelengths; Fe II 1392.82 and Ni II 1393.33 are in neither catalog and carry their references' wavelengths.
 
 How the strengths are predicted
 -------------------------------
 
-Each finite strength is obtained by normalizing an integrated optically thin line intensity for a fixed reference atmosphere,
+The integrated optically thin intensity is
 
 .. math::
 
@@ -125,55 +105,52 @@ Each finite strength is obtained by normalizing an integrated optically thin lin
 
 where the contribution function :math:`G` combines the upper-level population, radiative decay rate, photon energy, ionization fraction, and elemental abundance, and :math:`\mathrm{DEM}(T)=n_e n_H\,\mathrm{d}h/\mathrm{d}T`.
 :math:`G` is computed with `fiasco <https://fiasco.readthedocs.io>`__ from CHIANTI 11.0.2 atomic data, including proton collisions and two-ion level-population models where the data exist.
+Strengths are normalized to the strongest prediction in each passband and reference model.
 
 * **Temperature structure:** CHIANTI's standard DEMs; quiet Sun and active region from `Vernazza and Reeves (1978) <https://doi.org/10.1086/190539>`__, and flare from the 1973 August 9 flare of `Dere and Cook (1979) <https://doi.org/10.1086/157013>`__.
 * **Density:** fixed electron-pressure parameters, :math:`n_e T = 3\times10^{15}` K cm\ :sup:`-3` for quiet Sun and active region and :math:`10^{16}` K cm\ :sup:`-3` for flare.
-  These are model inputs, not densities inferred from an observation.
 * **Ionization:** fiasco's default ``chianti`` temperature-dependent equilibrium ionization fractions.
-  Density changes the excitation calculation, but the ion fractions do not vary with density here.
-  CHIANTI 11's advanced density-dependent ionization and charge-transfer models are not enabled by this calculation :cite:p:`dufresne2024`.
+  Density affects excitation; ion fractions depend only on temperature.
+  CHIANTI 11's advanced density-dependent ionization and charge-transfer models are not used :cite:p:`dufresne2024`.
 * **Abundances:** photospheric from `Asplund, Amarsi, and Grevesse (2021) <https://doi.org/10.1051/0004-6361/202140445>`__, and coronal, the same set with low first-ionization-potential (FIP) elements such as Mg, Si, and Fe enhanced by 0.5 dex.
-  The coronal set therefore strengthens low-FIP lines relative to those of C, N, O, and the noble gases.
 
-A CHIANTI prediction is attached to a NIST line only when both describe the same transition: same ion, wavenumbers within 5 cm\ :sup:`-1` (or three times NIST's uncertainty), and the same J values and energies within 5 cm\ :sup:`-1` for both levels.
-NIST lists a few lines without level data, such as Ca II 1341.89; those take the prediction within 0.02 Angstrom (or three times NIST's uncertainty).
+Matching requires the same ion, wavenumbers within 5 cm\ :sup:`-1` (or three times NIST's uncertainty), identical J values, and energies within 5 cm\ :sup:`-1` for both levels.
+NIST lines without level data, such as Ca II 1341.89, are matched within 0.02 Angstrom (or three times NIST's uncertainty).
 Ambiguous cases are not merged.
 When NIST lists several radiative channels of one transition, catalog matching selects the channel with the largest A-value.
-Neutral and singly ionized transitions, including Mg II's E1 and weak M2 entries, remain without predictions.
 
 Assumptions and limitations
 ---------------------------
 
-The region names select reference models; they do not fit an observation or establish its physical conditions.
-The strengths compare integrated energy emission within one passband and model.
-They do not predict peak brightness, IRIS detector counts, or the probability of a line identification.
+Region names select fixed reference atmospheres rather than conditions inferred from the observation.
+Rankings compare integrated energy emission within one passband and model, without predicting peak brightness, detector counts, or identification probabilities.
+Candidates require confirmation from the observed spectrum and solar line identifications.
 
-* **Excluded cool ions.** Neutral and singly ionized lines are retained without predictions.
+* **Cool ions:** neutral and singly ionized lines are retained without predictions.
   Mg II h and k and C II require optically thick radiative-transfer calculations :cite:p:`leenaarts2013,rathore_carlsson2015`.
   O I 1355.6 is optically thin, but its emission is dominated by recombination cascades and its ion balance by charge exchange with hydrogen :cite:p:`lin2015`.
-  Excluding these ions is a conservative scope restriction; it does not imply that every transition of them is optically thick or weak.
-* **Remaining predictions are conditional.** Optically thin calculations are useful for suitable transition-region and coronal lines, but a finite value is not a validity guarantee.
+  This conservative exclusion does not classify every transition as optically thick or weak.
+* **Opacity and ionization equilibrium:** predictions assume optically thin emission and equilibrium ionization.
   Si IV can become optically thick during flares :cite:p:`kerr2019`.
-  The equilibrium ionization approximation also needs checking in dynamic plasma.
-* **Density sensitivity.** At :math:`10^5` K the flare model uses :math:`n_e=10^{11}` cm\ :sup:`-3`.
+  Dynamic plasma can depart from ionization equilibrium.
+* **Density:** at :math:`10^5` K the flare model uses :math:`n_e=10^{11}` cm\ :sup:`-3`.
   IRIS flare diagnostics have inferred ribbon densities near :math:`10^{13}` cm\ :sup:`-3`, which change the O IV and S IV intensities and ratios :cite:p:`polito2016`.
   CHIANTI's advanced ionization treatment can also change strong UV radiances by factors of two to five :cite:p:`dufresne2024`.
-* **Generic temperature structure.** The DEMs are 1970s averages, derived with older coronal abundances and used unchanged for both abundance sets; real quiet Sun, plage, and flares vary widely.
-  The alternative abundance sets are sensitivity choices, not independently derived atmospheres or an accuracy bound.
-* **Cool plasma is poorly constrained.** The DEMs are least certain at their coolest temperatures, and the active-region DEM rises by more than two orders of magnitude at 10\ :sup:`4` K.
-  Removing cool-ion predictions prevents them from setting the normalization, but does not validate the remaining DEM or line ratios.
-* **No prediction does not mean weak.** Ions without CHIANTI data, and NIST transitions that cannot be matched, have NaN strengths; so do Cl I and C I, whose lines are bright in IRIS spectra.
-* **Not modeled:** absorption, photoexcitation, non-equilibrium ionization, sunspots, and molecular lines such as H\ :sub:`2` and CO.
+* **Temperature structure:** the DEMs are 1970s averages, derived with older coronal abundances and reused for both abundance sets despite variations in quiet Sun, plage, and flares.
+  The abundance alternatives test sensitivity; they are not independently derived atmospheres or an accuracy bound.
+* **Cool plasma:** the DEMs are least certain at low temperatures; the active-region DEM rises by more than two orders of magnitude at 10\ :sup:`4` K.
+  Excluding cool ions removes their influence on normalization but leaves the remaining DEM and line ratios unvalidated.
+* **Unranked lines:** NaN strengths denote excluded ions, missing CHIANTI data, or unmatched transitions, including bright C I and Cl I lines.
+* **Omitted processes and features:** absorption, photoexcitation, non-equilibrium ionization, sunspots, and molecular lines such as H\ :sub:`2` and CO.
 
 .. _line-categories:
 
 Categories
 ----------
 
-Categories are catalog labels, not formation-height measurements, and all lines of an ion share one category.
-They do not establish whether a transition appears in emission or absorption in a particular observation.
-The established chromospheric diagnostics below are identified from the literature, independent of their model temperature or prediction availability.
-For other ions the boundaries use the equilibrium ion-fraction peak, following the temperature ranges of :cite:t:`tian2017` and :cite:t:`depontieu2021`:
+Categories apply to ions, using published identifications for chromospheric diagnostics and equilibrium ion-fraction peaks for other ions.
+They do not specify an observed formation height or whether a line appears in emission or absorption.
+The temperature boundaries follow :cite:t:`tian2017,depontieu2021`:
 
 * ``flare``: :math:`T_\mathrm{max} \geq 10` MK, such as Fe XXI.
 * ``coronal``: :math:`0.8 \leq T_\mathrm{max} < 10` MK, such as Fe XII, the coronal line of :cite:t:`testa2016`, and Mn XVIII.
@@ -188,16 +165,13 @@ Other lines, including laboratory lines of heavy elements, have a blank category
 Regenerating the table
 ----------------------
 
-``tools/make_line_database.py`` updates the table in a development checkout; it is not part of the installed package.
-It needs the ``density`` extra, fiasco 0.8.2 or later, and a full CHIANTI database installed following `fiasco's instructions <https://fiasco.readthedocs.io/en/latest/quick_start.html>`__::
+Run ``tools/make_line_database.py`` from a development checkout with the ``density`` extra, fiasco 0.8.2 or later, and a full CHIANTI database configured using `fiasco's instructions <https://fiasco.readthedocs.io/en/latest/quick_start.html>`__::
 
     python tools/make_line_database.py
 
-The script prints the software and database versions, downloads current NIST data, recomputes the strengths, and overwrites ``iris_lines.ecsv``; it takes a few hours.
-Review the update with ``git diff``.
+The script reads the current ASD version, reports software versions, downloads NIST data, recomputes strengths, and overwrites ``iris_lines.ecsv``; a run takes a few hours.
+Raw NIST responses are not archived, so later runs may change the catalog as NIST updates its data.
 The shipped catalog uses NIST ASD 5.12, downloaded on 5 October 2026 (UTC).
 NIST publishes its releases in the `ASD version history <https://physics.nist.gov/PhysRefData/ASD/Html/verhist.shtml>`__.
-The table's metadata records the software versions, category boundaries, and the DEM and abundance files used.
-Inspect ``get_lines().meta["versions"]["nist_asd"]`` for the ASD version and ``get_lines().meta["nist_queries"]`` for each passband's download date (``query_date``), complete query parameters, and URL.
-The generator reads the current ASD version and downloads current NIST data each time it runs.
-Raw NIST responses are not stored; a later regeneration may change the catalog when NIST updates its data.
+Metadata records the software versions, category boundaries, and DEM and abundance files.
+``get_lines().meta["versions"]["nist_asd"]`` gives the ASD version; ``get_lines().meta["nist_queries"]`` gives each passband's download date (``query_date``), query parameters, and URL.

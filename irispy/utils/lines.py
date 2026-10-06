@@ -28,7 +28,7 @@ def get_lines(
     wavelength_range=None, *, region=None, abundance=None, main_only=False, categories=None, include_unranked=True
 ):
     """
-    Return lines in the IRIS passbands from the packaged line database.
+    Query the packaged IRIS spectral line catalog.
 
     Parameters
     ----------
@@ -36,21 +36,20 @@ def get_lines(
         Two endpoints in any spectral unit, in either order; both are included.
         Wavelengths are in vacuum.
     region : `str`, optional
-        Rank lines by their reference-model strength in ``'quiet_sun'``,
-        ``'active_region'``, or ``'flare'``. Results are grouped as FUV1, FUV2,
-        then NUV, with strongest first and unranked lines last within each
-        passband. Requires ``abundance``. By default, lines are sorted by wavelength.
+        Rank by strength in the ``'quiet_sun'``, ``'active_region'``, or
+        ``'flare'`` reference model. Requires ``abundance``. Results are grouped
+        as FUV1, FUV2, NUV, with strongest predictions first and unranked lines
+        last in each passband. The default order is by wavelength.
     abundance : `str`, optional
         ``'coronal'`` or ``'photospheric'`` abundances for ranking. Requires
         ``region``.
     main_only : `bool`, optional
-        Return a curated selection of lines documented in the IRIS literature; their
-        ``reference`` column names the citing paper in the documentation's
-        bibliography.
+        Select curated IRIS identifications. The ``reference`` column contains
+        their bibliography keys.
     categories : `str` or iterable of `str`, optional
-        Keep only ``'flare'``, ``'coronal'``, ``'transition_region'``,
-        ``'chromospheric'``, or ``'cool_metal'`` lines. These are catalog labels,
-        not measurements of the formation height in an observation.
+        Filter by ``'flare'``, ``'coronal'``, ``'transition_region'``,
+        ``'chromospheric'``, or ``'cool_metal'``. Categories describe ions rather
+        than observed formation heights.
     include_unranked : `bool`, optional
         If `False`, drop lines with no predicted strength in the ranking model,
         or in every model when ``region`` is not given.
@@ -58,18 +57,16 @@ def get_lines(
     Returns
     -------
     `~astropy.table.QTable`
-        A copy of the selected lines. The predicted strengths
-        (``intensity_<region>_<abundance>``) are normalized to the strongest
-        predicted line in each passband, so compare them only within one passband and
-        model.
+        A copy of the selected lines, with strengths
+        (``intensity_<region>_<abundance>``) normalized to the strongest prediction
+        in each passband and model.
 
     Notes
     -----
-    Strengths are normalized, integrated optically thin intensities for fixed
-    reference atmospheres. Neutral and singly ionized lines have no prediction.
-    The strengths provide approximate candidate rankings for these models.
+    Strengths provide approximate rankings of integrated optically thin intensities
+    from fixed reference atmospheres. Neutral and singly ionized lines are unranked.
     Density, opacity, and ionization effects can invalidate the remaining
-    predictions; see the line database documentation before comparing observations.
+    predictions; model assumptions are described in :doc:`/line_database`.
     """
     if region is not None and region not in _REGIONS:
         msg = f"region must be one of {_REGIONS}."
@@ -108,8 +105,7 @@ def get_lines(
         columns = [intensity_column] if intensity_column else [c for c in table.colnames if c.startswith("intensity_")]
         selected &= np.any([np.isfinite(table[column]) for column in columns], axis=0)
 
-    # The table is stored in wavelength order; the stable lexsort keeps that order for ties.
-    # The copy keeps the cached table's metadata out of the caller's hands.
+    # Isolate cached metadata.
     result = table[selected].copy()
     if intensity_column:
         intensity = result[intensity_column]

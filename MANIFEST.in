@@ -18,5 +18,4 @@ global-exclude *.pyc *.o
 # This subpackage is only used in development checkouts
 # and should not be included in built tarballs
 prune irispy/_dev
-# Data generation scripts are only used in development checkouts.
 prune tools

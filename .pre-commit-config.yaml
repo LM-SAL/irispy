@@ -48,7 +48,6 @@ repos:
         exclude: *exclude_dirs
       - id: check-added-large-files
         args: ["--enforce-all", "--maxkb=1054"]
-        # Generated atomic catalog, including weak and unranked transitions.
         exclude: ^irispy/data/iris_lines\.ecsv$
       - id: end-of-file-fixer
         types_or: [python, rst, yaml, json]

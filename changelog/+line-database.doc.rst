@@ -1,2 +1,2 @@
-Add a page on the IRIS spectral line database with the sources behind its passbands, curated lines and catalog categories, explicit limits on reference-model intensity predictions, and a gallery example that finds candidates in an IRIS raster using published solar identifications.
-Record the NIST ASD version alongside each passband's download date and complete query parameters, and document how to inspect this provenance.
+Document the spectral line catalog's sources, model assumptions, NIST provenance, and regeneration procedure.
+Add a gallery example identifying candidate lines in an IRIS flare raster.

@@ -3,7 +3,7 @@
 Identify lines in IRIS spectra
 ==============================
 
-In this example, we use the irispy line database to find candidate transitions near features in an IRIS observation.
+Find candidate transitions in an IRIS flare raster using the spectral line database.
 """
 
 import matplotlib.pyplot as plt
@@ -17,10 +17,9 @@ from irispy.io import read_files
 from irispy.utils.lines import get_lines
 
 ###############################################################################
-# `We start with a raster of active region 12268 <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20150130_055150_3893010094_2015-01-30T05%3A51%3A502015-01-30T05%3A51%3A50.xml>`__,
-# taken during the decay of an M1.7 flare. Its three spectral windows cover the full
-# FUV1, FUV2 and NUV passbands with 15 s exposures. To keep the download small, we
-# use a cutout of 16 raster steps that covers a flare ribbon and the hot post-flare loops.
+# This `raster of active region 12268 <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20150130_055150_3893010094_2015-01-30T05%3A51%3A502015-01-30T05%3A51%3A50.xml>`__
+# was taken during the decay of an M1.7 flare, with 15 s exposures covering FUV1,
+# FUV2, and NUV. The 16-step cutout covers a flare ribbon and hot post-flare loops.
 
 raster_filename = pooch.retrieve(
     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20150130_055150_3893010094_cutout_raster.fits.gz",
@@ -29,11 +28,9 @@ raster_filename = pooch.retrieve(
 raster = read_files(raster_filename)
 
 ###############################################################################
-# `~irispy.utils.lines.get_lines` returns the lines within a wavelength range.
-# Given a ``region`` and an ``abundance``, it sorts them by reference-model strength
-# within each passband. These are the five strongest eligible predictions in the
-# C II window for the flare reference atmosphere. C II itself is retained without a
-# prediction because its optically thick formation is outside this model's scope.
+# `~irispy.utils.lines.get_lines` ranks candidates in the C II window using the
+# flare reference atmosphere and coronal abundances. C II itself is unranked
+# because its optically thick formation lies outside the model's scope.
 
 c_ii = raster["C II 1336"][0]
 (wavelength,) = c_ii.axis_world_coords("wl")
@@ -42,17 +39,14 @@ lines["intensity_flare_coronal"].info.format = ".3f"
 print(lines["ion", "wavelength", "wavelength_source", "intensity_flare_coronal"][:5])
 
 ###############################################################################
-# To display bright features, we take the 99th percentile of each
-# window over the cutout at every wavelength. This highlights the ribbon and loops
-# while reducing sensitivity to isolated cosmic-ray spikes.
-# Different wavelengths can select different spatial pixels, so this composite
-# spectrum cannot validate the intensity ratios of one reference atmosphere.
+# The 99th percentile at each wavelength highlights the ribbon and loops while
+# reducing sensitivity to isolated cosmic-ray spikes. Different wavelengths can
+# select different pixels, so the composite cannot validate model intensity ratios.
 #
-# IRIS Level 2 data and the database both use vacuum wavelengths, so we mark the lines
-# predicted above 1 % of each passband's strongest prediction, and the documented IRIS lines,
-# in each window directly. Blue marks the curated lines and grey marks other
-# reference-model candidates. Normalizing within the eligible subset can give a
-# large score to a line much fainter than an unranked Mg II line; it does not establish detectability.
+# Both Level 2 data and the catalog use vacuum wavelengths. Each panel marks the
+# curated lines and candidates at least 1 % of the passband's strongest prediction.
+# Scores normalize only eligible predictions; a high-scoring line can still be
+# much fainter than an unranked Mg II line.
 
 fig, axes = plt.subplots(3, 1, figsize=(10, 11), layout="constrained")
 for ax, window in zip(axes, raster.keys(), strict=True):
@@ -65,7 +59,6 @@ for ax, window in zip(axes, raster.keys(), strict=True):
     ax.plot(wavelength.to_value(u.AA), spectrum, color="black", linewidth=0.8)
     lines = get_lines(wavelength[[0, -1]])
     lines = lines[(lines["intensity_flare_coronal"] >= 0.01) | lines["main"]]
-    # Labels alternate between the top and bottom edges so that neighbouring lines do not overlap.
     for i, line in enumerate(lines):
         position = line["wavelength"].to_value(u.AA)
         color = "tab:blue" if line["main"] else "0.5"
@@ -96,18 +89,16 @@ fig.legend(
 plt.show()
 
 ###############################################################################
-# The predicted candidates include the broad Fe XXI 1354.08 Å line from the hot loops.
-# C II, O I, Cl I, C I, and Mg II are documented lines without strength predictions.
+# Fe XXI 1354.08 Å is the broad line from the hot loops. C II, O I, Cl I, C I, and
+# Mg II are documented lines without predictions.
 # C II and Mg II need radiative transfer; O I needs recombination and charge exchange.
 #
-# The remaining predictions are conditional too. They use a fixed DEM and pressure;
-# a region label does not infer the conditions of this raster. Si IV can become
-# optically thick in flares, so its predicted doublet ratio is not guaranteed here.
+# Strengths assume a fixed DEM and pressure; ``region="flare"`` does not fit this
+# raster's atmosphere. Si IV can become optically thick in flares, affecting its
+# doublet ratio.
 #
-# Two bright lines near 1357 Å are still unlabelled. Lines without a prediction are in
-# the database too, so a narrow range around each peak lists the candidates. The
-# feature at 1386.7 Å is below the documented FUV2 passband, which starts at 1389 Å,
-# so the database does not cover it.
+# Search around the two unlabelled peaks near 1357 Å, including unranked candidates.
+# The feature at 1386.7 Å falls below the catalog's FUV2 limit of 1389 Å.
 
 for peak in [1357.14, 1357.66]:
     candidates = get_lines([peak - 0.02, peak + 0.02] * u.AA)
@@ -115,14 +106,13 @@ for peak in [1357.14, 1357.66]:
 
 ###############################################################################
 # `Peter Young's IRIS line list <https://pyoung.org/iris/iris_line_list.pdf>`__, Table 1,
-# identifies solar C I lines at 1357.134 and 1357.659 Å, consistent with these features.
-# Laboratory intensities cannot distinguish candidates from different elements or
-# ionization stages because they have no common scale and depend on the excitation source.
+# identifies C I lines at 1357.134 and 1357.659 Å, consistent with these features.
+# Laboratory intensities depend on the excitation source and have no common
+# scale across elements and ionization stages.
 #
-# Most of the NUV features away from Mg II are photospheric absorption lines. The
-# database lists cool-metal candidates without assigning them a photospheric formation
-# height. The same ions can produce chromospheric emission in flares. Identifying the
-# transitions and whether they appear in absorption requires a solar atlas and the data.
+# Most NUV features away from Mg II are photospheric absorption lines, but cool
+# metals can also emit in the chromosphere during flares. The ``cool_metal`` label
+# does not assign a formation height; identification requires the spectrum and a solar atlas.
 
 cool_metals = get_lines([2812, 2818] * u.AA, categories="cool_metal")
 print(f"{len(cool_metals)} cool-metal candidates between 2812 and 2818 Å")

@@ -1,4 +1,5 @@
 import io
+import os
 import csv
 import importlib.util
 from types import SimpleNamespace
@@ -46,27 +47,36 @@ ABUNDANCES = ["coronal", "photospheric"]
 INTENSITY_COLUMNS = [f"intensity_{region}_{abundance}" for region in REGIONS for abundance in ABUNDANCES]
 
 
+@pytest.fixture
+def tool():
+    generator = os.environ.get("IRISPY_LINE_GENERATOR")
+    if generator is None and not GENERATOR.exists():
+        pytest.skip("The generator is only in development checkouts.")
+    pytest.importorskip("plasmapy")
+    spec = importlib.util.spec_from_file_location("make_line_database", generator or GENERATOR)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_documented_lines():
     table = get_lines(main_only=True)
     assert len(table) == len(DOCUMENTED)
     for ion, wavelength, reference in DOCUMENTED:
         (line,) = table[(table["ion"] == ion) & (np.abs(table["wavelength"].value - wavelength) <= 0.01)]
         assert line["reference"] == reference
-    # Lines from neither catalog carry the reference's wavelength and no prediction.
     assert set(table["wavelength_source"][table["ion"] == "Ni II"]) == {"literature"}
     full = get_lines()
     np.testing.assert_array_equal(full["main"], full["reference"].filled("") != "")
 
 
-def test_mg_ii_channels_are_unranked():
+def test_mg_ii_documented_channel():
     # NIST lists Mg II 2798.75 as a strong E1 and a weak M2 channel between the same levels.
     mg_ii = get_lines([2798.75, 2798.76] * u.angstrom)
     mg_ii = mg_ii[mg_ii["ion"] == "Mg II"]
     e1, m2 = mg_ii[np.argsort(mg_ii["nist_transition_probability"].value)[::-1]]
     assert e1["main"]
     assert m2["transition_type"] == "M2"
-    assert np.isnan(e1["intensity_quiet_sun_coronal"])
-    assert np.isnan(m2["intensity_quiet_sun_coronal"])
 
 
 @pytest.mark.parametrize("region", REGIONS)
@@ -94,20 +104,16 @@ def test_neutral_and_singly_ionized_lines_unranked():
 def test_categories():
     table = get_lines()
     categories = table["category"].filled("")
-    # Categories describe the ion, so Mg II's unranked M2 entries are chromospheric too.
     assert set(categories[table["ion"] == "Mg II"]) == {"chromospheric"}
     assert set(categories[table["ion"] == "Si IV"]) == {"transition_region"}
     assert set(categories[table["ion"] == "Fe XII"]) == {"coronal"}
     assert set(categories[table["ion"] == "Fe XXI"]) == {"flare"}
-    # These metals may appear in photospheric absorption or chromospheric emission.
     cool_metals = table[categories == "cool_metal"]
     assert {"Si II", "Fe I", "Fe II"} <= set(cool_metals["ion"])
     assert not set(cool_metals["element"]) & {"W", "Pt", "Th", "Pu"}
-    assert np.all(np.isnan([cool_metals[column] for column in INTENSITY_COLUMNS]))
     assert set(get_lines(categories="cool_metal")["category"]) == {"cool_metal"}
     chromospheric = get_lines(categories="chromospheric", main_only=True)
     assert {"Mg II", "C II", "C I", "O I", "Cl I"} <= set(chromospheric["ion"])
-    assert np.isnan([chromospheric[column] for column in INTENSITY_COLUMNS]).all()
     assert set(get_lines(categories=["flare", "transition_region"], main_only=True)["category"]) == {
         "flare",
         "transition_region",
@@ -123,9 +129,11 @@ def test_spectral_range(unit):
     np.testing.assert_array_equal(get_lines(endpoints[::-1])["wavelength"], expected["wavelength"])
 
 
-def test_range_includes_endpoints():
+@pytest.mark.parametrize("unit", [u.angstrom, u.nm, u.Hz, u.eV])
+def test_range_includes_endpoints(unit):
     wavelength = get_lines(main_only=True)["wavelength"][0]
-    result = get_lines([wavelength, wavelength])
+    endpoints = u.Quantity([wavelength, wavelength]).to(unit, equivalencies=u.spectral())
+    result = get_lines(endpoints)
     assert len(result) >= 1
     assert np.all(result["wavelength"] == wavelength)
     assert len(get_lines([1, 2] * u.angstrom)) == 0
@@ -138,7 +146,6 @@ def test_ranking(region, abundance):
     intensity = table[f"intensity_{region}_{abundance}"]
     band_order = np.array([("FUV1", "FUV2", "NUV").index(band) for band in table["passband"]])
     assert np.all(np.diff(band_order) >= 0)
-    # Strengths are comparable only within one passband, including the placement of unranked lines.
     for band in ("FUV1", "FUV2", "NUV"):
         values = intensity[table["passband"] == band]
         ranked = np.isfinite(values)
@@ -149,15 +156,22 @@ def test_ranking(region, abundance):
     assert len(ranked_only) == np.isfinite(intensity).sum()
 
 
-def test_include_unranked_without_region():
-    table = get_lines(include_unranked=False)
-    assert not np.any(np.all(np.isnan([table[column] for column in INTENSITY_COLUMNS]), axis=0))
+def test_include_unranked(monkeypatch):
+    table = get_lines()[:3]
+    for column in INTENSITY_COLUMNS:
+        table[column] = np.full(3, np.nan)
+    table[INTENSITY_COLUMNS[0]][0] = 1
+    table[INTENSITY_COLUMNS[-1]][1] = 0
+    monkeypatch.setattr(lines, "_load_lines", lambda: table)
+    np.testing.assert_array_equal(get_lines(include_unranked=False)["wavelength"], table["wavelength"][:2])
+    ranked = get_lines(region="flare", abundance="photospheric", include_unranked=False)
+    np.testing.assert_array_equal(ranked["wavelength"], table["wavelength"][1:2])
 
 
 def test_default_order():
     table = get_lines()
     assert np.all(np.diff(table["wavelength"].value) >= 0)
-    # Mg II's E1 and M2 entries share wavelength, ion, and levels; ties keep the packaged order.
+    # Mg II E1 and M2 entries have identical sort keys.
     packaged = lines._load_lines()
     for column in ("ion", "lower", "upper", "transition_type", "wavelength_source"):
         np.testing.assert_array_equal(np.asarray(table[column]), np.asarray(packaged[column]))
@@ -213,12 +227,7 @@ def test_non_spectral_units():
         get_lines([1402, 1404])
 
 
-@pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
-def test_merge_lines(monkeypatch):
-    pytest.importorskip("plasmapy")
-    spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
+def test_merge_lines(monkeypatch, tool):
     monkeypatch.setattr(
         tool,
         "DOCUMENTED",
@@ -280,8 +289,8 @@ def test_merge_lines(monkeypatch):
         nist("Fe I", 2805.3465),
     ]
     predictions = [
-        predicted("C II", 1335.708, 10.0),
-        predicted("Ca II", 1341.9, 1.0),
+        predicted("C II", 1335.708, 10.0, intensity_flare_photospheric=2.0),
+        predicted("Ca II", 1341.9, 1.0, intensity_flare_photospheric=4.0),
         predicted("O IV", 1343.5, 1e-6),
         predicted("Mn XVIII", 1355.014, 1e-6),
         predicted("O IV", 1401.157, 2.0),
@@ -298,26 +307,26 @@ def test_merge_lines(monkeypatch):
         "Mg II": 4.15,
         "Fe II": 4.15,
     }
-    merged = {
-        (row["ion"], row["wavelength"], row["transition_type"]): row
-        for row in tool.merge_lines(rows, predictions, formation)
-    }
+    merged_rows = tool.merge_lines(rows, predictions, formation)
+    merged = {(row["ion"], row["wavelength"], row["transition_type"]): row for row in merged_rows}
+    assert len(merged) == len(merged_rows)
 
     c_ii = merged["C II", 1335.7079, ""]
-    assert c_ii["intensity_quiet_sun_coronal"] == 1
+    np.testing.assert_allclose([c_ii[column] for column in INTENSITY_COLUMNS], [1, 1, 1, 1, 1, 0.5])
     assert c_ii["reference"] == "depontieu2014"
     assert c_ii["main"]
-    # A NIST line without level data takes the prediction instead of a CHIANTI-only duplicate.
+    # Missing level data must not create a duplicate.
     (ca_ii,) = [row for key, row in merged.items() if key[0] == "Ca II"]
     assert ca_ii["wavelength_source"] == "observed"
-    assert ca_ii["intensity_quiet_sun_coronal"] == pytest.approx(0.1)
-    # Documented lines take the closest catalog line; channels at one wavelength go by A-value.
+    np.testing.assert_allclose([ca_ii[column] for column in INTENSITY_COLUMNS], [0.1, 0.1, 0.1, 0.1, 0.1, 1])
+    # Match documented channels by wavelength, then A-value.
     assert merged["O IV", 1401.157, ""]["main"]
     assert not merged["O IV", 1401.15, ""]["main"]
-    assert np.isfinite(merged["Mg II", 2798.754, ""]["intensity_quiet_sun_coronal"])
+    for key in [("O IV", 1401.157, ""), ("Mg II", 2798.754, "")]:
+        np.testing.assert_allclose([merged[key][column] for column in INTENSITY_COLUMNS], 1)
     assert merged["Mg II", 2798.754, ""]["reference"] == "pereira2015"
     assert np.isnan(merged["Mg II", 2798.754, "M2"]["intensity_quiet_sun_coronal"])
-    # Catalog inclusion is independent of strength; undocumented catalog gaps are filled from the reference.
+    # Retain weak transitions and add literature-only lines.
     assert ("O IV", 1343.5, "") in merged
     assert merged["Mn XVIII", 1355.014, ""]["wavelength_source"] == "chianti"
     fe_ii = merged["Fe II", 1392.817, ""]
@@ -339,14 +348,43 @@ def test_merge_lines(monkeypatch):
     }
 
 
-@pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
+@pytest.mark.parametrize(("nist_count", "model_count"), [(2, 1), (1, 2)])
+def test_ambiguous_matches_remain_separate(monkeypatch, tool, nist_count, model_count):
+    monkeypatch.setattr(tool, "DOCUMENTED", [])
+    transition = tool.LITERATURE_ONLY | {
+        "ion": "O IV",
+        "element": "O",
+        "ion_stage": 4,
+        "wavelength": 1401.157,
+        "wavelength_source": "observed",
+        "wavelength_uncertainty": 0.001,
+        "nist_transition_probability": 1e8,
+        "passband": "FUV2",
+        "lower": "a",
+        "upper": "b",
+        "lower_energy": 0.0,
+        "upper_energy": 7e4,
+        "lower_j": 0.5,
+        "upper_j": 1.5,
+    }
+    rows = [transition | {"upper_energy": 7e4 + index} for index in range(nist_count)]
+    predictions = [
+        transition | {"upper_energy": 7e4 + index} | dict.fromkeys(INTENSITY_COLUMNS, 1.0)
+        for index in range(model_count)
+    ]
+    merged = tool.merge_lines(rows, predictions, {"O IV": 5.15})
+    assert len(merged) == nist_count + model_count
+    observed = [row for row in merged if row["wavelength_source"] == "observed"]
+    modeled = [row for row in merged if row["wavelength_source"] == "chianti"]
+    assert len(observed) == nist_count
+    assert {row["upper_energy"] for row in modeled} == {7e4 + index for index in range(model_count)}
+    assert np.isnan([[row[column] for column in INTENSITY_COLUMNS] for row in observed]).all()
+    np.testing.assert_allclose([[row[column] for column in INTENSITY_COLUMNS] for row in modeled], 1)
+
+
 @pytest.mark.parametrize("version", ["5.12", "5.13.1", None])
-def test_nist_version(monkeypatch, version):
-    pytest.importorskip("plasmapy")
-    spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
-    # The citation names the current release; the history below it contains older releases.
+def test_nist_version(monkeypatch, version, tool):
+    # Ignore older versions listed below the current citation.
     content = f"NIST Atomic Spectra Database</i> (version&nbsp;{version}), <b>Version&nbsp;5.11</b>"
     monkeypatch.setattr(tool, "urlopen", lambda *_args, **_kwargs: io.BytesIO(content.encode()))
     if version is None:
@@ -356,12 +394,7 @@ def test_nist_version(monkeypatch, version):
         assert tool._nist_version() == version
 
 
-@pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
-def test_nist_wavelength_selection(monkeypatch):
-    pytest.importorskip("plasmapy")
-    spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
+def test_nist_wavelength_selection(monkeypatch, tool):
     fields = [
         "element",
         "sp_num",
@@ -391,7 +424,27 @@ def test_nist_wavelength_selection(monkeypatch):
         ("Si", 4, "", "1402.7697", "", ""),
         ("Mg", 2, "2796.352", "2796.352", "", ""),
     ]:
-        writer.writerow(dict(zip(fields[:6], (element, stage, observed, ritz, obs_unc, ritz_unc), strict=True)))
+        record = dict(zip(fields[:6], (element, stage, observed, ritz, obs_unc, ritz_unc), strict=True))
+        if element == "C":
+            record.update({"Ei(cm-1)": "[123]", "Ek(cm-1)": "123+x", "J_i": "1/2,3/2"})
+        if observed == "1393.76":
+            record.update(
+                {
+                    "Type": "E1",
+                    "conf_i": "3s",
+                    "term_i": "2S",
+                    "J_i": "1/2",
+                    "conf_k": "3p",
+                    "term_k": "2P*",
+                    "J_k": "3/2",
+                    "Ei(cm-1)": "0",
+                    "Ek(cm-1)": "71748.64",
+                    "intens": "1000bl",
+                    "Aki(s^-1)": "4.7e8?",
+                    "line_ref": "T1234",
+                }
+            )
+        writer.writerow({key: value if key == "sp_num" else f'="{value}"' for key, value in record.items()})
     monkeypatch.setattr(tool, "urlopen", lambda *_args, **_kwargs: io.BytesIO(content.getvalue().encode()))
     rows, queries = tool.download_nist()
     for band, query in queries.items():
@@ -409,16 +462,23 @@ def test_nist_wavelength_selection(monkeypatch):
     assert rows[0]["wavelength_uncertainty"] == 0.00006
     assert rows[0]["observed_wavelength"] == 1354.284
     assert not any(row["wavelength_is_theoretical"] for row in rows)
+    assert np.isnan([rows[0][key] for key in ("lower_energy", "upper_energy", "lower_j")]).all()
+    assert tuple(rows[1][key] for key in ("lower_energy", "upper_energy", "lower_j", "upper_j")) == (
+        0,
+        71748.64,
+        0.5,
+        1.5,
+    )
+    assert (rows[1]["lower"], rows[1]["upper"]) == ("3s 2S 1/2", "3p 2P* 3/2")
+    assert rows[1]["transition_type"] == "E1"
+    assert rows[1]["nist_transition_probability"] == 4.7e8
+    assert rows[1]["nist_intensity"] == "1000bl"
+    assert rows[1]["nist_line_reference"] == "T1234"
 
 
-@pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
-@pytest.mark.parametrize("ion_stage", [2, 3])
-def test_unpredicted_ion_retains_catalog_transition(monkeypatch, ion_stage):
-    pytest.importorskip("plasmapy")
+@pytest.mark.parametrize("ion_stage", [2, 3, 4], ids=["excluded", "missing_excitation", "computed"])
+def test_predict_lines(monkeypatch, ion_stage, tool):
     fiasco = pytest.importorskip("fiasco")
-    spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
     ion_name = f"Mg {tool.roman.to_roman(ion_stage)}"
     raw_name = f"mg_{ion_stage}"
     ion = SimpleNamespace(
@@ -427,7 +487,7 @@ def test_unpredicted_ion_retains_catalog_transition(monkeypatch, ion_stage):
         atomic_number=12,
         ionization_stage=ion_stage,
         n_levels=2,
-        ionization_fraction=np.ones(1),
+        ionization_fraction=np.array([1, 0, 0.5]),
         formation_temperature=1e4 * u.K,
         transitions=SimpleNamespace(
             is_bound_bound=np.array([True]),
@@ -443,7 +503,7 @@ def test_unpredicted_ion_retains_catalog_transition(monkeypatch, ion_stage):
             label=np.array(["ground", "upper"]),
         ),
     )
-    # Excluded ions must not solve populations; missing excitation data must also retain the catalog row.
+    # Both exclusions and missing excitation data must preserve the transition.
     if ion_stage == 3:
 
         def unavailable_contribution(*_args, **_kwargs):
@@ -451,15 +511,41 @@ def test_unpredicted_ion_retains_catalog_transition(monkeypatch, ion_stage):
             raise fiasco.util.exceptions.MissingDatasetException(msg)
 
         ion.contribution_function = unavailable_contribution
+
+    def make_ion(_name, temperature, **kwargs):
+        if "abundance" not in kwargs or ion_stage != 4:
+            return ion
+        np.testing.assert_array_equal(temperature.to_value(u.K), [1e4, 4e4])
+        scale = {"sun_coronal_2021_chianti": 1, "sun_photospheric_2021_asplund": 2}[kwargs["abundance"]]
+
+        def contribution(density, *, couple_density_to_temperature):
+            assert couple_density_to_temperature
+            values = np.array([1, 4]) * density.to_value(u.cm**-3) / 1e11 * scale
+            return values[:, None, None] * u.erg * u.cm**3 / u.s
+
+        return SimpleNamespace(contribution_function=contribution)
+
     monkeypatch.setattr(fiasco, "list_ions", lambda **_kwargs: [raw_name])
-    monkeypatch.setattr(fiasco, "Ion", lambda *_args, **_kwargs: ion)
-    model = {"temperature_bin_center": np.array([1e4]) * u.K}
-    monkeypatch.setattr(fiasco.io, "Parser", lambda *_args: SimpleNamespace(parse=lambda: model))
+    monkeypatch.setattr(fiasco, "Ion", make_ion)
+    models = {
+        f"{region}.dem": {
+            "temperature_bin_center": np.array([1e4, 2e4, 4e4]) * u.K,
+            "em": np.array([2 + index, 100, 3 + index]) / u.cm**5,
+        }
+        for index, region in enumerate(REGIONS)
+    }
+    monkeypatch.setattr(fiasco.io, "Parser", lambda filename: SimpleNamespace(parse=lambda: models[filename]))
     rows, formation, unranked = tool.predict_lines()
     (row,) = rows
     assert row["ion"] == ion_name
     assert row["upper"] == "upper"  # Non-contiguous level identifiers still resolve correctly.
     assert row["wavelength_is_theoretical"]
-    assert np.isnan([row[column] for column in INTENSITY_COLUMNS]).all()
     assert formation == {ion_name: 4.0}
-    assert raw_name in unranked
+    if ion_stage == 4:
+        np.testing.assert_allclose(
+            [row[column] for column in INTENSITY_COLUMNS], np.array([15, 30, 21, 42, 90, 180]) / (4 * np.pi)
+        )
+        assert unranked == {}
+    else:
+        assert np.isnan([row[column] for column in INTENSITY_COLUMNS]).all()
+        assert raw_name in unranked

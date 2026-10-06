@@ -1,9 +1,9 @@
 """
-Update irispy/data/iris_lines.ecsv.
+Regenerate irispy/data/iris_lines.ecsv from current NIST and CHIANTI data.
 
-Needs ``pip install -e '.[density]'``, fiasco 0.8.2 or later, and a full CHIANTI database in fiasco's configured
-location (https://fiasco.readthedocs.io/en/latest/quick_start.html). Run it, then review
-the changes with ``git diff``. docs/line_database.rst explains the science.
+Requires ``pip install -e '.[density]'``, fiasco 0.8.2 or later, and a full CHIANTI database in fiasco's configured
+location (https://fiasco.readthedocs.io/en/latest/quick_start.html).
+Model assumptions and provenance are documented in docs/line_database.rst.
 
 python tools/make_line_database.py
 """
@@ -30,15 +30,12 @@ from astropy.table import QTable
 DATA_DIR = Path(__file__).resolve().parents[1] / "irispy" / "data"
 NIST_URL = "https://physics.nist.gov/cgi-bin/ASD/lines1.pl"
 NIST_VERSION_URL = "https://physics.nist.gov/PhysRefData/ASD/Html/verhist.shtml"
-# Vacuum wavelengths in Angstrom from De Pontieu et al. (2014) Table 2, without margins. Level 2
-# full-detector windows from 2015 and 2026 span 1331.68-1358.28, 1380.66-1406.70 and
-# 2783.23-2835.10 A: the FUV2 readout below 1389.0 A is outside the documented passband.
+# Vacuum Angstrom limits from De Pontieu et al. (2014), Table 2.
+# FUV2 readout below 1389 A falls outside the published passband.
 PASSBANDS = {"FUV1": [1331.7, 1358.4], "FUV2": [1389.0, 1407.0], "NUV": [2782.7, 2835.1]}
 PRESSURES = {"quiet_sun": 3e15, "active_region": 3e15, "flare": 1e16}  # n_e T in K cm^-3
 ABUNDANCES = {"coronal": "sun_coronal_2021_chianti", "photospheric": "sun_photospheric_2021_asplund"}
-# A curated selection of IRIS lines: ion, vacuum wavelength, and the key of the reference
-# in docs/references.bib. Wavelengths are the NIST values where NIST lists the line, else
-# CHIANTI's, else the reference's; a line in neither catalog is added from the reference.
+# Ion, vacuum wavelength (Angstrom), and docs/references.bib key.
 DOCUMENTED = [
     ("C II", 1334.5323, "depontieu2014"),
     ("C II", 1335.6628, "rathore2015"),
@@ -66,20 +63,15 @@ DOCUMENTED = [
     ("Ni I", 2799.47, "wulser2018"),
     ("Mg II", 2803.530, "depontieu2014"),
 ]
-# Equilibrium ion-fraction peak boundaries for the categories, in log10 K. Tian (2017) defines the
-# transition region as 0.02-0.8 MK; the Fe XXI flare line forms at 10 MK and above
-# (De Pontieu et al. 2021).
+# Equilibrium ion-fraction peak boundaries, log10 K: Tian (2017); De Pontieu et al. (2021).
 CATEGORY_BOUNDARIES = [("flare", 7.0), ("coronal", 5.9), ("transition_region", 4.3)]
 INTENSITY_COLUMNS = [f"intensity_{region}_{abundance}" for region in PRESSURES for abundance in ABUNDANCES]
 LEVELS = ("lower", "upper", "lower_energy", "upper_energy", "lower_j", "upper_j")
-# Catalog identity tolerance for level energies and transition wavenumbers, in cm^-1.
-# Accommodates Fe XII's 2 cm^-1 catalog difference; not a measurement uncertainty.
+# Matching tolerance in cm^-1; accommodates Fe XII's 2 cm^-1 catalog difference.
 ENERGY_TOLERANCE = 5.0
-# Literature-established chromospheric diagnostics, independent of prediction coverage.
 # Mg II: Leenaarts et al. (2013); C II: Rathore & Carlsson (2015);
 # O I: Lin & Carlsson (2015); C I: Lin et al. (2017); Cl I: IRIS Technical Note 38.
 CHROMOSPHERIC_IONS = {"Mg II", "C II", "O I", "C I", "Cl I"}
-# Cool metals may be seen in absorption or chromospheric emission; this is not a formation-height label.
 COOL_METALS = {"Li", "Be", "Na", "Mg", "Al", "Si", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"}
 # Vacuum wavelengths in Angstrom for all spectra, with levels, A-values, and references.
 NIST_PARAMETERS = {
@@ -130,7 +122,7 @@ LITERATURE_ONLY = {
 
 
 def _text(value):
-    # NIST CSV wraps text as Excel string expressions. Do not evaluate them.
+    # Strip NIST's Excel string wrappers without evaluating them.
     value = value.strip()
     return value[2:-1] if value.startswith('="') and value.endswith('"') else value
 
@@ -141,7 +133,7 @@ def _number(value):
 
 
 def _level_number(value):
-    # J values and energies that are ambiguous or qualified ("1/2,3/2", "[123]", "123+x") become NaN.
+    # Reject ambiguous or qualified level values: "1/2,3/2", "[123]", "123+x".
     try:
         return float(Fraction(_text(value)))
     except (ValueError, ZeroDivisionError):
@@ -168,7 +160,7 @@ def _nist_version():
 
 def download_nist():
     """
-    Download every NIST line in each passband; return the rows and the queries made.
+    Return NIST lines and query provenance for each passband.
     """
     rows, queries = [], {}
     for band, (low, high) in PASSBANDS.items():
@@ -183,7 +175,7 @@ def download_nist():
             ritz = _number(record["ritz_wl_vac(A)"])
             observed_uncertainty = _number(record["unc_obs_wl"])
             ritz_uncertainty = _number(record["unc_ritz_wl"])
-            # Use the better quantified wavelength; retain observed values when neither uncertainty is known.
+            # Prefer the smaller known uncertainty, falling back to observed wavelengths.
             prefer_ritz = np.isfinite(ritz) and (
                 not np.isfinite(observed)
                 or (
@@ -269,14 +261,13 @@ def predict_lines():
                     if not np.all(np.isfinite(fraction)):
                         msg = f"Non-finite ionization fractions for {name}, {region}."
                         raise ValueError(msg)
-                    # Bins without the ion contribute nothing; skip their population solves.
                     keep = fraction > 0
                     for abundance, dataset in ABUNDANCES.items():
                         if not keep.any():
                             intensity[f"intensity_{region}_{abundance}"] = np.zeros(len(indices))
                             continue
                         density = PRESSURES[region] * u.K / u.cm**3 / temperature[keep]
-                        # The abundance set also sets fiasco's proton/electron ratio for proton collisions.
+                        # Abundances also determine fiasco's proton/electron ratio.
                         region_ion = fiasco.Ion(
                             name, temperature[keep], abundance=dataset, ionization_fraction="chianti"
                         )
@@ -293,7 +284,7 @@ def predict_lines():
             except MissingDatasetException as exc:
                 unranked[name] = str(exc)
                 intensity = {column: np.full(len(indices), np.nan) for column in INTENSITY_COLUMNS}
-        # CHIANTI level numbers are not always contiguous (e.g. S II), so look them up.
+        # CHIANTI level identifiers can be non-contiguous (e.g. S II).
         level_index = {int(level): index for index, level in enumerate(levels.level)}
         energy = levels.energy.to_value(u.cm**-1, equivalencies=u.spectral())
         j = levels.total_angular_momentum.value
@@ -321,7 +312,7 @@ def predict_lines():
 
 
 def _identity(row):
-    # NIST lists some lines without level data (e.g. Ca II 1341.89); their wavelength identifies them.
+    # Wavelength identifies NIST lines lacking level data (e.g. Ca II 1341.89).
     return tuple(row[key] for key in LEVELS) if np.isfinite(row["lower_energy"]) else row["wavelength"]
 
 
@@ -329,9 +320,8 @@ def _same_transition(nist, model):
     if nist["ion"] != model["ion"] or nist["passband"] != model["passband"]:
         return False
     if np.isnan(nist["lower_energy"]) and np.isnan(nist["upper_energy"]):
-        # No levels to compare: within twice NIST's 0.01 A precision for such lines, or 3 sigma.
+        # Twice NIST's 0.01 A precision for lines lacking levels, or 3 sigma.
         return abs(nist["wavelength"] - model["wavelength"]) <= np.fmax(0.02, 3 * nist["wavelength_uncertainty"])
-    # Wavenumbers within the tolerance (or 3 sigma), and identical J and energies for both levels.
     window = np.fmax(ENERGY_TOLERANCE, 3e8 * nist["wavelength_uncertainty"] / nist["wavelength"] ** 2)
     return abs(1e8 / nist["wavelength"] - 1e8 / model["wavelength"]) <= window and all(
         nist[f"{level}_j"] == model[f"{level}_j"]
@@ -342,18 +332,17 @@ def _same_transition(nist, model):
 
 def merge_lines(rows, predictions, formation):
     """
-    Attach predictions to NIST lines of the same transition and keep all unmatched
-    CHIANTI transitions, independent of strength or prediction availability.
+    Match NIST and CHIANTI transitions, retaining unmatched lines regardless of
+    strength.
 
-    Then normalize each passband and model, attach the documented lines' references, and
+    Normalize strengths per passband and model, add published identifications, and
     assign categories.
     """
     nist_rows = list(rows)
     matches, model_pairs = [], {}
     for predicted in predictions:
         candidates = [row for row in nist_rows if _same_transition(row, predicted)]
-        # Distinct compatible NIST lines are ambiguous. Among radiative channels between the
-        # same levels (e.g. Mg II E1 and M2), use the largest A-value.
+        # Accept one level pair; prefer the largest A-value among its radiative channels.
         matched = None
         if len({_identity(row) for row in candidates}) == 1:
             matched = max(
@@ -367,7 +356,7 @@ def merge_lines(rows, predictions, formation):
             model_pairs.setdefault(id(matched), set()).add(_identity(predicted))
         matches.append(matched)
     for predicted, matched in zip(predictions, matches, strict=True):
-        # A NIST line compatible with several distinct model transitions is also ambiguous.
+        # Reject a NIST line matched to multiple CHIANTI level pairs.
         if matched is not None and len(model_pairs[id(matched)]) == 1:
             for column in INTENSITY_COLUMNS:
                 matched[column] = np.nan_to_num(matched[column]) + predicted[column]
@@ -396,7 +385,7 @@ def merge_lines(rows, predictions, formation):
                 }
             ]
             rows.append(candidates[0])
-        # The closest line; among channels at one wavelength (Mg II E1 and M2), the largest A-value.
+        # Prefer the nearest wavelength, then the largest A-value among channels.
         line = min(
             candidates,
             key=lambda row: (
@@ -405,9 +394,8 @@ def merge_lines(rows, predictions, formation):
             ),
         )
         line["reference"], line["main"] = reference, True
-    # Categories describe ions, so every row of an ion shares one category.
     for row in rows:
-        # Round away floating-point drift from the 0.01-dex grid before applying boundaries.
+        # Remove floating-point drift at the 0.01-dex category boundaries.
         row["log_t_max"] = round(formation.get(row["ion"], np.nan), 2)
         if row["ion"] in CHROMOSPHERIC_IONS:
             row["category"] = "chromospheric"
@@ -454,7 +442,6 @@ def main():
     rows, queries = download_nist()
     predictions, formation, unranked = predict_lines()
     rows = merge_lines(rows, predictions, formation)
-    # Python's sort is stable, so ties keep the deterministic input order on every platform.
     rows.sort(key=lambda row: (row["wavelength"], row["ion"], row["lower"], row["upper"]))
     table = QTable(rows=rows)
     for name in table.colnames:

@@ -1,3 +1,3 @@
-Add `irispy.utils.lines.get_lines`, an offline database of atomic lines in the three IRIS spectrograph passbands, combining NIST and CHIANTI transitions with approximate reference-model strengths for eligible ions, a curated selection of documented IRIS lines, and catalog categories.
-Strength rankings are grouped by passband. Neutral and singly ionized lines are retained without predictions, and catalog inclusion does not depend on predicted brightness. Cool metals are labelled ``cool_metal`` without assigning a photospheric formation height; wavelength selections use available uncertainties and preserve CHIANTI's theoretical-wavelength flag.
-The table ships as ``irispy/data/iris_lines.ecsv`` and is regenerated with ``tools/make_line_database.py``.
+Add `irispy.utils.lines.get_lines` to query a packaged NIST and CHIANTI catalog of the three IRIS spectrograph passbands.
+Queries support wavelength ranges, catalog categories, documented IRIS lines, and approximate strength rankings within each passband and reference model.
+Neutral and singly ionized lines are included without strength predictions.
