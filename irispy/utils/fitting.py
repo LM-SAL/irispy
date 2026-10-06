@@ -22,22 +22,25 @@ _SPEED_OF_LIGHT = constants.c.to(u.km / u.s)
 # and must not see beside their line: De Pontieu et al. (2014) Table 4, with O IV 1404.806 and S IV from
 # Polito et al. (2016), Mg II 2791.599 and the triplet from Pereira et al. (2015), Fe II and Ni I from
 # Wülser et al. (2018), and Ni II from IRIS Technical Note 38.
+_SI_IV_1403 = 1402.77
+_MG_II_K = 2796.352
+_MG_II_H = 2803.530
 _DOCUMENTED_LINES = (
     ("Fe II", 1392.817),
     ("Ni II", 1393.330),
     ("Si IV", 1393.76),
     ("O IV", 1399.776),
     ("O IV", 1401.157),
-    ("Si IV", 1402.77),
+    ("Si IV", _SI_IV_1403),
     ("O IV", 1404.806),
     ("S IV", 1404.808),
     ("S IV", 1406.009),
     ("Mg II", 2791.599),
-    ("Mg II", 2796.352),
+    ("Mg II", _MG_II_K),
     ("Mg II", 2798.754),
     ("Mg II", 2798.823),
     ("Ni I", 2799.47),
-    ("Mg II", 2803.530),
+    ("Mg II", _MG_II_H),
 )
 
 
@@ -51,33 +54,22 @@ def _profile(profile):
     return _PROFILES[profile]
 
 
-def _rest_wavelength(ion, name):
+def _wavelength(cube):
     """
-    The documented rest wavelength of the ``ion`` line that IRIS names by ``name`` Å.
+    The wavelengths of ``cube`` in Å.
     """
-    (wavelength,) = [line for line_ion, line in _DOCUMENTED_LINES if line_ion == ion and abs(line - name) <= 1]
-    return wavelength * u.AA
+    return cube.axis_world_coords(cube.wavelength_axis)[0].to(u.AA)
 
 
-def _covered(wavelength):
+def _check_window(wavelength, rest_wavelength):
     """
-    The documented ``(ion, rest wavelength)`` lines within an array of wavelengths.
+    Raise if ``wavelength`` covers a documented line other than ``rest_wavelength`` Å.
     """
     low, high = wavelength.min().to_value(u.AA), wavelength.max().to_value(u.AA)
-    return [(ion, line * u.AA) for ion, line in _DOCUMENTED_LINES if low <= line <= high]
-
-
-def _line_window(cube, rest_wavelength):
-    """
-    The wavelengths of ``cube`` in Å, which must cover ``rest_wavelength`` and no other
-    documented line.
-    """
-    wavelength = cube.axis_world_coords(cube.wavelength_axis)[0].to(u.AA)
-    others = [f"{ion} {line.value:.3f}" for ion, line in _covered(wavelength) if line != rest_wavelength]
+    others = [f"{ion} {line:.3f}" for ion, line in _DOCUMENTED_LINES if low <= line <= high and line != rest_wavelength]
     if others:
         msg = f"The cube also covers {', '.join(others)} Å, which the model leaves out; crop it to the line to fit."
         raise ValueError(msg)
-    return wavelength
 
 
 def _spectra(cube):
@@ -97,8 +89,7 @@ def _background_level(spectra):
     examples.
     """
     with warnings.catch_warnings():
-        # Fully masked spectra get NaN starts, and parallel_fit_dask returns NaN for them.
-        warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
+        warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)  # Fully masked spectra.
         return np.nanpercentile(spectra, 10, axis=-1)
 
 
@@ -157,14 +148,6 @@ def gaussians_on_background(
     centers = u.Quantity(centers)
     if centers.ndim == 0:
         centers = centers[np.newaxis]
-    components = []
-    for index, center in enumerate(centers):
-        start = {center_name: center}
-        if amplitudes is not None:
-            start["amplitude"] = amplitudes[index]
-        if widths is not None:
-            start[width_name] = widths[index]
-        components.append(line(**start))
     # Unitless starts take the unit of the data when fitted.
     level = 0 if background_level is None else background_level
     slope = 0 * level.unit / centers.unit if isinstance(level, u.Quantity) else 0
@@ -172,13 +155,19 @@ def gaussians_on_background(
         model = models.Const1D(amplitude=level)
     else:
         model = models.Linear1D(slope=slope, intercept=level)
-    for component in components:
-        model += component
+    for index, center in enumerate(centers):
+        start = {center_name: center}
+        if amplitudes is not None:
+            start["amplitude"] = amplitudes[index]
+        if widths is not None:
+            start[width_name] = widths[index]
+        model += line(**start)
         # astropy counts the left-hand parameters by their values, not their names, which breaks
-        # array starts once parallel_fit_dask resets them to one spectrum's scalars.
+        # array starts once parallel_fit_dask resets them to one spectrum's scalars:
+        # https://github.com/astropy/astropy/issues/20554
         model.n_left_params = len(model.left.param_names)
     limits = dict(bounds or {})
-    for name in (f"{width_name}_{index}" for index in range(1, len(components) + 1)):
+    for name in (f"{width_name}_{index}" for index in range(1, len(centers) + 1)):
         lower, upper = limits.get(name, (None, None))
         # Gaussian1D's own lower bound, as zero widths divide by zero.
         limits[name] = (models.Gaussian1D.stddev.bounds[0] if lower is None else lower, upper)
@@ -194,13 +183,12 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     """
     A starting model for Si IV 140.277 nm, with a start for every spectrum of ``cube``.
 
-    One Gaussian or Lorentzian on a constant background. The line is first found in the mean
-    spectrum of ``cube``, as the run of samples around its brightest one that are above half that
-    sample's height over the background (the 10th percentile). Each spectrum's background then
-    starts at its own 10th percentile, its line centre at its brightest sample within that run, and
-    its amplitude at that sample's height above the background. The full width at half maximum
-    starts at the width of the run, the same for every spectrum. The line centre is kept inside the
-    window, the width between 0 and the window's width, and the amplitude positive.
+    One Gaussian or Lorentzian on a constant background. The line is the run of samples above half
+    maximum around the peak of the mean spectrum, over its 10th percentile. Each spectrum's
+    background starts at its own 10th percentile, its centre at its brightest sample in that run
+    and its amplitude at that sample's height above the background; the full width at half maximum
+    starts at the run's width for every spectrum. The centre is bounded to the window, the width to
+    the window's width and the amplitude to positive values.
 
     Parameters
     ----------
@@ -223,7 +211,8 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     """
     _, center_name, width_name = _profile(profile)
     check_scaled(cube)
-    wavelength = _line_window(cube, _rest_wavelength("Si IV", 1403))
+    wavelength = _wavelength(cube)
+    _check_window(wavelength, _SI_IV_1403)
     spectra = _spectra(cube)
     background = _background_level(spectra)
     with warnings.catch_warnings():
@@ -237,6 +226,7 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     first = index[below & (index < mean_peak)].max(initial=-1)
     last = index[below & (index > mean_peak)].min(initial=mean.size)
     line = (index > first) & (index < last)
+    # A fully masked spectrum gets index 0 and a NaN height, so parallel_fit_dask gives it NaN parameters.
     peak = np.argmax(np.where(line & ~np.isnan(spectra), spectra, -np.inf), axis=-1)
     height = np.take_along_axis(spectra, peak[..., np.newaxis], axis=-1)[..., 0] - background
     fwhm = np.full(height.shape, last - first - 1) * np.mean(np.abs(np.diff(wavelength)))
@@ -292,17 +282,18 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
     the peaks are hard to recover from them in complex profiles, such as those of flare ribbons.
     """
     check_scaled(cube)
-    wavelength = cube.axis_world_coords(cube.wavelength_axis)[0].to(u.AA)
+    wavelength = _wavelength(cube)
     covered = [
         (line, rest)
-        for line, rest in (("k", _rest_wavelength("Mg II", 2796)), ("h", _rest_wavelength("Mg II", 2803)))
-        if wavelength.min() <= rest <= wavelength.max()
+        for line, rest in (("k", _MG_II_K), ("h", _MG_II_H))
+        if wavelength.min() <= rest * u.AA <= wavelength.max()
     ]
     if not covered:
         msg = "The cube covers neither the Mg II k nor the h line."
         raise ValueError(msg)
-    line, rest_wavelength = covered[0]
-    _line_window(cube, rest_wavelength)
+    line, rest = covered[0]
+    _check_window(wavelength, rest)
+    rest_wavelength = rest * u.AA
     velocity_range = u.Quantity(velocity_range, u.km / u.s)
     features = calculate_mg_features(cube, velocity_range=velocity_range, lines=(line,))
     background = _background_level(_spectra(cube))

@@ -118,19 +118,15 @@ def test_gaussians_on_background_bounds_hold():
         [1402.77] * u.AA, amplitudes=[100] * u.ct, widths=[0.04] * u.AA, background_level=np.full(SHAPE, 2.0) * u.ct
     )
     data, sigma = _observe(truth, rng)
-    bounds = {"mean_1": (1402.6, 1402.7) * u.AA, "amplitude_1": (0, 50) * u.ct, "amplitude_0": (None, 1 * u.ct)}
+    # Bounds in another unit than the centres are converted to it.
+    bounds = {"mean_1": (140.26, 140.27) * u.nm, "amplitude_1": (0, 50) * u.ct, "amplitude_0": (None, 1 * u.ct)}
     start = gaussians_on_background([1402.65] * u.AA, amplitudes=[40] * u.ct, widths=[0.04] * u.AA, bounds=bounds)
-    assert start.mean_1.bounds == (1402.6, 1402.7)
+    np.testing.assert_allclose(start.mean_1.bounds, (1402.6, 1402.7))
     assert start.stddev_1.bounds[0] > 0
     fitted, _ = _fit(start, data, sigma)
     _assert_within_bounds(fitted, start)
     # The true centre lies outside the bounds, so most fits stop on the nearer one.
     np.testing.assert_allclose(np.median(fitted.mean_1.value), 1402.7)
-
-
-def test_gaussians_on_background_bounds_convert_units():
-    model = gaussians_on_background([1402.77] * u.AA, bounds={"mean_1": (140.2, 140.35) * u.nm})
-    np.testing.assert_allclose(model.mean_1.bounds, (1402.0, 1403.5))
 
 
 @pytest.mark.parametrize(("keyword", "value"), [("profile", "voigt"), ("background", "quadratic")])
@@ -144,7 +140,9 @@ def _cube(truth, wavelength, rng):
     return make_test_spectrogram_cube(data, wavelength, uncertainty=StdDevUncertainty(sigma))
 
 
-def _si_iv_cube(rng, profile="gaussian"):
+@pytest.mark.parametrize("profile", ["gaussian", "lorentzian"])
+def test_si_iv_1403_model_recovers_parameters(profile):
+    rng = np.random.default_rng(7)
     truth = gaussians_on_background(
         (1402.77 + rng.normal(0, 0.02, SHAPE))[np.newaxis] * u.AA,
         amplitudes=rng.uniform(100, 300, (1, *SHAPE)) * u.DN,
@@ -152,13 +150,7 @@ def _si_iv_cube(rng, profile="gaussian"):
         background_level=5 * u.DN,
         profile=profile,
     )
-    return truth, _cube(truth, WAVELENGTH, rng)
-
-
-@pytest.mark.parametrize("profile", ["gaussian", "lorentzian"])
-def test_si_iv_1403_model_recovers_parameters(profile):
-    rng = np.random.default_rng(7)
-    truth, cube = _si_iv_cube(rng, profile)
+    cube = _cube(truth, WAVELENGTH, rng)
     model = si_iv_1403_model(cube, profile=profile)
     assert model.param_names == truth.param_names
     assert model(WAVELENGTH[:, np.newaxis, np.newaxis]).unit == u.DN
@@ -197,7 +189,8 @@ def test_mg_ii_model_on_level_2_data():
     fitted, _ = _fit(
         mg_ii_model(cube), np.nan_to_num(cube.data.clip(min=0)), cube.uncertainty.array, wavelength, cube.unit
     )
-    # Observed quiet-Sun k2 peak separations are 20-50 km/s (Ondratschek et al. 2024, Fig. 5b).
+    # IRIS k2 peak separations spread about a mean of 33 km/s (Ondratschek et al. 2024, Fig. 5b), so the median
+    # of this disk-centre raster should fall well inside 20-50 km/s.
     separation = (fitted.mean_2.quantity - fitted.mean_1.quantity) / (2796.352 * u.AA) * C_KMS * u.km / u.s
     assert 20 < np.nanmedian(separation.value) < 50
 

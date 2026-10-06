@@ -83,11 +83,11 @@ Things to know
 
 * **Pass the wavelengths in Å.**
   The starting models are in Å, and astropy converts a model's parameters to the unit of the wavelengths it is given but not their bounds.
-  Its least-squares fitters also do not rescale the parameters, so a fit in metres, the unit of the cube's WCS, barely moves the line centres and widths.
+  `~astropy.modeling.fitting.TRFLSQFitter` also does not rescale the parameters, so with wavelengths in metres, the unit of the cube's WCS, it can stop before the line centres and widths converge.
   That is why the wavelengths are passed as ``world`` rather than the cube itself.
 * **Masked and missing samples.**
   The fitters do not accept NaN, so replace bad samples with any number and give them zero weight, as above.
-  Spectra that are entirely NaN, and fits that raise an error, give NaN parameters and a zero covariance.
+  Spectra that are entirely NaN, and fits that raise an error, give NaN parameters and a zero covariance; ``diagnostics="error"`` with a ``diagnostics_path`` writes each error to a folder.
 * **Uncertainties.**
   With weights of 1/σ, ``param_cov`` is the covariance of the parameters given those uncertainties, and the errors are only as good as the uncertainties of the cube.
   Without weights, astropy scales it by the variance of the residuals, as `scipy.optimize.curve_fit` does with ``absolute_sigma=False``.
