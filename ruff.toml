@@ -5,7 +5,6 @@ line-length = 120
 extend-exclude=[
     "__pycache__",
     "build",
-    "tools/**",
 ]
 lint.extend-select = [
     "ALL",
@@ -51,6 +50,9 @@ lint.ignore = [
 ]
 
 [lint.per-file-ignores]
+"tools/*.py" = [
+    "INP001", # Implicit namespace package
+]
 "examples/*.py" = [
     "B018", # Not print but display
     "D400", # First line should end with a period, question mark, or exclamation point

@@ -9,14 +9,12 @@ import numpy as np
 from scipy import ndimage
 
 import astropy.units as u
-from astropy.modeling.models import custom_model
 
 from .constants import BAD_PIXEL_VALUES_SCALED
 
 __all__ = [
     "calculate_dust_mask",
     "calculate_uncertainty",
-    "gaussian1d_on_linear_bg",
     "get_detector_type",
     "image_clipping",
     "record_to_dict",
@@ -102,18 +100,6 @@ def image_clipping(image, cutoff=1.5e-3, gamma=1.0):
     vmin = (np.max(np.where(h <= (cutoff + h[0]), bins[1:] - bins[0], 0)) / fak + hmin) ** gamma
     vmax = (np.min(np.where(h >= (1.0 - cutoff), bins[1:] - bins[0], nh - 2)) / fak + hmin) ** gamma
     return vmin, vmax
-
-
-@custom_model
-def gaussian1d_on_linear_bg(
-    x,
-    amplitude=None,
-    mean=None,
-    standard_deviation=None,
-    constant_term=None,
-    linear_term=None,
-):
-    return amplitude * np.exp(-(((x - mean) / standard_deviation) ** 2)) + constant_term + linear_term * x
 
 
 def get_detector_type(meta):

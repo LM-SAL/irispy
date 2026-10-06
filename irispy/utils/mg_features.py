@@ -64,6 +64,8 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
       For unevenly spaced knots, as when slit positions are left out, IDL's ``SPLINE`` reuses the
       first interval's diagonal in the last row of its system, so the guesses near and beyond the
       last good slit position can differ.
+    * The rest wavelengths are IDL's, 279.63509 and 280.35297 nm, 0.001 Å from the catalog's
+      documented values (`~irispy.utils.lines.get_lines`), so that the velocities match IDL's.
     * Not reproduced: IDL's ``/onlyk`` uses 279.644 nm for k, its reversed (V34) rasters are
       descaled twice, its jump search along the slit takes the last line centre as 0 km/s when
       none is missing, and its minimum near a guessed line centre is misplaced when the guess is
