@@ -46,7 +46,7 @@ _DOCUMENTED_LINES = (
 
 def _profile(profile):
     """
-    The astropy model of ``profile`` and the names of its centre and width parameters.
+    The astropy model of ``profile`` and the names of its center and width parameters.
     """
     if profile not in _PROFILES:
         msg = f"profile must be one of {tuple(_PROFILES)}, not {profile!r}."
@@ -114,7 +114,7 @@ def gaussians_on_background(
     Parameters
     ----------
     centers : `~astropy.units.Quantity`
-        Initial line centres, one per component along the first axis. Further axes give a
+        Initial line centers, one per component along the first axis. Further axes give a
         different start in every spectrum of a cube, and must match its spatial axes.
     amplitudes : `~astropy.units.Quantity`, optional
         Initial peak values above the background, shaped like ``centers``. Defaults to 1.
@@ -185,16 +185,16 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
 
     One Gaussian or Lorentzian on a constant background. The line is the run of samples above half
     maximum around the peak of the mean spectrum, over its 10th percentile. Each spectrum's
-    background starts at its own 10th percentile, its centre at its brightest sample in that run
+    background starts at its own 10th percentile, its center at its brightest sample in that run
     and its amplitude at that sample's height above the background; the full width at half maximum
-    starts at the run's width for every spectrum. The centre is bounded to the window, the width to
+    starts at the run's width for every spectrum. The center is bounded to the window, the width to
     the window's width and the amplitude to positive values.
 
     Parameters
     ----------
     cube : `~irispy.spectrograph.SpectrogramCube`
         A Si IV 1403 cube cropped to the wavelengths to fit, read with ``memmap=False``. The window
-        must leave out the neighbouring documented lines, such as O IV 140.116 and 140.481 nm.
+        must leave out the neighboring documented lines, such as O IV 140.116 and 140.481 nm.
     profile : `str`, optional
         The line profile, ``"gaussian"`` or ``"lorentzian"``.
 
@@ -253,10 +253,10 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
     Two Gaussians, for the blue (k2v or h2v) and red (k2r or h2r) emission peaks, on a constant
     background, as in the k and h components of the Gaussian decomposition of :cite:t:`itn39`.
     Where `~irispy.utils.mg_features.calculate_mg_features` finds the peaks of a spectrum
-    :cite:p:`pereira2013`, they set its Gaussians' centres and amplitudes; elsewhere these start at
+    :cite:p:`pereira2013`, they set its Gaussians' centers and amplitudes; elsewhere these start at
     the medians over the cube. Each width starts at the median distance of its peak from the line
-    centre (k3 or h3) over the cube, and the background at each spectrum's 10th percentile. The
-    centres are kept within ``velocity_range`` of the rest wavelength and the amplitudes positive.
+    center (k3 or h3) over the cube, and the background at each spectrum's 10th percentile. The
+    centers are kept within ``velocity_range`` of the rest wavelength and the amplitudes positive.
 
     Parameters
     ----------
@@ -266,7 +266,7 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
         such as the Mg II triplet at 279.88 nm.
     velocity_range : `~astropy.units.Quantity`, optional
         Doppler velocities from the rest wavelength within which to search for the peaks and to keep
-        the Gaussians' centres. The default is the search range of :cite:t:`leenaarts2013`.
+        the Gaussians' centers. The default is the search range of :cite:t:`leenaarts2013`.
 
     Returns
     -------
@@ -307,7 +307,7 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
     def peak_wavelength(feature):
         return rest_wavelength * (1 + features[f"{feature}_velocity"].data * u.km / u.s / _SPEED_OF_LIGHT)
 
-    core = start(peak_wavelength(f"{line}3"), f"{line}3 line centre")
+    core = start(peak_wavelength(f"{line}3"), f"{line}3 line center")
     peaks = [f"{line}2v", f"{line}2r"]
     centers = u.Quantity([start(peak_wavelength(peak), f"{peak} peak") for peak in peaks])
     amplitudes = np.clip(

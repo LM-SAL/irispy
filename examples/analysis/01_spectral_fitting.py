@@ -72,7 +72,7 @@ si_iv_1403 = si_iv_1403[:ny, :nx].rebin((2, 2, 1), propagate_uncertainties=True)
 
 ###############################################################################
 # The model describes Si IV alone, so we keep the wavelengths halfway to the
-# neighbouring O IV lines at 1401.157 and 1404.806 Å (De Pontieu et al. 2014; Polito et al. 2016).
+# neighboring O IV lines at 1401.157 and 1404.806 Å :cite:p:`depontieu2014,polito2016`.
 
 blue, si_iv_core, red = [1401.157, 1402.77, 1404.806] * u.AA
 lower_corner = [SpectralCoord((blue + si_iv_core) / 2), None]
@@ -105,10 +105,29 @@ iris_model_fit = parallel_fit_dask(
 )
 
 ###############################################################################
-# The fitted parameters are 2D arrays with the shape of the spatial axes. We convert
-# them into physical quantities and wrap them in `~irispy.spectrograph.SpectrogramCube`
-# objects with the WCS of the line-core image, so that they plot with the same
-# orientation and coordinates.
+# The fitted parameters are 2D arrays with the shape of the spatial axes. The net flux
+# of each Gaussian is the area under it in units of spectral pixels, that is the total
+# count in the line, several times its peak value. We compare the starting and the fitted
+# model for a bright spectrum, the one at the 99th percentile of net flux.
+
+gaussian_width = iris_model_fit.stddev_1.quantity
+net_flux = (
+    np.sqrt(2 * np.pi) * iris_model_fit.amplitude_1.quantity * gaussian_width / np.mean(np.diff(wavelength))
+).to(si_iv_1403.unit)
+# The models' parameters are maps, so we evaluate them on wavelengths shaped to broadcast against them.
+bright = np.nanpercentile(net_flux.value, 99)
+step, slit = np.unravel_index(np.nanargmin(np.abs(net_flux.value - bright)), net_flux.shape)
+plt.figure()
+ax = si_iv_1403[step, slit].plot(label="Spectrum")
+ax.plot(model(wavelength[:, np.newaxis, np.newaxis])[:, step, slit], label="Starting model")
+ax.plot(iris_model_fit(wavelength[:, np.newaxis, np.newaxis])[:, step, slit], linestyle="--", label="Fitted model")
+ax.set_title("Si IV 1403 profile")
+plt.legend()
+
+###############################################################################
+# We convert the fitted parameters into physical quantities and wrap them in
+# `~irispy.spectrograph.SpectrogramCube` objects with the WCS of the line-core image,
+# so that they plot with the same orientation and coordinates.
 
 fig, ax_dict = plt.subplot_mosaic(
     [["fov", "net_flux"], ["velocity", "sigma"]],
@@ -120,16 +139,12 @@ si_iv_spec_crop.plot(axes=ax_dict["fov"], plot_axes=["x", "y"], vmin=0, vmax=200
 ax_dict["fov"].set_title(f"Si IV {si_iv_core.to_value(u.AA)} Å")
 fig.colorbar(ax_dict["fov"].images[0], ax=ax_dict["fov"], label="Intensity [DN]", shrink=0.8)
 
-gaussian_width = iris_model_fit.stddev_1.quantity
-net_flux = (
-    np.sqrt(2 * np.pi) * iris_model_fit.amplitude_1.quantity * gaussian_width / np.mean(np.diff(wavelength))
-).to(si_iv_1403.unit)
 amp_max = np.nanpercentile(np.abs(net_flux.value), 99)
 SpectrogramCube(net_flux, si_iv_spec_crop.wcs).plot(
     axes=ax_dict["net_flux"], plot_axes=["x", "y"], vmin=0, vmax=amp_max
 )
 cbar = fig.colorbar(ax_dict["net_flux"].images[0], ax=ax_dict["net_flux"])
-cbar.set_label(label=f"Intensity [{net_flux.unit.to_string()}]", fontsize=8)
+cbar.set_label(label=f"Line flux [{net_flux.unit.to_string()}]", fontsize=8)
 cbar.ax.tick_params(labelsize=8)
 ax_dict["net_flux"].set_title("Gaussian Net Flux")
 
@@ -161,3 +176,5 @@ for ax in ax_dict.values():
 fig.tight_layout()
 
 plt.show()
+
+# sphinx_gallery_thumbnail_number = 2

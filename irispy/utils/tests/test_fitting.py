@@ -102,7 +102,7 @@ def test_gaussians_on_background_array_starts_broadcast():
     assert truth.mean_1.shape == SHAPE
     assert truth.amplitude_1.shape == ()
     data, sigma = _observe(truth, rng)
-    # Scalar starts mixed with per-spectrum centres.
+    # Scalar starts mixed with per-spectrum centers.
     start = gaussians_on_background(
         centers[np.newaxis] + 0.01 * u.AA, amplitudes=[80] * u.ct, widths=[0.05] * u.AA, background_level=1 * u.ct
     )
@@ -118,14 +118,14 @@ def test_gaussians_on_background_bounds_hold():
         [1402.77] * u.AA, amplitudes=[100] * u.ct, widths=[0.04] * u.AA, background_level=np.full(SHAPE, 2.0) * u.ct
     )
     data, sigma = _observe(truth, rng)
-    # Bounds in another unit than the centres are converted to it.
+    # Bounds in another unit than the centers are converted to it.
     bounds = {"mean_1": (140.26, 140.27) * u.nm, "amplitude_1": (0, 50) * u.ct, "amplitude_0": (None, 1 * u.ct)}
     start = gaussians_on_background([1402.65] * u.AA, amplitudes=[40] * u.ct, widths=[0.04] * u.AA, bounds=bounds)
     np.testing.assert_allclose(start.mean_1.bounds, (1402.6, 1402.7))
     assert start.stddev_1.bounds[0] > 0
     fitted, _ = _fit(start, data, sigma)
     _assert_within_bounds(fitted, start)
-    # The true centre lies outside the bounds, so most fits stop on the nearer one.
+    # The true center lies outside the bounds, so most fits stop on the nearer one.
     np.testing.assert_allclose(np.median(fitted.mean_1.value), 1402.7)
 
 
@@ -164,7 +164,7 @@ def test_mg_ii_model_recovers_parameters():
     rng = np.random.default_rng(8)
     wavelength = (2795.5 + 0.0254 * np.arange(70)) * u.AA
     # The k2v and k2r peaks 32 km/s apart, as observed in the quiet Sun (Ondratschek et al. 2024), overlapping
-    # so that the line centre is about 60% of the peaks, as in Level 2 data.
+    # so that the line center is about 60% of the peaks, as in Level 2 data.
     truth = gaussians_on_background(
         (np.array([2796.20, 2796.50])[:, None, None] + rng.normal(0, 0.01, (2, *SHAPE))) * u.AA,
         amplitudes=rng.uniform(400, 600, (2, *SHAPE)) * u.DN,
@@ -190,7 +190,7 @@ def test_mg_ii_model_on_level_2_data():
         mg_ii_model(cube), np.nan_to_num(cube.data.clip(min=0)), cube.uncertainty.array, wavelength, cube.unit
     )
     # IRIS k2 peak separations spread about a mean of 33 km/s (Ondratschek et al. 2024, Fig. 5b), so the median
-    # of this disk-centre raster should fall well inside 20-50 km/s.
+    # of this disk-center raster should fall well inside 20-50 km/s.
     separation = (fitted.mean_2.quantity - fitted.mean_1.quantity) / (2796.352 * u.AA) * C_KMS * u.km / u.s
     assert 20 < np.nanmedian(separation.value) < 50
 
