@@ -31,4 +31,5 @@ Each chapter of the tutorial provides a self-contained set of codes.
    acquiring_data
    level_2
    calibration
+   fitting
    data_idiosyncrasies
