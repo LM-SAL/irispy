@@ -19,6 +19,15 @@ _CATEGORIES = ("flare", "coronal", "transition_region", "chromospheric", "cool_m
 _PASSBANDS = ("FUV1", "FUV2", "NUV")
 
 
+def _documented_wavelength(ion, near):
+    """
+    The catalog rest wavelength of the documented ``ion`` line within 1 Å of ``near`` Å.
+    """
+    lines = get_lines([near - 1, near + 1] * u.AA, main_only=True)
+    (wavelength,) = lines["wavelength"][lines["ion"] == ion]
+    return wavelength
+
+
 @cache
 def _load_lines():
     # Keep empty strings as strings rather than masked values.

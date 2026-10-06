@@ -28,6 +28,7 @@ from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 from irispy.utils.fitting import fit_to_maps, non_thermal_velocity, si_iv_1403_model
+from irispy.utils.lines import get_lines
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
@@ -70,9 +71,11 @@ si_iv_1403 = si_iv_1403[:ny, :nx].rebin((2, 2, 1), propagate_uncertainties=True)
 
 ###############################################################################
 # The model describes Si IV alone, so we keep the wavelengths halfway to the
-# neighbouring O IV lines at 1401.157 and 1404.806 Å (De Pontieu et al. 2014; Polito et al. 2016).
+# neighbouring O IV lines, which we take from the line catalog.
 
-blue, si_iv_core, red = [1401.157, 1402.77, 1404.806] * u.AA
+lines = get_lines([1398, 1407] * u.AA, main_only=True)
+si_iv_index = np.flatnonzero(lines["ion"] == "Si IV")[0]
+blue, si_iv_core, red = lines["wavelength"][si_iv_index - 1 : si_iv_index + 2]
 lower_corner = [SpectralCoord((blue + si_iv_core) / 2), None]
 upper_corner = [SpectralCoord((si_iv_core + red) / 2), None]
 si_iv_1403 = si_iv_1403.crop(lower_corner, upper_corner)
@@ -161,13 +164,10 @@ fig.tight_layout()
 ###############################################################################
 # The fitted width also holds the instrumental and thermal broadening of the line.
 # `~irispy.utils.fitting.non_thermal_velocity` removes both, taking the thermal width
-# at the temperature we give, here the peak of Si IV in CHIANTI's ionisation
-# equilibrium, log T = 4.9 (Dere et al. 2023). Lines narrower than that have no
-# non-thermal velocity.
+# at the formation temperature of Si IV in the line catalog, to leave the
+# non-thermal velocity. Lines narrower than that have no non-thermal velocity.
 
-non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv_core, ion="Si IV", temperature=10**4.9 * u.K)[
-    "non_thermal_velocity"
-]
+non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv_core, ion="Si IV")["non_thermal_velocity"]
 
 fig = plt.figure()
 ax = fig.add_subplot(projection=non_thermal.wcs)

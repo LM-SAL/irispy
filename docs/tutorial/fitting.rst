@@ -27,6 +27,7 @@ We use a cutout of an active region observation with the Si IV 1403 window, as i
     >>> from astropy.modeling.fitting import TRFLSQFitter, parallel_fit_dask
     >>> from irispy.io import read_files
     >>> from irispy.utils.fitting import si_iv_1403_model
+    >>> from irispy.utils.lines import get_lines
     >>> filename = pooch.retrieve(
     ...     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20180102_153155_3610108077_cutout_raster.tar.gz",
     ...     known_hash="ff80e6a7900d4d5e1716a6415db25d40b6058f3523184b549c7e0d9928c0b68b",
@@ -35,13 +36,27 @@ We use a cutout of an active region observation with the Si IV 1403 window, as i
     >>> cube = raster["Si IV 1403"][0][100:140, 200:260]  # doctest: +REMOTE_DATA
 
 The starting models describe one line and no other, so the cube has to be cropped to that line.
-The Si IV 1403 window also holds O IV and S IV lines, and `~irispy.utils.fitting.si_iv_1403_model` raises an error if the cube covers any of them.
-Here we keep the wavelengths halfway to the neighbouring O IV lines at 140.116 and 140.481 nm:
+The Si IV 1403 window also holds O IV and S IV lines, and the line catalog lists them:
 
 .. code-block:: python
 
-    >>> si_iv = 1402.77 * u.AA
-    >>> window = [(1401.157 * u.AA + si_iv) / 2, (si_iv + 1404.806 * u.AA) / 2]
+    >>> lines = get_lines([1398, 1407] * u.AA, main_only=True)
+    >>> for line in lines:
+    ...     print(line["ion"], line["wavelength"])
+    O IV 1399.776 Angstrom
+    O IV 1401.157 Angstrom
+    Si IV 1402.77 Angstrom
+    O IV 1404.806 Angstrom
+    S IV 1404.808 Angstrom
+    S IV 1406.009 Angstrom
+
+Here we keep the wavelengths halfway to the neighbouring lines on either side.
+`~irispy.utils.fitting.si_iv_1403_model` raises an error if the cube covers another documented line.
+
+.. code-block:: python
+
+    >>> (si_iv,) = lines["wavelength"][lines["ion"] == "Si IV"]
+    >>> window = [(lines["wavelength"][1] + si_iv) / 2, (si_iv + lines["wavelength"][3]) / 2]
     >>> cube = cube.crop([SpectralCoord(window[0]), None], [SpectralCoord(window[1]), None])  # doctest: +REMOTE_DATA
     >>> model = si_iv_1403_model(cube)  # doctest: +REMOTE_DATA
     >>> model.param_names  # doctest: +REMOTE_DATA
@@ -105,12 +120,12 @@ Non-thermal velocities
 ======================
 
 A fitted width holds the instrumental and thermal broadening of the line as well.
-`~irispy.utils.fitting.non_thermal_velocity` removes both from a map of the full width at half maximum, using the spectral resolution of the passband and, for the thermal width, the ion's mass and a temperature, here the peak of Si IV in CHIANTI's ionisation equilibrium :cite:p:`dere2023`:
+`~irispy.utils.fitting.non_thermal_velocity` removes both from a map of the full width at half maximum, using the spectral resolution of the passband and, for the thermal width, the ion's temperature of maximum abundance in the line catalog:
 
 .. code-block:: python
 
     >>> from irispy.utils.fitting import non_thermal_velocity
-    >>> non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv, ion="Si IV", temperature=10**4.9 * u.K)  # doctest: +REMOTE_DATA
+    >>> non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv, ion="Si IV")  # doctest: +REMOTE_DATA
     >>> non_thermal["non_thermal_velocity"].unit  # doctest: +REMOTE_DATA
     Unit("km / s")
 

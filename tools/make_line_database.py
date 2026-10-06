@@ -27,12 +27,13 @@ import astropy
 import astropy.units as u
 from astropy.table import QTable
 
+from irispy.utils.constants import PASSBAND_LIMITS
+
 DATA_DIR = Path(__file__).resolve().parents[1] / "irispy" / "data"
 NIST_URL = "https://physics.nist.gov/cgi-bin/ASD/lines1.pl"
 NIST_VERSION_URL = "https://physics.nist.gov/PhysRefData/ASD/Html/verhist.shtml"
-# Vacuum Angstrom limits from De Pontieu et al. (2014), Table 2.
-# FUV2 readout below 1389 A falls outside the published passband.
-PASSBANDS = {"FUV1": [1331.7, 1358.4], "FUV2": [1389.0, 1407.0], "NUV": [2782.7, 2835.1]}
+# Vacuum Angstrom limits from De Pontieu et al. (2014), Table 2; the FUV2 readout below 1389 A is outside them.
+PASSBANDS = {band: limits.to_value(u.angstrom).tolist() for band, limits in PASSBAND_LIMITS.items()}
 PRESSURES = {"quiet_sun": 3e15, "active_region": 3e15, "flare": 1e16}  # n_e T in K cm^-3
 ABUNDANCES = {"coronal": "sun_coronal_2021_chianti", "photospheric": "sun_photospheric_2021_asplund"}
 # Ion, vacuum wavelength (Angstrom), and docs/references.bib key.

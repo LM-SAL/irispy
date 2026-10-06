@@ -405,8 +405,8 @@ def test_non_thermal_velocity_formula():
 
 def test_non_thermal_velocity_defaults():
     sigma = np.array([[0.05, np.nan]])
-    # Si IV peaks at log T = 4.9 in CHIANTI's ionisation equilibrium.
-    result = non_thermal_velocity(_width_map(sigma), 1402.77 * u.AA, ion="Si IV", temperature=10**4.9 * u.K)
+    result = non_thermal_velocity(_width_map(sigma), 1402.77 * u.AA, ion="Si IV")
+    # Si IV peaks at log T = 4.9 in the catalog's ionisation equilibrium.
     thermal = (
         np.sqrt(4 * np.log(2))
         * 1402.77
@@ -419,7 +419,7 @@ def test_non_thermal_velocity_defaults():
     )
     np.testing.assert_allclose(result["non_thermal_velocity"].data, expected["non_thermal_velocity"].data)
     assert result["quality"].data[0, 1] == NonThermalQualityFlag.NO_DATA
-    # A hotter ion leaves less width for the non-thermal velocity.
+    # A given temperature replaces the catalog's.
     hotter = non_thermal_velocity(_width_map(sigma), 1402.77 * u.AA, ion="Si IV", temperature=2e5 * u.K)
     assert hotter["non_thermal_velocity"].data[0, 0] < result["non_thermal_velocity"].data[0, 0]
 
@@ -428,8 +428,9 @@ def test_non_thermal_velocity_defaults():
     ("keywords", "match"),
     [
         ({}, "Pass ion"),
-        ({"ion": "Si IV"}, "temperature"),
-        ({"ion": "Xx IV", "temperature": 1e5 * u.K}, "No atomic mass"),
+        ({"ion": "Xx IV"}, "not in the line catalog"),
+        ({"ion": "Al III"}, "No atomic mass"),
+        ({"ion": "O I"}, "no formation temperature"),
         ({"ion": "Si IV", "wavelength": 1500 * u.AA}, "outside the IRIS passbands"),
     ],
 )

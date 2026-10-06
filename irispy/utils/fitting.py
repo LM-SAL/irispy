@@ -15,6 +15,7 @@ from astropy.nddata import StdDevUncertainty
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import _QualityFlag, check_scaled, make_map_cube, make_spatial_template, standard_deviation
 from irispy.utils.constants import ATOMIC_MASS, INSTRUMENTAL_FWHM, PASSBAND_LIMITS
+from irispy.utils.lines import _documented_wavelength, get_lines
 from irispy.utils.mg_features import calculate_mg_features
 
 __all__ = [
@@ -30,27 +31,6 @@ __all__ = [
 _PROFILES = {"gaussian": (models.Gaussian1D, "mean", "stddev"), "lorentzian": (models.Lorentz1D, "x_0", "fwhm")}
 _BACKGROUNDS = ("constant", "linear")
 _SPEED_OF_LIGHT = constants.c.to(u.km / u.s)
-# Vacuum rest wavelengths in Å of the IRIS lines documented in the FUV2 and NUV passbands, which the presets fit
-# and must not see beside their line: De Pontieu et al. (2014) Table 4, with O IV 1404.806 and S IV from
-# Polito et al. (2016), Mg II 2791.599 and the triplet from Pereira et al. (2015), Fe II and Ni I from
-# Wülser et al. (2018), and Ni II from IRIS Technical Note 38.
-_DOCUMENTED_LINES = (
-    ("Fe II", 1392.817),
-    ("Ni II", 1393.330),
-    ("Si IV", 1393.76),
-    ("O IV", 1399.776),
-    ("O IV", 1401.157),
-    ("Si IV", 1402.77),
-    ("O IV", 1404.806),
-    ("S IV", 1404.808),
-    ("S IV", 1406.009),
-    ("Mg II", 2791.599),
-    ("Mg II", 2796.352),
-    ("Mg II", 2798.754),
-    ("Mg II", 2798.823),
-    ("Ni I", 2799.47),
-    ("Mg II", 2803.530),
-)
 
 
 def _profile(profile):
@@ -63,20 +43,13 @@ def _profile(profile):
     return _PROFILES[profile]
 
 
-def _rest_wavelength(ion, name):
-    """
-    The documented rest wavelength of the ``ion`` line that IRIS names by ``name`` Å.
-    """
-    (wavelength,) = [line for line_ion, line in _DOCUMENTED_LINES if line_ion == ion and abs(line - name) <= 1]
-    return wavelength * u.AA
-
-
 def _covered(wavelength):
     """
-    The documented ``(ion, rest wavelength)`` lines within an array of wavelengths.
+    The documented ``(ion, rest wavelength)`` lines of the catalog within an array of
+    wavelengths.
     """
-    low, high = wavelength.min().to_value(u.AA), wavelength.max().to_value(u.AA)
-    return [(ion, line * u.AA) for ion, line in _DOCUMENTED_LINES if low <= line <= high]
+    lines = get_lines([wavelength.min(), wavelength.max()], main_only=True)
+    return list(zip(lines["ion"], lines["wavelength"], strict=True))
 
 
 def _line_window(cube, rest_wavelength):
@@ -218,7 +191,8 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     ----------
     cube : `~irispy.spectrograph.SpectrogramCube`
         A Si IV 1403 cube cropped to the wavelengths to fit, read with ``memmap=False``. The window
-        must leave out the neighbouring documented lines, such as O IV 140.116 and 140.481 nm.
+        must leave out the neighbouring documented lines (`~irispy.utils.lines.get_lines` with
+        ``main_only=True``), such as O IV 140.116 and 140.481 nm.
     profile : `str`, optional
         The line profile, ``"gaussian"`` or ``"lorentzian"``.
 
@@ -235,7 +209,7 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     """
     _, center_name, width_name = _profile(profile)
     check_scaled(cube)
-    wavelength = _line_window(cube, _rest_wavelength("Si IV", 1403))
+    wavelength = _line_window(cube, _documented_wavelength("Si IV", 1403))
     spectra = _spectra(cube)
     background = _background_level(spectra)
     with warnings.catch_warnings():
@@ -307,7 +281,7 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
     wavelength = cube.axis_world_coords(cube.wavelength_axis)[0].to(u.AA)
     covered = [
         (line, rest)
-        for line, rest in (("k", _rest_wavelength("Mg II", 2796)), ("h", _rest_wavelength("Mg II", 2803)))
+        for line, rest in (("k", _documented_wavelength("Mg II", 2796)), ("h", _documented_wavelength("Mg II", 2803)))
         if wavelength.min() <= rest <= wavelength.max()
     ]
     if not covered:
@@ -585,10 +559,11 @@ def non_thermal_velocity(fwhm, wavelength, *, instrumental_fwhm=None, thermal_fw
     thermal_fwhm : `~astropy.units.Quantity`, optional
         The thermal width. Defaults to the width above for the mass of ``ion`` and ``temperature``.
     temperature : `~astropy.units.Quantity`, optional
-        The ion temperature :math:`T`. Needed with ``ion`` unless ``thermal_fwhm`` is given.
+        The ion temperature :math:`T`. Defaults to the temperature of maximum abundance of ``ion``
+        in the line catalog, from the ionisation equilibrium of CHIANTI :cite:p:`dere2023`.
     ion : `str`, optional
         The ion, such as ``"Si IV"``, for its mass :math:`m`, the standard atomic weight of its element
-        :cite:p:`prohaska2022`. Needed with ``temperature`` unless ``thermal_fwhm`` is given.
+        :cite:p:`prohaska2022`, and its temperature. Needed unless ``thermal_fwhm`` is given.
 
     Returns
     -------
@@ -599,9 +574,9 @@ def non_thermal_velocity(fwhm, wavelength, *, instrumental_fwhm=None, thermal_fw
 
     Notes
     -----
-    A temperature of maximum abundance from an ionisation equilibrium, such as CHIANTI's
-    :cite:p:`dere2023`, assumes optically thin lines and does not suit chromospheric lines such as
-    Mg II.
+    The temperatures of maximum abundance assume ionisation equilibrium and optically thin lines,
+    so they do not suit chromospheric lines such as Mg II. Neutral ions have none in the catalog,
+    so pass their ``temperature``.
     """
     wavelength = u.Quantity(wavelength, u.AA)
     if instrumental_fwhm is None:
@@ -611,13 +586,24 @@ def non_thermal_velocity(fwhm, wavelength, *, instrumental_fwhm=None, thermal_fw
             raise ValueError(msg)
         instrumental_fwhm = INSTRUMENTAL_FWHM[band]
     if thermal_fwhm is None:
-        if ion is None or temperature is None:
-            msg = "Pass ion and temperature, for the thermal width, or thermal_fwhm."
+        if ion is None:
+            msg = "Pass ion, for its mass and temperature, or thermal_fwhm."
             raise ValueError(msg)
-        element = ion.split()[0]
+        lines = get_lines()
+        lines = lines[lines["ion"] == ion]
+        if not len(lines):
+            msg = f"{ion!r} is not in the line catalog; pass thermal_fwhm."
+            raise ValueError(msg)
+        element = lines["element"][0]
         if element not in ATOMIC_MASS:
             msg = f"No atomic mass for {ion!r}; pass thermal_fwhm."
             raise ValueError(msg)
+        if temperature is None:
+            # Neutral ions sit at the lower edge of the ionisation equilibrium's temperature grid.
+            if lines["ion_stage"][0] == 1:
+                msg = f"The catalog has no formation temperature for {ion}; pass temperature."
+                raise ValueError(msg)
+            temperature = 10 ** lines["log_t_max"][0] * u.K
         speed = np.sqrt(2 * constants.k_B * u.Quantity(temperature, u.K) / ATOMIC_MASS[element])
         thermal_fwhm = np.sqrt(4 * np.log(2)) * wavelength * speed / constants.c
     width = u.Quantity(fwhm.data, fwhm.unit).to_value(u.AA)

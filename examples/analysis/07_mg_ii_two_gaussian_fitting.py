@@ -28,6 +28,7 @@ from sunpy.coordinates.frames import Helioprojective
 from irispy.io import read_files
 from irispy.spectrograph import SpectrogramCube
 from irispy.utils.fitting import FitQualityFlag, fit_to_maps, mg_ii_model
+from irispy.utils.lines import get_lines
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20180102_153155_3610108077_2018-01-02T15%3A31%3A552018-01-02T15%3A31%3A55.xml>`__.
@@ -117,7 +118,7 @@ plt.legend()
 # intensities, their imbalance and their separation trace the chromospheric temperature,
 # velocity and velocity gradient.
 
-mg_ii_core = 2796.352 * u.AA  # Mg II k rest wavelength, De Pontieu et al. (2014)
+(mg_ii_core,) = get_lines([wavelength[0], wavelength[-1]], main_only=True)["wavelength"]
 line_core = mg_ii_k.crop([SpectralCoord(mg_ii_core), None], [SpectralCoord(mg_ii_core), None])
 
 # `~irispy.utils.fitting.fit_to_maps` gives each component's integrated intensity and
