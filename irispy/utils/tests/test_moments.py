@@ -350,7 +350,7 @@ def test_calculate_moments_wings_empty_window():
     data = spectrum.reshape(1, 1, -1)
     cube = make_test_spectrogram_cube(data, wvls)
     # wings range is completely outside the spectral coverage
-    with pytest.raises(ValueError, match="No wavelength points found within the specified wings"):
+    with pytest.raises(ValueError, match="No wavelengths between"):
         calculate_moments(cube, rest_wavelength=1500.0 * u.Angstrom, wings=1.0 * u.Angstrom)
 
 

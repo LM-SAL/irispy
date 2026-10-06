@@ -9,7 +9,7 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
-from irispy.utils._spectral import check_scaled, make_map_cube, standard_deviation
+from irispy.utils._spectral import check_scaled, in_windows, make_map_cube, standard_deviation
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
@@ -19,6 +19,7 @@ __all__ = [
     "radiation_temperature",
     "radiometric_calibration",
     "reshape_1d_wavelength_dimensions_for_broadcast",
+    "subtract_background",
 ]
 
 
@@ -309,3 +310,53 @@ def reshape_1d_wavelength_dimensions_for_broadcast(wavelength, n_data_dim):
         msg = "IRISSpectrogram dimensions must be 2 or 3."
         raise ValueError(msg)
     return wavelength
+
+
+def subtract_background(cube, windows, *, degree=1):
+    r"""
+    Fit a polynomial to line-free wavelength windows of each spectrum and subtract it.
+
+    Only unmasked, finite samples within ``windows`` determine the polynomial.
+    The fitted background is then evaluated and subtracted at every wavelength in the spectrum.
+
+    Parameters
+    ----------
+    cube : `irispy.spectrograph.SpectrogramCube`
+        Input cube with a wavelength axis.
+    windows : `astropy.units.Quantity`
+        A ``(lower, upper)`` wavelength window, or an ``(n, 2)`` array of them, holding no line.
+    degree : `int`, optional
+        Degree of the polynomial in wavelength, fitted to the unmasked, finite samples in the
+        windows by unweighted least squares. Defaults to 1, a straight line.
+
+    Returns
+    -------
+    `irispy.spectrograph.SpectrogramCube`
+        ``cube`` minus the fitted background, with the same mask, uncertainty and coordinates.
+        Spectra with no more than ``degree`` samples to fit are NaN.
+
+    Notes
+    -----
+    The error of the fitted background is shared by all the samples of a spectrum, so it adds
+    up coherently in a sum over wavelength, which a
+    `~astropy.nddata.StdDevUncertainty` of independent samples cannot hold. For a constant
+    (``degree=0``) fitted to :math:`n` samples of error :math:`\sigma`, it is :math:`\sigma / \sqrt{n}`.
+    """
+    check_scaled(cube)
+    wavelength_axis = cube.wavelength_axis
+    wavelengths = cube.axis_world_coords(wavelength_axis)[0]
+    index = np.flatnonzero(in_windows(wavelengths, windows))
+    # Centred wavelengths keep the fit well conditioned
+    vander = np.polynomial.polynomial.polyvander((wavelengths - wavelengths.mean()).to_value(u.AA), degree)
+    samples = np.moveaxis(cube.data, wavelength_axis, -1)[..., index].astype(float)
+    kept = np.isfinite(samples)
+    if cube.mask is not None:
+        kept &= ~np.moveaxis(np.broadcast_to(cube.mask, cube.data.shape), wavelength_axis, -1)[..., index]
+    # The normal equations of each spectrum, with its own samples
+    normal = np.einsum("...k,ki,kj->...ij", kept, vander[index], vander[index])
+    enough = kept.sum(axis=-1) > degree
+    normal[~enough] = np.eye(degree + 1)
+    rhs = np.einsum("...k,ki->...i", np.where(kept, samples, 0), vander[index])
+    coefficients = np.linalg.solve(normal, rhs[..., np.newaxis])[..., 0]
+    background = np.where(enough[..., np.newaxis], coefficients @ vander.T, np.nan)
+    return cube - u.Quantity(np.moveaxis(background, -1, wavelength_axis), cube.unit)

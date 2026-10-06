@@ -2,6 +2,7 @@ import io
 import os
 import gzip
 import tarfile
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -183,3 +184,38 @@ def test_extract_tarfile_reuses_complete_extraction(tmp_path):
     os.utime(tar_path, ns=(old_mtime_ns, old_mtime_ns))
     assert _extract_tarfile([tar_path]) == [extract_dir / "a.fits"]
     assert (extract_dir / "a.fits").read_bytes() == b"abcd"
+
+
+def test_extract_tarfile_serializes_concurrent_callers(tmp_path, monkeypatch):
+    tar_path = tmp_path / "obs_raster.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        info = tarfile.TarInfo("a.fits")
+        info.size = 3
+        tar.addfile(info, io.BytesIO(b"abc"))
+    extracting = threading.Semaphore(0)
+    release = threading.Event()
+    original_extractall = tarfile.TarFile.extractall
+
+    def paused_extractall(self, *args, **kwargs):
+        extracting.release()
+        assert release.wait(10), "Extraction was not released"
+        original_extractall(self, *args, **kwargs)
+
+    monkeypatch.setattr(tarfile.TarFile, "extractall", paused_extractall)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(_extract_tarfile([tar_path]))) for _ in range(2)]
+    try:
+        threads[0].start()
+        assert extracting.acquire(timeout=10), "First caller did not start extracting"
+        threads[1].start()
+        # The second caller must wait until the first has finished extracting.
+        assert not extracting.acquire(timeout=1), "Both callers entered extraction"
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(10)
+
+    # The second caller reused the finished extraction instead of extracting again.
+    assert not extracting.acquire(blocking=False)
+    assert results == [[tmp_path / "obs_raster" / "a.fits"]] * 2
+    assert (tmp_path / "obs_raster" / "a.fits").read_bytes() == b"abc"

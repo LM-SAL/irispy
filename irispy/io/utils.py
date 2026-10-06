@@ -4,6 +4,8 @@ import tarfile
 from pathlib import Path
 from contextlib import nullcontext
 
+from filelock import FileLock
+
 from astropy.io import fits
 from astropy.table import Table
 
@@ -47,6 +49,7 @@ def _extract_tarfile(filenames):
 
     A complete earlier extraction of the same tar file (same size and modification
     time) is reused while all of its files still exist.
+    Concurrent callers wait for extraction to finish before reusing its files.
 
     Parameters
     ----------
@@ -58,24 +61,26 @@ def _extract_tarfile(filenames):
         filename = Path(fname)
         if tarfile.is_tarfile(filename):
             extract_dir = filename.with_suffix("").with_suffix("")  # removes .tar.gz or .tar
-            # Written only after a complete extraction: the tar file it came from and the extracted files.
-            marker = extract_dir / ".irispy-extracted.json"
-            source = [filename.stat().st_size, filename.stat().st_mtime_ns]
-            names = []
-            if marker.is_file():
-                try:
-                    extracted = json.loads(marker.read_text())
-                except ValueError:
-                    extracted = {}
-                if extracted.get("source") == source:
-                    names = extracted.get("files", [])
-            if not names or not all((extract_dir / name).is_file() for name in names):
-                extract_dir.mkdir(parents=True, exist_ok=True)
-                marker.unlink(missing_ok=True)
-                with tarfile.open(filename, "r") as tar:
-                    tar.extractall(extract_dir, filter="data")
-                    names = [member.name for member in tar.getmembers() if member.isfile()]
-                marker.write_text(json.dumps({"source": source, "files": names}))
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            # The cache check must share the lock with extraction: a waiting caller can then reuse the files.
+            with FileLock(extract_dir / ".irispy-extracted.lock"):
+                # Written only after a complete extraction: the tar file it came from and the extracted files.
+                marker = extract_dir / ".irispy-extracted.json"
+                source = [filename.stat().st_size, filename.stat().st_mtime_ns]
+                names = []
+                if marker.is_file():
+                    try:
+                        extracted = json.loads(marker.read_text())
+                    except ValueError:
+                        extracted = {}
+                    if extracted.get("source") == source:
+                        names = extracted.get("files", [])
+                if not names or not all((extract_dir / name).is_file() for name in names):
+                    marker.unlink(missing_ok=True)
+                    with tarfile.open(filename, "r") as tar:
+                        tar.extractall(extract_dir, filter="data")
+                        names = [member.name for member in tar.getmembers() if member.isfile()]
+                    marker.write_text(json.dumps({"source": source, "files": names}))
             expanded_files.extend(extract_dir / name for name in names)
         else:
             expanded_files.append(filename)

@@ -17,6 +17,7 @@ from irispy.utils._spectral import (
     _QualityFlag,
     check_scaled,
     drop_extra_coords_dependent_on_axis,
+    in_windows,
     make_map_cube,
     make_spatial_template,
     standard_deviation,
@@ -83,9 +84,9 @@ def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
     Extract data/errors, mask negatives, subtract continuum, move spectral axis to -1.
     """
     data = np.asarray(cube.data, dtype=float)
-    if cube.mask is not None:
-        data = np.where(cube.mask, np.nan, data)
-    data = np.where(data < 0, np.nan, data)
+    # Negative samples are left out, also of the continuum
+    dropped = data < 0 if cube.mask is None else (data < 0) | cube.mask
+    data = np.where(dropped, np.nan, data)
 
     errors = standard_deviation(cube)
     if errors is not None and cube.mask is not None:
@@ -96,20 +97,8 @@ def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
         errors = np.moveaxis(errors, wavelength_axis, -1)
 
     if continuum_windows is not None:
-        windows = u.Quantity(continuum_windows).to(wavelengths.unit)
-        if windows.shape == (2,):
-            windows = windows[np.newaxis, :]
-        if windows.ndim != 2 or windows.shape[1] != 2:
-            msg = "continuum_windows must have shape (2,) or (n, 2)"
-            raise ValueError(msg)
-        continuum_mask = np.zeros(wavelengths.shape, dtype=bool)
-        for low, high in windows:
-            continuum_mask |= (wavelengths >= low) & (wavelengths <= high)
-        if not continuum_mask.any():
-            msg = "No wavelength points found within continuum_windows"
-            raise ValueError(msg)
-        continuum_values = np.nanmean(data[..., continuum_mask], axis=-1)
-        data = data - continuum_values[..., np.newaxis]
+        continuum_mask = in_windows(wavelengths, continuum_windows)
+        data -= np.ma.masked_invalid(data[..., continuum_mask]).mean(axis=-1, keepdims=True).filled(np.nan)
         if errors is not None:
             n_finite = np.isfinite(errors[..., continuum_mask]).sum(axis=-1)
             continuum_errors = np.sqrt(np.nansum(errors[..., continuum_mask] ** 2, axis=-1))
@@ -152,8 +141,8 @@ def calculate_red_blue_asymmetry(
     dv : `astropy.units.Quantity`, optional
         Velocity spacing for the interpolated profile.
     continuum_windows : `astropy.units.Quantity`, optional
-        One or more wavelength windows used to estimate and subtract a
-        continuum.
+        One or more wavelength windows whose mean, leaving out negative samples, is subtracted as
+        a constant continuum.
     degree : `int`, optional
         Spline degree for `scipy.interpolate.make_interp_spline`.
     min_intensity : `float` or `astropy.units.Quantity`, optional

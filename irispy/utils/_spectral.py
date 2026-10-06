@@ -8,11 +8,12 @@ from numbers import Integral
 
 import numpy as np
 
+import astropy.units as u
 from astropy.nddata import StdDevUncertainty, UnknownUncertainty
 
 from ndcube import ExtraCoords
 
-from irispy.spectrograph import SpectrogramCube
+from irispy.spectrograph import SpectrogramCube, _wavelength_indices
 
 
 class _QualityFlag(IntEnum):
@@ -35,6 +36,28 @@ def check_scaled(cube):
     if not cube.meta.get("scaled", not np.issubdtype(cube.data.dtype, np.integer)):
         msg = "The data are unscaled; read them with memmap=False"
         raise ValueError(msg)
+
+
+def in_windows(wavelengths, windows):
+    """
+    `True` for the ``wavelengths`` within any of the ``(lower, upper)`` ``windows``,
+    ends included.
+
+    Windows without samples are ignored. Raise a `ValueError` if none contain samples.
+    """
+    windows = u.Quantity(windows)
+    if windows.shape == (2,):
+        windows = windows[np.newaxis]
+    if windows.ndim != 2 or windows.shape[1] != 2:
+        msg = "The windows must have shape (2,) or (n, 2)"
+        raise ValueError(msg)
+    inside = np.zeros(wavelengths.shape, dtype=bool)
+    for window in windows:
+        inside[_wavelength_indices(wavelengths, window, allow_empty=True)] = True
+    if not inside.any():
+        msg = f"No wavelengths between any of the window bounds: {windows}"
+        raise ValueError(msg)
+    return inside
 
 
 def standard_deviation(cube):

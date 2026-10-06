@@ -8,7 +8,7 @@ import astropy.units as u
 from astropy import constants
 from astropy.nddata import StdDevUncertainty
 
-from irispy.spectrograph import RasterCollection
+from irispy.spectrograph import RasterCollection, _wavelength_indices
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, standard_deviation
 
 __all__ = ["calculate_moments"]
@@ -97,14 +97,9 @@ def calculate_moments(
             msg = "wings must be one offset or a (lower, upper) pair"
             raise ValueError(msg)
         wing_low, wing_high = (wings, wings) if wings.isscalar else wings
-        wavelengths_in_rest_unit = wavelengths.to(rest_wavelength.unit)
-        wvl_min = rest_wavelength - wing_low.to(rest_wavelength.unit)
-        wvl_max = rest_wavelength + wing_high.to(rest_wavelength.unit)
-        crop_mask = (wavelengths_in_rest_unit >= wvl_min) & (wavelengths_in_rest_unit <= wvl_max)
-        crop_indices = np.where(crop_mask)[0]
-        if len(crop_indices) == 0:
-            msg = "No wavelength points found within the specified wings"
-            raise ValueError(msg)
+        crop_indices = _wavelength_indices(
+            wavelengths, u.Quantity([rest_wavelength - wing_low, rest_wavelength + wing_high])
+        )
         slicer = [slice(None)] * data.ndim
         slicer[wavelength_axis] = crop_indices
         data = data[tuple(slicer)]
@@ -112,7 +107,7 @@ def calculate_moments(
             mask = mask[tuple(slicer)]
         if sigma is not None:
             sigma = sigma[tuple(slicer)]
-        wavelengths = wavelengths[crop_mask]
+        wavelengths = wavelengths[crop_indices]
     data = np.array(data, dtype=float, copy=True)
     dropped = (data < 0) | ~np.isfinite(data) | (False if mask is None else mask)
     data[dropped] = 0
