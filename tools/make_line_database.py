@@ -9,9 +9,11 @@ python tools/make_line_database.py
 """
 
 import io
+import re
 import csv
 import sys
 import hashlib
+from html import unescape
 from pathlib import Path
 from datetime import UTC, datetime
 from fractions import Fraction
@@ -27,6 +29,7 @@ from astropy.table import QTable
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "irispy" / "data"
 NIST_URL = "https://physics.nist.gov/cgi-bin/ASD/lines1.pl"
+NIST_VERSION_URL = "https://physics.nist.gov/PhysRefData/ASD/Html/verhist.shtml"
 # Vacuum wavelengths in Angstrom from De Pontieu et al. (2014) Table 2, without margins. Level 2
 # full-detector windows from 2015 and 2026 span 1331.68-1358.28, 1380.66-1406.70 and
 # 2783.23-2835.10 A: the FUV2 readout below 1389.0 A is outside the documented passband.
@@ -150,6 +153,17 @@ def _passband(wavelength):
         if low <= wavelength <= high:
             return band
     return None
+
+
+def _nist_version():
+    request = Request(NIST_VERSION_URL, headers={"User-Agent": "Mozilla/5.0 (irispy line database generator)"})  # noqa: S310
+    with urlopen(request, timeout=120) as response:  # noqa: S310
+        content = unescape(response.read().decode("utf-8"))
+    match = re.search(r"\(version\s+([0-9]+(?:\.[0-9]+)*)\)", content, flags=re.IGNORECASE)
+    if match is None:
+        msg = "Could not read the current NIST ASD version from its citation."
+        raise ValueError(msg)
+    return match.group(1)
 
 
 def download_nist():
@@ -432,6 +446,7 @@ def main():
         "chianti": (Path(fiasco.defaults["ascii_dbase_root"]) / "VERSION").read_text().strip(),
         "chianti_hdf5": str(hdf5_version),
         "chianti_hdf5_built_with_fiasco": str(builder_version),
+        "nist_asd": _nist_version(),
     }
     for name, version in versions.items():
         print(f"{name}: {version}", flush=True)  # noqa: T201

@@ -340,6 +340,23 @@ def test_merge_lines(monkeypatch):
 
 
 @pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
+@pytest.mark.parametrize("version", ["5.12", "5.13.1", None])
+def test_nist_version(monkeypatch, version):
+    pytest.importorskip("plasmapy")
+    spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    # The citation names the current release; the history below it contains older releases.
+    content = f"NIST Atomic Spectra Database</i> (version&nbsp;{version}), <b>Version&nbsp;5.11</b>"
+    monkeypatch.setattr(tool, "urlopen", lambda *_args, **_kwargs: io.BytesIO(content.encode()))
+    if version is None:
+        with pytest.raises(ValueError, match="Could not read the current NIST ASD version"):
+            tool._nist_version()
+    else:
+        assert tool._nist_version() == version
+
+
+@pytest.mark.skipif(not GENERATOR.exists(), reason="The generator is only in development checkouts.")
 def test_nist_wavelength_selection(monkeypatch):
     pytest.importorskip("plasmapy")
     spec = importlib.util.spec_from_file_location("make_line_database", GENERATOR)
@@ -376,7 +393,13 @@ def test_nist_wavelength_selection(monkeypatch):
     ]:
         writer.writerow(dict(zip(fields[:6], (element, stage, observed, ritz, obs_unc, ritz_unc), strict=True)))
     monkeypatch.setattr(tool, "urlopen", lambda *_args, **_kwargs: io.BytesIO(content.getvalue().encode()))
-    rows, _ = tool.download_nist()
+    rows, queries = tool.download_nist()
+    for band, query in queries.items():
+        assert query["query_date"].endswith("+00:00")
+        assert query["url"].startswith(tool.NIST_URL + "?")
+        assert query["parameters"] == dict(
+            tool.NIST_PARAMETERS, low_w=tool.PASSBANDS[band][0], upp_w=tool.PASSBANDS[band][1]
+        )
     assert [(row["wavelength"], row["wavelength_source"]) for row in rows] == [
         (1354.28888, "ritz"),
         (1393.76, "observed"),

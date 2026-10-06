@@ -67,6 +67,7 @@ def get_lines(
     -----
     Strengths are normalized, integrated optically thin intensities for fixed
     reference atmospheres. Neutral and singly ionized lines have no prediction.
+    The strengths provide approximate candidate rankings for these models.
     Density, opacity, and ionization effects can invalidate the remaining
     predictions; see the line database documentation before comparing observations.
     """

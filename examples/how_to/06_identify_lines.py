@@ -27,7 +27,6 @@ raster_filename = pooch.retrieve(
     known_hash="603aa2a5dbe0cf9738e3628451dd24361da05b8eeecd42962ac1253db05888eb",
 )
 raster = read_files(raster_filename)
-print(raster.keys())
 
 ###############################################################################
 # `~irispy.utils.lines.get_lines` returns the lines within a wavelength range.
@@ -44,8 +43,8 @@ print(lines["ion", "wavelength", "wavelength_source", "intensity_flare_coronal"]
 
 ###############################################################################
 # To display bright features, we take the 99th percentile of each
-# window over the cutout at every wavelength. This picks out the bright ribbon
-# and loops and ignores cosmic-ray spikes, which hit far fewer than 1% of the pixels.
+# window over the cutout at every wavelength. This highlights the ribbon and loops
+# while reducing sensitivity to isolated cosmic-ray spikes.
 # Different wavelengths can select different spatial pixels, so this composite
 # spectrum cannot validate the intensity ratios of one reference atmosphere.
 #
@@ -98,9 +97,8 @@ plt.show()
 
 ###############################################################################
 # The predicted candidates include the broad Fe XXI 1354.08 Å line from the hot loops.
-# C II, O I, Cl I, C I, and Mg II are labelled as documented lines without strength
-# predictions. Their chromospheric formation requires physics outside the model:
-# radiative transfer for C II and Mg II, and recombination and charge exchange for O I.
+# C II, O I, Cl I, C I, and Mg II are documented lines without strength predictions.
+# C II and Mg II need radiative transfer; O I needs recombination and charge exchange.
 #
 # The remaining predictions are conditional too. They use a fixed DEM and pressure;
 # a region label does not infer the conditions of this raster. Si IV can become
@@ -118,8 +116,6 @@ for peak in [1357.14, 1357.66]:
 ###############################################################################
 # `Peter Young's IRIS line list <https://pyoung.org/iris/iris_line_list.pdf>`__, Table 1,
 # identifies solar C I lines at 1357.134 and 1357.659 Å, consistent with these features.
-# The four C I lines near 1354, 1355, and 1357 Å share a lower level but have different
-# upper configurations or terms; they are not all one multiplet.
 # Laboratory intensities cannot distinguish candidates from different elements or
 # ionization stages because they have no common scale and depend on the excitation source.
 #

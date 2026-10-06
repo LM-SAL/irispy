@@ -1,8 +1,9 @@
 IRIS spectral line database
 ===========================
 
-``irispy`` ships an offline table of atomic lines in the three IRIS spectrograph passbands, with reference-model strengths for eligible ions.
+``irispy`` ships an offline table of atomic lines in the three IRIS spectrograph passbands, with approximate reference-model strengths for eligible ions.
 Use it to find candidate transitions near a wavelength; a candidate is not a confirmed solar line identification.
+The strength rankings depend on the selected reference atmosphere and help compare candidates within a passband.
 Use `irispy.utils.lines.get_lines`::
 
     >>> import astropy.units as u
@@ -34,42 +35,7 @@ The five strongest predicted FUV2 lines for the quiet Sun with coronal abundance
     O IV    1404.81  0.08  chianti
     O IV    1399.78  0.07  chianti
 
-The figure shows every line predicted to reach 10\ :sup:`-3` of its passband's strongest line, using coronal abundances.
-Grey ticks along the bottom mark lines without a prediction.
-:ref:`sphx_glr_generated_gallery_how_to_06_identify_lines.py` marks these lines on an IRIS observation.
-
-.. plot::
-    :show-source-link: False
-
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    import astropy.units as u
-
-    from irispy.utils.lines import get_lines
-
-    table = get_lines()
-    models = {"quiet_sun": ("Quiet Sun", "o"), "active_region": ("Active region", "s"), "flare": ("Flare", "^")}
-    fig, axes = plt.subplots(3, 1, figsize=(10, 10), layout="constrained")
-    for ax, (band, (low, high)) in zip(axes, table.meta["passband_limits_angstrom"].items()):
-        lines = table[table["passband"] == band]
-        wavelength = lines["wavelength"].to_value(u.AA)
-        strength = np.array([lines[f"intensity_{region}_coronal"] for region in models])
-        ranked = np.isfinite(strength).any(axis=0)
-        ax.vlines(wavelength[~ranked], 1e-3, 1.5e-3, color="0.75", linewidth=0.5)
-        ax.vlines(wavelength[ranked], 1e-3, np.nanmax(strength[:, ranked], axis=0), color="0.5", linewidth=0.8)
-        for values, (label, marker) in zip(strength, models.values()):
-            ax.plot(wavelength, values, marker, markerfacecolor="none", linestyle="none", label=label)
-        labelled = []
-        for line in lines[lines["main"]]:
-            position = line["wavelength"].to_value(u.AA)
-            if all(abs(position - other) > 0.5 for other in labelled):
-                ax.annotate(f"{line['ion']} {position:.1f}", (position, 1.5), rotation=90, ha="center", fontsize=8)
-                labelled.append(position)
-        ax.set(xlim=(low, high), ylim=(1e-3, 30), yscale="log", title=band, ylabel="Relative strength")
-    axes[-1].set_xlabel("Vacuum wavelength [Å]")
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="outside upper center", ncols=3)
-    plt.show()
+For an example of marking candidates on an observation, see :ref:`sphx_glr_generated_gallery_how_to_06_identify_lines.py`.
 
 Passbands
 ---------
@@ -229,4 +195,9 @@ It needs the ``density`` extra, fiasco 0.8.2 or later, and a full CHIANTI databa
 
 The script prints the software and database versions, downloads current NIST data, recomputes the strengths, and overwrites ``iris_lines.ecsv``; it takes a few hours.
 Review the update with ``git diff``.
-The table's metadata records the software versions, NIST queries, category boundaries, and the DEM and abundance files used.
+The shipped catalog uses NIST ASD 5.12, downloaded on 5 October 2026 (UTC).
+NIST publishes its releases in the `ASD version history <https://physics.nist.gov/PhysRefData/ASD/Html/verhist.shtml>`__.
+The table's metadata records the software versions, category boundaries, and the DEM and abundance files used.
+Inspect ``get_lines().meta["versions"]["nist_asd"]`` for the ASD version and ``get_lines().meta["nist_queries"]`` for each passband's download date (``query_date``), complete query parameters, and URL.
+The generator reads the current ASD version and downloads current NIST data each time it runs.
+Raw NIST responses are not stored; a later regeneration may change the catalog when NIST updates its data.

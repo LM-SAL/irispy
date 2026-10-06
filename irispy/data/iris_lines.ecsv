@@ -35,8 +35,8 @@
 # - {name: intensity_flare_photospheric, datatype: float64}
 # meta: !!omap
 # - {generation_date: '2026-10-05T09:15:59.240982+00:00'}
-# - versions: {astropy: 8.0.1, chianti: 11.0.2, chianti_hdf5: 11.0.2, chianti_hdf5_built_with_fiasco: 0.8.1, fiasco: 0.8.2, numpy: 2.5.3,
-#     python: 3.14.4}
+# - versions: {astropy: 8.0.1, chianti: 11.0.2, chianti_hdf5: 11.0.2, chianti_hdf5_built_with_fiasco: 0.8.1, fiasco: 0.8.2, nist_asd: '5.12',
+#     numpy: 2.5.3, python: 3.14.4}
 # - nist_queries:
 #     FUV1:
 #       parameters: {J_out: 'on', allowed_out: 1, bibrefs: 1, conf_out: 'on', enrg_out: 'on', forbid_out: 1, format: 2, intens_out: 'on',
