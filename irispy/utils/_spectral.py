@@ -29,6 +29,8 @@ def in_windows(wavelengths, windows):
     """
     `True` for the ``wavelengths`` within any of the ``(lower, upper)`` ``windows``,
     ends included.
+
+    Windows without samples are ignored. Raise a `ValueError` if none contain samples.
     """
     windows = u.Quantity(windows)
     if windows.shape == (2,):
@@ -38,7 +40,10 @@ def in_windows(wavelengths, windows):
         raise ValueError(msg)
     inside = np.zeros(wavelengths.shape, dtype=bool)
     for window in windows:
-        inside[_wavelength_indices(wavelengths, window)] = True
+        inside[_wavelength_indices(wavelengths, window, allow_empty=True)] = True
+    if not inside.any():
+        msg = f"No wavelengths between any of the window bounds: {windows}"
+        raise ValueError(msg)
     return inside
 
 

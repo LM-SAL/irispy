@@ -138,12 +138,13 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
             raise ValueError(msg) from None
 
 
-def _wavelength_indices(wavelengths, wavelength_range):
+def _wavelength_indices(wavelengths, wavelength_range, *, allow_empty=False):
     """
     Indices of the ``wavelengths`` between two wavelengths, inclusive.
 
     The bounds are widened by 1e-6 Å, so that a wavelength typed from the grid is kept
-    despite the rounding of the WCS unit conversion.
+    despite the rounding of the WCS unit conversion. With ``allow_empty=True``, a range
+    without samples returns an empty array.
     """
     wavelength_range = u.Quantity(wavelength_range, u.AA)
     if wavelength_range.shape != (2,):
@@ -151,7 +152,7 @@ def _wavelength_indices(wavelengths, wavelength_range):
         raise ValueError(msg)
     low, high = wavelength_range + [-1e-6, 1e-6] * u.AA
     indices = np.flatnonzero((wavelengths >= low) & (wavelengths <= high))
-    if not indices.size:
+    if not indices.size and not allow_empty:
         msg = f"No wavelengths between {wavelength_range[0]} and {wavelength_range[1]}"
         raise ValueError(msg)
     return indices
