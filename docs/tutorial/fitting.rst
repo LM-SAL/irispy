@@ -7,7 +7,7 @@ Fitting spectral lines
 ``irispy`` does not provide line fitting as astropy already handles this.
 What ``irispy`` adds, in `irispy.utils.fitting`, are starting models for IRIS lines:
 
-* `~irispy.utils.fitting.gaussians_on_background`: any number of Gaussian or Lorentzian lines on a constant or linear background, from user inputs.
+* `~irispy.utils.fitting.profiles_on_background`: any number of Gaussian or Lorentzian lines on a constant or linear background, from user inputs.
 * `~irispy.utils.fitting.si_iv_1403_model`: one line for Si IV 140.277 nm, started for every spectrum from the data.
 * `~irispy.utils.fitting.mg_ii_model`: two Gaussians for the emission peaks of the Mg II k or h line core, started from `~irispy.utils.mg_features.calculate_mg_features`.
 
@@ -97,13 +97,13 @@ Things to know
   `~astropy.modeling.fitting.LMLSQFitter`, which is faster, clips them to the bounds at each step.
 * **Faint lines**
   When a line is not much brighter than the noise, its fit is poorly constrained whatever its start.
-  Average neighboring spectra first, for example with ``cube.rebin((2, 2, 1))``.
+  Average neighboring spectra first, keeping the uncertainties with ``cube.rebin((2, 2, 1), propagate_uncertainties=True)``.
 * **Two Gaussians can swap**
   In `~irispy.utils.fitting.mg_ii_model`, ``mean_1`` starts at the blue peak and ``mean_2`` at the red one, but both may move anywhere within the velocity range.
   In the gallery example about one fit in a thousand ends with them the other way round, so sort them by wavelength before making maps.
 * **Several components**
   `~irispy.utils.fitting.si_iv_1403_model` offers one component because the layout of several depends on what is observed:
   a narrow and a broad Gaussian with one centroid in active-region loops :cite:p:`dudik2017`, a static and a redshifted component in flare ribbons :cite:p:`yu2020`, and components tens of km/s from the line center in UV bursts :cite:p:`peter2014,young2018`.
-  Build such a model with `~irispy.utils.fitting.gaussians_on_background` and starts that suit your data.
+  Build such a model with `~irispy.utils.fitting.profiles_on_background` and starts that suit your data.
 
 The gallery examples :ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py` and :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py` turn the fitted parameters into maps.

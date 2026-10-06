@@ -13,7 +13,7 @@ from astropy.modeling import models
 from irispy.utils._spectral import check_scaled
 from irispy.utils.mg_features import calculate_mg_features
 
-__all__ = ["gaussians_on_background", "mg_ii_model", "si_iv_1403_model"]
+__all__ = ["mg_ii_model", "profiles_on_background", "si_iv_1403_model"]
 
 _PROFILES = {"gaussian": (models.Gaussian1D, "mean", "stddev"), "lorentzian": (models.Lorentz1D, "x_0", "fwhm")}
 _BACKGROUNDS = ("constant", "linear")
@@ -77,10 +77,10 @@ def _spectra(cube):
     The data of ``cube`` with masked samples set to NaN, its spectra along the last
     axis.
     """
-    data = np.moveaxis(np.asarray(cube.data, dtype=float), cube.wavelength_axis, -1)
+    data = np.asarray(cube.data, dtype=float)
     if cube.mask is not None:
-        data = np.where(np.moveaxis(np.asarray(cube.mask, dtype=bool), cube.wavelength_axis, -1), np.nan, data)
-    return data
+        data = np.where(cube.mask, np.nan, data)
+    return np.moveaxis(data, cube.wavelength_axis, -1)
 
 
 def _background_level(spectra):
@@ -93,7 +93,7 @@ def _background_level(spectra):
         return np.nanpercentile(spectra, 10, axis=-1)
 
 
-def gaussians_on_background(
+def profiles_on_background(
     centers,
     *,
     amplitudes=None,
@@ -183,12 +183,7 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     """
     A starting model for Si IV 140.277 nm, with a start for every spectrum of ``cube``.
 
-    One Gaussian or Lorentzian on a constant background. The line is the run of samples above half
-    maximum around the peak of the mean spectrum, over its 10th percentile. Each spectrum's
-    background starts at its own 10th percentile, its center at its brightest sample in that run
-    and its amplitude at that sample's height above the background; the full width at half maximum
-    starts at the run's width for every spectrum. The center is bounded to the window, the width to
-    the window's width and the amplitude to positive values.
+    One Gaussian or Lorentzian on a constant background.
 
     Parameters
     ----------
@@ -201,13 +196,21 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     Returns
     -------
     `~astropy.modeling.CompoundModel`
-        The model of `gaussians_on_background`, with wavelengths in Å and intensities in the unit of
+        The model of `profiles_on_background`, with wavelengths in Å and intensities in the unit of
         ``cube``, and parameters shaped like the spatial axes of ``cube``.
 
     Notes
     -----
+    The line is the run of samples above half maximum around the peak of the mean spectrum,
+    over its 10th percentile. Each spectrum's background starts at its own 10th percentile,
+    its center at its brightest sample in that run, and its amplitude at that sample's height
+    above the background. The starting full width at half maximum is the run's width for every spectrum.
+
+    The center stays within the wavelength window, the width below the window's width, and
+    the amplitude nonnegative.
+
     The rest wavelength is the vacuum value of :cite:t:`depontieu2014`. For several components,
-    build the model with `gaussians_on_background`; see :ref:`irispy-tutorial-fitting`.
+    build the model with `profiles_on_background`; see :ref:`irispy-tutorial-fitting`.
     """
     _, center_name, width_name = _profile(profile)
     check_scaled(cube)
@@ -231,7 +234,7 @@ def si_iv_1403_model(cube, *, profile="gaussian"):
     height = np.take_along_axis(spectra, peak[..., np.newaxis], axis=-1)[..., 0] - background
     fwhm = np.full(height.shape, last - first - 1) * np.mean(np.abs(np.diff(wavelength)))
     width = fwhm if profile == "lorentzian" else fwhm / (2 * np.sqrt(2 * np.log(2)))
-    return gaussians_on_background(
+    return profiles_on_background(
         wavelength[peak][np.newaxis],
         amplitudes=height[np.newaxis] * cube.unit,
         widths=width[np.newaxis],
@@ -252,11 +255,6 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
 
     Two Gaussians, for the blue (k2v or h2v) and red (k2r or h2r) emission peaks, on a constant
     background, as in the k and h components of the Gaussian decomposition of :cite:t:`itn39`.
-    Where `~irispy.utils.mg_features.calculate_mg_features` finds the peaks of a spectrum
-    :cite:p:`pereira2013`, they set its Gaussians' centers and amplitudes; elsewhere these start at
-    the medians over the cube. Each width starts at the median distance of its peak from the line
-    center (k3 or h3) over the cube, and the background at each spectrum's 10th percentile. The
-    centers are kept within ``velocity_range`` of the rest wavelength and the amplitudes positive.
 
     Parameters
     ----------
@@ -271,12 +269,19 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
     Returns
     -------
     `~astropy.modeling.CompoundModel`
-        The model of `gaussians_on_background`, with wavelengths in Å and intensities in the unit of
+        The model of `profiles_on_background`, with wavelengths in Å and intensities in the unit of
         ``cube``, and parameters shaped like the spatial axes of ``cube``. ``mean_1`` starts at the
         blue peak and ``mean_2`` at the red one, but a fit can swap them.
 
     Notes
     -----
+    Where `~irispy.utils.mg_features.calculate_mg_features` finds the peaks of a spectrum
+    :cite:p:`pereira2013`, they set its Gaussians' centers and amplitudes; elsewhere these start at
+    the medians over the cube. Each width starts at the median distance of its peak from the line
+    center (k3 or h3) over the cube, and the background at each spectrum's 10th percentile.
+
+    The centers stay within ``velocity_range`` of the rest wavelength and the amplitudes nonnegative.
+
     The rest wavelengths are the vacuum values of :cite:t:`depontieu2014`. The Gaussians are a
     proxy for the emission peaks, not a radiative-transfer inversion; :cite:t:`itn39` warns that
     the peaks are hard to recover from them in complex profiles, such as those of flare ribbons.
@@ -300,7 +305,7 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
 
     def start(values, name):
         if np.all(np.isnan(values)):
-            msg = f"No {name} found in the cube; build a model with gaussians_on_background instead."
+            msg = f"No {name} found in the cube; build a model with profiles_on_background instead."
             raise ValueError(msg)
         return np.where(np.isnan(values), np.nanmedian(values), values)
 
@@ -319,7 +324,7 @@ def mg_ii_model(cube, *, velocity_range=(-40, 40) * u.km / u.s):
     widths = np.broadcast_to(
         np.median(distance, axis=tuple(range(1, distance.ndim)), keepdims=True), distance.shape, subok=True
     )
-    return gaussians_on_background(
+    return profiles_on_background(
         centers,
         amplitudes=amplitudes * cube.unit,
         widths=widths,

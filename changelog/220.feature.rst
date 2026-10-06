@@ -1,1 +1,1 @@
-Added `irispy.utils.fitting`, with starting models for fitting IRIS lines with `astropy.modeling.fitting.parallel_fit_dask`: `~irispy.utils.fitting.gaussians_on_background`, `~irispy.utils.fitting.si_iv_1403_model` and `~irispy.utils.fitting.mg_ii_model`.
+Added `irispy.utils.fitting`, with starting models for fitting IRIS lines with `astropy.modeling.fitting.parallel_fit_dask`: `~irispy.utils.fitting.profiles_on_background`, `~irispy.utils.fitting.si_iv_1403_model` and `~irispy.utils.fitting.mg_ii_model`.

@@ -9,7 +9,7 @@ from astropy.nddata import StdDevUncertainty
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils.fitting import gaussians_on_background, mg_ii_model, si_iv_1403_model
+from irispy.utils.fitting import mg_ii_model, profiles_on_background, si_iv_1403_model
 
 SHAPE = (20, 20)
 WAVELENGTH = (1402.0 + 0.026 * np.arange(60)) * u.AA
@@ -71,17 +71,17 @@ def _assert_within_bounds(fitted, model):
 
 @pytest.mark.parametrize("profile", ["gaussian", "lorentzian"])
 @pytest.mark.parametrize("background", ["constant", "linear"])
-def test_gaussians_on_background_recovers_parameters(profile, background):
+def test_profiles_on_background_recovers_parameters(profile, background):
     rng = np.random.default_rng(42)
     centers = np.stack([1402.70 + rng.normal(0, 0.01, SHAPE), 1402.88 + rng.normal(0, 0.01, SHAPE)]) * u.AA
     amplitudes = rng.uniform(80, 150, (2, *SHAPE)) * u.ct
     widths = rng.uniform(0.03, 0.05, (2, *SHAPE)) * u.AA
     level = np.full(SHAPE, 5.0) * u.ct
-    truth = gaussians_on_background(
+    truth = profiles_on_background(
         centers, amplitudes=amplitudes, widths=widths, background=background, background_level=level, profile=profile
     )
     data, sigma = _observe(truth, rng)
-    start = gaussians_on_background(
+    start = profiles_on_background(
         centers + 0.01 * u.AA,
         amplitudes=0.8 * amplitudes,
         widths=1.2 * widths,
@@ -93,17 +93,17 @@ def test_gaussians_on_background_recovers_parameters(profile, background):
     _assert_recovered(fitted, truth, _errors(fitter), data, sigma)
 
 
-def test_gaussians_on_background_array_starts_broadcast():
+def test_profiles_on_background_array_starts_broadcast():
     rng = np.random.default_rng(0)
     centers = (1402.77 + rng.normal(0, 0.02, SHAPE)) * u.AA
-    truth = gaussians_on_background(
+    truth = profiles_on_background(
         centers[np.newaxis], amplitudes=[100] * u.ct, widths=[0.04] * u.AA, background_level=2 * u.ct
     )
     assert truth.mean_1.shape == SHAPE
     assert truth.amplitude_1.shape == ()
     data, sigma = _observe(truth, rng)
     # Scalar starts mixed with per-spectrum centers.
-    start = gaussians_on_background(
+    start = profiles_on_background(
         centers[np.newaxis] + 0.01 * u.AA, amplitudes=[80] * u.ct, widths=[0.05] * u.AA, background_level=1 * u.ct
     )
     fitted, _ = _fit(start, data, sigma)
@@ -112,15 +112,15 @@ def test_gaussians_on_background_array_starts_broadcast():
     np.testing.assert_allclose(fitted.mean_1.quantity.to_value(u.AA), centers.to_value(u.AA), atol=0.01)
 
 
-def test_gaussians_on_background_bounds_hold():
+def test_profiles_on_background_bounds_hold():
     rng = np.random.default_rng(1)
-    truth = gaussians_on_background(
+    truth = profiles_on_background(
         [1402.77] * u.AA, amplitudes=[100] * u.ct, widths=[0.04] * u.AA, background_level=np.full(SHAPE, 2.0) * u.ct
     )
     data, sigma = _observe(truth, rng)
     # Bounds in another unit than the centers are converted to it.
     bounds = {"mean_1": (140.26, 140.27) * u.nm, "amplitude_1": (0, 50) * u.ct, "amplitude_0": (None, 1 * u.ct)}
-    start = gaussians_on_background([1402.65] * u.AA, amplitudes=[40] * u.ct, widths=[0.04] * u.AA, bounds=bounds)
+    start = profiles_on_background([1402.65] * u.AA, amplitudes=[40] * u.ct, widths=[0.04] * u.AA, bounds=bounds)
     np.testing.assert_allclose(start.mean_1.bounds, (1402.6, 1402.7))
     assert start.stddev_1.bounds[0] > 0
     fitted, _ = _fit(start, data, sigma)
@@ -130,9 +130,9 @@ def test_gaussians_on_background_bounds_hold():
 
 
 @pytest.mark.parametrize(("keyword", "value"), [("profile", "voigt"), ("background", "quadratic")])
-def test_gaussians_on_background_rejects_unknown_options(keyword, value):
+def test_profiles_on_background_rejects_unknown_options(keyword, value):
     with pytest.raises(ValueError, match=keyword):
-        gaussians_on_background([1402.77] * u.AA, **{keyword: value})
+        profiles_on_background([1402.77] * u.AA, **{keyword: value})
 
 
 def _cube(truth, wavelength, rng):
@@ -143,7 +143,7 @@ def _cube(truth, wavelength, rng):
 @pytest.mark.parametrize("profile", ["gaussian", "lorentzian"])
 def test_si_iv_1403_model_recovers_parameters(profile):
     rng = np.random.default_rng(7)
-    truth = gaussians_on_background(
+    truth = profiles_on_background(
         (1402.77 + rng.normal(0, 0.02, SHAPE))[np.newaxis] * u.AA,
         amplitudes=rng.uniform(100, 300, (1, *SHAPE)) * u.DN,
         widths=rng.uniform(0.05, 0.09, (1, *SHAPE)) * u.AA,
@@ -165,7 +165,7 @@ def test_mg_ii_model_recovers_parameters():
     wavelength = (2795.5 + 0.0254 * np.arange(70)) * u.AA
     # The k2v and k2r peaks 32 km/s apart, as observed in the quiet Sun (Ondratschek et al. 2024), overlapping
     # so that the line center is about 60% of the peaks, as in Level 2 data.
-    truth = gaussians_on_background(
+    truth = profiles_on_background(
         (np.array([2796.20, 2796.50])[:, None, None] + rng.normal(0, 0.01, (2, *SHAPE))) * u.AA,
         amplitudes=rng.uniform(400, 600, (2, *SHAPE)) * u.DN,
         widths=rng.uniform(0.08, 0.1, (2, *SHAPE)) * u.AA,
@@ -193,6 +193,25 @@ def test_mg_ii_model_on_level_2_data():
     # of this disk-center raster should fall well inside 20-50 km/s.
     separation = (fitted.mean_2.quantity - fitted.mean_1.quantity) / (2796.352 * u.AA) * C_KMS * u.km / u.s
     assert 20 < np.nanmedian(separation.value) < 50
+
+
+@pytest.mark.parametrize(
+    ("function", "centers", "start"),
+    [(si_iv_1403_model, [1402.77], 1402.0), (mg_ii_model, [2796.20, 2796.50], 2795.5)],
+)
+def test_presets_accept_scalar_mask(function, centers, start):
+    wavelength = (start + 0.0254 * np.arange(70)) * u.AA
+    truth = profiles_on_background(
+        centers * u.AA,
+        amplitudes=np.full(len(centers), 500) * u.DN,
+        widths=np.full(len(centers), 0.09) * u.AA,
+        background_level=100 * u.DN,
+    )
+    data = np.broadcast_to(truth(wavelength).value, (2, 3, 70)).copy()
+    cube = make_test_spectrogram_cube(data, wavelength)
+    expected = function(cube)
+    cube.mask = False
+    np.testing.assert_allclose(function(cube).parameters, expected.parameters)
 
 
 @pytest.mark.parametrize("function", [si_iv_1403_model, mg_ii_model])
