@@ -79,6 +79,25 @@ The other properties of each fit, such as ``status``, ``success`` and ``nfev``, 
 The default ``scheduler`` uses several processes; ``"single-threaded"`` keeps this example simple.
 A ``dask.distributed.Client`` can be passed instead.
 
+Maps from the fit
+=================
+
+`~irispy.utils.fitting.maps_from_fit` turns the fitted model into a `~irispy.spectrograph.RasterCollection` of maps with the spatial coordinates of the cube.
+When the fitter provides covariance, parameter maps carry the uncertainties from the fit, and derived maps propagate them:
+
+.. code-block:: python
+
+    >>> from irispy.utils.fitting import maps_from_fit
+    >>> maps = maps_from_fit(fitted, cube, fitter=fitter)  # doctest: +REMOTE_DATA
+    >>> list(maps.keys())  # doctest: +REMOTE_DATA
+    ['amplitude_0', 'amplitude_1', 'mean_1', 'stddev_1', 'velocity_1', 'fwhm_1', 'fwhm_velocity_1', 'integrated_intensity_1', 'quality', 'residual']
+    >>> maps["velocity_1"].unit, maps["integrated_intensity_1"].unit  # doctest: +REMOTE_DATA
+    (Unit("km / s"), Unit("Angstrom DN_IRIS_FUV"))
+
+The velocities are against the rest wavelength of the one documented line in the cube, here Si IV, unless ``rest_wavelength`` is given.
+``"quality"`` holds a `~irispy.utils.fitting.FitQualityFlag` for each spectrum: whether its fit failed or did not converge, stopped at a bound, or used a spectrum with masked samples.
+``"residual"`` is the cube minus the fitted model, to check the fits. It retains the cube's uncertainty and coordinates.
+
 Things to know
 ==============
 
@@ -88,7 +107,8 @@ Things to know
   That is why the wavelengths are passed as ``world`` rather than the cube itself.
 * **Masked and missing samples**
   The fitters do not accept NaN, so replace bad samples with any number and give them zero weight, as above.
-  Spectra that are entirely NaN, and fits that raise an error, give NaN parameters and a zero covariance; ``diagnostics="error"`` with a ``diagnostics_path`` writes each error to a folder.
+  Fits that raise an error give NaN parameters and a zero covariance, and spectra left entirely NaN make ``fit_info.get_property_as_array`` fail; `~irispy.utils.fitting.maps_from_fit` copes with both.
+  ``diagnostics="error"`` with a ``diagnostics_path`` writes each error to a folder.
 * **Uncertainties**
   With weights of 1/σ, ``param_cov`` is the covariance of the parameters given those uncertainties, and the errors are only as good as the uncertainties of the cube.
   Without weights, astropy scales it by the variance of the residuals, as `scipy.optimize.curve_fit` does with ``absolute_sigma=False``.
@@ -100,10 +120,10 @@ Things to know
   Average neighboring spectra first, keeping the uncertainties with ``cube.rebin((2, 2, 1), propagate_uncertainties=True)``.
 * **Two Gaussians can swap**
   In `~irispy.utils.fitting.mg_ii_model`, ``mean_1`` starts at the blue peak and ``mean_2`` at the red one, but both may move anywhere within the velocity range.
-  In the gallery example about one fit in a thousand ends with them the other way round, so sort them by wavelength before making maps.
+  In the gallery example about one fit in a thousand ends with them the other way round, so sort the components by velocity before combining their maps.
 * **Several components**
   `~irispy.utils.fitting.si_iv_1403_model` offers one component because the layout of several depends on what is observed:
   a narrow and a broad Gaussian with one centroid in active-region loops :cite:p:`dudik2017`, a static and a redshifted component in flare ribbons :cite:p:`yu2020`, and components tens of km/s from the line center in UV bursts :cite:p:`peter2014,young2018`.
   Build such a model with `~irispy.utils.fitting.profiles_on_background` and starts that suit your data.
 
-The gallery examples :ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py` and :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py` turn the fitted parameters into maps.
+The gallery examples :ref:`sphx_glr_generated_gallery_analysis_01_spectral_fitting.py` and :ref:`sphx_glr_generated_gallery_analysis_07_mg_ii_two_gaussian_fitting.py` plot such maps.

@@ -3,6 +3,7 @@ Shared helpers for spectral map outputs.
 """
 
 from copy import deepcopy
+from enum import IntEnum
 from numbers import Integral
 
 import numpy as np
@@ -12,6 +13,18 @@ from astropy.nddata import StdDevUncertainty, UnknownUncertainty
 from ndcube import ExtraCoords
 
 from irispy.spectrograph import SpectrogramCube
+
+
+class _QualityFlag(IntEnum):
+    """
+    An `~enum.IntEnum` whose members are ``(value, description)`` pairs.
+    """
+
+    def __new__(cls, value, description):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        obj.description = description
+        return obj
 
 
 def check_scaled(cube):

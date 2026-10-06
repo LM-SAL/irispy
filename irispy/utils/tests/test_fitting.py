@@ -3,13 +3,14 @@ import pytest
 
 import astropy.units as u
 from astropy import constants
-from astropy.modeling.fitting import TRFLSQFitter, parallel_fit_dask
+from astropy.modeling.fitting import LevMarLSQFitter, TRFLSQFitter, parallel_fit_dask
 from astropy.nddata import StdDevUncertainty
+from astropy.time import Time
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils.fitting import mg_ii_model, profiles_on_background, si_iv_1403_model
+from irispy.utils.fitting import FitQualityFlag, maps_from_fit, mg_ii_model, profiles_on_background, si_iv_1403_model
 
 SHAPE = (20, 20)
 WAVELENGTH = (1402.0 + 0.026 * np.arange(60)) * u.AA
@@ -17,8 +18,8 @@ MG_FEATURES_FILE = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r
 C_KMS = constants.c.to_value(u.km / u.s)
 
 
-def _fit(model, data, sigma, wavelength=WAVELENGTH, unit=u.ct):
-    fitter = TRFLSQFitter()
+def _fit(model, data, sigma, wavelength=WAVELENGTH, unit=u.ct, *, fitter=None, **kwargs):
+    fitter = TRFLSQFitter() if fitter is None else fitter
     fitted = parallel_fit_dask(
         model=model,
         fitter=fitter,
@@ -29,6 +30,7 @@ def _fit(model, data, sigma, wavelength=WAVELENGTH, unit=u.ct):
         fitting_axes=2,
         scheduler="single-threaded",
         fit_info=True,
+        **kwargs,
     )
     return fitted, fitter
 
@@ -234,3 +236,201 @@ def test_presets_reject_other_windows(function, start, match):
     cube = make_test_spectrogram_cube(np.ones((2, 3, 140)), wavelength)
     with pytest.raises(ValueError, match=match):
         function(cube)
+
+
+def _si_iv_cube(rng, profile="gaussian"):
+    truth = profiles_on_background(
+        (1402.77 + rng.normal(0, 0.02, SHAPE))[np.newaxis] * u.AA,
+        amplitudes=rng.uniform(100, 300, (1, *SHAPE)) * u.DN,
+        widths=rng.uniform(0.05, 0.09, (1, *SHAPE)) * u.AA,
+        background_level=5 * u.DN,
+        profile=profile,
+    )
+    return truth, _cube(truth, WAVELENGTH, rng)
+
+
+def test_maps_from_fit_recovers_derived_maps():
+    rng = np.random.default_rng(7)
+    truth, cube = _si_iv_cube(rng)
+    fitted, fitter = _fit(si_iv_1403_model(cube), cube.data, cube.uncertainty.array, unit=cube.unit)
+    error = _errors(fitter)
+    maps = maps_from_fit(fitted, cube, fitter=fitter)
+    derived = ["velocity_1", "fwhm_1", "fwhm_velocity_1", "integrated_intensity_1"]
+    assert list(maps.keys()) == [*fitted.param_names, *derived, "quality", "residual"]
+    for index, name in enumerate(fitted.param_names):
+        np.testing.assert_allclose(maps[name].data, getattr(fitted, name).value)
+        np.testing.assert_allclose(maps[name].uncertainty.array, error[..., index])
+    speed = C_KMS * u.km / u.s / (1402.77 * u.AA)
+    expected = {
+        "velocity_1": ((truth.mean_1.quantity - 1402.77 * u.AA) * speed, u.km / u.s),
+        "fwhm_1": (2 * np.sqrt(2 * np.log(2)) * truth.stddev_1.quantity, u.AA),
+        "fwhm_velocity_1": (2 * np.sqrt(2 * np.log(2)) * truth.stddev_1.quantity * speed, u.km / u.s),
+        "integrated_intensity_1": (
+            np.sqrt(2 * np.pi) * truth.amplitude_1.quantity * truth.stddev_1.quantity,
+            u.DN * u.AA,
+        ),
+    }
+    for name, (value, unit) in expected.items():
+        assert maps[name].unit == unit
+        z = (maps[name].data - value.to_value(unit)) / maps[name].uncertainty.array
+        # The propagated 1 sigma should hold the true value in about 68% of the 400 spectra.
+        assert 0.6 < np.mean(np.abs(z) < 1) < 0.76, name
+    assert np.all(maps["quality"].data == FitQualityFlag.OK)
+    residual = maps["residual"]
+    assert residual.data.shape == cube.data.shape
+    assert residual.wcs is cube.wcs
+    np.testing.assert_allclose(
+        residual.data,
+        cube.data - np.moveaxis(fitted(WAVELENGTH[:, np.newaxis, np.newaxis]).to_value(u.DN), 0, -1),
+        atol=1e-9,
+    )
+
+
+@pytest.mark.parametrize(
+    ("profile", "width", "fwhm", "area"),
+    [
+        ("gaussian", 0.1, 0.1 * 2.3548200450309493, 0.1 * 2.5066282746310002 * 50),
+        ("lorentzian", 0.2, 0.2, np.pi * 0.2 * 50 / 2),
+    ],
+)
+def test_maps_from_fit_formulas(profile, width, fwhm, area):
+    model = profiles_on_background(
+        np.full((1, 2, 3), 1402.77) * u.AA,
+        amplitudes=np.full((1, 2, 3), 50) * u.DN,
+        widths=np.full((1, 2, 3), width) * u.AA,
+        background_level=0 * u.DN,
+        profile=profile,
+    )
+    cube = make_test_spectrogram_cube(np.zeros((2, 3, 60)), WAVELENGTH)
+    maps = maps_from_fit(model, cube)
+    np.testing.assert_allclose(maps["velocity_1"].data, 0, atol=1e-9)
+    np.testing.assert_allclose(maps["fwhm_1"].data, fwhm)
+    np.testing.assert_allclose(maps["integrated_intensity_1"].data, area)
+    assert all(maps[name].uncertainty is None for name in maps if name != "residual")
+
+
+def test_maps_from_fit_flags_no_fit_and_at_bound():
+    rng = np.random.default_rng(3)
+    truth, cube = _si_iv_cube(rng)
+    data = cube.data.copy()
+    data[0, 0] = np.nan  # no fit
+    model = si_iv_1403_model(cube)
+    # Capping the amplitude below that of the brighter lines pins their fits to the cap.
+    cap = np.median(truth.amplitude_1.value)
+    model.amplitude_1.bounds = (0, cap)
+    model.amplitude_1 = np.minimum(model.amplitude_1.value, cap) * u.DN
+    fitted, fitter = _fit(model, data, cube.uncertainty.array, unit=cube.unit)
+    maps = maps_from_fit(fitted, cube, fitter=fitter)
+    assert np.isnan(maps["mean_1"].uncertainty.array[0, 0])
+    quality = maps["quality"].data
+    assert quality[0, 0] == FitQualityFlag.NO_FIT
+    bright = truth.amplitude_1.value > 1.2 * cap
+    faint = truth.amplitude_1.value < 0.8 * cap
+    bright[0, 0] = faint[0, 0] = False
+    assert np.mean(quality[bright] == FitQualityFlag.AT_BOUND) > 0.95
+    assert np.mean(quality[faint] == FitQualityFlag.OK) > 0.95
+
+
+@pytest.mark.parametrize(
+    ("fitter_class", "expected"),
+    # LevMarLSQFitter's fit information has no success, so its fits are never flagged.
+    [(TRFLSQFitter, FitQualityFlag.NOT_CONVERGED), (LevMarLSQFitter, FitQualityFlag.OK)],
+)
+def test_maps_from_fit_flags_convergence(fitter_class, expected):
+    _, cube = _si_iv_cube(np.random.default_rng(3))
+    fitted, fitter = _fit(
+        si_iv_1403_model(cube),
+        cube.data,
+        cube.uncertainty.array,
+        unit=cube.unit,
+        fitter=fitter_class(),
+        fitter_kwargs={"maxiter": 1},
+    )
+    assert np.all(maps_from_fit(fitted, cube, fitter=fitter)["quality"].data == expected)
+
+
+def test_maps_from_fit_bound_tolerance_is_relative():
+    # In meters the center is 1e-11 from its bounds, which only a relative tolerance leaves unflagged.
+    model = profiles_on_background(
+        np.full((1, 2, 3), 1402.77e-10) * u.m,
+        amplitudes=np.full((1, 2, 3), 50) * u.DN,
+        widths=np.full((1, 2, 3), 0.05e-10) * u.m,
+        background_level=5 * u.DN,
+        bounds={"mean_1": [1402.67, 1402.87] * u.AA, "stddev_1": [0.01, 0.1] * u.AA, "amplitude_1": [0, 100] * u.DN},
+    )
+    cube = make_test_spectrogram_cube(np.zeros((2, 3, 60)), WAVELENGTH)
+    assert np.all(maps_from_fit(model, cube)["quality"].data == FitQualityFlag.OK)
+
+
+@pytest.mark.parametrize(("wavelength_axis", "wcs_axes"), [(0, [2, 3, 1]), (1, [2, 1, 3])])
+def test_maps_from_fit_aligns_spatial_axes(wavelength_axis, wcs_axes):
+    _, cube = _si_iv_cube(np.random.default_rng(3))
+    fitted, _ = _fit(si_iv_1403_model(cube), cube.data, cube.uncertainty.array, unit=cube.unit)
+    cube = type(cube)(np.moveaxis(cube.data, 2, wavelength_axis), cube.wcs.sub(wcs_axes), unit=cube.unit)
+    maps = maps_from_fit(fitted, cube)
+    map_axes = (0, 1)
+    residual_axes = tuple(axis for axis in range(3) if axis != wavelength_axis)
+    assert maps.aligned_axes["mean_1"] == map_axes
+    assert maps.aligned_axes["residual"] == residual_axes
+    np.testing.assert_allclose(
+        maps["residual"].data,
+        cube.data - np.moveaxis(fitted(WAVELENGTH[:, None, None]).to_value(cube.unit), 0, wavelength_axis),
+        atol=1e-9,
+    )
+
+
+def test_maps_from_fit_preserves_residual_coordinates():
+    _, cube = _si_iv_cube(np.random.default_rng(3))
+    fitted, _ = _fit(si_iv_1403_model(cube), cube.data, cube.uncertainty.array, unit=cube.unit)
+    times = Time("2020-01-01") + np.arange(SHAPE[0]) * u.s
+    cube.extra_coords.add("time", 0, times, physical_types="time")
+    cube.global_coords.add("observer", "custom:observer", "IRIS")
+    residual = maps_from_fit(fitted, cube)["residual"]
+    assert residual.global_coords["observer"] == "IRIS"
+    assert residual.extra_coords._ndcube is residual
+    assert cube.extra_coords._ndcube is cube
+    np.testing.assert_array_equal(residual.axis_world_coords("time", wcs=residual.extra_coords)[0], times)
+
+
+def test_maps_from_fit_flags_masked_input():
+    _, cube = _si_iv_cube(np.random.default_rng(3))
+    fitted, _ = _fit(si_iv_1403_model(cube), cube.data, cube.uncertainty.array, unit=cube.unit)
+    cube.mask = np.zeros(cube.data.shape, dtype=bool)
+    cube.mask[0, 1, 5] = True
+    quality = maps_from_fit(fitted, cube)["quality"].data
+    assert quality[0, 1] == FitQualityFlag.MASKED_INPUT
+    assert quality[1, 1] == FitQualityFlag.OK
+    for mask, expected in ((False, FitQualityFlag.OK), (True, FitQualityFlag.MASKED_INPUT)):  # Scalar masks.
+        cube.mask = mask
+        assert np.all(maps_from_fit(fitted, cube)["quality"].data == expected)
+
+
+def test_maps_from_fit_without_any_covariance():
+    _, cube = _si_iv_cube(np.random.default_rng(3))
+    fitted, fitter = _fit(
+        si_iv_1403_model(cube), np.full_like(cube.data, np.nan), cube.uncertainty.array, unit=cube.unit
+    )
+    maps = maps_from_fit(fitted, cube, fitter=fitter)
+    assert np.all(maps["quality"].data == FitQualityFlag.NO_FIT)
+    assert maps["mean_1"].uncertainty is None
+    assert maps["integrated_intensity_1"].uncertainty is None
+
+
+def test_maps_from_fit_fixed_parameters_and_rest_wavelength():
+    rng = np.random.default_rng(4)
+    _, cube = _si_iv_cube(rng)
+    model = si_iv_1403_model(cube)
+    model.amplitude_0.fixed = True
+    fitted, fitter = _fit(model, cube.data, cube.uncertainty.array, unit=cube.unit)
+    maps = maps_from_fit(fitted, cube, fitter=fitter, rest_wavelength=1402.0 * u.AA)
+    assert np.all(np.isnan(maps["amplitude_0"].uncertainty.array))
+    assert np.all(np.isfinite(maps["mean_1"].uncertainty.array))
+    # Against 1402.0 Å instead of the documented 1402.77 Å.
+    np.testing.assert_allclose(np.median(maps["velocity_1"].data), 0.77 / 1402.0 * C_KMS, rtol=0.01)
+    wider = make_test_spectrogram_cube(np.zeros((2, 3, 400)), (1395.0 + 0.026 * np.arange(400)) * u.AA)
+    with pytest.raises(ValueError, match="pass rest_wavelength"):
+        maps_from_fit(model, wider)
+    with pytest.raises(ValueError, match="no unit"):
+        maps_from_fit(profiles_on_background([1402.77] * u.AA), cube)
+    with pytest.raises(ValueError, match="fit_info=True"):
+        maps_from_fit(fitted, cube, fitter=TRFLSQFitter())

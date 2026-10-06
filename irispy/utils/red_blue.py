@@ -3,7 +3,6 @@ Red-blue asymmetry utilities for IRIS spectrogram cubes.
 """
 
 import warnings
-from enum import IntEnum
 
 import numpy as np
 from scipy.interpolate import make_interp_spline
@@ -15,6 +14,7 @@ from astropy.wcs import WCS
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import (
+    _QualityFlag,
     check_scaled,
     drop_extra_coords_dependent_on_axis,
     make_map_cube,
@@ -28,7 +28,7 @@ __all__ = ["RBAQualityFlag", "calculate_red_blue_asymmetry"]
 _MIN_WING_COVERAGE = 0.8
 
 
-class RBAQualityFlag(IntEnum):
+class RBAQualityFlag(_QualityFlag):
     """
     Quality flags for the per-pixel RBA computation.
     """
@@ -42,12 +42,6 @@ class RBAQualityFlag(IntEnum):
     INCOMPLETE_WINGS = (6, "incomplete red or blue wing coverage")
     LOW_SIGNAL = (7, "below min_intensity")
     SATURATED = (8, "above saturation_limit")
-
-    def __new__(cls, value, description):
-        obj = int.__new__(cls, value)
-        obj._value_ = value
-        obj.description = description
-        return obj
 
 
 def _make_velocity_wcs(array_shape, velocity_axis, velocity_grid):
@@ -180,7 +174,7 @@ def calculate_red_blue_asymmetry(
         ``"red_blue_asymmetry_error"`` is added when the input cube has uncertainty.
         ``"observed_profile"`` and ``"interpolated_profile"`` 3D cubes are added
         when ``return_profiles=True``. The interpolated profile velocity axis is
-        peak-centred; the observed profile velocity axis is relative to
+        peak-centered; the observed profile velocity axis is relative to
         ``rest_wavelength``.
     """
     check_scaled(cube)
