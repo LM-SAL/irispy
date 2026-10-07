@@ -2,6 +2,8 @@ import logging
 import importlib
 from pathlib import Path
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import pooch
 import pytest
 from scipy.io import readsav
@@ -18,14 +20,7 @@ console_logger.setLevel("INFO")
 remotedata_spec = importlib.util.find_spec("pytest_remotedata")
 HAVE_REMOTEDATA = remotedata_spec is not None
 # Force MPL to use non-gui backends for testing.
-try:
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-
-    HAVE_MATPLOTLIB = True
-    mpl.use("Agg")
-except ImportError:
-    HAVE_MATPLOTLIB = False
+mpl.use("Agg")
 
 
 def pytest_runtest_setup(item):
@@ -37,7 +32,7 @@ def pytest_runtest_setup(item):
         pytest.skip("skipping remotedata tests as pytest-remotedata is not installed")
 
     # Confirm that the pyplot figure stack is empty before the test
-    if HAVE_MATPLOTLIB and plt.get_fignums():
+    if plt.get_fignums():
         msg = f"There are stale pyplot figures prior to running {item.name}"
         raise UserWarning(msg)
 
@@ -45,7 +40,7 @@ def pytest_runtest_setup(item):
 def pytest_runtest_teardown(item):
     # Clear the pyplot figure stack if it is not empty after the test
     # You can see these log messages by passing "-o log_cli=true" to pytest on the command line
-    if HAVE_MATPLOTLIB and plt.get_fignums():
+    if plt.get_fignums():
         msg = f"Removing {len(plt.get_fignums())} pyplot figure(s) left open by {item.name}"
         console_logger.info(msg)
         plt.close("all")

@@ -52,7 +52,8 @@ def test_map_ratio_to_quantity_rejects_non_monotonic_curve():
         map_ratio_to_quantity(0.35, density, theoretical_ratio)
 
 
-def test_density_diagnostic(monkeypatch):
+@pytest.mark.parametrize("shape", [(), (2,), (1, 2)])
+def test_density_diagnostic(monkeypatch, shape):
     _install_fake_fiasco(monkeypatch, [0.5, 1.0])
     fake_ion = types.SimpleNamespace(
         temperature=[1e5, 2e5] * u.K,
@@ -60,25 +61,27 @@ def test_density_diagnostic(monkeypatch):
     )
 
     result = density_diagnostic(
-        [1.2, 1.5] * u.ct,
-        [2.0, 2.0] * u.ct,
+        np.resize([1.2, 1.5], shape) * u.ct,
+        np.full(shape, 2.0) * u.ct,
         [1e10, 1e11] * u.cm**-3,
         ion=fake_ion,
         numerator=1399.78 * u.angstrom,
         denominator=1401.16 * u.angstrom,
-        intensity_numerator_uncertainty=[0.1, 0.1] * u.ct,
-        intensity_denominator_uncertainty=[0.2, 0.2] * u.ct,
+        intensity_numerator_uncertainty=np.full(shape, 0.1) * u.ct,
+        intensity_denominator_uncertainty=np.full(shape, 0.2) * u.ct,
     )
 
-    np.testing.assert_allclose(result["ratio"].value, [0.6, 0.75])
+    np.testing.assert_allclose(result["ratio"].value, np.resize([0.6, 0.75], shape))
     # Hand-calculated ratio variances; the linear density curve has slope 1.8e11 cm^-3.
-    ratio_error = np.sqrt([0.0061, 0.008125]) * u.one
-    expected_density = [2.8e10, 5.5e10] * u.cm**-3
+    ratio_error = np.sqrt(np.resize([0.0061, 0.008125], shape)) * u.one
+    expected_density = np.resize([2.8e10, 5.5e10], shape) * u.cm**-3
     density_error = ratio_error.value * 1.8e11 * u.cm**-3
     assert u.allclose(result["ratio_uncertainty"], ratio_error)
     assert u.allclose(result["density"], expected_density)
     assert u.allclose(result["density_lower"], expected_density - density_error)
     assert u.allclose(result["density_upper"], expected_density + density_error)
+    for key in ("ratio", "ratio_uncertainty", "density", "density_lower", "density_upper"):
+        assert result[key].shape == shape
 
 
 def test_density_diagnostic_builds_theoretical_ratio_with_fiasco(monkeypatch):

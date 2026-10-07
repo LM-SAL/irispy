@@ -276,39 +276,21 @@ def density_diagnostic(
                 density_grid, theoretical_ratio = segment
                 best_score = score
 
-    density = map_ratio_to_quantity(
-        ratio,
+    ratios = [ratio] if ratio_uncertainty is None else [ratio, ratio - ratio_uncertainty, ratio + ratio_uncertainty]
+    densities = map_ratio_to_quantity(
+        u.Quantity(ratios),
         density_grid,
         theoretical_ratio,
         bounds_error=bounds_error,
         fill_value=fill_value,
     )
 
-    density_lower = None
-    density_upper = None
+    density = densities[0]
+    density_lower = density_upper = None
     if ratio_uncertainty is not None:
-        density_minus = map_ratio_to_quantity(
-            ratio - ratio_uncertainty,
-            density_grid,
-            theoretical_ratio,
-            bounds_error=bounds_error,
-            fill_value=fill_value,
-        )
-        density_plus = map_ratio_to_quantity(
-            ratio + ratio_uncertainty,
-            density_grid,
-            theoretical_ratio,
-            bounds_error=bounds_error,
-            fill_value=fill_value,
-        )
-        density_lower = u.Quantity(
-            np.fmin(density_minus.to_value(density.unit), density_plus.to_value(density.unit)),
-            density.unit,
-        )
-        density_upper = u.Quantity(
-            np.fmax(density_minus.to_value(density.unit), density_plus.to_value(density.unit)),
-            density.unit,
-        )
+        density_minus, density_plus = densities[1:]
+        density_lower = np.fmin(density_minus, density_plus)
+        density_upper = np.fmax(density_minus, density_plus)
 
     return {
         "ratio": ratio,
