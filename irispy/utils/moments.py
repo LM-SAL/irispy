@@ -1,17 +1,17 @@
 """
-Spectral moment calculation utilities for IRIS spectrogram cubes.
+Spectral moment and window maps for IRIS spectrogram cubes.
 """
 
 import numpy as np
 
 import astropy.units as u
 from astropy import constants
-from astropy.nddata import StdDevUncertainty
+from astropy.nddata import NDDataArray, StdDevUncertainty
 
 from irispy.spectrograph import RasterCollection, _wavelength_indices
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, standard_deviation
 
-__all__ = ["calculate_moments"]
+__all__ = ["average_window", "calculate_moments"]
 
 
 def calculate_moments(
@@ -188,3 +188,52 @@ def calculate_moments(
 
     cubes = [(name, _make_cube(name, values, unit)) for name, values, unit in maps]
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
+
+
+def average_window(cube, wavelength_range, *, method="mean"):
+    r"""
+    Average or sum a spectrogram cube over a wavelength window, giving an intensity map.
+
+    Parameters
+    ----------
+    cube : `irispy.spectrograph.SpectrogramCube`
+        Input cube with a wavelength axis.
+    wavelength_range : `astropy.units.Quantity`
+        The ``(lower, upper)`` wavelengths of the window, ends included.
+    method : `str`, optional
+        ``"mean"`` (the default) or ``"sum"`` of the samples in the window.
+
+    Returns
+    -------
+    `irispy.spectrograph.SpectrogramCube`
+        Map in ``cube.unit`` with the spatial WCS of ``cube``. It has a `~astropy.nddata.StdDevUncertainty`
+        if ``cube`` has an uncertainty (e.g. read with ``uncertainty=True``).
+
+    Notes
+    -----
+    * Masked and non-finite samples are left out, so a sum over a partly masked window is low.
+      Pixels with no sample left are NaN and masked.
+    * Uncertainties are propagated taking the samples as independent, treating an
+      `~astropy.nddata.UnknownUncertainty` as a standard deviation, as in `calculate_moments`.
+    * For :math:`\int I(\lambda) \, d\lambda`, multiply a sum by the absolute wavelength step,
+      ``abs(cube.spectral_dispersion)``.
+    """
+    check_scaled(cube)
+    if method not in {"mean", "sum"}:
+        msg = f'method must be "mean" or "sum", not {method!r}'
+        raise ValueError(msg)
+    wavelength_axis = cube.wavelength_axis
+    window = _wavelength_indices(cube.axis_world_coords(wavelength_axis)[0], wavelength_range)
+    data = np.take(cube.data, window, axis=wavelength_axis).astype(float)
+    dropped = ~np.isfinite(data)
+    if cube.mask is not None:
+        mask = np.broadcast_to(np.asarray(cube.mask, dtype=bool), cube.data.shape)
+        dropped |= np.take(mask, window, axis=wavelength_axis)
+    sigma = standard_deviation(cube)
+    uncertainty = None if sigma is None else StdDevUncertainty(np.take(sigma, window, axis=wavelength_axis))
+    reduction = getattr(NDDataArray(data, uncertainty=uncertainty, mask=dropped), method)
+    result = reduction(axis=wavelength_axis, operation_ignores_mask=True)
+    values = np.where(result.mask, np.nan, result.data)
+    uncertainty = None if sigma is None else StdDevUncertainty(np.where(result.mask, np.nan, result.uncertainty.array))
+    template = make_spatial_template(cube, wavelength_axis)
+    return make_map_cube(template, values, cube.unit, mask_invalid=True, uncertainty=uncertainty)

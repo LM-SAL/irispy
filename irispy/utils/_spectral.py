@@ -2,7 +2,7 @@
 Shared helpers for spectral map outputs.
 """
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from enum import IntEnum
 from numbers import Integral
 
@@ -112,17 +112,17 @@ def drop_extra_coords_dependent_on_axis(extra_coords, axis, *, reindex):
 
 
 def make_spatial_template(cube, wavelength_axis):
+    if cube.mask is not None:
+        # Broadcast before slicing without changing the input cube's mask.
+        cube = copy(cube)
+        cube.mask = np.broadcast_to(np.asarray(cube.mask, dtype=bool), cube.data.shape)
     template_slicer = [slice(None)] * cube.data.ndim
     template_slicer[wavelength_axis] = 0
     sliced_template = super(SpectrogramCube, cube).__getitem__(tuple(template_slicer))
     template_mask = None
     if cube.mask is not None:
-        cube_mask = np.asarray(cube.mask, dtype=bool)
-        if cube_mask.shape == cube.data.shape:
-            spatial_mask = np.all(cube_mask, axis=wavelength_axis)
-            template_mask = spatial_mask if np.any(spatial_mask) else None
-        elif sliced_template.mask is not None and np.any(sliced_template.mask):
-            template_mask = sliced_template.mask
+        spatial_mask = np.all(cube.mask, axis=wavelength_axis)
+        template_mask = spatial_mask if np.any(spatial_mask) else None
     if hasattr(cube.wcs, "dropaxis"):
         template_wcs = cube.wcs.dropaxis(cube.data.ndim - 1 - wavelength_axis)
     else:

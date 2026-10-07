@@ -13,7 +13,7 @@ from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
 from irispy.utils import calculate_uncertainty
 from irispy.utils.constants import DN_UNIT, READOUT_NOISE
-from irispy.utils.moments import calculate_moments
+from irispy.utils.moments import average_window, calculate_moments
 
 
 def test_calculate_moments_basic(sns_sg_file):
@@ -511,3 +511,75 @@ def test_calculate_moments_zero_rest_wavelength_warns():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), [500.0, 501.0, 502.0] * u.nm)
     with pytest.warns(RuntimeWarning, match="divide by zero"):
         calculate_moments(cube, rest_wavelength=0 * u.nm)
+
+
+@pytest.mark.parametrize(
+    ("method", "values", "errors"),
+    [("mean", [3, 4, np.nan], [np.sqrt(0.13) / 2, 0.3, np.nan]), ("sum", [6, 4, np.nan], [np.sqrt(0.13), 0.3, np.nan])],
+)
+def test_average_window_by_hand(method, values, errors):
+    # The window holds the samples at 501 and 502 nm; NaN and masked samples are left out
+    mask = np.zeros((1, 3, 4), dtype=bool)
+    mask[0, 2, 1:3] = True
+    cube = make_test_spectrogram_cube(
+        [[[1.0, 2.0, 4.0, 8.0], [1.0, np.nan, 4.0, 8.0], [1.0, 2.0, 4.0, 8.0]]],
+        [500.0, 501.0, 502.0, 503.0] * u.nm,
+        uncertainty=StdDevUncertainty(np.broadcast_to([0.1, 0.2, 0.3, 0.4], (1, 3, 4))),
+        mask=mask,
+    )
+    window = average_window(cube, [5005, 5025] * u.AA, method=method)
+    assert window.unit == cube.unit
+    assert isinstance(window.uncertainty, StdDevUncertainty)
+    np.testing.assert_allclose(window.data[0], values)
+    np.testing.assert_allclose(window.uncertainty.array[0], errors)
+    np.testing.assert_array_equal(window.mask[0], [False, False, True])
+
+
+def test_average_window_without_uncertainty():
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), [500.0, 501.0, 502.0] * u.nm)
+    assert average_window(cube, [501, 502] * u.nm).uncertainty is None
+
+
+@pytest.mark.parametrize(
+    "mask",
+    [
+        np.array([[[True, False, False]]]),
+        np.array([True, False, False]),
+        np.broadcast_to([1, 0, 0], (2, 2, 3)).astype(np.uint8),
+    ],
+)
+def test_average_window_mask_representations(mask):
+    data = np.broadcast_to([1.0, 2.0, 4.0], (2, 2, 3)).copy()
+    cube = make_test_spectrogram_cube(data, [500, 501, 502] * u.nm, mask=mask)
+    original_mask = mask.copy()
+    original_data = data.copy()
+    window = average_window(cube, [500, 502] * u.nm)
+    np.testing.assert_allclose(window.data, np.full((2, 2), 3.0))
+    assert not window.mask.any()
+    assert cube.mask is mask
+    np.testing.assert_array_equal(cube.mask, original_mask)
+    np.testing.assert_array_equal(cube.data, original_data)
+
+
+def test_average_window_real_data(sns_sg_file):
+    cube = read_files(sns_sg_file, uncertainty=True)["C II 1336"][0]
+    window = average_window(cube, [1335.2, 1336.2] * u.AA)
+    assert window.shape == cube.shape[:-1]
+    assert window.wcs.world_axis_physical_types == cube.wcs.world_axis_physical_types[1:]
+    assert "time" in tuple(window.extra_coords.keys())
+    assert np.isfinite(window.data[~window.mask]).all()
+    assert np.isfinite(window.uncertainty.array[~window.mask]).all()
+
+
+@pytest.mark.parametrize(
+    ("wavelength_range", "kwargs", "match"),
+    [
+        ([501, 502] * u.nm, {"method": "median"}, "method must be"),
+        ([501.2, 501.8] * u.nm, {}, "No wavelengths between"),
+        ([501] * u.nm, {}, "two wavelengths"),
+    ],
+)
+def test_average_window_rejects_bad_input(wavelength_range, kwargs, match):
+    cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), [500.0, 501.0, 502.0] * u.nm)
+    with pytest.raises(ValueError, match=match):
+        average_window(cube, wavelength_range, **kwargs)
