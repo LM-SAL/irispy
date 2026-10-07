@@ -40,7 +40,7 @@ Documentation
 - The gallery examples now download cut-down copies of their IRIS rasters, holding only the scans and spectral windows each example uses, from `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__. Each example links the full observation in the IRIS archive. (`#187 <https://github.com/LM-SAL/irispy/pull/187>`__)
 - The fitting examples average 2x2 spatial pixels before fitting, the reprojection example downloads its AIA image from `LM-SAL/irispy-data <https://github.com/LM-SAL/irispy-data>`__ instead of the VSO, and the AIA cube example uses a five-minute cutout of its observation. (`#189 <https://github.com/LM-SAL/irispy/pull/189>`__)
 - Fixed the fitted and moment maps in the spectral fitting, spectral moments and Mg II two-Gaussian gallery examples, which were plotted against the wrong coordinates, the prose of the IRIS–AIA co-alignment example, which rendered as code, and the rolled-SJI reprojection example, which matched the AIA image to a different SJI frame. (`#189 <https://github.com/LM-SAL/irispy/pull/189>`__)
-- Fixed wrong results in several gallery examples: the slit-jaw light curve and date axis in the umbral flashes example, the Mg II k core wavelength and v34 flip description in the raster how-to examples, the red-blue asymmetry windows and sign, the colour map of the double-Gaussian asymmetry map, the axis labels and colour scale of the Mg II Dopplergram, the AIA time used for co-alignment, and several units, labels and descriptions. (`#190 <https://github.com/LM-SAL/irispy/pull/190>`__)
+- Fixed wrong results in several gallery examples: the slit-jaw light curve and date axis in the umbral flashes example, the Mg II k core wavelength and v34 flip description in the raster how-to examples, the red-blue asymmetry windows and sign, the color map of the double-Gaussian asymmetry map, the axis labels and color scale of the Mg II Dopplergram, the AIA time used for co-alignment, and several units, labels and descriptions. (`#190 <https://github.com/LM-SAL/irispy/pull/190>`__)
 - Added a "Citing irispy" section to the README and documentation, pointing at the Zenodo record of every release. (`#192 <https://github.com/LM-SAL/irispy/pull/192>`__)
 - The API documentation no longer includes inheritance diagrams, so building the documentation no longer needs graphviz. (`#193 <https://github.com/LM-SAL/irispy/pull/193>`__)
 - Documented that the frame of `irispy.sji.SJICube.wcs` uses the time of the first exposure as its ``obstime``, and how to get a frame for the time of each exposure. (`#194 <https://github.com/LM-SAL/irispy/pull/194>`__)
@@ -67,7 +67,7 @@ New Features
   The mapped range defaults to +/-100 km/s when the rest wavelength lies within the cube's range,
   otherwise to the full window; explicit wavelength bounds override it.
   The image can be drawn against helioprojective longitude or against time, and the colorbar is
-  labelled in both wavelength and Doppler velocity. The colorbar represents single-bin spectra;
+  labeled in both wavelength and Doppler velocity. The colorbar represents single-bin spectra;
   finite-width lines can have different colors at the same peak intensity.
   This needs the optional ``colorsynth`` dependency, installable with ``pip install 'irispy-lmsal[rgb]'``. (`#168 <https://github.com/LM-SAL/irispy/pull/168>`__)
 
@@ -80,7 +80,7 @@ Bug Fixes
   no longer interpolated over. Only fully-zeroed pointing rows (dropped
   exposures) are treated as gaps, they are now handled consistently for both
   the gWCS and the header-based WCS, and are filled with the average of the
-  neighbouring exposures. (`#169 <https://github.com/LM-SAL/irispy/pull/169>`__)
+  neighboring exposures. (`#169 <https://github.com/LM-SAL/irispy/pull/169>`__)
 - Fixed a crash when plotting a 1D slice of an SJI cube: the default colormap is no longer passed to the 1D line plot. (`#170 <https://github.com/LM-SAL/irispy/pull/170>`__)
 
 
@@ -333,7 +333,7 @@ Internal Changes
 ----------------
 
 - Rewrite of unit tests.
-- Fixed warning from DKIST modelling.
+- Fixed warning from DKIST modeling.
 
 0.2.1 (2024-06-09)
 ==================

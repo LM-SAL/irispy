@@ -35,7 +35,7 @@ def calculate_wavelength_drift(raster):
     For every exposure, the spectrum averaged along the slit is fitted with a Gaussian on a
     constant or linear background around the Ni I 2799.474, Mn I 2801.902 and Fe I 2805.346 Å
     absorption lines (NUV) and the O I 1355.60 and Fe II 1392.82 Å emission lines (FUV). A
-    line's shift is its rest wavelength minus the fitted centre.
+    line's shift is its rest wavelength minus the fitted center.
 
     The NUV and FUV drifts are fitted to the Ni I and O I shifts: shifts more than 0.08 Å (NUV)
     or 0.05 Å (FUV) from the median are dropped, a 5-minute running mean removes oscillations,
@@ -157,15 +157,15 @@ def _line_shifts(cube, wavelength, rest, fit_range, min_intensity, sign):
     profiles = np.clip(np.nan_to_num(data, copy=False), 0, None, out=data).mean(axis=1, dtype=float)
     offset = wavelength[bins] - rest
     for step in np.flatnonzero(profiles.mean(axis=1) > min_intensity):
-        amplitude, centre = _fit_gaussian(offset, profiles[step], background_order=int(bins.size >= 7))
-        if amplitude * sign > 0 and abs(centre) <= (fit_range[1] - fit_range[0]) / 4:
-            shifts[step] = -centre
+        amplitude, center = _fit_gaussian(offset, profiles[step], background_order=int(bins.size >= 7))
+        if amplitude * sign > 0 and abs(center) <= (fit_range[1] - fit_range[0]) / 4:
+            shifts[step] = -center
     return shifts
 
 
 def _fit_gaussian(x, y, background_order):
     """
-    The amplitude and centre of a Gaussian on a polynomial background fitted to ``y``.
+    The amplitude and center of a Gaussian on a polynomial background fitted to ``y``.
     """
     background = np.polynomial.polynomial.polyfit(x, y, background_order)
     line = y - np.polynomial.polynomial.polyval(x, background)
@@ -180,8 +180,8 @@ def _fit_gaussian(x, y, background_order):
     def jacobian(p):
         z = (x - p[1]) / p[2]
         gaussian = np.exp(-0.5 * z**2)
-        centre = p[0] * gaussian * z / p[2]
-        return np.column_stack([gaussian, centre, centre * z, *powers])
+        center = p[0] * gaussian * z / p[2]
+        return np.column_stack([gaussian, center, center * z, *powers])
 
     with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
         fit = least_squares(residuals, [line[peak], x[peak], fwhm / 2.355, *background], jacobian, method="lm")

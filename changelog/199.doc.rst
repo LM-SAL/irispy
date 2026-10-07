@@ -1,1 +1,1 @@
-Added an example that maps the Mg II h and k line features with `~irispy.utils.mg_features.calculate_mg_features` and reproduces Figure 3 of Long et al. (2024).
+Added an example that maps the Mg II h and k line features with `~irispy.utils.mg_features.calculate_mg_features` and reproduces Figure 3 of :cite:t:`long2024`.

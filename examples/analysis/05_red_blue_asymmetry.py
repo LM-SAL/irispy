@@ -100,7 +100,7 @@ axes = [fig.add_subplot(1, 2, 1), fig.add_subplot(1, 2, 2)]
 
 ax = axes[0]
 rba_map = np.where(quality.data == int(RBAQualityFlag.OK), asymmetry.data, np.nan)
-# Colour scale: 98th percentile of absolute RBA, floored so subtle features remain visible.
+# Color scale: 98th percentile of absolute RBA, floored so subtle features remain visible.
 vmax = max(np.nanpercentile(np.abs(rba_map), 98), 0.15)
 latitude = asymmetry[0].axis_world_coords()[0].Ty.to_value(u.arcsec)
 minutes = (asymmetry.time - asymmetry.time[0]).to_value(u.min)
@@ -131,8 +131,8 @@ ax = axes[1]
 finite = np.isfinite(velocities.value) & np.isfinite(profile)
 ax.plot(velocities.value[finite], profile[finite], color="black", marker="o", markersize=3)
 v_peak = velocities.value[finite][np.argmax(profile[finite])]
-ax.axvline(0, color="grey", linestyle="dashed", label="Rest wavelength")
-ax.axvline(v_peak, color="grey", linestyle="dotted", label="Line peak")
+ax.axvline(0, color="gray", linestyle="dashed", label="Rest wavelength")
+ax.axvline(v_peak, color="gray", linestyle="dotted", label="Line peak")
 
 v_low = velocity_range[0].to_value(u.km / u.s)
 v_high = velocity_range[1].to_value(u.km / u.s)

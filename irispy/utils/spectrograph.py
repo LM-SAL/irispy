@@ -346,7 +346,7 @@ def subtract_background(cube, windows, *, degree=1):
     wavelength_axis = cube.wavelength_axis
     wavelengths = cube.axis_world_coords(wavelength_axis)[0]
     index = np.flatnonzero(in_windows(wavelengths, windows))
-    # Centred wavelengths keep the fit well conditioned
+    # Centered wavelengths keep the fit well conditioned
     vander = np.polynomial.polynomial.polyvander((wavelengths - wavelengths.mean()).to_value(u.AA), degree)
     samples = np.moveaxis(cube.data, wavelength_axis, -1)[..., index].astype(float)
     kept = np.isfinite(samples)

@@ -9,8 +9,18 @@ from astropy.time import Time
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils.fitting import FitQualityFlag, maps_from_fit, mg_ii_model, profiles_on_background, si_iv_1403_model
+from irispy.utils.constants import ATOMIC_MASS, INSTRUMENTAL_FWHM
+from irispy.utils.fitting import (
+    FitQualityFlag,
+    NonThermalQualityFlag,
+    maps_from_fit,
+    mg_ii_model,
+    non_thermal_velocity,
+    profiles_on_background,
+    si_iv_1403_model,
+)
 
 SHAPE = (20, 20)
 WAVELENGTH = (1402.0 + 0.026 * np.arange(60)) * u.AA
@@ -434,3 +444,109 @@ def test_maps_from_fit_fixed_parameters_and_rest_wavelength():
         maps_from_fit(profiles_on_background([1402.77] * u.AA), cube)
     with pytest.raises(ValueError, match="fit_info=True"):
         maps_from_fit(fitted, cube, fitter=TRFLSQFitter())
+
+
+def _width_map(sigmas, *, error=None, mask=None):
+    """
+    A map of Gaussian full widths at half maximum, in Å, from standard deviations.
+    """
+    shape = np.shape(sigmas)
+    template = make_test_spectrogram_cube(np.zeros((*shape, 2)), WAVELENGTH[:2])[..., 0]
+    fwhm = 2 * np.sqrt(2 * np.log(2)) * np.asarray(sigmas, dtype=float)
+    uncertainty = None if error is None else StdDevUncertainty(np.full(shape, error))
+    return SpectrogramCube(fwhm, template.wcs, uncertainty=uncertainty, unit=u.AA, mask=mask)
+
+
+def test_non_thermal_velocity_formula():
+    # Standard deviations of 0.05 and 0.01 Å, and one whose width is all instrumental.
+    sigma = np.array([[0.05, 0.01, 0.02]])
+    widths = 2 * np.sqrt(2 * np.log(2)) * sigma
+    result = non_thermal_velocity(
+        _width_map(sigma, error=1e-3),
+        1402.77 * u.AA,
+        instrumental_fwhm=widths[0, 2] * u.AA,
+        thermal_fwhm=0.02 * u.AA,
+    )
+    velocity = result["non_thermal_velocity"]
+    assert velocity.unit == u.km / u.s
+    radicand = widths**2 - widths[0, 2] ** 2 - 0.02**2
+    expected = C_KMS / (1402.77 * np.sqrt(4 * np.log(2))) * np.sqrt(np.where(radicand > 0, radicand, np.nan))
+    np.testing.assert_allclose(velocity.data, expected)
+    # dv/dW by a central difference, for the FWHM error of 2 sqrt(2 ln 2) 1e-3 Å.
+    step = 1e-6
+    shifted = [
+        non_thermal_velocity(
+            _width_map(sigma + sign * step),
+            1402.77 * u.AA,
+            instrumental_fwhm=widths[0, 2] * u.AA,
+            thermal_fwhm=0.02 * u.AA,
+        )["non_thermal_velocity"].data
+        for sign in (1, -1)
+    ]
+    # The step is in the standard deviation, so dv/dW is the difference over the step in FWHM.
+    derivative = (shifted[0] - shifted[1]) / (2 * step * 2 * np.sqrt(2 * np.log(2)))
+    np.testing.assert_allclose(velocity.uncertainty.array[0, 0], derivative[0, 0] * 1e-3, rtol=1e-5)
+    quality = result["quality"].data
+    np.testing.assert_array_equal(
+        quality, [[NonThermalQualityFlag.OK, NonThermalQualityFlag.TOO_NARROW, NonThermalQualityFlag.TOO_NARROW]]
+    )
+    assert np.isnan(velocity.data[0, 1])
+
+
+def test_non_thermal_velocity_defaults():
+    sigma = np.array([[0.05, np.nan]])
+    # Si IV peaks at log T = 4.9 in CHIANTI's ionization equilibrium.
+    result = non_thermal_velocity(_width_map(sigma), 1402.77 * u.AA, ion="Si IV", temperature=10**4.9 * u.K)
+    thermal = (
+        np.sqrt(4 * np.log(2))
+        * 1402.77
+        * u.AA
+        * np.sqrt(2 * constants.k_B * 10**4.9 * u.K / ATOMIC_MASS["Si"])
+        / constants.c
+    )
+    expected = non_thermal_velocity(
+        _width_map(sigma), 1402.77 * u.AA, instrumental_fwhm=INSTRUMENTAL_FWHM["FUV2"], thermal_fwhm=thermal
+    )
+    np.testing.assert_allclose(result["non_thermal_velocity"].data, expected["non_thermal_velocity"].data)
+    assert result["quality"].data[0, 1] == NonThermalQualityFlag.NO_DATA
+    # A hotter ion leaves less width for the non-thermal velocity.
+    hotter = non_thermal_velocity(_width_map(sigma), 1402.77 * u.AA, ion="Si IV", temperature=2e5 * u.K)
+    assert hotter["non_thermal_velocity"].data[0, 0] < result["non_thermal_velocity"].data[0, 0]
+
+
+def test_non_thermal_velocity_non_positive_widths():
+    widths = _width_map([[0.05, -0.05, 0, np.nan, -0.05]], error=1e-3, mask=[[False, False, False, False, True]])
+    result = non_thermal_velocity(widths, 1402.77 * u.AA, thermal_fwhm=0.03 * u.AA)
+    velocity = result["non_thermal_velocity"]
+    assert np.isfinite(velocity.data[0, 0])
+    assert np.isfinite(velocity.uncertainty.array[0, 0])
+    assert np.all(np.isnan(velocity.data[0, 1:]))
+    assert np.all(np.isnan(velocity.uncertainty.array[0, 1:]))
+    np.testing.assert_array_equal(velocity.mask, [[False, True, True, True, True]])
+    np.testing.assert_array_equal(
+        result["quality"].data,
+        [
+            [
+                NonThermalQualityFlag.OK,
+                NonThermalQualityFlag.TOO_NARROW,
+                NonThermalQualityFlag.TOO_NARROW,
+                NonThermalQualityFlag.NO_DATA,
+                NonThermalQualityFlag.NO_DATA,
+            ]
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("keywords", "match"),
+    [
+        ({}, "Pass ion"),
+        ({"ion": "Si IV"}, "temperature"),
+        ({"ion": "Xx IV", "temperature": 1e5 * u.K}, "No atomic mass"),
+        ({"ion": "Si IV", "wavelength": 1500 * u.AA}, "outside the IRIS passbands"),
+    ],
+)
+def test_non_thermal_velocity_errors(keywords, match):
+    wavelength = keywords.pop("wavelength", 1402.77 * u.AA)
+    with pytest.raises(ValueError, match=match):
+        non_thermal_velocity(_width_map(np.array([[0.05, 0.06]])), wavelength, **keywords)

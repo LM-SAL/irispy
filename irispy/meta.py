@@ -277,9 +277,9 @@ class BaseMeta(NDMeta):
         `fov_center`.
 
         :math:`\mu = \sqrt{1 - (\sin\rho / \sin R)^2}`, where :math:`\rho` is the angular
-        distance of the field-of-view centre from disk centre,
+        distance of the field-of-view center from disk center,
         :math:`\cos\rho = \cos T_x \cos T_y` :cite:p:`thompson2006`, and :math:`R` is
-        `sun_angular_radius`. It is 1 at disk centre, 0 at the limb and NaN off the disk,
+        `sun_angular_radius`. It is 1 at disk center, 0 at the limb and NaN off the disk,
         and agrees with `sunpy.coordinates.utils.get_heliocentric_angle`.
 
         `None` when the header lacks the pointing or the solar distance.
@@ -548,7 +548,7 @@ class SGMeta(BaseMeta, SlitSpectrographMetaABC):
     @property
     def exposure_mu(self):
         """
-        `~irispy.meta.BaseMeta.mu` at the field-of-view centre of each exposure.
+        `~irispy.meta.BaseMeta.mu` at the field-of-view center of each exposure.
 
         Computed from the per-exposure ``"exposure FOV center"`` entry, so it follows
         slicing and V34 flipping of the raster step axis. `None` when that entry or the

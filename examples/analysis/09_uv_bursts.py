@@ -86,7 +86,7 @@ in_frame = sji_events[sji_events["frame"] == frame]
 burst = in_frame[np.argmax(in_frame["intensity"])]
 
 ###############################################################################
-# The light curve is the mean of a 7 x 8 pixel box centred on the burst, divided by the median
+# The light curve is the mean of a 7 x 8 pixel box centered on the burst, divided by the median
 # of the area, and the inset shows its flickering around the peak. Its shape and timing match
 # the paper, but it peaks at about 19 times the median rather than 25, most likely because the
 # data were reprocessed in 2025.

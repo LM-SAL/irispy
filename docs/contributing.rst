@@ -43,6 +43,9 @@ If you are a more seasoned developer and would like to get further information, 
 Before you can contribute code to irispy, you first need to install the development version of ``irispy``.
 To find out how, see :ref:`dev_install`.
 
+Use US English in documentation, comments, and internal names.
+Cite scientific references using the :doc:`bibliography` roles so they link to the bibliography.
+
 .. _issue tracker: https://github.com/LM-SAL/irispy/issues
 .. _SunPy Newcomers Guide: http://docs.sunpy.org/en/latest/dev_guide/newcomers.html
 .. _GitHub: https://github.com/

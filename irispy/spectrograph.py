@@ -184,7 +184,7 @@ class MosaicCube(SpectrogramCube):
         """
         Return a `sunpy.map.Map` at one wavelength or averaged over a range.
 
-        The colour map is that of the nearest slit-jaw passband. Masked values are left
+        The color map is that of the nearest slit-jaw passband. Masked values are left
         out of the average.
 
         Parameters

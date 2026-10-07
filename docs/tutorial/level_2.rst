@@ -121,7 +121,7 @@ Reading Level 2 Data
 
 ``irispy`` is designed to allow the user to easily read and access the data and keywords contained in IRIS level 2 FITS files.
 Currently, ``irispy`` does not provide a way to download the data from the `IRIS archive. <https://iris.lmsal.com/data.html>`__
-We recommend browsing the catalogue using your web browser.
+We recommend browsing the catalog using your web browser.
 
 The following examples in this section will showcase how to read the FITS file header, load an IRIS raster window (region) into memory, as well as locate important auxiliary information.
 
@@ -332,8 +332,8 @@ The exposure times are calculated from the auxiliary metadata, are given in seco
 In most cases, the exposure times are fixed for all scans in a raster.
 However, when automatic exposure compensation (AEC) is enabled and there is a very energetic event (e.g., a flare), IRIS will automatically use a lower exposure time to prevent detector saturation.
 
-The position on the disk is often given as μ, the cosine of the angle between the line of sight and the local vertical (1 at disk centre, 0 at the limb, NaN off the disk).
-``meta.mu`` gives it at the centre of the field of view, and for rasters ``meta.exposure_mu`` gives it at each raster step:
+The position on the disk is often given as μ, the cosine of the angle between the line of sight and the local vertical (1 at disk center, 0 at the limb, NaN off the disk).
+``meta.mu`` gives it at the center of the field of view, and for rasters ``meta.exposure_mu`` gives it at each raster step:
 
 .. code-block:: python
 

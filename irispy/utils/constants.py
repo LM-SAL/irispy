@@ -5,10 +5,13 @@ This module provides constants used elsewhere.
 import astropy.units as u
 
 __all__ = [
+    "ATOMIC_MASS",
     "BAD_PIXEL_VALUES_SCALED",
     "BAD_PIXEL_VALUE_SCALED",
     "BAD_PIXEL_VALUE_UNSCALED",
     "DN_UNIT",
+    "INSTRUMENTAL_FWHM",
+    "PASSBAND_LIMITS",
     "RADIANCE_UNIT",
     "RADIANCE_UNIT_PER_HZ",
     "READOUT_NOISE",
@@ -40,6 +43,28 @@ READOUT_NOISE = {
 RADIANCE_UNIT = u.erg / u.cm**2 / u.s / u.steradian / u.Angstrom
 RADIANCE_UNIT_PER_HZ = u.erg / u.cm**2 / u.s / u.steradian / u.Hz
 SLIT_WIDTH = 0.33 * u.arcsec
+# Spectral resolution (FWHM) of the spectrograph by passband: De Pontieu et al. (2014) Table 1.
+# Their Sect. 7.3.3 measures 25.85 mA (FUV1) and 50.54 mA (NUV) on solar lines, upper bounds that include the
+# solar width; the 31.8 mA often used for FUV2 is a pre-launch laboratory value (Tian et al. 2014, Text S5).
+INSTRUMENTAL_FWHM = {"FUV1": 26 * u.mAA, "FUV2": 26 * u.mAA, "NUV": 53 * u.mAA}
+# Vacuum wavelength limits of the spectrograph passbands: De Pontieu et al. (2014) Table 2.
+PASSBAND_LIMITS = {"FUV1": [1331.7, 1358.4] * u.AA, "FUV2": [1389.0, 1407.0] * u.AA, "NUV": [2782.7, 2835.1] * u.AA}
+# Abridged standard atomic weights of the elements of the IRIS lines: Prohaska et al. (2022), via ciaaw.org.
+ATOMIC_MASS = {
+    "H": 1.0080 * u.u,
+    "He": 4.0026 * u.u,
+    "C": 12.011 * u.u,
+    "N": 14.007 * u.u,
+    "O": 15.999 * u.u,
+    "Mg": 24.305 * u.u,
+    "Si": 28.085 * u.u,
+    "S": 32.06 * u.u,
+    "Cl": 35.45 * u.u,
+    "Ca": 40.078 * u.u,
+    "Mn": 54.938 * u.u,
+    "Fe": 55.845 * u.u,
+    "Ni": 58.693 * u.u,
+}
 SPECTRAL_BAND = {
     "1330": "FUV",
     "1336": "FUV",

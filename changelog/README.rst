@@ -4,7 +4,7 @@ Changelog
 
 .. note::
 
-    This README was adapted from the pytest changelog readme under the terms of the MIT licence.
+    This README was adapted from the pytest changelog readme under the terms of the MIT license.
 
 This directory contains "news fragments" which are short files that contain a small **ReST**-formatted text that will be added to the next ``CHANGELOG``.
 

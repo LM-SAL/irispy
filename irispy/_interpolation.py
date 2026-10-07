@@ -12,7 +12,7 @@ def _time_lookup(times, name=None):
     have finite times. Pixels further out get NaN, not a plausible but wrong time.
     """
     # Odd reflection extrapolates linearly to pixels -1 and n; averaging each with its
-    # neighbour moves those nodes to the pixel edges.
+    # neighbor moves those nodes to the pixel edges.
     table = np.pad(times, 1, mode="reflect", reflect_type="odd")
     for axis in range(table.ndim):
         nodes = np.moveaxis(table, axis, 0)

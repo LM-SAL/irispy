@@ -8,17 +8,17 @@ Our goal is to keep ours a positive, inclusive, successful, and growing communit
 ## Open
 
 Members of the community are open to collaboration, whether on patches, reporting issues, asking for help or otherwise.
-We welcome those interested in joining the community, and realise that including people with a variety of opinions and backgrounds will only serve to enrich our community.
+We welcome those interested in joining the community, and realize that including people with a variety of opinions and backgrounds will only serve to enrich our community.
 
 We are accepting of all who wish to take part in our activities, fostering an environment where anyone can participate and everyone can make a difference, ensuring that all participants are heard and feel confident that they can freely express their opinions.
 
 ## Considerate
 
 Members of the community are considerate of their peers -- other developers, users, etc.
-We are thoughtful when addressing the efforts of others, keeping in mind that often the labour was completed simply for the good of the community.
+We are thoughtful when addressing the efforts of others, keeping in mind that often the labor was completed simply for the good of the community.
 We are attentive in our communications, whether in person or online, and we're tactful when approaching differing views.
 
-We recognize the work made by everyone and ensure the proper acknowledgement/citation of original authors at all times.
+We recognize the work made by everyone and ensure the proper acknowledgment/citation of original authors at all times.
 As authors, we pledge to be explicit about how we want our own work to be cited or acknowledged.
 
 ## Respectful

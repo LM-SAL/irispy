@@ -70,7 +70,7 @@ def calculate_moments(
       `#198 <https://github.com/LM-SAL/irispy/pull/198>`__) and the bias from zeroing negative samples,
       which can widen faint lines several times (see ``min_intensity``). Where the background is near
       zero they are conservative, up to about 25% too large.
-    * Samples are taken as independent, but the level 2 resampling correlates neighbours, which
+    * Samples are taken as independent, but the level 2 resampling correlates neighbors, which
       changes the intensity uncertainty of a 15-sample line by 2 to 15%.
 
     References

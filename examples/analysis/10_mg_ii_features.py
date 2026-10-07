@@ -40,7 +40,7 @@ mg_ii = read_files(raster_filename)["Mg II k 2796"][0]
 
 ###############################################################################
 # `~irispy.utils.mg_features.calculate_mg_features` finds the velocity and
-# intensity of the blue peak, line centre and red peak of both lines, within
+# intensity of the blue peak, line center and red peak of both lines, within
 # 40 km/s of their rest wavelengths. Each is a map with the spatial WCS of the raster.
 
 features = calculate_mg_features(mg_ii)

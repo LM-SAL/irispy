@@ -3,9 +3,10 @@ import pytest
 
 import astropy.units as u
 from astropy.nddata import InverseVariance, StdDevUncertainty, UnknownUncertainty
+from astropy.time import Time
 
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils._spectral import check_scaled, in_windows, standard_deviation
+from irispy.utils._spectral import check_scaled, in_windows, make_map_cube, standard_deviation
 
 
 def test_check_scaled():
@@ -46,3 +47,27 @@ def test_standard_deviation(uncertainty):
         assert sigma is None
     else:
         np.testing.assert_allclose(sigma, np.full((1, 1, 3), 2.0))
+
+
+def test_make_map_cube_preserves_independent_coordinates():
+    cube = make_test_spectrogram_cube(np.ones((3, 4, 2)), [1402.77, 1402.80] * u.AA)
+    times = Time("2026-10-07") + np.arange(3) * u.s
+    cube.extra_coords.add("time", 0, times, physical_types="time")
+    template = cube[..., 0]
+    template.global_coords.add("reference_time", "time", times[0])
+    values = np.ones(template.shape)
+    maps = [make_map_cube(template, values, u.km / u.s) for _ in range(2)]
+    for output in maps:
+        assert output.wcs is template.wcs
+        assert output.global_coords["reference_time"] == times[0]
+        output_times = output.axis_world_coords("time", wcs=output.extra_coords)[0]
+        np.testing.assert_allclose(output_times.unix, times.unix, rtol=0, atol=1e-6)
+        sliced = output[1:, :]
+        sliced_times = sliced.axis_world_coords("time", wcs=sliced.extra_coords)[0]
+        np.testing.assert_allclose(sliced_times.unix, times[1:].unix, rtol=0, atol=1e-6)
+
+    maps[0].extra_coords.add("exposure", 0, np.ones(3) * u.s, physical_types="time.duration")
+    maps[0].global_coords.remove("reference_time")
+    for unchanged in (template, maps[1]):
+        assert unchanged.extra_coords.keys() == ("time",)
+        assert unchanged.global_coords["reference_time"] == times[0]
