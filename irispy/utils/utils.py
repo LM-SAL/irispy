@@ -80,13 +80,9 @@ def image_clipping(image, cutoff=1.5e-3, gamma=1.0):
         nbins = 10000
         fak = nbins / (hmax - hmin)
         hist = np.histogram((image - hmin) * fak, range=(0.0, float(nbins)), bins=nbins)
-    h = hist[0]
+    h = np.cumsum(hist[0])
     bins = hist[1]
     nh = np.size(h)
-    # Integrate the histogram so that h(i) holds the number of points
-    # with equal or lower intensity.
-    for i in range(1, nh - 1):
-        h[i] = h[i] + h[i - 1]
     h = h / float(h[nh - 2])
     h[nh - 1] = 1
     # As cutoff is in percent and h is normalized to unity,

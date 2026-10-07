@@ -35,6 +35,16 @@ def test_get_detector_type(test_input, expected_output):
     assert utils.get_detector_type(test_input) == expected_output
 
 
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [(np.int16, (4.0, 16.0)), (np.float64, (3.99920004, 9.00360036))],
+)
+def test_image_clipping(dtype, expected):
+    image = np.array([0, 0, 0, 1, 2, 3, 4, 9], dtype=dtype)
+
+    np_test.assert_allclose(utils.image_clipping(image, cutoff=0.2, gamma=2), expected)
+
+
 @pytest.mark.parametrize(("input_array", "expected_array"), [(data_dust, dust_mask_expected)])
 def test_calculate_dust_mask(input_array, expected_array):
     np_test.assert_array_equal(utils.calculate_dust_mask(input_array), expected_array)
