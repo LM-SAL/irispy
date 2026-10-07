@@ -127,7 +127,7 @@ jobs:
         - linux: py313-online
 
   build_dists:
-    # Build wheels on PRs only when labelled. Releases will only be published if tagged ^v.*
+    # Build wheels on PRs only when labeled. Releases will only be published if tagged ^v.*
     # see https://github-actions-workflows.openastronomy.org/en/latest/publish.html#upload-to-pypi
     if: |
       github.event_name != 'pull_request' ||

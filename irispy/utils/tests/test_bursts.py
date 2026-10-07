@@ -37,7 +37,7 @@ def idl_si_iv():
 
 def assert_same_events(labels, pixels, groups):
     """
-    The labelled pixels are ``pixels``, and they split into events as ``groups`` does.
+    The labeled pixels are ``pixels``, and they split into events as ``groups`` does.
     """
     assert labels[pixels].all()
     assert np.count_nonzero(labels) == len(groups)

@@ -68,7 +68,7 @@ def test_find_fiducials_takes_the_most_significant_dip_without_a_pair():
 
 
 def test_find_fiducials_skips_single_dark_rows():
-    # The PSF spreads a mark over its neighbours; a lone dark row is a bad pixel row
+    # The PSF spreads a mark over its neighbors; a lone dark row is a bad pixel row
     cube = make_window(marks=[])
     cube.data[:, 100] = 0
     assert find_fiducials(cube)[0].size == 0

@@ -141,7 +141,7 @@ def calculate_dust_mask(data_array):
     mask = np.zeros_like(data_array, dtype=bool)
     # Set the pixel value to True is the pixel is recognized as a dust pixel.
     mask[(data_array < 0.5) & (data_array > max(BAD_PIXEL_VALUES_SCALED))] = True
-    # Extending the mask to avoid the neighbours pixel influenced by the dust pixels.
+    # Extending the mask to avoid the neighbors pixel influenced by the dust pixels.
     if mask.ndim == 2:
         struct = np.ones((3, 3), dtype=bool)
     elif mask.ndim == 3:

@@ -495,7 +495,7 @@ def test_non_thermal_velocity_formula():
 
 def test_non_thermal_velocity_defaults():
     sigma = np.array([[0.05, np.nan]])
-    # Si IV peaks at log T = 4.9 in CHIANTI's ionisation equilibrium.
+    # Si IV peaks at log T = 4.9 in CHIANTI's ionization equilibrium.
     result = non_thermal_velocity(_width_map(sigma), 1402.77 * u.AA, ion="Si IV", temperature=10**4.9 * u.K)
     thermal = (
         np.sqrt(4 * np.log(2))

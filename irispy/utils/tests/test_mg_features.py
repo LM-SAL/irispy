@@ -11,18 +11,18 @@ import astropy.units as u
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube
-from irispy.utils.mg_features import _centre_vertex, _maxima, _peak_vertex, _peaks, _spline, calculate_mg_features
+from irispy.utils.mg_features import _center_vertex, _maxima, _peak_vertex, _peaks, _spline, calculate_mg_features
 
 TEST_FILE = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits"
 WINDOWS = {"k": "Mg II k 2796", "h": "Mg II h 2803"}
-# (step, slit) of the line centres IDL finds from another guess along the slit.
-# Its guess spline also goes through the centres it finds in the -200 fill
+# (step, slit) of the line centers IDL finds from another guess along the slit.
+# Its guess spline also goes through the centers it finds in the -200 fill
 # (h slit rows 0-7 and 729-770), which changes the spline's tension everywhere
 # and its values near row 729. For these spectra the lowest point within 15 grid points
 # of the guess is at the edge of that range, so a guess rounded to another grid point
-# gives another centre (0.019 and 0.157 km/s away). From IDL's guesses the port gives IDL's centres.
+# gives another center (0.019 and 0.157 km/s away). From IDL's guesses the port gives IDL's centers.
 # Row 8 is the first good row after the fill, where the port holds its
-# guess at the first good centre.
+# guess at the first good center.
 OTHER_GUESS = {"k": [], "h": [[0, 112], [2, 8], [2, 727]]}
 
 
@@ -42,7 +42,7 @@ def test_matches_idl(raster, idl, index, line):
     cube = raster[WINDOWS[line]][0]
     features = calculate_mg_features(cube, lines=(line,))
     missing = (cube.data == -200).any(axis=-1)  # IDL interpolates through the fill
-    # Velocity (km/s) and relative intensity tolerances. The line centres differ by at most 1.1e-4 km/s
+    # Velocity (km/s) and relative intensity tolerances. The line centers differ by at most 1.1e-4 km/s
     # and 1.0e-6. IDL's extrapolated peak spline puts its peaks within 2 grid points (0.27 km/s each) of the
     # highest one and the port's are within half a point, so they differ by less than 0.69 km/s (0.682
     # seen), and by up to 0.049 in intensity.
@@ -60,7 +60,7 @@ def test_matches_idl(raster, idl, index, line):
         off = np.argwhere(found[..., 0] & ~close).tolist()
         if key == "lc":
             assert off == OTHER_GUESS[line]
-        else:  # the peaks are found around the line centre
+        else:  # the peaks are found around the line center
             assert all(pixel in OTHER_GUESS[line] for pixel in off)
 
 
@@ -129,8 +129,8 @@ def test_missing_data(raster, fill):
     assert np.isfinite(velocity[1, [99, 199, 299]]).all()
 
 
-def test_good_centres_far_from_slit_end(raster):
-    # Extrapolated far beyond the good line centres, the spline through them would overflow.
+def test_good_centers_far_from_slit_end(raster):
+    # Extrapolated far beyond the good line centers, the spline through them would overflow.
     cube = copy.deepcopy(raster["Mg II k 2796"][0])
     cube.data[:, 20:] = np.linspace(50, 100, cube.data.shape[-1])  # featureless
     cube.mask[:, 20:] = False
@@ -140,9 +140,9 @@ def test_good_centres_far_from_slit_end(raster):
 
 
 def test_short_slit(raster):
-    # As in IDL, a slit shorter than the 17-pixel kernel is not smoothed, so no line centre jumps.
+    # As in IDL, a slit shorter than the 17-pixel kernel is not smoothed, so no line center jumps.
     cube = copy.deepcopy(raster["Mg II k 2796"][0][:, 100:116])
-    cube.data[:, 8, 2:] = cube.data[:, 8, :-2]  # its line centre moves 5.5 km/s redward
+    cube.data[:, 8, 2:] = cube.data[:, 8, :-2]  # its line center moves 5.5 km/s redward
     velocity = calculate_mg_features(cube, lines=("k",))["k3_velocity"].data
     alone = calculate_mg_features(cube[:, 8:9], lines=("k",))["k3_velocity"].data
     np.testing.assert_array_equal(velocity[:, 8:9], alone)
@@ -198,7 +198,7 @@ def test_parabola_vertices():
     vertices = np.array([0.237, -9.863])
     offset = grid - vertices[:, np.newaxis]
     spectra = 2 + 3 * offset**2 + offset**3 * np.exp(-(offset**2))
-    minimum = _centre_vertex(grid, spectra, vertices, np.array([15, 15]))
+    minimum = _center_vertex(grid, spectra, vertices, np.array([15, 15]))
     lowest = np.argmin(spectra, axis=-1)
     for row, points in enumerate([np.arange(lowest[0] - 3, lowest[0] + 4), np.arange(lowest[1] + 4)]):
         a2, a1, a0 = np.polyfit(grid[points] - grid[lowest[row]], spectra[row, points], 2)
@@ -213,8 +213,8 @@ def test_peaks():
     grid = np.linspace(-40, 40, 161)
     spectra = np.zeros((3, grid.size))
     maxima = np.zeros(spectra.shape, dtype=bool)
-    # Three maxima with the centre, 15 km/s, outside both gaps, of which the weakest is dropped; one
-    # maximum redward of the centre, 0 km/s; and none.
+    # Three maxima with the center, 15 km/s, outside both gaps, of which the weakest is dropped; one
+    # maximum redward of the center, 0 km/s; and none.
     for row, velocities, heights in [(0, [-20, -10, 10], [3, 1, 2]), (1, [10], [1])]:
         index = np.searchsorted(grid, velocities)
         spectra[row, index], maxima[row, index] = heights, True

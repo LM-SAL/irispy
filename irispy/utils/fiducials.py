@@ -61,7 +61,7 @@ def _candidates(cube_or_sequence, min_depth):
     keep = (np.fmin(left, right) > 0) & (np.fmax(left, right) > 3 * scatter)
     keep &= (depths >= 5 * scatter) & (depths <= 1 + 3 * scatter)
     left, depths, right, scatter = left[keep], depths[keep], right[keep], scatter[keep]
-    # The vertex of the parabola through the logarithms is the centre of the Gaussian through the rows
+    # The vertex of the parabola through the logarithms is the center of the Gaussian through the rows
     logs = np.log([left, depths, right])
     curvature = logs[0] - 2 * logs[1] + logs[2]
     shift = np.divide(logs[0] - logs[2], 2 * curvature, out=np.zeros_like(curvature), where=curvature < 0)
@@ -79,7 +79,7 @@ def find_fiducials(cube_or_sequence, *, min_depth=0.5):
     The slit profile is the mean of the data over raster steps and wavelengths, and over the cubes
     of a sequence, leaving out masked and non-finite values. It is divided by its running median
     over 21 rows, and the marks are the dips in this ratio. Each dip is placed to a fraction of a
-    pixel at the centre of the Gaussian through its deepest row and the rows either side, as the
+    pixel at the center of the Gaussian through its deepest row and the rows either side, as the
     IRIS team measures the marks (:cite:t:`depontieu2014`, Section 7.6.1).
 
     Parameters

@@ -117,7 +117,7 @@ def test_sgmeta_sun_angular_radius_from_dsun():
 @pytest.mark.parametrize(
     ("xcen", "ycen", "expected"),
     [(0, 0, 1), (0, 960, 0), (-1000, 0, np.nan)],
-    ids=["disk centre", "limb", "off disk"],
+    ids=["disk center", "limb", "off disk"],
 )
 def test_meta_mu(xcen, ycen, expected):
     header = _make_sg_header()
@@ -131,7 +131,7 @@ def test_meta_mu_matches_sunpy(fraction):
     observer = get_earth("2021-10-01T06:09:25")
     header = _make_sg_header()
     header["DSUN_OBS"] = observer.radius.to_value(u.m)
-    # On the diagonal, where the angular distance from disk centre is not sqrt(Tx**2 + Ty**2)
+    # On the diagonal, where the angular distance from disk center is not sqrt(Tx**2 + Ty**2)
     offset = fraction * SGMeta(header, "Si IV 1403").sun_angular_radius / np.sqrt(2)
     header["XCEN"] = header["YCEN"] = offset.to_value(u.arcsec)
     point = SkyCoord(offset, offset, frame=Helioprojective(observer=observer, obstime=observer.obstime))
@@ -143,7 +143,7 @@ def test_sgmeta_exposure_mu(raster_sg_file):
     cube = read_files(raster_sg_file)["C II 1336"][0]
     exposure_mu = cube.meta.exposure_mu
     assert exposure_mu.shape == cube.data.shape[:1]
-    # The raster steps across its centre, so mu at the centre lies within the per-step range
+    # The raster steps across its center, so mu at the center lies within the per-step range
     assert exposure_mu.min() < cube.meta.mu < exposure_mu.max()
     np.testing.assert_array_equal(cube[1:3].meta.exposure_mu, exposure_mu[1:3])
 

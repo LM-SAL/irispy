@@ -116,8 +116,9 @@ plt.legend()
 # These follow the Mg II k diagnostics of :cite:t:`leenaarts2013`, where the k2 peak
 # intensities, their imbalance and their separation trace the chromospheric temperature,
 # velocity and velocity gradient.
+# We use the Mg II k rest wavelength from :cite:t:`depontieu2014`.
 
-mg_ii_core = 2796.352 * u.AA  # Mg II k rest wavelength, De Pontieu et al. (2014)
+mg_ii_core = 2796.352 * u.AA
 line_core = mg_ii_k.crop([SpectralCoord(mg_ii_core), None], [SpectralCoord(mg_ii_core), None])
 
 # `~irispy.utils.fitting.maps_from_fit` gives each component's integrated intensity and

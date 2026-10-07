@@ -281,9 +281,9 @@ def test_read_spectrograph_flips_v34_mask_uncertainty_and_meta(raster_sg_file, t
         np.testing.assert_array_equal(cube.meta["auxiliary times"].jd, reference.meta["auxiliary times"][::-1].jd)
         for key in ("exposure time", "observer radial velocity", "orbital phase"):
             np.testing.assert_array_equal(cube.meta[key], reference.meta[key][::-1])
-        centre, reference_centre = cube.meta["exposure FOV center"], reference.meta["exposure FOV center"][::-1]
-        np.testing.assert_array_equal(centre.Tx, reference_centre.Tx)
-        np.testing.assert_array_equal(centre.Ty, reference_centre.Ty)
+        center, reference_center = cube.meta["exposure FOV center"], reference.meta["exposure FOV center"][::-1]
+        np.testing.assert_array_equal(center.Tx, reference_center.Tx)
+        np.testing.assert_array_equal(center.Ty, reference_center.Ty)
 
 
 def test_raster_wcs_steps_have_no_index_vector(raster_sg_file):

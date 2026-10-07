@@ -213,7 +213,7 @@ def test_read_sji_lvl2_unrotated_pointing(tmp_path, sns_sji_1330_file):
 @pytest.mark.parametrize("from_bytes", [False, True])
 def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file, from_bytes):
     # A dropped exposure zeroes its whole pointing row; those rows are filled
-    # with the average of the neighbouring exposures.
+    # with the average of the neighboring exposures.
     keys = ("XCENIX", "YCENIX", "PC1_1IX", "PC1_2IX", "PC2_1IX", "PC2_2IX")
     filename = tmp_path / "dropped_row.fits"
     with fits.open(sns_sji_1330_file, memmap=False) as hdulist:

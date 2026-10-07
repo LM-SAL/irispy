@@ -627,7 +627,7 @@ def non_thermal_velocity(fwhm, wavelength, *, instrumental_fwhm=None, thermal_fw
     Quadrature subtraction assumes Gaussian observed, instrumental and thermal profiles.
     A Lorentzian full width at half maximum from `maps_from_fit` cannot be used here.
 
-    A temperature of maximum abundance from an ionisation equilibrium, such as CHIANTI's
+    A temperature of maximum abundance from an ionization equilibrium, such as CHIANTI's
     :cite:p:`dere2023`, assumes optically thin lines and does not suit chromospheric lines such as
     Mg II.
     """

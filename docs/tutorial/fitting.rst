@@ -104,7 +104,7 @@ Non-thermal velocities
 A Gaussian fitted width holds the instrumental and thermal broadening of the line as well.
 The quadrature subtraction assumes Gaussian profiles; do not pass the width of a Lorentzian fit.
 
-`~irispy.utils.fitting.non_thermal_velocity` removes both from a map of the full width at half maximum, using the spectral resolution of the passband and, for the thermal width, the ion's mass and a temperature, here the peak of Si IV in CHIANTI's ionisation equilibrium :cite:p:`dere2023`:
+`~irispy.utils.fitting.non_thermal_velocity` removes both from a map of the full width at half maximum, using the spectral resolution of the passband and, for the thermal width, the ion's mass and a temperature, here the peak of Si IV in CHIANTI's ionization equilibrium :cite:p:`dere2023`:
 
 .. code-block:: python
 

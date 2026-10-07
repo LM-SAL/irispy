@@ -4,7 +4,7 @@ Read a full-disk mosaic
 =======================
 
 In this example we read the Mg II k full-disk mosaic of 2015-02-22 and compare a map at
-the centre of the window with a map of its blue end.
+the center of the window with a map of its blue end.
 
 The file is 553 MB, so this example is not run when the documentation is built.
 """
@@ -41,7 +41,7 @@ print(times.min().isot, times.max().isot)
 
 ###############################################################################
 # `~irispy.spectrograph.MosaicCube.to_map` gives a `sunpy.map.Map` at the nearest
-# wavelength (here ``LAMREF``, the window centre) or the mean over a range (here the
+# wavelength (here ``LAMREF``, the window center) or the mean over a range (here the
 # bluest 0.4 Å).
 
 core = mosaic.to_map(mosaic.meta.rest_wavelength)

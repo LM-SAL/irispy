@@ -124,8 +124,8 @@ for i, shift in enumerate(drift["nuv"]):
 # Before the correction, the Mn I intensity shows a regular bright-dark pattern
 # along the raster steps: the intensities were not taken at the same position in
 # the line because of the wavelength shifts. After it, the map is uniform along
-# the solar disk. The two images share one grey scale and their difference is
-# shown on a separate scale centred on zero.
+# the solar disk. The two images share one gray scale and their difference is
+# shown on a separate scale centered on zero.
 
 # Since we changed the underlying data, we need to re-crop
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
@@ -155,9 +155,9 @@ axes[0].set_ylabel("Position along the slit (pixel)")
 # the indices of the -50 and +50 km/s velocity positions (here using the
 # convention of negative velocities for upflows):
 
-mg_k_centre = 279.6351 * u.nm
-pos = 50 * u.km / u.s  # Around the line centre
-velocity = ((mg_wave - mg_k_centre) * constants.c / mg_k_centre).to(u.km / u.s)
+mg_k_center = 279.6351 * u.nm
+pos = 50 * u.km / u.s  # Around the line center
+velocity = ((mg_wave - mg_k_center) * constants.c / mg_k_center).to(u.km / u.s)
 index_p = np.argmin(np.abs(velocity - pos))
 index_m = np.argmin(np.abs(velocity + pos))
 # Use floats for the subtraction and leave the result invalid if either wing is bad.
@@ -170,7 +170,7 @@ doppler = wings[..., 0] - wings[..., 1]
 # because of the unscaled DNs).
 
 vmin, vmax = image_clipping(doppler[np.isfinite(doppler)])
-# A diverging colour map needs limits centred on zero.
+# A diverging color map needs limits centered on zero.
 limit = max(abs(vmin), abs(vmax))
 plt.figure()
 plt.imshow(

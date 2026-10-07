@@ -24,7 +24,7 @@ def _colorbar_axes(ax, fraction, pad):
     """
     Split the grid cell of ``ax`` so the colorbar stays under the layout engine.
 
-    `mpl_toolkits.axes_grid1` hides the colorbar from the engine, so neighbouring panels
+    `mpl_toolkits.axes_grid1` hides the colorbar from the engine, so neighboring panels
     overlap it; `matplotlib.colorbar.make_axes_gridspec` registers it as a colorbar of
     ``ax``, and constrained layout then moves it into a margin.
     """

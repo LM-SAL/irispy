@@ -175,8 +175,8 @@ fig.tight_layout()
 ###############################################################################
 # The fitted width also holds the instrumental and thermal broadening of the line.
 # `~irispy.utils.fitting.non_thermal_velocity` removes both, taking the thermal width
-# at the temperature we give, here the peak of Si IV in CHIANTI's ionisation
-# equilibrium, log T = 4.9 (Dere et al. 2023). Lines narrower than that have no
+# at the temperature we give, here the peak of Si IV in CHIANTI's ionization
+# equilibrium, log T = 4.9 :cite:p:`dere2023`. Lines narrower than that have no
 # non-thermal velocity.
 
 non_thermal = non_thermal_velocity(maps["fwhm_1"], si_iv_core, ion="Si IV", temperature=10**4.9 * u.K)[

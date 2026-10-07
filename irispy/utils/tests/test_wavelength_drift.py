@@ -26,7 +26,7 @@ def idl_reference(obsid):
 
 def assert_shifts_match_idl(table, idl):
     """
-    IDL's CURVEFIT stops early, which moves its centres on these files by up to 2 mÅ.
+    IDL's CURVEFIT stops early, which moves its centers on these files by up to 2 mÅ.
     """
     assert all(np.abs((table["time"] - idl["time"]).to_value(u.s)) < 1e-6)
     for name in LINES:

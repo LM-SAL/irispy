@@ -7,7 +7,7 @@ In this example, we are going to render each spectrum as one RGB pixel.
 
 The spectrum in a pixel is treated as a spectral power distribution and
 converted to a single sRGB color, so brightness is the total intensity of the
-spectral window and hue is the wavelength within it. Plasma moving towards us
+spectral window and hue is the wavelength within it. Plasma moving toward us
 is blue-shifted and appears bluer, plasma moving away appears redder, and a
 line with asymmetric wings picks up a color the same line would not have if
 it were symmetric.

@@ -303,7 +303,7 @@ def _events(values, labels, count):
     """
     The label, number of pixels and array index of the brightest pixel of each event.
     """
-    # Only the labelled pixels: maximum_position makes several copies of whatever it is given
+    # Only the labeled pixels: maximum_position makes several copies of whatever it is given
     where = np.flatnonzero(labels)
     event = labels.ravel()[where]
     label = np.arange(1, count + 1)
