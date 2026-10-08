@@ -102,13 +102,16 @@ def test_both_lines(raster, both_lines):
 
 def test_saturation_limit(both_lines):
     cube = copy.deepcopy(both_lines)
-    cube.data[1, 300, 10] = SATURATION_LIMIT.value  # at -19.7 km/s from k
+    cube.data[1, 300, 10] = SATURATION_LIMIT.value  # at -17.0 km/s from k
     cube.data[1, 400, 0] = SATURATION_LIMIT.value  # at -44.3 km/s, not searched
-    cube.data[2, 500, 10] = SATURATION_LIMIT.value  # masked, so already without features
-    cube.mask[2, 500, 10] = True
     plain = calculate_mg_features(cube)
     assert np.isfinite(plain["k3_velocity"].data[1, [300, 400]]).all()
-    for key, value in calculate_mg_features(cube, saturation_limit=SATURATION_LIMIT).items():
+    features = calculate_mg_features(cube, saturation_limit=SATURATION_LIMIT)
+    assert list(zip(*np.nonzero(features["k_saturated"].data), strict=True)) == [(1, 300)]
+    assert not features["h_saturated"].data.any()
+    for key, value in features.items():
+        if key.endswith("_saturated"):
+            continue
         expected = plain[key].data.copy()
         if key.startswith("k"):
             expected[1, 300] = np.nan

@@ -52,7 +52,8 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
         (step, slit) maps keyed ``"{feature}_velocity"`` (km/s) and ``"{feature}_intensity"`` (the
         unit of ``cube``) for the blue peak, line center and red peak of each measured line:
         ``"k2v"``, ``"k3"``, ``"k2r"`` and ``"h2v"``, ``"h3"``, ``"h2r"``. Features that are not
-        found are NaN and masked.
+        found are NaN and masked. ``"{line}_saturated"``, if ``saturation_limit`` is given, is `True`
+        where it was reached.
 
     Notes
     -----
@@ -128,12 +129,15 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
                 features[step, valid] = _slit_features(grid, spectra, valid)
         if saturation_limit is not None:
             # After the search, so the other spectra's features stay as they are
-            features[np.any(window >= saturation_limit, axis=-1)] = np.nan
+            saturated = np.any(window >= saturation_limit, axis=-1)
+            features[saturated] = np.nan
         maps += [
             (f"{line}{feature}_{kind}", make_map_cube(template, features[..., index, part], unit, mask_invalid=True))
             for index, feature in enumerate(("2v", "3", "2r"))
             for part, (kind, unit) in enumerate([("velocity", u.km / u.s), ("intensity", cube.unit)])
         ]
+        if saturation_limit is not None:
+            maps.append((f"{line}_saturated", make_map_cube(template, saturated, u.dimensionless_unscaled)))
     msg = f"The spectral window does not cover Mg II {' or '.join(skipped)} from {low} to {high} km/s"
     if not maps:
         raise ValueError(msg)
