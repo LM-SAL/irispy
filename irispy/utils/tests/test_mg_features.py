@@ -11,6 +11,7 @@ import astropy.units as u
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube
+from irispy.utils.constants import SATURATION_LIMIT
 from irispy.utils.mg_features import _center_vertex, _maxima, _peak_vertex, _peaks, _spline, calculate_mg_features
 
 TEST_FILE = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits"
@@ -74,7 +75,8 @@ def test_output(raster):
     assert set(features.aligned_axes.values()) == {(0, 1)}
 
 
-def test_both_lines(raster):
+@pytest.fixture(scope="module")
+def both_lines(raster):
     # The two windows put back at their place in the file's Mg II window, with zeros between them.
     k, h = raster["Mg II k 2796"][0], raster["Mg II h 2803"][0]
     offset = int(k.wcs.wcs.crpix[0] - h.wcs.wcs.crpix[0])
@@ -82,16 +84,49 @@ def test_both_lines(raster):
     mask = np.zeros(data.shape, dtype=bool)
     data[..., : k.data.shape[-1]], data[..., offset:] = k.data, h.data
     mask[..., : k.data.shape[-1]], mask[..., offset:] = k.mask, h.mask
-    features = calculate_mg_features(SpectrogramCube(data, k.wcs, unit=k.unit, mask=mask))
+    return SpectrogramCube(data, k.wcs, unit=k.unit, mask=mask)
+
+
+def test_both_lines(raster, both_lines):
+    features = calculate_mg_features(both_lines)
     assert list(features.keys()) == [
         f"{line}{feature}_{kind}"
         for line in "kh"
         for feature in ("2v", "3", "2r")
         for kind in ("velocity", "intensity")
     ]
-    for line, cube in [("k", k), ("h", h)]:
-        for key, value in calculate_mg_features(cube, lines=(line,)).items():
+    for line, window in WINDOWS.items():
+        for key, value in calculate_mg_features(raster[window][0], lines=(line,)).items():
             np.testing.assert_array_equal(features[key].data, value.data)
+
+
+def test_saturation_limit(both_lines):
+    cube = copy.deepcopy(both_lines)
+    cube.data[1, 300, 10] = SATURATION_LIMIT.value  # at -19.7 km/s from k
+    cube.data[1, 400, 0] = SATURATION_LIMIT.value  # at -44.3 km/s, not searched
+    cube.data[2, 500, 10] = SATURATION_LIMIT.value  # masked, so already without features
+    cube.mask[2, 500, 10] = True
+    plain = calculate_mg_features(cube)
+    assert np.isfinite(plain["k3_velocity"].data[1, [300, 400]]).all()
+    for key, value in calculate_mg_features(cube, saturation_limit=SATURATION_LIMIT).items():
+        expected = plain[key].data.copy()
+        if key.startswith("k"):
+            expected[1, 300] = np.nan
+        np.testing.assert_array_equal(value.data, expected, err_msg=key)
+        np.testing.assert_array_equal(value.mask, np.isnan(expected), err_msg=key)
+
+
+def test_saturation_limit_per_second(raster):
+    # The same rate is 16182 DN in the 4 s step but not in the 1 s ones
+    cube = raster["Mg II k 2796"][0].apply_exposure_time_correction()
+    cube.meta.add("exposure time", [1, 4, 1] * u.s, None, 0, overwrite=True)
+    cube.data[:, 300, 10] = SATURATION_LIMIT.value / 4
+    expected = calculate_mg_features(cube, lines=("k",))["k3_velocity"].data
+    assert np.isfinite(expected[:, 300]).all()
+    expected[1, 300] = np.nan
+    for limit in (SATURATION_LIMIT, SATURATION_LIMIT.value):
+        velocity = calculate_mg_features(cube, lines=("k",), saturation_limit=limit)["k3_velocity"].data
+        np.testing.assert_array_equal(velocity, expected)
 
 
 def test_dask_data(raster):
