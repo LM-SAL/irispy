@@ -43,7 +43,7 @@ def calculate_moments(
     min_intensity : `float` or `astropy.units.Quantity`, optional
         Pixels whose 0th moment is below this get NaN in every map.
     saturation_limit : `float` or `astropy.units.Quantity`, optional
-        Pixels with any sample at or above this many DN, or of +Inf, get NaN in every map.
+        Pixels with any unmasked sample at or above this many DN, or of +Inf, get NaN in every map.
         A `float` is in DN. ``cube`` must be in DN, or in DN per second with the reader's
         per-step ``"exposure time"`` metadata, which divides the limit step by step; anything
         else raises `ValueError`. Level 2 files clip their samples at
@@ -121,7 +121,10 @@ def calculate_moments(
         wavelengths = wavelengths[crop_indices]
     data = np.array(data, dtype=float, copy=True)
     if saturation_limit is not None:
-        saturated = np.any(data >= _saturation_limit(cube, saturation_limit), axis=wavelength_axis)
+        reached = data >= _saturation_limit(cube, saturation_limit)
+        if mask is not None:
+            reached &= ~mask  # left out of the moments, so not saturating them either
+        saturated = np.any(reached, axis=wavelength_axis)
     dropped = (data < 0) | ~np.isfinite(data) | (False if mask is None else mask)
     data[dropped] = 0
 
@@ -208,14 +211,17 @@ def _saturation_limit(cube, saturation_limit):
     """
     ``saturation_limit``, in DN, in ``cube.unit``, broadcastable to ``cube.data``.
     """
+    unit = cube.unit
     # The same test sunraster's apply_exposure_time_correction uses
-    per_second = u.s in cube.unit.decompose().bases
-    dn_unit = cube.unit * u.s if per_second else cube.unit
-    if not (dn_unit.is_equivalent(u.DN) or dn_unit in DN_UNIT.values()):
-        msg = f"saturation_limit needs a cube in DN or DN per second, not {cube.unit}"
+    per_second = unit is not None and u.s in unit.decompose().bases
+    dn_unit = unit * u.s if per_second else unit
+    if dn_unit is None or not (dn_unit.is_equivalent(u.DN) or dn_unit in DN_UNIT.values()):
+        msg = f"saturation_limit needs a cube in DN or DN per second, not {unit}"
         raise ValueError(msg)
-    if isinstance(saturation_limit, u.Quantity):
-        saturation_limit = saturation_limit.to_value(dn_unit, equivalencies=[(u.DN, dn_unit)])
+    if not isinstance(saturation_limit, u.Quantity):
+        saturation_limit *= u.DN
+    # Also scales a limit for a cube in a multiple of DN, or of DN per second, such as DN per minute
+    saturation_limit = saturation_limit.to_value(dn_unit, equivalencies=[(u.DN, dn_unit)])
     if not per_second:
         return saturation_limit
     exposure_time = cube.meta.get("exposure time")

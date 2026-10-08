@@ -416,6 +416,33 @@ def test_calculate_moments_saturation_limit_needs_dn():
     cube = make_test_spectrogram_cube([[[1.0, 2.0, 1.0]]], [500, 501, 502] * u.nm, unit=u.DN / u.s)
     with pytest.raises(ValueError, match="exposure time"):
         calculate_moments(cube, saturation_limit=1e4)
+    cube = make_test_spectrogram_cube([[[1.0, 2.0, 1.0]]], [500, 501, 502] * u.nm, unit=None)
+    with pytest.raises(ValueError, match="needs a cube in DN"):
+        calculate_moments(cube, saturation_limit=1e4)
+
+
+def test_calculate_moments_saturation_limit_float_is_dn():
+    # A 1000 DN peak in a 2 s exposure is 500 DN/s or 30000 DN/min, far below 16182 DN
+    spectrum = np.array([10.0, 500.0, 1000.0, 500.0, 10.0]) / 2
+    wavelengths = (500 + np.arange(5)) * u.nm
+    for unit, scale in ((u.DN / u.s, 1), (u.DN / u.min, 60)):
+        cube = make_test_spectrogram_cube([[spectrum * scale]] * 2, wavelengths, unit=unit)
+        cube.meta.add("exposure time", [2, 2] * u.s, None, 0)
+        for limit in (SATURATION_LIMIT.value, SATURATION_LIMIT):
+            assert not calculate_moments(cube, saturation_limit=limit)["saturated"].data.any()
+        cube.data[1, 0, 2] = SATURATION_LIMIT.value / 2 * scale
+        saturated = calculate_moments(cube, saturation_limit=SATURATION_LIMIT.value)["saturated"].data
+        np.testing.assert_array_equal(saturated, [[False], [True]])
+
+
+def test_calculate_moments_saturation_limit_ignores_masked_samples():
+    data = np.array([[[10.0, 500.0, 1000.0, 500.0, 2e4]]])
+    mask = np.zeros(data.shape, dtype=bool)
+    mask[..., -1] = True
+    cube = make_test_spectrogram_cube(data, (500 + np.arange(5)) * u.nm, mask=mask)
+    moments = calculate_moments(cube, saturation_limit=SATURATION_LIMIT)
+    assert not moments["saturated"].data.any()
+    assert moments["intensity"].data[0, 0] == calculate_moments(cube)["intensity"].data[0, 0]
 
 
 def test_calculate_moments_integrated():
