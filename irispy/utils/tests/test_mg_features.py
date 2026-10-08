@@ -119,6 +119,15 @@ def test_saturation_limit(both_lines):
         np.testing.assert_array_equal(value.mask, np.isnan(expected), err_msg=key)
 
 
+def test_saturation_limit_ignores_masked_samples(both_lines):
+    cube = copy.deepcopy(both_lines)
+    cube.data[1, 300, 10] = SATURATION_LIMIT.value
+    cube.mask[1, 300, 10] = True
+    cube.data[1, 301, 10] = np.inf  # unmasked, so saturated like in calculate_moments, though not finite
+    saturated = calculate_mg_features(cube, lines=("k",), saturation_limit=SATURATION_LIMIT)["k_saturated"].data
+    assert list(zip(*np.nonzero(saturated), strict=True)) == [(1, 301)]
+
+
 def test_saturation_limit_per_second(raster):
     # The same rate is 16182 DN in the 4 s step but not in the 1 s ones
     cube = raster["Mg II k 2796"][0].apply_exposure_time_correction()
