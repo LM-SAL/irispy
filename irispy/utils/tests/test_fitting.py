@@ -7,6 +7,8 @@ from astropy.modeling.fitting import LevMarLSQFitter, TRFLSQFitter, parallel_fit
 from astropy.nddata import StdDevUncertainty
 from astropy.time import Time
 
+from ndcube import NDCollection, NDCube
+
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube
@@ -228,7 +230,7 @@ def test_presets_accept_scalar_mask(function, centers, start):
 
 @pytest.mark.parametrize("function", [si_iv_1403_model, mg_ii_model])
 def test_presets_reject_unscaled_data(function):
-    raster = read_spectrograph_lvl2(get_test_filepath(MG_FEATURES_FILE), memmap=True)
+    raster = read_spectrograph_lvl2(get_test_filepath(MG_FEATURES_FILE), raw=True)
     with pytest.raises(ValueError, match="unscaled"):
         function(raster["Mg II k 2796"][0])
 
@@ -265,9 +267,12 @@ def test_maps_from_fit_recovers_derived_maps():
     fitted, fitter = _fit(si_iv_1403_model(cube), cube.data, cube.uncertainty.array, unit=cube.unit)
     error = _errors(fitter)
     maps = maps_from_fit(fitted, cube, fitter=fitter)
+    assert isinstance(maps, NDCollection)
     derived = ["velocity_1", "fwhm_1", "fwhm_velocity_1", "integrated_intensity_1"]
     assert list(maps.keys()) == [*fitted.param_names, *derived, "quality", "residual"]
     for index, name in enumerate(fitted.param_names):
+        assert isinstance(maps[name], NDCube)
+        assert not isinstance(maps[name], SpectrogramCube)
         np.testing.assert_allclose(maps[name].data, getattr(fitted, name).value)
         np.testing.assert_allclose(maps[name].uncertainty.array, error[..., index])
     speed = C_KMS * u.km / u.s / (1402.77 * u.AA)
@@ -287,6 +292,7 @@ def test_maps_from_fit_recovers_derived_maps():
         assert 0.6 < np.mean(np.abs(z) < 1) < 0.76, name
     assert np.all(maps["quality"].data == FitQualityFlag.OK)
     residual = maps["residual"]
+    assert isinstance(residual, SpectrogramCube)
     assert residual.data.shape == cube.data.shape
     assert residual.wcs is cube.wcs
     np.testing.assert_allclose(
@@ -378,6 +384,7 @@ def test_maps_from_fit_aligns_spatial_axes(wavelength_axis, wcs_axes):
     fitted, _ = _fit(si_iv_1403_model(cube), cube.data, cube.uncertainty.array, unit=cube.unit)
     cube = type(cube)(np.moveaxis(cube.data, 2, wavelength_axis), cube.wcs.sub(wcs_axes), unit=cube.unit)
     maps = maps_from_fit(fitted, cube)
+    assert isinstance(maps, NDCollection)
     map_axes = (0, 1)
     residual_axes = tuple(axis for axis in range(3) if axis != wavelength_axis)
     assert maps.aligned_axes["mean_1"] == map_axes
@@ -468,6 +475,9 @@ def test_non_thermal_velocity_formula():
         thermal_fwhm=0.02 * u.AA,
     )
     velocity = result["non_thermal_velocity"]
+    assert isinstance(result, NDCollection)
+    assert isinstance(velocity, NDCube)
+    assert not isinstance(velocity, SpectrogramCube)
     assert velocity.unit == u.km / u.s
     radicand = widths**2 - widths[0, 2] ** 2 - 0.02**2
     expected = C_KMS / (1402.77 * np.sqrt(4 * np.log(2))) * np.sqrt(np.where(radicand > 0, radicand, np.nan))

@@ -190,7 +190,17 @@ def _create_headers_wcs(hdulist, t_obs):
     return headers
 
 
-def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
+def _check_hdulist_representation(hdulist, raw):
+    header = hdulist[0].header
+    has_fits_scaling = header.get("BSCALE", 1) != 1 or header.get("BZERO", 0) != 0 or "BLANK" in header
+    if has_fits_scaling and hdulist[0]._do_not_scale_image_data != raw:
+        opened_as = "raw" if hdulist[0]._do_not_scale_image_data else "scaled"
+        requested_as = "raw" if raw else "scaled"
+        msg = f"The supplied HDUList was opened with {opened_as} FITS values; raw={raw} requests {requested_as} values"
+        raise ValueError(msg)
+
+
+def read_sji_lvl2(filename, *, uncertainty=False, memmap=False, raw=False):
     """
     Reads a SINGLE level 2 SJI FITS or the IRIS aligned AIA Cube.
 
@@ -200,19 +210,19 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
     ----------
     filename : `str`, `pathlib.Path`, file-like, `bytes` or `astropy.io.fits.HDUList`
         File or decompressed FITS data to read. A supplied HDU list is left open;
-        open it with ``do_not_scale_image_data=True`` when using ``memmap=True``.
+        open it with ``do_not_scale_image_data=True`` when using ``raw=True``.
     uncertainty : `bool`, optional
-        If `True` (not the default), will compute the uncertainty for the data (slower and
-        uses more memory). If ``memmap=True``, the uncertainty is never computed.
+        If `True` (not the default), compute the uncertainty for IRIS SJI data. This is not
+        available for aligned AIA data and requires scaled values.
     memmap : `bool`, optional
-        If `True` (not the default), will not load arrays into memory, and will only read from
-        the file into memory when needed. This option is faster and uses a
-        lot less memory. However, because FITS scaling is not done on-the-fly,
-        the data units will be unscaled, not the usual data numbers (DN).
-        When ``memmap=True``, missing pixels retain their original values and are marked in a
-        lazy Dask mask, computed only for the slices that are used.
-        With ``memmap=False``, missing pixels are marked in the mask and replaced with ``NaN`` for
-        floating-point data or ``-200`` for integer data.
+        If `True`, request FITS memory mapping where supported. Scaling may materialize the
+        returned data in memory; this option does not select the data representation.
+    raw : `bool`, optional
+        If `True`, return raw FITS values, keep fill values in the data, and mark them in a lazy
+        Dask mask. The FITS ``BSCALE`` and ``BZERO`` values are retained in metadata. Raw data use
+        count units and cannot be combined with ``uncertainty=True``. Defaults to `False`, which
+        returns scaled values and replaces fill values with NaN for floating-point data or -200
+        for integer data.
         Compressed filenames are decompressed into memory once and cannot be memory-mapped.
 
     Returns
@@ -220,14 +230,21 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
     `irispy.sji.SJICube`
         The data cube, using a gWCS.
     """
+    if raw and uncertainty:
+        msg = "uncertainty=True is not supported for raw FITS values; pass raw=False"
+        raise ValueError(msg)
     if isinstance(filename, fits.HDUList):
+        _check_hdulist_representation(filename, raw)
         context = nullcontext(filename)
     elif isinstance(filename, bytes):
-        context = fits.HDUList.fromstring(filename, do_not_scale_image_data=memmap)
+        context = fits.HDUList.fromstring(filename, do_not_scale_image_data=raw)
     else:
-        context = fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
+        context = fits.open(filename, memmap=memmap and raw, do_not_scale_image_data=raw, decompress_in_memory=True)
     with context as hdulist:
         instrume = hdulist[0].header["INSTRUME"]
+        if uncertainty and instrume not in ["IRIS", "SJI"]:
+            msg = f"uncertainty=True is not supported for aligned AIA data (INSTRUME={instrume!r})"
+            raise ValueError(msg)
         t_obs = _t_obs(hdulist)
         _fill_dropped_pointing_rows(hdulist)
         extra_coords = [
@@ -262,9 +279,9 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             ("ycenix", 0, hdulist[1].data[:, hdulist[1].header["YCENIX"]] * u.arcsec),
         ]
         data = hdulist[0].data
-        data_nan_masked = hdulist[0].data
+        data_nan_masked = data
         out_uncertainty = None
-        if memmap:
+        if raw:
             mask = _memmap_fill_mask(data, hdulist[0].header)
             scaled = False
             unit = DN_UNIT["SJI_UNSCALED"]
@@ -285,6 +302,9 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         meta = SJIMeta(hdulist[0].header)
         meta["frame_wcs_headers"] = _create_headers_wcs(hdulist, t_obs)  # root-relative, not axis-aware
         meta["scaled"] = scaled
+        if raw:
+            meta["BSCALE"] = hdulist[0].header.get("BSCALE", 1)
+            meta["BZERO"] = hdulist[0].header.get("BZERO", 0)
         map_cube = cube_class(
             data_nan_masked,
             _create_gwcs(hdulist, t_obs),

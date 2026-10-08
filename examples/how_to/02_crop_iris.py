@@ -13,7 +13,7 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2
 from irispy.obsid import ObsID
 
 ###############################################################################
@@ -33,7 +33,7 @@ sji_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-sji_2832 = read_files(sji_filename)
+sji_2832 = read_sji_lvl2(sji_filename)
 
 ###############################################################################
 # Printing will give us an overview of the file.

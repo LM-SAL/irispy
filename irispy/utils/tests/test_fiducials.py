@@ -82,16 +82,18 @@ def test_find_fiducials_skips_dips_below_zero():
 
 
 def test_find_fiducials_rejects_unscaled_data():
-    raster = read_files(get_test_filepath(MG_FEATURES_FILE), memmap=True)
+    raster = read_files(get_test_filepath(MG_FEATURES_FILE), raw=True)
+    sequence = raster["Mg II k 2796"]
     with pytest.raises(ValueError, match="unscaled"):
-        find_fiducials(raster["Mg II k 2796"])
+        find_fiducials(sequence)
 
 
 def test_level2_marks():
     # 80.97 and 620.01 in the whole Mg II k window of this file
     raster = read_files(get_test_filepath(MG_FEATURES_FILE))
     for window in ("Mg II k 2796", "Mg II h 2803"):
-        positions, depths = find_fiducials(raster[window])
+        sequence = raster[f"{window}"]
+        positions, depths = find_fiducials(sequence)
         np.testing.assert_allclose(positions, [81.0, 620.0], atol=0.1)
         assert np.all(depths > 0.85)
 
@@ -103,9 +105,11 @@ def test_level2_fuv_without_marks():
             "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
         )
     )
-    np.testing.assert_allclose(find_fiducials(raster["Mg II k 2796"])[0], [238.0], atol=0.1)
+    sequence = raster["Mg II k 2796"]
+    np.testing.assert_allclose(find_fiducials(sequence)[0], [238.0], atol=0.1)
     for window in ("O I 1356", "Si IV 1394"):
-        assert find_fiducials(raster[window])[0].size == 0
+        sequence = raster[f"{window}"]
+        assert find_fiducials(sequence)[0].size == 0
 
 
 @pytest.mark.remote_data
@@ -118,4 +122,5 @@ def test_level2_fuv_and_nuv_marks():
     )
     # Rows 22.85, 22.88 and 23.02: the Level 2 pipeline aligns the FUV to the NUV
     for window in ("C II 1336", "Si IV 1394", "Mg II k 2796"):
-        np.testing.assert_allclose(find_fiducials(raster[window])[0], [23.0], atol=0.2)
+        sequence = raster[f"{window}"]
+        np.testing.assert_allclose(find_fiducials(sequence)[0], [23.0], atol=0.2)

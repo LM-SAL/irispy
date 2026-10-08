@@ -114,18 +114,39 @@ def _get_spec_group_key(file):
     return obsid, startobs
 
 
-def _get_spec_return_key(file_group, describe, returns):
-    key = f"{describe}"
-    if key not in returns:
-        return key
-    group_key = _get_spec_group_key(file_group[0])
-    obsid, startobs = group_key
-    if startobs is None:
-        return f"{describe} ({Path(obsid).stem})"
-    key = f"{describe} ({obsid})"
-    if key not in returns:
-        return key
-    return f"{describe} ({obsid}, {startobs})"
+def _observation_identity(file, *, header=None, source_path=None):
+    """
+    Observation identity for the one-observation scope: ``(OBSID, STARTOBS)`` or a file-
+    path fallback.
+
+    Pass ``header`` when it is already loaded, to avoid re-reading (e.g. re-
+    decompressing) the file.
+    """
+    if header is None:
+        obsid, startobs = _get_spec_group_key(file)
+    else:
+        obsid, startobs = header.get("OBSID"), header.get("STARTOBS")
+    if obsid is None or not startobs:
+        return ("file", Path(file if source_path is None else source_path).resolve())
+    return ("obs", obsid, startobs)
+
+
+class _ReadFilesInputError(ValueError):
+    """
+    ``read_files`` rejected its input (multiple observations, unnameable product).
+
+    Always raised, even under ``allow_errors``: this is a bad request, not a skippable
+    load failure.
+    """
+
+
+def _reject_multiple_observations(observations):
+    if len(observations) > 1:
+        msg = (
+            f"read_files reads one observation at a time; got {len(observations)}: "
+            f"{sorted(map(str, observations))}. Read each observation separately."
+        )
+        raise _ReadFilesInputError(msg)
 
 
 def fits_info(filename: str) -> None:
@@ -173,7 +194,9 @@ def fits_info(filename: str) -> None:
     sys.stdout.flush()
 
 
-def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=False, allow_errors=False, **kwargs):
+def read_files(
+    filenames, *, spectral_windows=None, uncertainty=False, memmap=False, raw=False, allow_errors=False, **kwargs
+):
     """
     A wrapper function to read any number of raster, SJI or IRIS-aligned AIA data files.
 
@@ -188,16 +211,15 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
         Spectral windows to extract from files. Default=None, implies, extract all
         spectral windows.
     uncertainty : `bool`, optional
-        If `True` (not the default), will compute the uncertainty for the data (slower and
-        uses more memory). If ``memmap=True``, the uncertainty is never computed.
+        If `True` (not the default), compute the uncertainty for the data. This requires scaled
+        values and is not available for aligned AIA data.
     memmap : `bool`, optional
-        If `True` (not the default), FITS data are opened using Astropy/NumPy
-        memory mapping rather than being fully read into memory at once. This
-        can keep memory usage low when working with many files, since array
-        data are accessed from disk on demand. In this mode FITS image scaling
-        is disabled, so the returned data are unscaled/raw FITS values rather
-        than automatically scaled physical values. If ``memmap=True``, the
-        uncertainty is never computed.
+        If `True`, request FITS memory mapping where supported. Scaling may require materializing
+        the data in memory; this option does not change whether returned values are raw or scaled.
+    raw : `bool`, optional
+        If `True`, return unscaled raw FITS values and retain ``BSCALE`` and ``BZERO`` in metadata.
+        Raw values have count units and are rejected by scaled-data analysis functions. Raw data
+        cannot be combined with ``uncertainty=True``. Defaults to `False` (scaled values).
     allow_errors : `bool`, optional
         Will continue loading the files if one fails to load.
         Defaults to `False`.
@@ -207,14 +229,35 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
     Returns
     -------
     `ndcube.NDCollection`
-        With keys being the value of TDESC1, the values being the cube.
+        Always returned, including for a single input. Entries are flat cubes or cube sequences.
+        Keys are the bare product names: a spectral window such as ``"Si IV 1403"`` for spectrograph
+        window sequences, an SJI channel such as ``"SJI_2832"`` for slit-jaw cubes, and an AIA
+        channel such as ``"304_THIN"`` for aligned AIA cubes. Select a product directly, e.g.
+        ``result["Si IV 1403"]``. When the same product name appears in more than one file (e.g. an
+        original and a deconvolved SJI channel), the first keeps the bare name and later entries are
+        disambiguated with their source filename (``"SJI_2832:…_deconvolved.fits.gz"``). Observation identity (``OBSID``, ``STARTOBS``) and the
+        processing ``STATUS`` are in each cube's ``meta``, not the key. Use
+        `~irispy.io.read_spectrograph_lvl2` for a `~irispy.spectrograph.RasterCollection` keyed by bare
+        window names.
+
+    Notes
+    -----
+    Reads a single observation: all inputs must share one ``OBSID``/``STARTOBS`` (or, for files without
+    those headers such as AIA archives, one source path). If inputs span more than one observation, a
+    `ValueError` is raised; read each observation separately. Exact duplicate input paths are read once;
+    different files sharing a product name are both retained under filename-qualified keys. Unsupported
+    files are skipped with a warning, and a `ValueError` is raised if no supported product loads (with
+    ``allow_errors=True`` load failures are skipped with a warning instead). Compressed FITS files and
+    the supported SDO/raster tar archives are handled by this function.
     """
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
-    filenames = sorted(filenames)
-    filenames = [Path(f) for f in filenames]
-    returns = {}
+    filenames = sorted({Path(f).resolve() for f in filenames})
+    collected = []
+    only_spectrograph = True
     spec_groups = {}
+    spec_sources = {}
+    observations = set()
     for filename in filenames:
         if filename.name.startswith("IRISMosaic_"):
             msg = f"{filename} is a full-disk mosaic; read it with irispy.io.read_mosaic"
@@ -223,7 +266,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
             sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
             raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
             context = (
-                fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
+                fits.open(filename, memmap=memmap and raw, do_not_scale_image_data=raw, decompress_in_memory=True)
                 if filename.name.endswith((".fits", ".fits.gz"))
                 else nullcontext()
             )
@@ -234,44 +277,82 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                     file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
                     for f in file:
                         sji_context = (
-                            fits.open(f, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
+                            fits.open(f, memmap=memmap and raw, do_not_scale_image_data=raw, decompress_in_memory=True)
                             if sdo_tarfile
                             else nullcontext(hdulist)
                         )
                         with sji_context as sji_hdulist:
-                            instrume, describe = _get_simple_metadata(sji_hdulist)
-                            returns[f"{describe}"] = read_sji_lvl2(
-                                sji_hdulist, memmap=memmap, uncertainty=uncertainty, **kwargs
+                            _, describe = _get_simple_metadata(sji_hdulist)
+                            product_name = describe or sji_hdulist[0].header.get("TDET") or "SJI"
+                            source_path = filename if sdo_tarfile else f
+                            observations.add(
+                                _observation_identity(f, header=sji_hdulist[0].header, source_path=source_path)
+                            )
+                            _reject_multiple_observations(observations)
+                            only_spectrograph = False
+                            collected.append(
+                                (
+                                    product_name,
+                                    f.name,
+                                    read_sji_lvl2(
+                                        sji_hdulist, memmap=memmap, raw=raw, uncertainty=uncertainty, **kwargs
+                                    ),
+                                )
                             )
                 elif raster_tarfile:
-                    file = _extract_tarfile([filename]) if raster_tarfile else [filename]
-                    instrume, describe = _get_simple_metadata(file[0])
-                    returns[f"{describe}"] = read_spectrograph_lvl2(
-                        file, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
-                    )
+                    file = _extract_tarfile([filename])
+                    group_key = _get_spec_group_key(file[0])
+                    if group_key[1] is None:
+                        group_key = (filename, None)
+                    spec_groups.setdefault(group_key, []).extend(file)
+                    spec_sources.setdefault(group_key, filename)
                 elif instrume == "SPEC":
                     group_key = _get_spec_group_key(filename)
                     spec_groups.setdefault(group_key, []).append(filename)
+                    spec_sources.setdefault(group_key, filename)
                 else:
                     log.warning(f"File {filename} has unrecognized INSTRUME={instrume!r} and was not loaded")
+        except _ReadFilesInputError:
+            raise
         except Exception as e:
             if allow_errors:
                 log.warning(f"File {filename} failed to load with {e}")
                 continue
             raise
-    for file_group in spec_groups.values():
+    for group_key, file_group in spec_groups.items():
         try:
-            instrume, describe = _get_simple_metadata(file_group[0])
-            key = _get_spec_return_key(file_group, describe, returns)
-            returns[key] = read_spectrograph_lvl2(
-                file_group, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
+            collection = read_spectrograph_lvl2(
+                file_group, spectral_windows=spectral_windows, memmap=memmap, raw=raw, uncertainty=uncertainty, **kwargs
             )
+            observations.add(_observation_identity(file_group[0], source_path=spec_sources[group_key]))
+            _reject_multiple_observations(observations)
+            source_name = Path(spec_sources[group_key]).name
+            collected.extend((window, source_name, sequence) for window, sequence in collection.items())
+        except _ReadFilesInputError:
+            raise
         except Exception as e:
             if allow_errors:
                 log.warning(f"File group {file_group} failed to load with {e}")
                 continue
             raise
-    if not returns:
+    if not collected:
         msg = f"No supported IRIS files were loaded from {filenames}."
         raise ValueError(msg)
-    return NDCollection(returns.items()) if len(returns) > 1 else next(iter(returns.values()))
+    groups = {}
+    for product_name, source_name, value in collected:
+        groups.setdefault(product_name, []).append((source_name, value))
+    keyed = []
+    for product_name, entries in groups.items():
+        # The first entry (input order) keeps the bare name; later ones (e.g. a deconvolved
+        # variant) are filename-qualified so the primary product stays clean and stable.
+        keyed.append((product_name, entries[0][1]))
+        keyed.extend((f"{product_name}:{source_name}", value) for source_name, value in entries[1:])
+    keys = [key for key, _ in keyed]
+    if len(keys) != len(set(keys)):
+        duplicates = sorted({key for key in keys if keys.count(key) > 1})
+        msg_0 = f"Cannot uniquely name products: {duplicates}"
+        raise _ReadFilesInputError(msg_0)
+    returns = dict(keyed)
+    if only_spectrograph:
+        return NDCollection(returns.items(), aligned_axes=(0, 1, 2))
+    return NDCollection(returns.items())

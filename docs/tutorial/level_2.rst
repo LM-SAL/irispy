@@ -139,7 +139,7 @@ Once the level 2 data has downloaded, the next step is to read, extract, and ins
 
 .. code-block:: python
 
-    >>> from irispy.io import read_files  # doctest: +REMOTE_DATA
+    >>> from irispy.io import read_files, read_sji_lvl2  # doctest: +REMOTE_DATA
 
 Let us retrieve the header of the raster file and display the description of the observation:
 
@@ -148,31 +148,27 @@ Let us retrieve the header of the raster file and display the description of the
     >>> raster = read_files(sample_data.RASTER_TAR)  # doctest: +REMOTE_DATA
 
 .. note::
-    By default, this will load the data into memory.
-    You can pass ``memmap=True`` to avoid this; the data array will be a `numpy.memmap` instead.
-    In this case, the data are not loaded into system memory, but written to a temporary file.
-    Memmapped data are the raw, unscaled integers stored in the file, not data numbers (DN).
+    ``read_files`` always returns a flat `~ndcube.NDCollection`, including for a single input.
+    It does not return the per-window `~irispy.spectrograph.RasterCollection`; use
+    `~irispy.io.read_spectrograph_lvl2` when that specialized structure is useful.
+    ``memmap=True`` controls FITS storage only. Values remain scaled by default; use ``raw=True``
+    to request raw integers and their count unit.
 
-We can print the ``raster`` object to get some basic information about the raster file: what spectral windows were observed, the size of the cube, and the wavelength keys.
-
-.. code-block:: python
-
-    >>> raster  # doctest: +REMOTE_DATA
-    <irispy.spectrograph.RasterCollection object at ...>
-    <BLANKLINE>
-    Raster Collection
-    -----------------
-    Spectral Windows (cube keys): (np.str_('C II 1336'), np.str_('Si IV 1394'), np.str_('Mg II k 2796'))
-    Number of Cubes: 3
-    Aligned dimensions: [5 16 548]
-    Aligned physical types: [('meta.obs.sequence',), ...]
-    <BLANKLINE>
-
-Let us check the metadata of this collection, this is stored as a ``meta`` attribute:
+The generic collection has one entry per spectral window. Its keys are the spectral window names
+(e.g. ``Si IV 1403``), and it reads one observation at a time:
 
 .. code-block:: python
 
-    >>> raster["C II 1336"][0].meta  # doctest: +REMOTE_DATA
+    >>> len(raster)  # doctest: +REMOTE_DATA
+    3
+    >>> c_ii = raster["C II 1336"]  # doctest: +REMOTE_DATA
+
+The reader's typed alternative returns a `~irispy.spectrograph.RasterCollection` keyed by the
+display names of its spectral windows. For the flat generic collection, select a product by its key:
+
+.. code-block:: python
+
+    >>> c_ii[0].meta  # doctest: +REMOTE_DATA
     <irispy.meta.SGMeta object at ...>
     <BLANKLINE>
     SGMeta
@@ -196,7 +192,7 @@ If we want to check the primary header of the raster, we can do the following:
 
 .. code-block:: python
 
-    >>> raster["C II 1336"][0].meta.fits_header  # doctest: +REMOTE_DATA
+    >>> c_ii[0].meta.fits_header  # doctest: +REMOTE_DATA
     SIMPLE  =                    T / Written by IDL:  Mon Nov 15 09:21:38 2021
     BITPIX  =                   16 / Number of bits per data pixel
     NAXIS   =                    0 / Number of data axes
@@ -210,11 +206,12 @@ If we want to check the primary header of the raster, we can do the following:
 
 This is only available for the raster files.
 
-We use the same command to read and load the data from a SJI level 2 file:
+Use the typed reader when you want an SJI cube directly. The generic reader returns the same cube
+inside a one-entry `~ndcube.NDCollection`:
 
 .. code-block:: python
 
-    >>> iris_sji = read_files(sample_data.SJI_1330)  # doctest: +REMOTE_DATA
+    >>> iris_sji = read_sji_lvl2(sample_data.SJI_1330)  # doctest: +REMOTE_DATA
     >>> iris_sji  # doctest: +REMOTE_DATA
     <irispy.sji.SJICube object at ...>
     <BLANKLINE>
@@ -339,7 +336,7 @@ The position on the disk is often given as μ, the cosine of the angle between t
 
     >>> iris_sji.meta.mu  # doctest: +REMOTE_DATA
     np.float64(0.8493051077033886)
-    >>> raster["C II 1336"][0].meta.exposure_mu[:4]  # doctest: +REMOTE_DATA
+    >>> c_ii[0].meta.exposure_mu[:4]  # doctest: +REMOTE_DATA
     array([0.84655326, 0.84697703, 0.84739929, 0.84782021])
 
 Specific coordinates are also provided as part of the cube instead of the metadata.
@@ -416,11 +413,12 @@ Visualizing Level 2 Data
     # This snippet of code is not visible in the rendered documentation.
     import astropy.units as u
 
-    from irispy.io import read_files
+    from irispy.io import read_files, read_sji_lvl2
     import irispy.data.sample as sample_data
 
     raster = read_files(sample_data.RASTER_TAR)
-    iris_sji = read_files(sample_data.SJI_2832)
+    iris_sji = read_sji_lvl2(sample_data.SJI_2832)
+    mg_ii = raster["Mg II k 2796"]
 
 Both the raster and slit-jaw cubes can be visualized using the ``plot`` method.
 
@@ -449,7 +447,7 @@ This only applies to the slit-jaw images, as the raster cubes do not have a sing
 
     import matplotlib.pyplot as plt
 
-    raster["Mg II k 2796"].plot(vmax=255)
+    mg_ii.plot(vmax=255)
 
     plt.show()
 

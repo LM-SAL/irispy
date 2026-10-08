@@ -15,7 +15,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2, read_spectrograph_lvl2
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_182935_4000005156_2013-09-02T18%3A29%3A352013-09-02T18%3A29%3A35.xml>`__:
@@ -38,8 +38,8 @@ sji_filename = pooch.retrieve(
 ###############################################################################
 # Now to open the files using ``irispy``.
 
-raster = read_files(raster_filename, spectral_windows=["Mg II k 2796", "C II 1336"])
-sji_2796 = read_files(sji_filename)
+raster = read_spectrograph_lvl2(raster_filename, spectral_windows=["Mg II k 2796", "C II 1336"])
+sji_2796 = read_sji_lvl2(sji_filename)
 
 ###############################################################################
 # Now we will find the closest SJI time to the 56th raster step.

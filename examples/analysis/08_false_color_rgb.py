@@ -24,7 +24,7 @@ import pooch
 
 import astropy.units as u
 
-from irispy.io import read_files
+from irispy.io import read_spectrograph_lvl2
 from irispy.utils.rgb import asinh_velocity
 
 ###############################################################################
@@ -43,7 +43,7 @@ raster_filename = pooch.retrieve(
 )
 
 # We will only focus on the Si IV 1403 window.
-si_iv = read_files(raster_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
+si_iv = read_spectrograph_lvl2(raster_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
 
 ###############################################################################
 # By default, the metadata stored in the cube will be used: the rest
@@ -81,7 +81,7 @@ sns_filename = pooch.retrieve(
     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20210429_110908_3660259102_cutout_raster.tar.gz",
     known_hash="3b0a5c731334bc952aad0078a2865338f1165ed78603398df115f5bde2d1d513",
 )
-sit_and_stare = read_files(sns_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
+sit_and_stare = read_spectrograph_lvl2(sns_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
 
 sit_and_stare.plotter.plot_rgb(coordinates="time")
 

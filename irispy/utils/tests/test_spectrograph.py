@@ -10,7 +10,7 @@ from astropy.tests.helper import assert_quantity_allclose
 from sunpy.time import parse_time
 
 from irispy.data.test import get_test_filepath
-from irispy.io.utils import read_files
+from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ, SLIT_WIDTH
@@ -29,8 +29,8 @@ def test_rejects_unscaled_data(function, sequence):
     filename = get_test_filepath(
         "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
     )
-    cubes = read_files(filename, memmap=True)["Mg II k 2796"]
-    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
+    cubes = read_spectrograph_lvl2(filename, raw=True)["Mg II k 2796"]
+    with pytest.raises(ValueError, match=r"unscaled.*raw=False"):
         function(cubes if sequence else cubes[0])
 
 
@@ -47,7 +47,7 @@ def idl_output_rad_cal():
 
 
 def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_output_rad_cal):
-    raster_collection = read_files(sns_sg_file)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     idl_wavelength = idl_input_rad_cal["wavelength"] * u.Angstrom
     idl_factor_cgs = idl_output_rad_cal["factor"]
@@ -87,7 +87,7 @@ def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_out
 
 
 def test_radiometric_calibration(sns_sg_file):
-    raster_collection = read_files(sns_sg_file)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     new_cube = radiometric_calibration(cube)
     assert isinstance(new_cube, SpectrogramCube)
@@ -105,7 +105,7 @@ def test_radiometric_calibration(sns_sg_file):
 
 
 def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
-    raster_collection = read_files(sns_sg_file)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     # The slicing operation, returns a slicedWCS which breaks the code
     cube_slice = cube[10, :, :]
@@ -124,7 +124,7 @@ def test_radiometric_calibration_single_sliced_raster_cube(sns_sg_file):
 
 
 def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
-    raster_collection = read_files(sns_sg_file)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
 
     solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH)
@@ -163,7 +163,7 @@ def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
 
 
 def test_radiometric_calibration_keeps_a_standard_deviation(sns_sg_file):
-    cube = read_files(sns_sg_file, uncertainty=True)["C II 1336"][0]
+    cube = read_spectrograph_lvl2(sns_sg_file, uncertainty=True)["C II 1336"][0]
     new_cube = radiometric_calibration(cube)
     assert isinstance(new_cube.uncertainty, StdDevUncertainty)
     assert new_cube.uncertainty.array.shape == cube.data.shape
@@ -207,7 +207,7 @@ def test_radiation_temperature_uncertainty_and_mask():
 
 
 def test_radiation_temperature_on_level_2_cube(sns_sg_file):
-    cube = read_files(sns_sg_file, uncertainty=True)["C II 1336"][0]
+    cube = read_spectrograph_lvl2(sns_sg_file, uncertainty=True)["C II 1336"][0]
     with pytest.raises(ValueError, match="radiometric_calibration"):
         radiation_temperature(cube)
     temperature = radiation_temperature(radiometric_calibration(cube))
@@ -256,5 +256,6 @@ def test_subtract_background_rejects_bad_windows(windows, match):
 
 def test_subtract_background_rejects_unscaled_data():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 5), dtype=np.int16), np.linspace(1333, 1337, 5) * u.AA)
+    cube.meta["scaled"] = False
     with pytest.raises(ValueError, match="unscaled"):
         subtract_background(cube, [1333, 1334] * u.AA)

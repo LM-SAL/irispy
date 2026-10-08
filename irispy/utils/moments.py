@@ -8,7 +8,9 @@ import astropy.units as u
 from astropy import constants
 from astropy.nddata import NDDataArray, StdDevUncertainty
 
-from irispy.spectrograph import RasterCollection, _wavelength_indices
+from ndcube import NDCollection
+
+from irispy.spectrograph import _wavelength_indices
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, standard_deviation
 
 __all__ = ["average_window", "calculate_moments"]
@@ -46,8 +48,8 @@ def calculate_moments(
 
     Returns
     -------
-    `irispy.spectrograph.RasterCollection`
-        `~irispy.spectrograph.SpectrogramCube` maps with the spatial WCS of ``cube``:
+    `ndcube.NDCollection`
+        `~ndcube.NDCube` maps with the spatial WCS of ``cube``:
 
         * ``"intensity"`` — 0th moment
         * ``"centroid"`` — 1st moment, in nm
@@ -61,8 +63,8 @@ def calculate_moments(
     Notes
     -----
     * Negative, non-finite and masked samples are set to zero and add no uncertainty.
-    * Uncertainties are propagated to first order, treating an `~astropy.nddata.UnknownUncertainty`
-      as a standard deviation. They are NaN where undefined: the intensity error where no sample is
+    * Typed uncertainties are propagated to first order. Unknown uncertainty types raise `TypeError`.
+      Errors are NaN where undefined: the intensity error where no sample is
       left, the centroid and velocity errors where fewer than two are left, and the width and velocity
       width errors where the width is 0.
     * The uncertainties are statistical only and unreliable below a signal-to-noise ratio of about 5.
@@ -187,7 +189,7 @@ def calculate_moments(
         return make_map_cube(template, values, unit, mask_invalid=True, uncertainty=uncertainty)
 
     cubes = [(name, _make_cube(name, values, unit)) for name, values, unit in maps]
-    return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
+    return NDCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
 
 
 def average_window(cube, wavelength_range, *, method="mean"):
@@ -205,7 +207,7 @@ def average_window(cube, wavelength_range, *, method="mean"):
 
     Returns
     -------
-    `irispy.spectrograph.SpectrogramCube`
+    `ndcube.NDCube`
         Map in ``cube.unit`` with the spatial WCS of ``cube``. It has a `~astropy.nddata.StdDevUncertainty`
         if ``cube`` has an uncertainty (e.g. read with ``uncertainty=True``).
 
@@ -213,8 +215,8 @@ def average_window(cube, wavelength_range, *, method="mean"):
     -----
     * Masked and non-finite samples are left out, so a sum over a partly masked window is low.
       Pixels with no sample left are NaN and masked.
-    * Uncertainties are propagated taking the samples as independent, treating an
-      `~astropy.nddata.UnknownUncertainty` as a standard deviation, as in `calculate_moments`.
+    * Standard deviation, variance, and inverse variance uncertainties are propagated taking the
+      samples as independent. Unknown uncertainty types raise `TypeError`.
     * For :math:`\int I(\lambda) \, d\lambda`, multiply a sum by the absolute wavelength step,
       ``abs(cube.spectral_dispersion)``.
     """

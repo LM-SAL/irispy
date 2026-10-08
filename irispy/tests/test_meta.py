@@ -8,6 +8,7 @@ from astropy.io import fits
 from sunpy.coordinates import Helioprojective, get_earth
 from sunpy.coordinates.utils import get_heliocentric_angle
 
+from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.io.utils import read_files
 from irispy.meta import SGMeta, SJIMeta
 
@@ -80,7 +81,7 @@ def test_sgmeta_temporal_cadence():
 
 
 def test_sgmeta_real_sns_data(sns_sg_file):
-    raster = read_files(sns_sg_file)
+    raster = read_spectrograph_lvl2(sns_sg_file)
     cube = raster["Si IV 1403"][0]
     meta = cube.meta
 

@@ -9,7 +9,7 @@ This example shows how to remove dust from IRIS slit-jaw imager (SJI) images.
 import matplotlib.pyplot as plt
 import pooch
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20140919_051712_3860608353_2014-09-19T05%3A17%3A122014-09-19T05%3A17%3A12.xml>`__.
@@ -27,7 +27,7 @@ sji_filename = pooch.retrieve(
 ###############################################################################
 # Now we read it and apply `~irispy.sji.SJICube.remove_dust`.
 
-sji_2832 = read_files(sji_filename)
+sji_2832 = read_sji_lvl2(sji_filename)
 # We keep two frames to reduce memory usage for the online documentation build.
 sji_subset = sji_2832[44:46]
 clean_subset = sji_subset.remove_dust()

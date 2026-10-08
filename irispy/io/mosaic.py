@@ -82,4 +82,5 @@ def read_mosaic(filename, *, wavelength_range=None):
     times[uncovered] = np.ma.masked
     meta = MosaicMeta(header, data_shape=data.shape)
     meta.add("time", times, "Time of each mosaic position, masked where no raster covered it", (1, 2))
+    meta["scaled"] = True
     return MosaicCube(data, wcs, unit=DN_UNIT[meta.detector], meta=meta, mask=mask)

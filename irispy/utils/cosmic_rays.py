@@ -117,7 +117,7 @@ def remove_cosmic_rays(
     if dask_backed and method == "rsliding":
         msg = (
             "remove_cosmic_rays(method='rsliding') requires the full cube in memory. "
-            "Slice the cube first, load it without memmap=True, or use method='astroscrappy'."
+            "Slice the cube first, load it with raw=False, or use method='astroscrappy'."
         )
         raise ValueError(msg)
 

@@ -10,9 +10,11 @@ import pytest
 
 from astropy.io import fits
 
+from ndcube import NDCollection
+
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
-from irispy.io.utils import _extract_tarfile, _get_spec_group_key, fits_info, read_files
+from irispy.io.utils import _extract_tarfile, _get_spec_group_key, _observation_identity, fits_info, read_files
 
 
 @pytest.mark.parametrize("memmap", [False, True])
@@ -23,6 +25,7 @@ def test_decompresses_sji_once(tmp_path, monkeypatch, memmap, reader):
     with Path(source).open("rb") as original, gzip.open(filename, "wb") as compressed:
         compressed.write(original.read())
     expected = read_files(source, memmap=memmap)
+    expected = next(iter(expected.values()))
     opens = []
     real_open = gzip.GzipFile.__init__
 
@@ -37,6 +40,8 @@ def test_decompresses_sji_once(tmp_path, monkeypatch, memmap, reader):
     monkeypatch.setattr(gzip._GzipReader, "_rewind", unexpected_rewind)
 
     cube = reader(filename, memmap=memmap)
+    if reader is read_files:
+        cube = next(iter(cube.values()))
 
     assert opens == [1]
     np.testing.assert_array_equal(cube.data, expected.data)
@@ -54,7 +59,15 @@ def test_fits_info(capsys, request, file_fixture):
 
 def test_read_files_with_mix(sns_sg_file, sns_sji_1330_file):
     returns = read_files([sns_sg_file, sns_sji_1330_file])
-    assert len(returns) == 2
+    assert isinstance(returns, NDCollection)
+    assert len(returns) == fits.getheader(sns_sg_file)["NWIN"] + 1
+
+
+@pytest.mark.parametrize("file_fixture", ["sns_sg_file", "sns_sji_1330_file"])
+def test_read_files_rejects_raw_uncertainty(request, file_fixture):
+    filename = request.getfixturevalue(file_fixture)
+    with pytest.raises(ValueError, match=r"uncertainty=True.*raw FITS values"):
+        read_files(filename, raw=True, uncertainty=True)
 
 
 @pytest.mark.parametrize(
@@ -63,7 +76,9 @@ def test_read_files_with_mix(sns_sg_file, sns_sji_1330_file):
 @pytest.mark.parametrize("as_list", [False, True])
 def test_read_files_single_file(request, file_fixture, as_list):
     filename = request.getfixturevalue(file_fixture)
-    assert read_files([filename] if as_list else filename)
+    result = read_files([filename] if as_list else filename)
+    assert isinstance(result, NDCollection)
+    assert len(result) == fits.getheader(filename).get("NWIN", 1)
 
 
 def test_read_files_raster_file_list(raster_sg_files):
@@ -104,15 +119,51 @@ def test_get_spec_group_key_falls_back_when_header_read_fails(monkeypatch, tmp_p
     assert _get_spec_group_key(filename) == (filename, None)
 
 
-def test_read_files_raster_file_list_multiple_observations_use_unique_keys(raster_sg_file, sns_sg_file):
-    filenames = sorted([raster_sg_file, sns_sg_file])
-    first_describe = fits.getheader(filenames[0]).get("TDESC1")
-    second_obsid = fits.getheader(filenames[1]).get("OBSID")
+def test_observation_identity_uses_source_path_when_observation_metadata_is_missing(tmp_path):
+    extracted_file = tmp_path / "extracted" / "product.fits"
+    source_path = tmp_path / "observation_raster.tar.gz"
 
-    returns = read_files(filenames)
+    identity = _observation_identity(extracted_file, source_path=source_path)
+
+    assert identity == ("file", source_path.resolve())
+
+
+def test_observation_identity_uses_obsid_startobs(monkeypatch, tmp_path):
+    filename = tmp_path / "product.fits"
+    filename.touch()
+    monkeypatch.setattr("irispy.io.utils.fits.getheader", lambda _: {"OBSID": "3620258102", "STARTOBS": "2021-09-05"})
+
+    assert _observation_identity(filename) == ("obs", "3620258102", "2021-09-05")
+
+
+def test_read_files_rejects_multiple_observations(raster_sg_file, sns_sg_file):
+    filenames = sorted([raster_sg_file, sns_sg_file])
+    with pytest.raises(ValueError, match="one observation at a time"):
+        read_files(filenames)
+
+
+def test_read_files_sji_keys_do_not_depend_on_unrelated_inputs(sns_sji_1330_file, sns_sg_file):
+    single = read_files(sns_sji_1330_file)
+    mixed = read_files([sns_sji_1330_file, sns_sg_file])
+
+    assert set(single.keys()).issubset(mixed.keys())
+
+
+def test_read_files_retains_repeated_products(tmp_path, sns_sji_1330_file):
+    duplicate_product = tmp_path / "second_sji_segment.fits"
+    duplicate_product.write_bytes(Path(sns_sji_1330_file).read_bytes())
+
+    returns = read_files([sns_sji_1330_file, duplicate_product])
 
     assert len(returns) == 2
-    assert set(returns.keys()) == {first_describe, f"{first_describe} ({second_obsid})"}
+    assert "SJI_1330" in returns  # the primary keeps the bare name
+    assert any(key.startswith("SJI_1330:") for key in returns)  # the variant is filename-qualified
+
+
+def test_read_files_deduplicates_exact_paths(sns_sji_1330_file):
+    returns = read_files([sns_sji_1330_file, sns_sji_1330_file])
+
+    assert len(returns) == 1
 
 
 def test_read_files_grouped_spectrograph_honors_allow_errors(
@@ -151,8 +202,9 @@ def test_read_files_raises_when_no_files_are_supported(tmp_path):
 def test_read_files_raster_scanning(remote_raster_scanning_tar):
     returns = read_files(remote_raster_scanning_tar)
     assert len(returns) == 8  # spectral windows
+    c_ii = returns["C II 1336"]
     np.testing.assert_array_equal(
-        returns["C II 1336"].shape, (29, 4, 388, 186)
+        c_ii.shape, (29, 4, 388, 186)
     )  # 29 time steps, 4 steps, 388 spatial pixels, 186 spectral pixels
     np.testing.assert_array_equal(returns.aligned_dimensions, [29, 4, 388])
 

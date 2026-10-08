@@ -81,6 +81,7 @@ def test_read_mosaic(mosaic_file):
     assert str(cube)
     assert cube.data.shape == (5, 4, 3)
     assert cube.data.dtype == np.float32
+    assert cube.meta["scaled"] is True
     assert cube.data[2, 1, 1] == 28.25
     # The uncovered position and the fill value are masked, the covered zeros are not.
     assert cube.mask.sum() == 6

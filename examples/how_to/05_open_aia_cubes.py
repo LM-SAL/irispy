@@ -33,8 +33,8 @@ sdo_aia_file = pooch.retrieve(
 
 ###############################################################################
 # We will now open the AIA dataset. It is a compressed archive with one file per AIA
-# channel, for example ``aia_l2_20250519_165924_3640107442_171.fits``, and reading it
-# returns a collection of the AIA cubes keyed by channel.
+# channel, for example ``aia_l2_20250519_165924_3640107442_171.fits``. The generic
+# reader returns one entry per channel, keyed by channel name.
 
 aia_collection = read_files(sdo_aia_file)
 
@@ -46,13 +46,14 @@ print(aia_collection)
 ###############################################################################
 # We will then select the 304 bandpass cube.
 
-print(aia_collection["304_THIN"])
+channel_304 = aia_collection["304_THIN"]
+print(channel_304)
 
 ###############################################################################
 # We will now plot the AIA data in the same manner as the SJI data, with the AIA 304
 # color map. ``get_animation`` lets Sphinx Gallery render the sequence as an animation.
 
 fig = plt.figure()
-animation = aia_collection["304_THIN"].plot(fig=fig, cmap="sdoaia304").get_animation()
+animation = channel_304.plot(fig=fig, cmap="sdoaia304").get_animation()
 
 plt.show()

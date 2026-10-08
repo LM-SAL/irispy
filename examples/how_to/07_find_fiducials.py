@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pooch
 
-from irispy.io import read_files
+from irispy.io import read_spectrograph_lvl2
 from irispy.utils.fiducials import find_fiducials
 
 ###############################################################################
@@ -24,7 +24,7 @@ raster_filename = pooch.retrieve(
     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20150130_055150_3893010094_cutout_raster.fits.gz",
     known_hash="603aa2a5dbe0cf9738e3628451dd24361da05b8eeecd42962ac1253db05888eb",
 )
-raster = read_files(raster_filename)
+raster = read_spectrograph_lvl2(raster_filename)
 
 ###############################################################################
 # The fiducial marks are two short gaps in the slit that let no light into the spectrograph,

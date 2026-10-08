@@ -20,7 +20,7 @@ import astropy.units as u
 from astropy.coordinates import SpectralCoord
 from astropy.time import Time
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2, read_spectrograph_lvl2
 from irispy.utils.bursts import find_si_iv_bursts, find_sji_bursts
 
 ###############################################################################
@@ -37,7 +37,7 @@ raster_filename = pooch.retrieve(
     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20130902_182935_4000005156_cutout_raster.tar.gz",
     known_hash="caec6a9d7e4d8fac70163f5f11ef992f3efd5a05b9b5fa6f67b79418bc183e1a",
 )
-si_iv = read_files(raster_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
+si_iv = read_spectrograph_lvl2(raster_filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
 
 ###############################################################################
 # A pixel is part of a burst when its mean Si IV intensity within 50 km/s of the line core
@@ -74,7 +74,7 @@ sji_filename = pooch.retrieve(
     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20161026_090824_3644103603_cutout_SJI_1400.fits.gz",
     known_hash="0fc9a8431347b22c00b61f5c1bf665ab94517878e251c2d36e2702be3206aacd",
 )
-sji_1400 = read_files(sji_filename)
+sji_1400 = read_sji_lvl2(sji_filename)
 
 ###############################################################################
 # Here, a pixel is part of a burst when it is at least 10 standard deviations (``sigma_factor``)

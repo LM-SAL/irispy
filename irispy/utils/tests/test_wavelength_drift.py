@@ -233,12 +233,12 @@ def test_window_chosen_by_its_wavelengths():
     )
 
 
-def test_memmap_data_give_the_same_table():
-    # memmap=True leaves the FITS integers, which are scaled to DN for the fit ranges only
+def test_raw_data_give_the_same_table():
+    # Raw FITS integers are scaled to DN for the fit ranges only
     table = calculate_wavelength_drift(read_spectrograph_lvl2(CROP))
-    memmap = calculate_wavelength_drift(read_spectrograph_lvl2(CROP, memmap=True))
+    raw = calculate_wavelength_drift(read_spectrograph_lvl2(CROP, raw=True))
     for name in [*LINES, "nuv", "fuv"]:
-        np.testing.assert_array_equal(memmap[name], table[name])
+        np.testing.assert_array_equal(raw[name], table[name])
 
 
 def test_missing_lines():

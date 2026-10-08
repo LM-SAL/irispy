@@ -66,7 +66,7 @@ def test_sns_read_spectrograph_lvl2(sns_sg_file):
     assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 0
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 13)  # History is missing
+    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 12)  # History and scaled metadata are not FITS cards
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -140,7 +140,7 @@ def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
     assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
     assert meta.exposure_control_triggers_in_observation == 526
     assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 12)  # History is missing
+    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 11)  # History and scaled metadata are not FITS cards
     assert meta.fov_center == SkyCoord(
         Tx=meta.get("XCEN"),
         Ty=meta.get("YCEN"),
@@ -297,16 +297,39 @@ def test_raster_wcs_steps_have_no_index_vector(raster_sg_file):
     np.testing.assert_allclose(cube.wcs.world_to_pixel_values(*world)[2], steps, atol=1e-6)
 
 
-def test_read_spectrograph_memmap_has_no_uncertainty(raster_sg_file):
-    # memmap data are unscaled integers, so no uncertainty is computed from them
-    memmap = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", memmap=True, uncertainty=True)
-    assert memmap["C II 1336"][0].uncertainty is None
-    scaled = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)
-    assert scaled["C II 1336"][0].uncertainty is not None
-
-
 @pytest.mark.parametrize("memmap", [False, True])
-def test_read_spectrograph_masks_both_fill_values(tmp_path, sns_sg_file, memmap):
+def test_read_spectrograph_representation_is_independent_of_memmap(raster_sg_file, memmap):
+    scaled = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", memmap=memmap, uncertainty=True)[
+        "C II 1336"
+    ][0]
+    raw = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", memmap=memmap, raw=True)["C II 1336"][0]
+    reference_scaled = read_spectrograph_lvl2(
+        raster_sg_file, spectral_windows="C II 1336", memmap=not memmap, uncertainty=True
+    )["C II 1336"][0]
+    reference_raw = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", memmap=not memmap, raw=True)[
+        "C II 1336"
+    ][0]
+    np.testing.assert_array_equal(scaled.data, reference_scaled.data)
+    np.testing.assert_array_equal(raw.data, reference_raw.data)
+    assert scaled.meta["scaled"] is True
+    assert scaled.uncertainty is not None
+    assert raw.meta["scaled"] is False
+    assert raw.unit == u.ct
+    assert raw.uncertainty is None
+    with pytest.raises(ValueError, match=r"uncertainty=True.*raw FITS values"):
+        read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", raw=True, uncertainty=True)
+
+
+def test_read_spectrograph_lvl2_is_exported():
+    import irispy.io as iris_io  # NOQA: PLC0415
+
+    assert iris_io.read_spectrograph_lvl2 is read_spectrograph_lvl2
+    assert "read_spectrograph_lvl2" in iris_io.__all__
+
+
+@pytest.mark.parametrize("raw_mode", [False, True])
+@pytest.mark.parametrize("memmap", [False, True])
+def test_read_spectrograph_masks_both_fill_values(tmp_path, sns_sg_file, raw_mode, memmap):
     filename = tmp_path / "raster_fill.fits"
     with fits.open(sns_sg_file, memmap=False) as hdulist:
         data = np.full(hdulist[1].data.shape, 7.0)
@@ -314,14 +337,17 @@ def test_read_spectrograph_masks_both_fill_values(tmp_path, sns_sg_file, memmap)
         expected_mask = np.isin(data, [-200, -199])
         hdulist[1].data = data
         hdulist[1].scale("int16", bscale=0.25, bzero=7992)
-        raw = hdulist[1].data.copy()
+        raw_values = hdulist[1].data.copy()
         hdulist.writeto(filename)
 
-    cube = read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=memmap)["C II 1336"].data[0]
+    cube = read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=memmap, raw=raw_mode)[
+        "C II 1336"
+    ].data[0]
 
     np.testing.assert_array_equal(cube.mask, expected_mask)
-    if memmap:
-        np.testing.assert_array_equal(cube.data, raw)
+    assert cube.meta["scaled"] is not raw_mode
+    if raw_mode:
+        np.testing.assert_array_equal(cube.data, raw_values)
 
 
 def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
@@ -331,12 +357,12 @@ def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
     assert cube.uncertainty.array.shape == cube.data.shape
 
 
-def test_memmap_records_the_window_scaling():
-    # memmap=True keeps the FITS integers, so the window's BSCALE and BZERO go in the metadata
+def test_raw_records_the_window_scaling():
+    # raw=True keeps the FITS integers, so the window's BSCALE and BZERO go in the metadata
     filename = get_test_filepath(
         "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
     )
-    cube = read_spectrograph_lvl2(filename, memmap=True, spectral_windows="Mg II k 2796")["Mg II k 2796"].data[0]
+    cube = read_spectrograph_lvl2(filename, raw=True, spectral_windows="Mg II k 2796")["Mg II k 2796"].data[0]
     assert np.issubdtype(cube.data.dtype, np.integer)
     with fits.open(filename) as hdulist:
         header = hdulist[3].header

@@ -18,7 +18,7 @@ from scipy.stats import gaussian_kde
 
 import astropy.units as u
 
-from irispy.io import read_files
+from irispy.io import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube
 from irispy.utils.mg_features import calculate_mg_features
 
@@ -36,7 +36,7 @@ raster_filename = pooch.retrieve(
     "https://github.com/LM-SAL/irispy-data/releases/download/v1/iris_l2_20200402_224709_3610108077_cutout_2796_raster.fits.gz",
     known_hash="e1c0f4cfaa82a782046b22684b8c657013751abcf57252eeab1f6ced8bd26cb5",
 )
-mg_ii = read_files(raster_filename)["Mg II k 2796"][0]
+mg_ii = read_spectrograph_lvl2(raster_filename)["Mg II k 2796"][0]
 
 ###############################################################################
 # `~irispy.utils.mg_features.calculate_mg_features` finds the velocity and

@@ -174,7 +174,8 @@ def test_solid_angle_missing_hplt_raises():
 
 def test_spectral_dispersion_real_data(sns_sg_file):
     raster = read_files(sns_sg_file)
-    cube = raster["Si IV 1403"][0]
+    sequence = raster["Si IV 1403"]
+    cube = sequence[0]
     dispersion = cube.spectral_dispersion
     assert dispersion.unit.is_equivalent(u.nm)
     assert dispersion.value > 0
@@ -182,14 +183,16 @@ def test_spectral_dispersion_real_data(sns_sg_file):
 
 def test_solid_angle_real_data(sns_sg_file):
     raster = read_files(sns_sg_file)
-    cube = raster["Si IV 1403"][0]
+    sequence = raster["Si IV 1403"]
+    cube = sequence[0]
     angle = cube.solid_angle
     assert angle.unit.is_equivalent(u.sr)
     assert angle.value > 0
 
 
 def test_spectrogram_cube_plot_defaults(sns_sg_file):
-    cube = read_files(sns_sg_file)["Si IV 1403"][0][0]
+    sequence = read_files(sns_sg_file)["Si IV 1403"]
+    cube = sequence[0][0]
     ax = cube.plot()
     # FUV detectors have no irissji colormap, so the default falls back to viridis.
     assert ax.images[0].get_cmap().name == "viridis"
@@ -207,7 +210,7 @@ def test_spectrogram_sequence_plot_uses_iris_slider_labels(sns_sg_file):
 
 def test_raster_collection_aligned_axis_physical_types_are_sorted(sns_sg_file):
     # NDCollection builds these from sets, so without sorting the order changes between runs.
-    types = read_files(sns_sg_file).aligned_axis_physical_types
+    types = read_spectrograph_lvl2(sns_sg_file).aligned_axis_physical_types
     assert any(len(axis_types) > 1 for axis_types in types)
     assert types == [tuple(sorted(axis_types)) for axis_types in types]
 

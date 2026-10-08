@@ -9,6 +9,8 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.time import Time
 
+from ndcube import NDCubeSequence
+
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
 from irispy.io.spectrograph import read_spectrograph_lvl2
@@ -59,7 +61,8 @@ def assert_si_iv_matches_idl(labels, events, idl, y_offset):
 def test_si_iv_matches_idl(bursts_si_iv_raster, idl_si_iv, threshold):
     # IDL ran with 40 DN/s on data not summed in wavelength, which is 80 DN/s here
     labels, events = find_si_iv_bursts(bursts_si_iv_raster, threshold=threshold)
-    assert isinstance(labels, SpectrogramCubeSequence)
+    assert isinstance(labels, NDCubeSequence)
+    assert not isinstance(labels, SpectrogramCubeSequence)
     assert events.meta["threshold"].value == 40
     assert_si_iv_matches_idl(labels.data[0].data, events, idl_si_iv, idl_si_iv.meta["y_offset"])
     cube = bursts_si_iv_raster[0]
@@ -118,7 +121,7 @@ def test_si_iv_errors(bursts_si_iv_raster, bursts_si_iv_file):
     with pytest.raises(ValueError, match="no wavelength bins"):
         find_si_iv_bursts(bursts_si_iv_raster[0][:, :, :3])
     with pytest.raises(ValueError, match="unscaled"):
-        find_si_iv_bursts(read_spectrograph_lvl2(bursts_si_iv_file, memmap=True)["Si IV 1403"])
+        find_si_iv_bursts(read_spectrograph_lvl2(bursts_si_iv_file, raw=True)["Si IV 1403"])
     with pytest.raises(ValueError, match="slice with a range"):
         find_si_iv_bursts(bursts_si_iv_raster[0][3])
     with pytest.raises(ValueError, match="must be in DN"):
@@ -201,7 +204,7 @@ def test_sji_errors(sns_sjicube_1330, bursts_sjicube_1400, bursts_sji_1400_file)
     with pytest.raises(ValueError, match="not 1330"):
         find_sji_bursts(sns_sjicube_1330)
     with pytest.raises(ValueError, match="unscaled"):
-        find_sji_bursts(read_sji_lvl2(bursts_sji_1400_file, memmap=True))
+        find_sji_bursts(read_sji_lvl2(bursts_sji_1400_file, raw=True))
     with pytest.raises(ValueError, match="slice with a range"):
         find_sji_bursts(bursts_sjicube_1400[0])
 

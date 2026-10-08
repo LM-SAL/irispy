@@ -26,7 +26,7 @@ from aiapy.calibrate.utils import get_pointing_table
 from sunpy.net import Fido
 from sunpy.net import attrs as a
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20250710_121126_3893010094_2025-07-10T12%3A11%3A262025-07-10T12%3A11%3A26.xml>`__.
@@ -45,7 +45,7 @@ sji_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-sji_2832 = read_files(sji_filename)
+sji_2832 = read_sji_lvl2(sji_filename)
 
 ###############################################################################
 # We will want to align the data to AIA.

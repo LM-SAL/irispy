@@ -13,7 +13,7 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SpectralCoord
 
-from irispy.io import read_files
+from irispy.io import read_files, read_sji_lvl2
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20130902_163935_4000255147_2013-09-02T16%3A39%3A352013-09-02T16%3A39%3A35.xml>`__.
@@ -43,8 +43,8 @@ sji_filename = pooch.retrieve(
 # Since this is a large dataset, we will use memory mapping to read the data values
 # directly from the FITS files without loading them into memory.
 
-raster = read_files(raster_filename, memmap=True, spectral_windows=["Mg II k 2796", "C II 1336"])
-sji_1400 = read_files(sji_filename, memmap=True)
+raster = read_files(raster_filename, memmap=True, raw=True, spectral_windows=["Mg II k 2796", "C II 1336"])
+sji_1400 = read_sji_lvl2(sji_filename, memmap=True, raw=True)
 
 ###############################################################################
 # We are after the Mg II k and C II lines, which we can select using keys.
@@ -105,7 +105,7 @@ plt.plot(mg_ii_times, mg_ii.data[:200, 220, 103], label="Mg II k3")
 plt.plot(c_ii_times, c_ii.data[:200, 220, 90], label="C II")
 (ax,) = plt.plot(times_sji, sji_1400.data[:50, 220, 190], label="1400 SJI")
 plt.legend()
-plt.ylabel("DN (Memory Mapped Value)")
+plt.ylabel("Raw counts")
 plt.xlabel("Time (UTC)")
 ax.axes.xaxis.set_major_formatter(mdates.ConciseDateFormatter(ax.axes.xaxis.get_major_locator()))
 # Rotates and right-aligns the x labels so they don't crowd each other.

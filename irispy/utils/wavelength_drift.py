@@ -45,9 +45,10 @@ def calculate_wavelength_drift(raster):
 
     Parameters
     ----------
-    raster : `~irispy.spectrograph.RasterCollection`
-        Level 2 spectra. They may be read with ``memmap=True``: only the fit ranges are read,
-        and scaled to DN.
+    raster : `~irispy.spectrograph.RasterCollection` or `ndcube.NDCollection`
+        Level 2 spectra, or a generic collection containing only spectrograph windows. They may
+        be read with ``raw=True, memmap=True``: only the fit ranges are read and scaled to DN for
+        fitting.
 
     Returns
     -------
@@ -147,10 +148,9 @@ def _line_shifts(cube, wavelength, rest, fit_range, min_intensity, sign):
         bins = np.arange(bins[0], min(bins[0] + 5, wavelength.size))
     if bins.size < 4:  # fewer bins than Gaussian parameters
         return shifts
-    # The fit bins in DN, which memmap=True leaves as the FITS integers, averaged along the slit
-    # with bad, masked and negative pixels as zero, as in IDL
+    # Scale raw FITS values only for these fit bins, leaving the cube unchanged.
     data = cube.data[..., bins]
-    if np.issubdtype(data.dtype, np.integer):
+    if not cube.meta.get("scaled", True):
         data = data.astype(np.float32) * cube.meta["BSCALE"] + cube.meta["BZERO"]
     if cube.mask is not None:
         data[np.broadcast_to(cube.mask, cube.data.shape)[..., bins]] = 0

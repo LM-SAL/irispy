@@ -8,8 +8,10 @@ from astropy.modeling.models import Gaussian1D
 from astropy.nddata import StdDevUncertainty, VarianceUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 
-from irispy.io.utils import read_files
-from irispy.spectrograph import RasterCollection, SpectrogramCube
+from ndcube import NDCollection, NDCube
+
+from irispy.io.spectrograph import read_spectrograph_lvl2
+from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
 from irispy.utils import calculate_uncertainty
 from irispy.utils.constants import DN_UNIT, READOUT_NOISE
@@ -20,14 +22,14 @@ def test_calculate_moments_basic(sns_sg_file):
     """
     Test that calculate_moments runs on real data and returns correct shapes and units.
     """
-    raster_collection = read_files(sns_sg_file, uncertainty=True)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file, uncertainty=True)
     cube = raster_collection["C II 1336"][0]
     # TWAVE1: the C II line, which the window brackets. The bundled test data is a
     # 10-pixel stride of the native data (~0.26 A/pixel), so wings must span
     # several of those coarse pixels.
     rest_wvl = 1335.71 * u.Angstrom
     moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=1.0 * u.Angstrom)
-    assert isinstance(moments, RasterCollection)
+    assert isinstance(moments, NDCollection)
     assert set(moments.keys()) == {"intensity", "centroid", "width", "velocity", "velocity_width"}
     intensity = moments["intensity"]
     centroid = moments["centroid"]
@@ -40,11 +42,9 @@ def test_calculate_moments_basic(sns_sg_file):
     assert width.shape == cube.shape[:-1]
     assert velocity.shape == cube.shape[:-1]
     assert velocity_width.shape == cube.shape[:-1]
-    assert isinstance(intensity, SpectrogramCube)
-    assert isinstance(centroid, SpectrogramCube)
-    assert isinstance(width, SpectrogramCube)
-    assert isinstance(velocity, SpectrogramCube)
-    assert isinstance(velocity_width, SpectrogramCube)
+    for moment in moments.values():
+        assert isinstance(moment, NDCube)
+        assert not isinstance(moment, SpectrogramCube)
     assert intensity.unit == cube.unit
     assert centroid.unit == u.nm
     assert width.unit == u.nm
@@ -72,7 +72,7 @@ def test_calculate_moments_sliced_cube(sns_sg_file):
     With real IRIS data, rest_wavelength is auto-detected from cube metadata, so
     velocity outputs are included.
     """
-    raster_collection = read_files(sns_sg_file)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     cube_slice = cube[10, :, :]
     moments = calculate_moments(cube_slice)
@@ -106,6 +106,7 @@ def test_calculate_moments_asymmetric_wings_rejects_bare_tuple():
 
 def test_calculate_moments_rejects_unscaled_data():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 3), dtype=np.int16), [500.0, 501.0, 502.0] * u.nm)
+    cube.meta["scaled"] = False
     with pytest.raises(ValueError, match="unscaled"):
         calculate_moments(cube)
 
@@ -115,7 +116,7 @@ def test_calculate_moments_wings_without_rest_wavelength(sns_sg_file):
     Test that calculate_moments auto-detects rest_wavelength from cube metadata when
     wings is given without explicit rest_wavelength.
     """
-    raster_collection = read_files(sns_sg_file)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     moments = calculate_moments(cube, wings=5.0 * u.Angstrom)
     assert "velocity" in moments
@@ -392,7 +393,7 @@ def test_calculate_moments_preserves_time_without_spectral_global_coord(sns_sg_f
     """
     Test that moment maps keep scan times without adding a fixed wavelength coordinate.
     """
-    raster_collection = read_files(sns_sg_file)
+    raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     moments = calculate_moments(cube)
     intensity = moments["intensity"]
@@ -528,6 +529,8 @@ def test_average_window_by_hand(method, values, errors):
         mask=mask,
     )
     window = average_window(cube, [5005, 5025] * u.AA, method=method)
+    assert isinstance(window, NDCube)
+    assert not isinstance(window, SpectrogramCube)
     assert window.unit == cube.unit
     assert isinstance(window.uncertainty, StdDevUncertainty)
     np.testing.assert_allclose(window.data[0], values)
@@ -562,7 +565,7 @@ def test_average_window_mask_representations(mask):
 
 
 def test_average_window_real_data(sns_sg_file):
-    cube = read_files(sns_sg_file, uncertainty=True)["C II 1336"][0]
+    cube = read_spectrograph_lvl2(sns_sg_file, uncertainty=True)["C II 1336"][0]
     window = average_window(cube, [1335.2, 1336.2] * u.AA)
     assert window.shape == cube.shape[:-1]
     assert window.wcs.world_axis_physical_types == cube.wcs.world_axis_physical_types[1:]

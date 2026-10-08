@@ -15,8 +15,8 @@ from irispy.utils.dust import _local_median_fill, remove_dust
 def test_remove_dust_rejects_unscaled_data(sns_sji_1330_file, method):
     from irispy.io import read_files  # NOQA: PLC0415
 
-    cube = read_files(sns_sji_1330_file, memmap=True)
-    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
+    cube = next(iter(read_files(sns_sji_1330_file, raw=True).values()))
+    with pytest.raises(ValueError, match=r"unscaled.*raw=False"):
         cube.remove_dust() if method else remove_dust(cube)
 
 

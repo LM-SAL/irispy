@@ -9,9 +9,9 @@ from numbers import Integral
 import numpy as np
 
 import astropy.units as u
-from astropy.nddata import StdDevUncertainty, UnknownUncertainty
+from astropy.nddata import InverseVariance, StdDevUncertainty, UnknownUncertainty, VarianceUncertainty
 
-from ndcube import ExtraCoords
+from ndcube import ExtraCoords, NDCube
 
 from irispy.spectrograph import SpectrogramCube, _wavelength_indices
 
@@ -30,11 +30,14 @@ class _QualityFlag(IntEnum):
 
 def check_scaled(cube):
     """
-    Raise a `ValueError` if ``cube`` holds unscaled data read with ``memmap=True``.
+    Raise a `ValueError` if ``cube`` is marked as holding raw, unscaled data.
+
+    User-created cubes without a ``scaled`` metadata value are treated as already
+    scaled.
     """
-    # The slit-jaw reader records the scaling, as scaled AIA data stay integer
-    if not cube.meta.get("scaled", not np.issubdtype(cube.data.dtype, np.integer)):
-        msg = "The data are unscaled; read them with memmap=False"
+    scaled = True if cube.meta is None else cube.meta.get("scaled", True)
+    if not scaled:
+        msg = "The data are raw and unscaled; read them with raw=False"
         raise ValueError(msg)
 
 
@@ -64,12 +67,23 @@ def standard_deviation(cube):
     """
     The standard deviation of each sample of ``cube``, in its unit, or `None`.
 
-    An `~astropy.nddata.UnknownUncertainty` is taken to be a standard deviation.
+    Standard deviation, variance, and inverse variance uncertainties are accepted.
+    Unknown or unsupported uncertainty types raise `TypeError` rather than acquiring an
+    implicit meaning.
     """
     uncertainty = cube.uncertainty
     if uncertainty is None:
         return None
-    if not isinstance(uncertainty, StdDevUncertainty | UnknownUncertainty):
+    if isinstance(uncertainty, UnknownUncertainty):
+        msg = (
+            "UnknownUncertainty has no defined interpretation; use StdDevUncertainty, VarianceUncertainty, "
+            "or InverseVariance"
+        )
+        raise TypeError(msg)
+    if not isinstance(uncertainty, StdDevUncertainty | VarianceUncertainty | InverseVariance):
+        msg = f"Unsupported uncertainty type {type(uncertainty).__name__}"
+        raise TypeError(msg)
+    if not isinstance(uncertainty, StdDevUncertainty):
         uncertainty = uncertainty.represent_as(StdDevUncertainty)
     sigma = np.asarray(uncertainty.array, dtype=float)
     if uncertainty.unit is not None and cube.unit is not None and uncertainty.unit != cube.unit:
@@ -77,7 +91,7 @@ def standard_deviation(cube):
     return np.broadcast_to(sigma, cube.data.shape)
 
 
-def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False, uncertainty=None):
+def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False, uncertainty=None, cube_class=NDCube):
     combined_mask = None
     for next_mask in (template.mask, mask, ~np.isfinite(values) if mask_invalid else None):
         if next_mask is None:
@@ -86,12 +100,12 @@ def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False, unce
         combined_mask = mask_array.copy() if combined_mask is None else np.logical_or(combined_mask, mask_array)
     # Coordinates point back to their cube; copy them without copying its data.
     coordinate_memo = {id(template): None}
-    return SpectrogramCube(
+    return cube_class(
         values,
         template.wcs,
-        uncertainty,
-        unit,
-        template.meta,
+        uncertainty=uncertainty,
+        unit=unit,
+        meta=template.meta,
         mask=combined_mask,
         extra_coords=deepcopy(template.extra_coords, coordinate_memo),
         global_coords=deepcopy(template.global_coords, coordinate_memo),
@@ -130,12 +144,14 @@ def make_spatial_template(cube, wavelength_axis):
         template_wcs = cube.wcs.dropaxis(cube.data.ndim - 1 - wavelength_axis)
     else:
         template_wcs = sliced_template.wcs
-    return SpectrogramCube(
+    coordinate_memo = {id(cube): None, id(sliced_template): None}
+    return NDCube(
         sliced_template.data,
         template_wcs,
-        sliced_template.uncertainty,
-        sliced_template.unit,
-        sliced_template.meta,
+        uncertainty=sliced_template.uncertainty,
+        unit=sliced_template.unit,
+        meta=sliced_template.meta,
         mask=template_mask,
         extra_coords=drop_extra_coords_dependent_on_axis(cube.extra_coords, wavelength_axis, reindex=True),
+        global_coords=deepcopy(sliced_template.global_coords, coordinate_memo),
     )

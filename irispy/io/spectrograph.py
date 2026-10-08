@@ -119,6 +119,7 @@ def read_spectrograph_lvl2(
     spectral_windows=None,
     uncertainty=False,
     memmap=False,
+    raw=False,
     revert_v34=False,
 ):
     """
@@ -135,14 +136,15 @@ def read_spectrograph_lvl2(
         Spectral windows to extract from files. Default=None, implies, extract all
         spectral windows.
     uncertainty : `bool`, optional
-        If `True` (not the default), will compute the uncertainty for the data (slower and
-        uses more memory). If ``memmap=True``, the uncertainty is never computed.
+        If `True` (not the default), compute the uncertainty for the data. This requires scaled
+        values.
     memmap : `bool`, optional
-        If `True` (not the default), will not load arrays into memory, and will only read from
-        the file into memory when needed. This option is faster and uses a
-        lot less memory. However, because FITS scaling is not done on-the-fly,
-        the data units will be unscaled, not the usual data numbers (DN).
-        The fill mask is a lazy Dask array, computed only for the slices that are used.
+        If `True`, request FITS memory mapping where supported. Scaling may materialize the
+        returned data in memory; this option does not select the data representation.
+    raw : `bool`, optional
+        If `True`, return raw FITS values and mark fill values in a lazy Dask mask. The FITS
+        ``BSCALE`` and ``BZERO`` values are retained in metadata. Raw data use count units and
+        cannot be combined with ``uncertainty=True``. Defaults to `False` (scaled values).
     revert_v34 : `bool`, optional.
         Will undo the flipping of the raster step axis made to V34 observations
         (data, mask, uncertainty, WCS, times and per-step metadata).
@@ -152,11 +154,14 @@ def read_spectrograph_lvl2(
     -------
     `irispy.spectrograph.RasterCollection`
     """
+    if raw and uncertainty:
+        msg = "uncertainty=True is not supported for raw FITS values; pass raw=False"
+        raise ValueError(msg)
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
     filenames = [str(f) for f in filenames]
     for file_index, filename in enumerate(filenames):
-        with fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
+        with fits.open(filename, memmap=memmap and raw, do_not_scale_image_data=raw) as hdulist:
             if file_index == 0:
                 # After a discussion with the IRIS team, it was decided that instead of the
                 # OBSID, we will use STEPS_AV less than -0.01 to identify V34 observations.
@@ -233,7 +238,8 @@ def read_spectrograph_lvl2(
                 meta.add("observer radial velocity", obs_vrix[steps], None, 0)
                 meta.add("orbital phase", ophaseix[steps], None, 0)
                 header = hdulist[window_fits_indices[i]].header
-                if memmap:  # the data stay the FITS integers, which these scale to DN
+                meta["scaled"] = not raw
+                if raw:
                     meta["BSCALE"], meta["BZERO"] = header.get("BSCALE", 1), header.get("BZERO", 0)
                 try:
                     wcs = _create_tabular_wcs(
@@ -253,19 +259,19 @@ def read_spectrograph_lvl2(
                 data = hdulist[window_fits_indices[i]].data[steps]
                 times = t_obs[steps]
                 out_uncertainty = None
-                if memmap:
+                if raw:
                     data_mask = _memmap_fill_mask(data, header)
                 else:
                     data_mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
-                    # memmap data are unscaled integers, so the photon noise would be wrong
                     if uncertainty:
                         out_uncertainty = StdDevUncertainty(calculate_uncertainty(data, readout_noise, dn_unit))
+                data_unit = u.ct if raw else dn_unit
                 _set_wcs_aux_obs_coord(wcs, observer)
                 cube = SpectrogramCube(
                     data,
                     wcs=wcs,
                     uncertainty=out_uncertainty,
-                    unit=dn_unit,
+                    unit=data_unit,
                     meta=meta,
                     mask=data_mask,
                 )

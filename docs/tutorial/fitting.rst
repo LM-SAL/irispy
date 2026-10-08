@@ -33,7 +33,8 @@ We use a cutout of an active region observation with the Si IV 1403 window, as i
     ...     known_hash="ff80e6a7900d4d5e1716a6415db25d40b6058f3523184b549c7e0d9928c0b68b",
     ... )  # doctest: +REMOTE_DATA
     >>> raster = read_files(filename, spectral_windows="Si IV 1403", uncertainty=True)  # doctest: +REMOTE_DATA
-    >>> cube = raster["Si IV 1403"][0][100:140, 200:260]  # doctest: +REMOTE_DATA
+    >>> si_iv_sequence = raster["Si IV 1403"]  # doctest: +REMOTE_DATA
+    >>> cube = si_iv_sequence[0][100:140, 200:260]  # doctest: +REMOTE_DATA
 
 The starting models describe one line and no other, so the cube has to be cropped to that line.
 The Si IV 1403 window also holds O IV and S IV lines, and `~irispy.utils.fitting.si_iv_1403_model` raises an error if the cube covers any of them.
@@ -82,7 +83,8 @@ A ``dask.distributed.Client`` can be passed instead.
 Maps from the fit
 =================
 
-`~irispy.utils.fitting.maps_from_fit` turns the fitted model into a `~irispy.spectrograph.RasterCollection` of maps with the spatial coordinates of the cube.
+`~irispy.utils.fitting.maps_from_fit` returns an `~ndcube.NDCollection` containing native `~ndcube.NDCube`
+maps with the spatial coordinates of the input cube and a `~irispy.spectrograph.SpectrogramCube` residual.
 When the fitter provides covariance, parameter maps carry the uncertainties from the fit, and derived maps propagate them:
 
 .. code-block:: python

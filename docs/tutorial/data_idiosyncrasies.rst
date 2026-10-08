@@ -31,14 +31,14 @@ The fitted background is then evaluated and subtracted at every wavelength, incl
     import astropy.units as u
 
     import irispy.data.sample as sample_data
-    from irispy.io import read_files
+    from irispy.io import read_spectrograph_lvl2
     from irispy.utils.spectrograph import subtract_background
 
     blue = ([-300, -150] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(1334.53 * u.AA))
     red = ([150, 300] * u.km / u.s).to(u.AA, equivalencies=u.doppler_optical(1335.71 * u.AA))
     windows = u.Quantity([blue, red])
 
-    c_ii = read_files(sample_data.RASTER_FITS, spectral_windows="C II 1336")["C II 1336"][0]
+    c_ii = read_spectrograph_lvl2(sample_data.RASTER_FITS, spectral_windows="C II 1336")["C II 1336"][0]
     spectrum = c_ii[0, 150]
     corrected = subtract_background(spectrum, windows)
 

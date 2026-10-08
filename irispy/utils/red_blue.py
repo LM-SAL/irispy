@@ -12,7 +12,9 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 
-from irispy.spectrograph import RasterCollection, SpectrogramCube
+from ndcube import NDCollection
+
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils._spectral import (
     _QualityFlag,
     check_scaled,
@@ -158,10 +160,10 @@ def calculate_red_blue_asymmetry(
 
     Returns
     -------
-    `irispy.spectrograph.RasterCollection`
-        Always contains ``"red_blue_asymmetry"`` and ``"quality"`` 2D maps.
-        ``"red_blue_asymmetry_error"`` is added when the input cube has uncertainty.
-        ``"observed_profile"`` and ``"interpolated_profile"`` 3D cubes are added
+    `ndcube.NDCollection`
+        Always contains ``"red_blue_asymmetry"`` and ``"quality"`` 2D maps. The asymmetry map
+        carries a `~astropy.nddata.StdDevUncertainty` when the input cube has uncertainty.
+        ``"observed_profile"`` and ``"interpolated_profile"`` spectral cubes are added
         when ``return_profiles=True``. The interpolated profile velocity axis is
         peak-centered; the observed profile velocity axis is relative to
         ``rest_wavelength``.
@@ -335,22 +337,24 @@ def calculate_red_blue_asymmetry(
 
     template = make_spatial_template(cube, wavelength_axis)
 
-    def _make_cube(values, unit, *, mask=None):
-        c = make_map_cube(template, values, unit, mask=mask)
+    def _make_cube(values, unit, *, mask=None, uncertainty=None):
+        c = make_map_cube(template, values, unit, mask=mask, uncertainty=uncertainty)
         c.meta.update(meta)
         return c
 
-    cubes = [
-        ("red_blue_asymmetry", red_blue, u.dimensionless_unscaled),
-        ("quality", quality, u.dimensionless_unscaled),
+    asymmetry_uncertainty = None if errors is None else StdDevUncertainty(red_blue_error)
+    result_cubes = [
+        (
+            "red_blue_asymmetry",
+            _make_cube(
+                red_blue,
+                u.dimensionless_unscaled,
+                mask=~np.isfinite(red_blue),
+                uncertainty=asymmetry_uncertainty,
+            ),
+        ),
+        ("quality", _make_cube(quality, u.dimensionless_unscaled)),
     ]
-    if errors is not None:
-        cubes.append(("red_blue_asymmetry_error", red_blue_error, u.dimensionless_unscaled))
-
-    result_cubes = []
-    for name, values, unit in cubes:
-        mask = None if name == "quality" else ~np.isfinite(values)
-        result_cubes.append((name, _make_cube(values, unit, mask=mask)))
 
     if return_profiles:
         observed_data = np.moveaxis(data, -1, wavelength_axis)
@@ -395,4 +399,10 @@ def calculate_red_blue_asymmetry(
             ]
         )
 
-    return RasterCollection(result_cubes)
+    spatial_axes = tuple(range(template.data.ndim))
+    profile_axes = tuple(axis for axis in range(cube.data.ndim) if axis != wavelength_axis)
+    aligned_axes = tuple(
+        profile_axes if name in {"observed_profile", "interpolated_profile"} else spatial_axes
+        for name, _ in result_cubes
+    )
+    return NDCollection(result_cubes, aligned_axes=aligned_axes)

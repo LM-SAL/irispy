@@ -82,4 +82,5 @@ A cube still in DN raises an error, so calibrate it first:
    from irispy.utils.spectrograph import radiation_temperature, radiometric_calibration
 
    raster = read_files("iris_l2_20260308_051050_3893012099_raster.tar.gz")
-   temperature = radiation_temperature(radiometric_calibration(raster["Mg II k 2796"]))
+   mg_ii = raster["Mg II k 2796"]
+   temperature = radiation_temperature(radiometric_calibration(mg_ii))

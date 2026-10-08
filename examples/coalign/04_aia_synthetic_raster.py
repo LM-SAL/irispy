@@ -21,7 +21,7 @@ from astropy.visualization import AsymmetricPercentileInterval
 
 import sunpy.map
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2, read_spectrograph_lvl2
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20170305_164021_3620106076_2017-03-05T16%3A40%3A212017-03-05T16%3A40%3A21.xml>`__.
@@ -48,9 +48,9 @@ aia_filename = pooch.retrieve(
     known_hash="f55401575c6967653e2cab60f79be399d5ee5386023e2316b5fc3d3ae6cc71e8",
 )
 
-raster = read_files(raster_filename, spectral_windows="2832")["2832"][0]
-sji_cube = read_files(sji_filename)
-aia_cube = read_files(aia_filename)
+raster = read_spectrograph_lvl2(raster_filename, spectral_windows="2832")["2832"][0]
+sji_cube = read_sji_lvl2(sji_filename)
+aia_cube = read_sji_lvl2(aia_filename)
 
 ###############################################################################
 # We take the raster at the wavelength closest to the reference wavelength of the

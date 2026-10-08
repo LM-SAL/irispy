@@ -13,6 +13,8 @@ from astropy.coordinates import SkyCoord
 from astropy.table import QTable, vstack
 from astropy.time import Time
 
+from ndcube import NDCubeSequence
+
 from irispy.spectrograph import SpectrogramCubeSequence
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
 from irispy.utils.constants import DN_UNIT
@@ -50,7 +52,7 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
 
     Returns
     -------
-    labels : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
+    labels : `~ndcube.NDCube` or `~ndcube.NDCubeSequence`
         As `find_bright_spectral_events`.
     events : `~astropy.table.QTable`
         As `find_bright_spectral_events`; ``events.meta["threshold"]`` is the scaled threshold.
@@ -118,7 +120,7 @@ def find_bright_spectral_events(
 
     Returns
     -------
-    labels : `~irispy.SpectrogramCube` or `~irispy.SpectrogramCubeSequence`
+    labels : `~ndcube.NDCube` or `~ndcube.NDCubeSequence`
         Event labels on the (step, slit) plane of each raster: 0 outside events, and 1 to N
         for the N events, numbered on through the rasters of a sequence.
     events : `~astropy.table.QTable`
@@ -188,7 +190,7 @@ def find_bright_spectral_events(
         offset += count
     if not isinstance(raster, SpectrogramCubeSequence):
         return maps[0], tables[0]
-    return SpectrogramCubeSequence(maps, meta=raster.meta), vstack(tables)
+    return NDCubeSequence(maps, meta=raster.meta), vstack(tables)
 
 
 def find_sji_bursts(sji, *, sigma_factor=10, min_pixels=2):

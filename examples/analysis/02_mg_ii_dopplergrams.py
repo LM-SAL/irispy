@@ -45,10 +45,10 @@ iris_raster_tar = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 #
-# Since this is a large dataset, we will use memory mapping to read the data values
-# directly from the FITS files without loading them into memory.
+# The drift fit can work directly from raw values and applies each window's FITS
+# scale only to the fit ranges. Memory mapping does not select raw values by itself.
 
-raster = read_files(iris_raster_tar, memmap=True, spectral_windows="Mg II k 2796")
+raster = read_files(iris_raster_tar, memmap=True, raw=True, spectral_windows="Mg II k 2796")
 
 ###############################################################################
 # We are after the Mg II k window, which we can select using a key.

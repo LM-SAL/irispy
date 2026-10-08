@@ -4,7 +4,7 @@ import pytest
 
 import astropy.units as u
 
-from irispy.io.utils import read_files
+from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
 from irispy.utils.rgb import asinh_velocity, calculate_rgb, plot_rgb
 
@@ -13,7 +13,7 @@ colorsynth = pytest.importorskip("colorsynth")
 
 @pytest.fixture
 def si_iv_cube(sns_sg_file):
-    return read_files(sns_sg_file)["Si IV 1403"][0]
+    return read_spectrograph_lvl2(sns_sg_file)["Si IV 1403"][0]
 
 
 @pytest.fixture

@@ -21,9 +21,9 @@ def test_memmap_mask_reads_only_the_requested_frame(reader, request, monkeypatch
 
     monkeypatch.setattr(_MappedArray, "__getitem__", record_read)
     cube = (
-        read_sji_lvl2(filename, memmap=True)
+        read_sji_lvl2(filename, memmap=True, raw=True)
         if reader == "sji"
-        else read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=True)["C II 1336"][0]
+        else read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=True, raw=True)["C II 1336"][0]
     )
     assert isinstance(cube.mask, da.Array)
     assert cube.mask.dtype == bool

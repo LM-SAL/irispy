@@ -8,10 +8,12 @@ from astropy.io import fits
 from astropy.nddata import StdDevUncertainty, VarianceUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 
+from ndcube import NDCollection, NDCube
+
 import irispy.utils.red_blue as red_blue_module
-from irispy.io.utils import read_files
+from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.meta import SGMeta
-from irispy.spectrograph import RasterCollection, SpectrogramCube
+from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
 from irispy.utils.red_blue import RBAQualityFlag, calculate_red_blue_asymmetry
 
@@ -42,7 +44,9 @@ def test_calculate_red_blue_asymmetry_red_and_blue_signs():
 
     result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
 
-    assert isinstance(result, RasterCollection)
+    assert isinstance(result, NDCollection)
+    assert isinstance(result["red_blue_asymmetry"], NDCube)
+    assert not isinstance(result["red_blue_asymmetry"], SpectrogramCube)
     assert set(result.keys()) == {
         "red_blue_asymmetry",
         "quality",
@@ -99,6 +103,7 @@ def test_calculate_red_blue_asymmetry_requires_wavelength_axis():
 
 def test_calculate_red_blue_asymmetry_rejects_unscaled_data():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 5), dtype=np.int16), np.arange(5) * u.nm)
+    cube.meta["scaled"] = False
     with pytest.raises(ValueError, match="unscaled"):
         calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)
 
@@ -115,14 +120,15 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
         rest_wavelength=REST_WAVELENGTH,
         degree=1,
     )
-    assert "red_blue_asymmetry_error" in result
-    assert result["red_blue_asymmetry_error"].unit == u.one
+    assert result["red_blue_asymmetry"].uncertainty.unit == u.one
     numerator = 2
     peak = 10
     n_wing_bins = int((150 - 50) / 10) + 1
     wing_error = np.sqrt(np.sum(np.full(n_wing_bins, 0.1) ** 2)) / n_wing_bins
     expected_propagated_error = np.sqrt((np.sqrt(2) * wing_error / peak) ** 2 + (numerator * 0.1 / peak**2) ** 2)
-    assert_quantity_allclose(result["red_blue_asymmetry_error"].data[0, 0] * u.one, expected_propagated_error * u.one)
+    assert_quantity_allclose(
+        result["red_blue_asymmetry"].uncertainty.array[0, 0] * u.one, expected_propagated_error * u.one
+    )
     assert result["red_blue_asymmetry"].meta["rba_rest_wavelength"] == 140.277
     assert result["red_blue_asymmetry"].meta["rba_interpolation_degree"] == 1
 
@@ -139,7 +145,7 @@ def test_calculate_red_blue_asymmetry_with_uncertainty():
     expected_zero_error = np.sqrt(2) * wing_error / 10
     assert_quantity_allclose(symmetric_result["red_blue_asymmetry"].data[0, 0] * u.one, 0 * u.one)
     assert_quantity_allclose(
-        symmetric_result["red_blue_asymmetry_error"].data[0, 0] * u.one, expected_zero_error * u.one
+        symmetric_result["red_blue_asymmetry"].uncertainty.array[0, 0] * u.one, expected_zero_error * u.one
     )
 
 
@@ -154,10 +160,10 @@ def test_calculate_red_blue_asymmetry_error_from_other_uncertainties(uncertainty
         _wavelengths_from_velocity(velocity),
         uncertainty=StdDevUncertainty(np.full((1, 1, velocity.size), 0.1)),
     )
-    expected = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry_error"]
+    expected = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry"].uncertainty
     cube.uncertainty = uncertainty
-    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry_error"]
-    np.testing.assert_allclose(result.data, expected.data)
+    result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH)["red_blue_asymmetry"].uncertainty
+    np.testing.assert_allclose(result.array, expected.array)
 
 
 def test_calculate_red_blue_asymmetry_flags_error_interpolation_failure(monkeypatch):
@@ -219,6 +225,10 @@ def test_calculate_red_blue_asymmetry_return_profiles():
     cube = make_test_spectrogram_cube(data, wavelengths, uncertainty=StdDevUncertainty(np.full(data.shape, 0.1)))
 
     result = calculate_red_blue_asymmetry(cube, rest_wavelength=REST_WAVELENGTH, degree=1)
+    assert result.aligned_axes["red_blue_asymmetry"] == (0, 1)
+    assert result.aligned_axes["quality"] == (0, 1)
+    assert result.aligned_axes["observed_profile"] == (0, 1)
+    assert result.aligned_axes["interpolated_profile"] == (0, 1)
     observed_cube = result["observed_profile"]
     interp_cube = result["interpolated_profile"]
     assert isinstance(observed_cube, SpectrogramCube)
@@ -378,7 +388,7 @@ def test_calculate_red_blue_asymmetry_quality_thresholds(option, value, expected
 
 
 def test_calculate_red_blue_asymmetry_real_cube_shape_and_coords(sns_sg_file):
-    raster = read_files(sns_sg_file)
+    raster = read_spectrograph_lvl2(sns_sg_file)
     cube = raster["C II 1336"][0]
     result = calculate_red_blue_asymmetry(
         cube,
@@ -437,7 +447,7 @@ def test_calculate_red_blue_asymmetry_auto_detect_rest_wavelength():
 
 
 def test_calculate_red_blue_asymmetry_auto_detect_on_real_data(sns_sg_file):
-    raster = read_files(sns_sg_file)
+    raster = read_spectrograph_lvl2(sns_sg_file)
     cube = raster["C II 1336"][0]
     result = calculate_red_blue_asymmetry(cube, degree=1)
     assert "red_blue_asymmetry" in result

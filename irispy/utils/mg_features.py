@@ -10,7 +10,9 @@ from scipy.ndimage import gaussian_filter1d
 
 import astropy.units as u
 
-from irispy.spectrograph import RasterCollection, SpectrogramCube
+from ndcube import NDCollection
+
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED
 
@@ -41,7 +43,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
 
     Returns
     -------
-    `~irispy.spectrograph.RasterCollection`
+    `ndcube.NDCollection`
         (step, slit) maps keyed ``"{feature}_velocity"`` (km/s) and ``"{feature}_intensity"`` (the
         unit of ``cube``) for the blue peak, line center and red peak of each measured line:
         ``"k2v"``, ``"k3"``, ``"k2r"`` and ``"h2v"``, ``"h3"``, ``"h2r"``. Features that are not
@@ -127,7 +129,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
         raise ValueError(msg)
     if skipped:
         warnings.warn(f"{msg}; skipping it", UserWarning, stacklevel=2)
-    return RasterCollection(maps, aligned_axes=(0, 1))
+    return NDCollection(maps, aligned_axes=(0, 1))
 
 
 def _slit_features(grid, spectra, valid):

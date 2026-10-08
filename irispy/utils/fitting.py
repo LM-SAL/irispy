@@ -13,7 +13,9 @@ from astropy.modeling import models
 from astropy.modeling.fitting import FitInfoArrayContainer
 from astropy.nddata import StdDevUncertainty
 
-from irispy.spectrograph import RasterCollection, SpectrogramCube
+from ndcube import NDCollection
+
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils._spectral import _QualityFlag, check_scaled, make_map_cube, make_spatial_template, standard_deviation
 from irispy.utils.constants import ATOMIC_MASS, INSTRUMENTAL_FWHM, PASSBAND_LIMITS
 from irispy.utils.mg_features import calculate_mg_features
@@ -411,8 +413,9 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
 
     Returns
     -------
-    `~irispy.spectrograph.RasterCollection`
-        Maps with the spatial WCS of ``cube``:
+    `ndcube.NDCollection`
+        `~ndcube.NDCube` maps with the spatial WCS of ``cube`` and a spectral
+        `~irispy.spectrograph.SpectrogramCube` residual:
 
         * one per model parameter, keyed by its name, such as ``"mean_1"``;
         * for each Gaussian or Lorentzian component ``i``, ``"velocity_i"``, the Doppler velocity of
@@ -434,6 +437,7 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
     Lorentzian, and the integral is :math:`\sqrt{2\pi}\,A\sigma` for a Gaussian and
     :math:`\pi A\,\mathrm{FWHM}/2` for a Lorentzian.
     """
+    check_scaled(cube)
     names = fitted_model.param_names
     values = {name: getattr(fitted_model, name).quantity for name in names}
     if unitless := [name for name, value in values.items() if value is None]:
@@ -568,7 +572,7 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
     )
     map_axes = tuple(range(len(shape)))
     residual_axes = tuple(axis for axis in range(cube.data.ndim) if axis != cube.wavelength_axis)
-    return RasterCollection(cubes, aligned_axes=(map_axes,) * (len(cubes) - 1) + (residual_axes,))
+    return NDCollection(cubes, aligned_axes=(map_axes,) * (len(cubes) - 1) + (residual_axes,))
 
 
 class NonThermalQualityFlag(_QualityFlag):
@@ -617,7 +621,7 @@ def non_thermal_velocity(fwhm, wavelength, *, instrumental_fwhm=None, thermal_fw
 
     Returns
     -------
-    `~irispy.spectrograph.RasterCollection`
+    `ndcube.NDCollection`
         ``"non_thermal_velocity"``, in km/s with the WCS and mask of ``fwhm`` and its uncertainty
         propagated to first order if ``fwhm`` has one, NaN where the observed width is non-positive
         or not above the others, and ``"quality"``, a `NonThermalQualityFlag` for each pixel.
@@ -665,7 +669,7 @@ def non_thermal_velocity(fwhm, wavelength, *, instrumental_fwhm=None, thermal_fw
         # dv/dW = scale**2 W / v
         with np.errstate(invalid="ignore", divide="ignore"):
             uncertainty = StdDevUncertainty(scale**2 * width * width_error / velocity)
-    return RasterCollection(
+    return NDCollection(
         [
             (
                 "non_thermal_velocity",

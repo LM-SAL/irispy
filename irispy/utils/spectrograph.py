@@ -82,7 +82,7 @@ def radiometric_calibration(
     data_quantities = (exp_corrected_cube.data * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s),)
     if exp_corrected_cube.uncertainty is not None:
         uncertainty = (
-            exp_corrected_cube.uncertainty.array * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s)
+            standard_deviation(exp_corrected_cube) * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s)
         )
         data_quantities += (uncertainty,)
     new_data_quantities = convert_photons_per_sec_to_radiance(
@@ -174,7 +174,7 @@ def radiation_temperature(
             # First-order propagation with dT/dI from differentiating the expression above.
             derivative = temperature**2 * planck_scale / (temperature_scale * radiance * (radiance + planck_scale))
             uncertainty = StdDevUncertainty(derivative * sigma * to_radiance)
-    return make_map_cube(cube, temperature, u.K, mask_invalid=True, uncertainty=uncertainty)
+    return make_map_cube(cube, temperature, u.K, mask_invalid=True, uncertainty=uncertainty, cube_class=SpectrogramCube)
 
 
 def convert_photons_per_sec_to_radiance(

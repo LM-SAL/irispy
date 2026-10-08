@@ -9,7 +9,7 @@ In this example we will show how to plot a South Pole SJI dataset.
 import matplotlib.pyplot as plt
 import pooch
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2
 
 ###############################################################################
 # `We start with getting data from the IRIS data archive <https://www.lmsal.com/hek/hcr?cmd=view-event&event-id=ivo%3A%2F%2Fsot.lmsal.com%2FVOEvent%23VOEvent_IRIS_20230211_083601_3880012095_2023-02-11T08%3A36%3A012023-02-11T08%3A36%3A01.xml>`__.
@@ -28,7 +28,7 @@ sji_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-sji_2832 = read_files(sji_filename)
+sji_2832 = read_sji_lvl2(sji_filename)
 
 ###############################################################################
 # Printing will give us an overview of the SJI dataset.

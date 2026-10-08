@@ -36,18 +36,18 @@ raster_filename = pooch.retrieve(
 )
 
 ###############################################################################
-# We will now open the data using a helper function which is designed to read
-# all files from a single observation.
+# We will now open the archive using the generic reader. It returns a flat
+# collection with one entry per spectral window.
 
 raster = read_files(raster_filename)
 
 ###############################################################################
-# Let us now explore what was returned. Printing gives an overview of the raster collection.
+# Let us now explore what was returned. The keys are the product names.
 
 print(raster)
 
 ###############################################################################
-# The keys are the spectral windows.
+# We can get the Mg II k window by its product suffix.
 
 print(raster.keys())
 

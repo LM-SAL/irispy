@@ -16,7 +16,7 @@ import pooch
 
 from astropy.visualization import quantity_support
 
-from irispy.io import read_files
+from irispy.io import read_sji_lvl2
 
 quantity_support()
 
@@ -40,7 +40,7 @@ sji_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 
-sji_2832 = read_files(sji_filename)
+sji_2832 = read_sji_lvl2(sji_filename)
 sji_frame = sji_2832[5]
 del sji_2832
 

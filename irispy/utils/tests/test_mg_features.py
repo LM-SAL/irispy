@@ -8,6 +8,8 @@ from scipy.io import readsav
 
 import astropy.units as u
 
+from ndcube import NDCollection, NDCube
+
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube
@@ -66,7 +68,10 @@ def test_matches_idl(raster, idl, index, line):
 
 def test_output(raster):
     features = calculate_mg_features(raster["Mg II k 2796"][0], lines=("k",))
+    assert isinstance(features, NDCollection)
     velocity = features["k3_velocity"]
+    assert isinstance(velocity, NDCube)
+    assert not isinstance(velocity, SpectrogramCube)
     assert velocity.unit == u.km / u.s
     assert velocity.data.shape == (3, 771)
     np.testing.assert_array_equal(velocity.mask, np.isnan(velocity.data))
@@ -149,7 +154,7 @@ def test_short_slit(raster):
 
 
 def test_rejects_unscaled_data():
-    raster = read_spectrograph_lvl2(get_test_filepath(TEST_FILE), memmap=True)
+    raster = read_spectrograph_lvl2(get_test_filepath(TEST_FILE), raw=True)
     with pytest.raises(ValueError, match="unscaled"):
         calculate_mg_features(raster["Mg II k 2796"][0], lines=("k",))
 
