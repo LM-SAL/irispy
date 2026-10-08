@@ -13,6 +13,7 @@ import astropy.units as u
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED
+from irispy.utils.moments import _saturation_limit
 
 __all__ = ["calculate_mg_features"]
 
@@ -22,7 +23,7 @@ _MIDDLE_MINIMUM = [(1, 2), (3, 1), (3, 2), (3, 4), (5, 4), (7, 6)]
 _BETWEEN_MAXIMA = [(2, 2), (2, 3), (3, 3), (4, 2), (4, 3), (4, 4)]
 
 
-def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=("k", "h")):
+def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=("k", "h"), saturation_limit=None):
     """
     Find the line centers and emission peaks of the Mg II h and k lines.
 
@@ -38,6 +39,12 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
         Doppler velocities from each line's rest wavelength within which to search (km/s if unitless).
     lines : `tuple` of `str`, optional
         The lines to measure, ``"k"`` (279.635 nm) and/or ``"h"`` (280.353 nm, both in vacuum).
+    saturation_limit : `float` or `astropy.units.Quantity`, optional
+        In DN. A line's features are NaN and masked where any sample it is searched over
+        (``velocity_range`` widened by 3 km/s) is at or above it.
+        ``cube`` must be in DN, or in DN per second with the reader's per-step ``"exposure time"``
+        metadata, which converts the limit step by step; anything else raises `ValueError`.
+        Level 2 files clip at ``irispy.utils.constants.SATURATION_LIMIT``, saturated samples included.
 
     Returns
     -------
@@ -45,7 +52,8 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
         (step, slit) maps keyed ``"{feature}_velocity"`` (km/s) and ``"{feature}_intensity"`` (the
         unit of ``cube``) for the blue peak, line center and red peak of each measured line:
         ``"k2v"``, ``"k3"``, ``"k2r"`` and ``"h2v"``, ``"h3"``, ``"h2r"``. Features that are not
-        found are NaN and masked.
+        found are NaN and masked. ``"{line}_saturated"``, if ``saturation_limit`` is given, is `True`
+        where it was reached.
 
     Notes
     -----
@@ -91,6 +99,8 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
         msg = f"lines must be 'k', 'h' or both, not {lines!r}"
         raise ValueError(msg)
     low, high = velocity_range.value
+    if saturation_limit is not None:
+        saturation_limit = _saturation_limit(cube, saturation_limit)
     wavelength = cube.axis_world_coords(cube.wavelength_axis)[0]
     if not np.all(np.diff(wavelength) > 0):
         msg = "The wavelengths must increase along the cube, as in level 2 data"
@@ -117,11 +127,17 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
             if valid.any():
                 spectra = _spline(velocity[inside], data[valid].T, grid, tension=0).T
                 features[step, valid] = _slit_features(grid, spectra, valid)
+        if saturation_limit is not None:
+            # After the search, so the other spectra's features stay as they are
+            saturated = np.any(window >= saturation_limit, axis=-1)
+            features[saturated] = np.nan
         maps += [
             (f"{line}{feature}_{kind}", make_map_cube(template, features[..., index, part], unit, mask_invalid=True))
             for index, feature in enumerate(("2v", "3", "2r"))
             for part, (kind, unit) in enumerate([("velocity", u.km / u.s), ("intensity", cube.unit)])
         ]
+        if saturation_limit is not None:
+            maps.append((f"{line}_saturated", make_map_cube(template, saturated, u.dimensionless_unscaled)))
     msg = f"The spectral window does not cover Mg II {' or '.join(skipped)} from {low} to {high} km/s"
     if not maps:
         raise ValueError(msg)

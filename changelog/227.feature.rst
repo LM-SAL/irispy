@@ -1,0 +1,1 @@
+`~irispy.utils.mg_features.calculate_mg_features` now takes ``saturation_limit`` in DN (converted per step for a cube in DN per second), like `~irispy.utils.moments.calculate_moments`, and gives NaN features for a line, and ``True`` in its ``"{line}_saturated"`` map, wherever a sample it searches is at or above it.
