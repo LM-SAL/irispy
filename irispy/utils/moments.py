@@ -10,6 +10,7 @@ from astropy.nddata import NDDataArray, StdDevUncertainty
 
 from irispy.spectrograph import RasterCollection, _wavelength_indices
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, standard_deviation
+from irispy.utils.constants import DN_UNIT
 
 __all__ = ["average_window", "calculate_moments"]
 
@@ -42,7 +43,10 @@ def calculate_moments(
     min_intensity : `float` or `astropy.units.Quantity`, optional
         Pixels whose 0th moment is below this get NaN in every map.
     saturation_limit : `float` or `astropy.units.Quantity`, optional
-        Pixels with any sample above this, in ``cube.unit``, get NaN in every map.
+        Pixels with any sample at or above this many DN, or of +Inf, get NaN in every map.
+        A `float` is in the DN of ``cube``. For a cube in DN per second, the limit is divided
+        by the exposure time of each step. Level 2 data saturate at
+        ``irispy.utils.constants.SATURATION_LIMIT``.
 
     Returns
     -------
@@ -54,13 +58,17 @@ def calculate_moments(
         * ``"width"`` — 2nd moment, in nm
         * ``"velocity"`` — Doppler velocity of the centroid in km/s, if ``rest_wavelength`` is known
         * ``"velocity_width"`` — width in km/s, if ``rest_wavelength`` is known
+        * ``"saturated"`` — `True` for the pixels that tripped ``saturation_limit``, if it is given
 
-        Each map has a `~astropy.nddata.StdDevUncertainty` if ``cube`` has an uncertainty
+        Each moment map has a `~astropy.nddata.StdDevUncertainty` if ``cube`` has an uncertainty
         (e.g. read with ``uncertainty=True``).
 
     Notes
     -----
     * Negative, non-finite and masked samples are set to zero and add no uncertainty.
+    * ``saturation_limit`` is checked before that zeroing, on every sample in the wavelength range,
+      so +Inf samples count. Level 2 files cannot hold +Inf and clip saturated samples to
+      ``irispy.utils.constants.SATURATION_LIMIT``, which counts as saturated.
     * Uncertainties are propagated to first order, treating an `~astropy.nddata.UnknownUncertainty`
       as a standard deviation. They are NaN where undefined: the intensity error where no sample is
       left, the centroid and velocity errors where fewer than two are left, and the width and velocity
@@ -109,6 +117,8 @@ def calculate_moments(
             sigma = sigma[tuple(slicer)]
         wavelengths = wavelengths[crop_indices]
     data = np.array(data, dtype=float, copy=True)
+    if saturation_limit is not None:
+        saturated = np.any(data >= _saturation_limit(cube, saturation_limit), axis=wavelength_axis)
     dropped = (data < 0) | ~np.isfinite(data) | (False if mask is None else mask)
     data[dropped] = 0
 
@@ -143,7 +153,6 @@ def calculate_moments(
         stddev_value = np.where(low_intensity, np.nan, stddev_value)
 
     if saturation_limit is not None:
-        saturated = np.max(data_moved, axis=-1) > u.Quantity(saturation_limit, cube.unit).value
         intensity_value = np.where(saturated, np.nan, intensity_value)
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)
@@ -187,7 +196,33 @@ def calculate_moments(
         return make_map_cube(template, values, unit, mask_invalid=True, uncertainty=uncertainty)
 
     cubes = [(name, _make_cube(name, values, unit)) for name, values, unit in maps]
+    if saturation_limit is not None:
+        cubes.append(("saturated", make_map_cube(template, saturated, u.dimensionless_unscaled)))
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
+
+
+def _saturation_limit(cube, saturation_limit):
+    """
+    ``saturation_limit``, in DN, in ``cube.unit``, broadcastable to ``cube.data``.
+    """
+    # The same test sunraster's apply_exposure_time_correction uses
+    per_second = u.s in cube.unit.decompose().bases
+    dn_unit = cube.unit * u.s if per_second else cube.unit
+    if not (dn_unit.is_equivalent(u.DN) or dn_unit in DN_UNIT.values()):
+        msg = f"saturation_limit needs a cube in DN or DN per second, not {cube.unit}"
+        raise ValueError(msg)
+    if isinstance(saturation_limit, u.Quantity):
+        saturation_limit = saturation_limit.to_value(dn_unit, equivalencies=[(u.DN, dn_unit)])
+    if not per_second:
+        return saturation_limit
+    exposure_time = cube.meta["exposure time"].to_value(u.s)
+    if np.ndim(exposure_time):
+        shape = [1] * cube.data.ndim
+        shape[cube.meta.axes["exposure time"][0]] = -1
+        exposure_time = exposure_time.reshape(shape)
+    # Steps of 0 s, with no data, get an infinite limit that only +Inf reaches
+    with np.errstate(divide="ignore"):
+        return saturation_limit / exposure_time
 
 
 def average_window(cube, wavelength_range, *, method="mean"):

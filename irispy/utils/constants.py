@@ -15,6 +15,7 @@ __all__ = [
     "RADIANCE_UNIT",
     "RADIANCE_UNIT_PER_HZ",
     "READOUT_NOISE",
+    "SATURATION_LIMIT",
     "SLIT_WIDTH",
     "SPECTRAL_BAND",
 ]
@@ -40,6 +41,9 @@ READOUT_NOISE = {
     "FUV": 3.1 * DN_UNIT["FUV"],
     "SJI": 1.2 * DN_UNIT["SJI"],
 }
+# Level 2 data are int16 with BSCALE 0.25 and BZERO 7992. iris_prep sets saturated samples to +Inf, which int16
+# cannot hold, so they and any brighter sample are clipped to the top code 32760: 0.25 * 32760 + 7992 = 16182 DN.
+SATURATION_LIMIT = 16182 * u.DN
 RADIANCE_UNIT = u.erg / u.cm**2 / u.s / u.steradian / u.Angstrom
 RADIANCE_UNIT_PER_HZ = u.erg / u.cm**2 / u.s / u.steradian / u.Hz
 SLIT_WIDTH = 0.33 * u.arcsec

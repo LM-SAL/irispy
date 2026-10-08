@@ -12,7 +12,7 @@ from irispy.io.utils import read_files
 from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.tests.helpers import figure_test, make_test_spectrogram_cube
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import DN_UNIT, READOUT_NOISE
+from irispy.utils.constants import DN_UNIT, RADIANCE_UNIT, READOUT_NOISE, SATURATION_LIMIT
 from irispy.utils.moments import average_window, calculate_moments
 
 
@@ -369,6 +369,50 @@ def test_calculate_moments_saturation_limit():
     assert np.isnan(moments["intensity"].data[0, 0])
     assert np.isnan(moments["centroid"].data[0, 0])
     assert np.isnan(moments["width"].data[0, 0])
+
+
+@pytest.mark.parametrize("limit", [SATURATION_LIMIT, 16182.0])
+def test_calculate_moments_saturation_limit_in_dn(limit):
+    wvls = (500 + np.arange(5)) * u.nm
+    # Pixels below the limit, at it, with +Inf, and with -Inf and NaN, which are not saturated
+    data = np.tile([1.0, 2.0, 16181.75, 2.0, 1.0], (4, 1))
+    data[1, 2], data[2, 0], data[3, 0], data[3, 4] = 16182, np.inf, -np.inf, np.nan
+    cube = make_test_spectrogram_cube(data[np.newaxis], wvls)
+    plain = calculate_moments(cube, rest_wavelength=502 * u.nm)
+    moments = calculate_moments(cube, rest_wavelength=502 * u.nm, saturation_limit=limit)
+    np.testing.assert_array_equal(moments["saturated"].data, [[False, True, True, False]])
+    for key in plain:
+        np.testing.assert_array_equal(moments[key].data[0, [0, 3]], plain[key].data[0, [0, 3]], err_msg=key)
+        assert np.isnan(moments[key].data[0, 1:3]).all(), key
+
+
+def test_calculate_moments_saturation_limit_per_second():
+    # The same rate is 16182 DN in the 4 s step but not in the 1 s one
+    spectrum = [1.0, 2.0, 16182 / 4, 2.0, 1.0]
+    cube = make_test_spectrogram_cube([[spectrum], [spectrum]], (500 + np.arange(5)) * u.nm, unit=u.DN / u.s)
+    cube.meta.add("exposure time", [1, 4] * u.s, None, 0)
+    moments = calculate_moments(cube, saturation_limit=SATURATION_LIMIT)
+    np.testing.assert_array_equal(moments["saturated"].data, [[False], [True]])
+    assert np.isfinite(moments["intensity"].data[0, 0])
+    assert np.isnan(moments["intensity"].data[1, 0])
+    # Slicing out a step leaves a scalar exposure time
+    assert calculate_moments(cube[1], saturation_limit=SATURATION_LIMIT)["saturated"].data.all()
+
+
+def test_calculate_moments_saturation_limit_level_2(sns_sg_file):
+    cube = read_files(sns_sg_file)["C II 1336"][0]
+    cube.data[0, 3, 5] = SATURATION_LIMIT.value
+    for unit_cube in (cube, cube.apply_exposure_time_correction()):
+        saturated = calculate_moments(unit_cube, saturation_limit=SATURATION_LIMIT)["saturated"].data
+        assert saturated[0, 3]
+        assert saturated.sum() == 1
+
+
+def test_calculate_moments_saturation_limit_needs_dn():
+    cube = make_test_spectrogram_cube([[[1.0, 2.0, 1.0]]], [500, 501, 502] * u.nm, unit=RADIANCE_UNIT)
+    with pytest.raises(ValueError, match="needs a cube in DN"):
+        calculate_moments(cube, saturation_limit=1e4)
+    assert "saturated" not in calculate_moments(cube)
 
 
 def test_calculate_moments_integrated():
