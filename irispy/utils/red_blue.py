@@ -152,6 +152,10 @@ def calculate_red_blue_asymmetry(
     saturation_limit : `float` or `astropy.units.Quantity`, optional
         Maximum allowed peak intensity. Pixels above this value are assigned
         quality flag `~irispy.utils.red_blue.RBAQualityFlag.SATURATED`.
+        Unlike ``saturation_limit`` of `~irispy.utils.moments.calculate_moments`,
+        it is in ``cube.unit``, is not converted with exposure times, and is
+        compared with the peak after any continuum subtraction, so a peak equal
+        to it is not flagged.
     return_profiles : `bool`, optional
         If `True`, include 3D ``"observed_profile"`` and
         ``"interpolated_profile"`` cubes in the output.

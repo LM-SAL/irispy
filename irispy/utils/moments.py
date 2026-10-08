@@ -44,9 +44,9 @@ def calculate_moments(
         Pixels whose 0th moment is below this get NaN in every map.
     saturation_limit : `float` or `astropy.units.Quantity`, optional
         Pixels with any sample at or above this many DN, or of +Inf, get NaN in every map.
-        A `float` is in the DN of ``cube``. For a cube in DN per second, the limit is divided
-        by the exposure time of each step. Level 2 data saturate at
-        ``irispy.utils.constants.SATURATION_LIMIT``.
+        A `float` is in DN. ``cube`` must be in DN, or in DN per second with the reader's
+        per-step ``"exposure time"`` metadata, which divides the limit step by step; anything
+        else raises `ValueError`. Level 2 data saturate at ``irispy.utils.constants.SATURATION_LIMIT``.
 
     Returns
     -------
@@ -215,7 +215,11 @@ def _saturation_limit(cube, saturation_limit):
         saturation_limit = saturation_limit.to_value(dn_unit, equivalencies=[(u.DN, dn_unit)])
     if not per_second:
         return saturation_limit
-    exposure_time = cube.meta["exposure time"].to_value(u.s)
+    exposure_time = cube.meta.get("exposure time")
+    if exposure_time is None:
+        msg = 'saturation_limit needs the "exposure time" metadata of a cube in DN per second'
+        raise ValueError(msg)
+    exposure_time = exposure_time.to_value(u.s)
     if np.ndim(exposure_time):
         shape = [1] * cube.data.ndim
         shape[cube.meta.axes["exposure time"][0]] = -1

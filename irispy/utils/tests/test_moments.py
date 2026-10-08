@@ -413,6 +413,9 @@ def test_calculate_moments_saturation_limit_needs_dn():
     with pytest.raises(ValueError, match="needs a cube in DN"):
         calculate_moments(cube, saturation_limit=1e4)
     assert "saturated" not in calculate_moments(cube)
+    cube = make_test_spectrogram_cube([[[1.0, 2.0, 1.0]]], [500, 501, 502] * u.nm, unit=u.DN / u.s)
+    with pytest.raises(ValueError, match="exposure time"):
+        calculate_moments(cube, saturation_limit=1e4)
 
 
 def test_calculate_moments_integrated():
