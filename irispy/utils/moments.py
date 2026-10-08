@@ -46,7 +46,8 @@ def calculate_moments(
         Pixels with any sample at or above this many DN, or of +Inf, get NaN in every map.
         A `float` is in DN. ``cube`` must be in DN, or in DN per second with the reader's
         per-step ``"exposure time"`` metadata, which divides the limit step by step; anything
-        else raises `ValueError`. Level 2 data saturate at ``irispy.utils.constants.SATURATION_LIMIT``.
+        else raises `ValueError`. Level 2 files clip their samples at
+        ``irispy.utils.constants.SATURATION_LIMIT``, saturated ones included.
 
     Returns
     -------
@@ -67,8 +68,10 @@ def calculate_moments(
     -----
     * Negative, non-finite and masked samples are set to zero and add no uncertainty.
     * ``saturation_limit`` is checked before that zeroing, on every sample in the wavelength range,
-      so +Inf samples count. Level 2 files cannot hold +Inf and clip saturated samples to
-      ``irispy.utils.constants.SATURATION_LIMIT``, which counts as saturated.
+      so +Inf samples count. Level 2 files hold no +Inf: they clip every sample, those iris_prep
+      flagged as saturated included, at ``irispy.utils.constants.SATURATION_LIMIT``, so at that
+      limit a sample is saturated or merely bright, which level 2 cannot tell apart, and their
+      NSATPIX and TSATPXn keywords are 0 (see the comment on the constant).
     * Uncertainties are propagated to first order, treating an `~astropy.nddata.UnknownUncertainty`
       as a standard deviation. They are NaN where undefined: the intensity error where no sample is
       left, the centroid and velocity errors where fewer than two are left, and the width and velocity

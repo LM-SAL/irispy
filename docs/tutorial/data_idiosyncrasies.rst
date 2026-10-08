@@ -124,7 +124,7 @@ Flagging of saturated data
 ==========================
 
 Some observations show strong solar activity and resulting saturation either on the CCD or (especially in OBS sequences where data is summed) in the A/D converter.
-Level 2 processing flags saturated pixels as ``inf``, but the level 2 files store integers, so these and any brighter samples are clipped to 16182 DN, ``irispy.utils.constants.SATURATION_LIMIT``.
+Level 2 processing flags saturated pixels as ``inf``, but the level 2 files hold no ``inf``: they store integers and clip every sample at 16182 DN, ``irispy.utils.constants.SATURATION_LIMIT``, so a sample there is saturated or merely bright, and their ``NSATPIX`` and ``TSATPXn`` keywords are 0.
 Pass it as ``saturation_limit`` to `~irispy.utils.moments.calculate_moments` to leave such pixels out of moment maps.
 
 Cosmetic finishing in quicklook movies

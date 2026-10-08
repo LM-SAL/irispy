@@ -41,8 +41,33 @@ READOUT_NOISE = {
     "FUV": 3.1 * DN_UNIT["FUV"],
     "SJI": 1.2 * DN_UNIT["SJI"],
 }
-# Level 2 data are int16 with BSCALE 0.25 and BZERO 7992. iris_prep sets saturated samples to +Inf, which int16
-# cannot hold, so they and any brighter sample are clipped to the top code 32760: 0.25 * 32760 + 7992 = 16182 DN.
+# The level 2 clipping ceiling, not a detector saturation level. Level 2 data are int16 with BSCALE 0.25 and BZERO
+# 7992, and the level 2 writer clips every sample to -199 to 16182 DN, the top code 32760: 0.25 * 32760 + 7992 = 16182
+# (irisl12_savesjidata.pro lines 545-552, irisl12_savespectraldata.pro lines 935-945). Samples at it include every
+# sample that iris_prep flagged as saturated, and any calibrated sample above the ceiling.
+#
+# Open questions for the IRIS team (SolarSoft as mirrored on 2026-10-07, level 2 writer L12-2019-08-08):
+#
+# - Is losing the saturation flags in the warping intended? iris_prep sets raw level 1 samples at or above sat_thresh
+#   to +Inf (iris_prep.pro lines 594-600). Since 2015-06-01 ("Do not turn NaNs into Infs!", infterpolate.pro line 28,
+#   inf_poly_2d.pro line 15), the warping marks Infs with NaN in a mask and restores them only where the interpolated
+#   mask is infinite, which NaN never is (infterpolate.pro line 66, inf_poly_2d.pro line 51). The flagged samples
+#   leave it near 2e4 DN (iris_prep_geowave_correct.pro lines 110-123 and 142-161), so the writer clips them to
+#   16182 DN like any bright sample instead of writing its saturation code 32764, 16183 DN (irisl12_savesjidata.pro
+#   line 552, irisl12_changelog.rtf lines 581-582 and 620).
+# - Are the level 2 NSATPIX and TSATPXn known to be empty? They count the +Inf samples the writer receives
+#   (irisl12_savesjidata.pro lines 628 and 687, irisl12_savespectraldata.pro lines 1030-1031, 1091 and 1130), so
+#   they are 0 whenever the flags are lost, as in every level 2 file checked.
+# - Why is iris_prep's threshold 16000 DN (sat_thresh = 1.6e4, iris_prep.pro lines 67 and 595), below the 16383 DN
+#   of the 14-bit camera?
+#
+# https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/lmsal/calibration/iris_prep.pro
+# https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/lmsal/calibration/infterpolate.pro
+# https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/lmsal/calibration/inf_poly_2d.pro
+# https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/lmsal/calibration/iris_prep_geowave_correct.pro
+# https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/uio/level1to2/irisl12_savesjidata.pro
+# https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/uio/level1to2/irisl12_savespectraldata.pro
+# https://sohoftp.nascom.nasa.gov/solarsoft/iris/idl/uio/level1to2/irisl12_changelog.rtf
 SATURATION_LIMIT = 16182 * u.DN
 RADIANCE_UNIT = u.erg / u.cm**2 / u.s / u.steradian / u.Angstrom
 RADIANCE_UNIT_PER_HZ = u.erg / u.cm**2 / u.s / u.steradian / u.Hz
