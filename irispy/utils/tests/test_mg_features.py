@@ -123,6 +123,7 @@ def test_saturation_limit_ignores_masked_samples(both_lines):
     cube = copy.deepcopy(both_lines)
     cube.data[1, 300, 10] = SATURATION_LIMIT.value
     cube.mask[1, 300, 10] = True
+    cube.mask = cube.mask.astype(int) * 2  # not boolean, so `~` must not complement it bitwise
     cube.data[1, 301, 10] = np.inf  # unmasked, so saturated like in calculate_moments, though not finite
     saturated = calculate_mg_features(cube, lines=("k",), saturation_limit=SATURATION_LIMIT)["k_saturated"].data
     assert list(zip(*np.nonzero(saturated), strict=True)) == [(1, 301)]
