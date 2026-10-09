@@ -17,6 +17,7 @@ from sunraster import SpectrogramCube
 
 from irispy._wcs import _celestial_frame_from_cube, _ResolveNegativeIndicesMixin
 from irispy.utils import calculate_dust_mask
+from irispy.utils._spectral import check_scaled
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import remove_dust as _remove_dust
 from irispy.visualization import SJIPlotter
@@ -125,6 +126,7 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
             If True, dust particles positions mask will be removed.
             Default=False
         """
+        check_scaled(self)
         dust_mask = calculate_dust_mask(self.data)
         if undo:
             if self.mask is not None:
