@@ -9,6 +9,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.time import Time
 from astropy.wcs import WCS
 
 from sunpy.coordinates import Helioprojective, get_body_heliographic_stonyhurst
@@ -16,7 +17,7 @@ from sunpy.map.header_helper import make_fitswcs_header
 
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import _create_headers_wcs, _fill_dropped_pointing_rows, _t_obs, read_sji_lvl2
-from irispy.sji import AIACube
+from irispy.sji import AIACube, SOTCube
 
 
 def test_sns_read_sji_lvl2(sns_sji_2832_file):
@@ -310,3 +311,83 @@ def test_frame_wcs_headers_match_per_frame_make_fitswcs_header(sns_sji_1400_file
                 unit=u.DN,
             )
             assert dict(headers[i]) == dict(expected)
+
+
+@pytest.mark.parametrize("memmap", [False, True])
+@pytest.mark.parametrize(
+    ("kind", "unit", "date"),
+    [
+        ("FG", u.DN, "2015-08-30T10:04:31.477"),
+        ("MG", u.dimensionless_unscaled, "2016-01-08T19:04:35.322"),
+        # The SOT-SP maps give SolarSoft dates, "8-Jan-2016 19:13:48.658"
+        ("SP", u.G, "2016-01-08T19:13:48.658"),
+    ],
+    ids=["FG", "MG", "SP"],
+)
+def test_read_sot_cube(kind, unit, date, memmap, request):
+    filename = request.getfixturevalue(f"sot_{kind.lower()}_file")
+    cube = read_sji_lvl2(filename, memmap=memmap)
+    with fits.open(filename) as hdulist:
+        header, raw = hdulist[0].header, hdulist[0].data
+        aux, columns = np.atleast_2d(hdulist[1].data), hdulist[1].header
+
+    assert isinstance(cube, SOTCube)
+    assert "SOTCube" in str(cube)
+    assert cube.unit == unit
+    assert cube.meta["scaled"]
+    # The floats are unscaled and NaN marks missing pixels, with or without memmap
+    np.testing.assert_array_equal(cube.data, raw)
+    np.testing.assert_array_equal(cube.mask, np.isnan(raw))
+    assert np.isnan(raw).any() == (kind != "MG")
+    assert cube.meta.date_reference.isot == date
+    # DSUN_OBS and TWAVE1 are 0, so the solar distance and wavelength are missing
+    assert cube.meta.distance_to_sun is None
+    assert cube.meta.mu is None
+    assert cube.meta.rest_wavelength is None
+    times = Time(header["STARTOBS"]) + (aux[:, columns["TIME"]] + aux[:, columns["EXPTIMES"]] / 2) * u.s
+    assert_quantity_allclose((cube.axis_world_coords("time")[0] - times).to(u.s), 0 * u.s, atol=1 * u.us)
+    # CRVAL is the per-frame XCENIX/YCENIX at the 1-based FITS CRPIX
+    frames = np.arange(len(aux))
+    pointing = cube.wcs.pixel_to_world(header["CRPIX1"] - 1, header["CRPIX2"] - 1, frames)[0]
+    assert_quantity_allclose(pointing.Tx, aux[:, columns["XCENIX"]] * u.arcsec, atol=1e-6 * u.arcsec)
+    assert_quantity_allclose(pointing.Ty, aux[:, columns["YCENIX"]] * u.arcsec, atol=1e-6 * u.arcsec)
+    frame = int(header["CRPIX3"]) - 1
+    assert_quantity_allclose(pointing[frame].Tx, header["CRVAL1"] * u.arcsec, atol=1e-6 * u.arcsec)
+    assert_quantity_allclose(pointing[frame].Ty, header["CRVAL2"] * u.arcsec, atol=1e-6 * u.arcsec)
+    step = cube.wcs.pixel_to_world(header["CRPIX1"], header["CRPIX2"] - 1, frame)[0]
+    assert_quantity_allclose(
+        np.hypot(step.Tx - pointing[frame].Tx, step.Ty - pointing[frame].Ty), header["CDELT1"] * u.arcsec, rtol=1e-4
+    )
+
+
+@pytest.mark.parametrize("memmap", [False, True])
+def test_read_sot_magnetic_values_are_not_fill_values(sot_sp_file, memmap):
+    with fits.open(sot_sp_file) as hdulist:
+        hdulist[0].data.flat[:3] = [-200, -199, np.nan]
+        expected = hdulist[0].data.copy()
+        cube = read_sji_lvl2(hdulist, memmap=memmap)
+
+    np.testing.assert_array_equal(cube.data, expected)
+    np.testing.assert_array_equal(cube.mask, np.isnan(expected))
+
+
+@pytest.mark.parametrize("kind", ["FG", "MG", "SP"])
+@pytest.mark.parametrize("conversion", ["frame", "sequence", "2d"])
+def test_sot_cube_to_maps(kind, conversion, request):
+    cube = read_sji_lvl2(request.getfixturevalue(f"sot_{kind.lower()}_file"))
+    index = cube.shape[0] - 1
+    if conversion == "2d":
+        sot_map = cube[index].to_maps()
+    elif conversion == "sequence":
+        sot_map = cube.to_maps([index])[0]
+    else:
+        sot_map = cube.to_maps(index)
+    assert sot_map.unit == cube.unit
+    assert sot_map.instrument == cube.meta["INSTRUME"]
+    assert sot_map.observatory == cube.meta["TELESCOP"]
+    assert sot_map.exposure_time == cube.meta["EXPTIME"] * u.s
+    assert sot_map.meta["TWAVE1"] == cube.meta["TWAVE1"]
+    assert sot_map.date.utc.isot == cube.wcs.pixel_to_world(0, 0, index)[-1].utc.isot
+    # The SOT cubes have no wavelength (TWAVE1 is 0), nor an IRIS colormap to plot with
+    assert sot_map.wavelength is None
+    sot_map.plot()

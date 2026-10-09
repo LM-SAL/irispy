@@ -116,6 +116,13 @@ The mosaic is not derotated, so ``meta["time"]`` gives the time of each position
 ``AllSDOMaps.tar.gz`` holds SDO pseudo-mosaics, AIA 171, 193, 304, 1600 and 1700 Å and an HMI magnetogram, sampled at the times IRIS observed each part of the disk.
 They are plain FITS images that `sunpy.map.Map` opens directly.
 
+Hinode/SOT data
+---------------
+
+`~irispy.io.read_files` reads the Hinode/SOT images and magnetic data supplied with IRIS observations :cite:p:`itn32`.
+The returned `~irispy.sji.SOTCube` supports the same slicing and plotting methods as `~irispy.sji.SJICube` and can be converted to SunPy maps with `~irispy.sji.SOTCube.to_maps`.
+The data retain their units, and missing pixels are masked.
+
 Reading Level 2 Data
 ====================
 

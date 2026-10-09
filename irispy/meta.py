@@ -6,10 +6,10 @@ import numpy as np
 import astropy.units as u
 from astropy.constants import R_sun as _R_SUN
 from astropy.coordinates import SkyCoord
-from astropy.time import Time
 
 from ndcube.meta import NDMeta
 from sunpy.coordinates import Helioprojective, get_earth
+from sunpy.time import parse_time
 from sunraster.meta import RemoteSensorMetaABC, SlitSpectrographMetaABC
 
 from irispy.utils.constants import SPECTRAL_BAND
@@ -40,7 +40,8 @@ class BaseMeta(NDMeta):
 
     def _construct_time(self, key):
         val = self.get(key)
-        return Time(val, format="fits", scale="utc") if val is not None and str(val).strip() else None
+        # SOT-SP dates can use SolarSoft's "8-Jan-2016 19:13:48.658" format.
+        return parse_time(val, scale="utc") if val is not None and str(val).strip() else None
 
     def _quantity(self, key, unit):
         """
@@ -90,7 +91,7 @@ class BaseMeta(NDMeta):
         rsun = self._quantity("RSUN_OBS", u.arcsec)
         if rsun is not None:
             return rsun
-        dsun = self._quantity("DSUN_OBS", u.m)
+        dsun = self.distance_to_sun
         if dsun is None:
             return None
         return np.arcsin(_R_SUN / dsun).to(u.arcsec)
@@ -112,8 +113,8 @@ class BaseMeta(NDMeta):
 
     @property
     def distance_to_sun(self):
-        dsun = self._quantity("DSUN_OBS", u.m)
-        return None if dsun is None else dsun.to(u.AU)
+        # SOT files use DSUN_OBS = 0 for an unknown distance.
+        return self._quantity("DSUN_OBS", u.m).to(u.AU) if self.get("DSUN_OBS") else None
 
     @property
     def date_reference(self):
@@ -237,6 +238,9 @@ class BaseMeta(NDMeta):
         `None` when the window has no usable ``TWAVE`` keyword.
         """
         twave = self.get(f"TWAVE{self._iwin}")
+        # SOT files use TWAVE1 = 0 for an unspecified wavelength.
+        if not twave:
+            return None
         try:
             return (float(twave) * u.AA).to(u.nm)
         except (TypeError, ValueError):

@@ -71,6 +71,9 @@ def test_to_map(sns_sjicube_1330):
     assert output.reference_date is not None
     assert output.wavelength == 1330 * u.AA
     assert "1330" in output.name
+    sliced = sns_sjicube_1330[0].to_maps()
+    assert sliced.meta == output.meta
+    assert sliced.plot_settings["cmap"] == output.plot_settings["cmap"]
 
     output = sns_sjicube_1330.to_maps([0, 2])
     assert isinstance(output, sunpy.map.mapsequence.MapSequence)

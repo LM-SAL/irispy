@@ -14,13 +14,20 @@ from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 from sunpy.util import MetaDict
 
 from irispy._interpolation import _time_lookup
-from irispy.io._mask import _memmap_fill_mask
+from irispy.io._mask import _fill_mask_values, _memmap_fill_mask
 from irispy.meta import SJIMeta
-from irispy.sji import AIACube, SJICube
+from irispy.sji import AIACube, SJICube, SOTCube
 from irispy.utils import calculate_uncertainty
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUES_SCALED, DN_UNIT, READOUT_NOISE
 
 __all__ = ["read_sji_lvl2"]
+
+# SOT unit descriptions that Astropy cannot parse directly.
+_SOT_BUNIT = {
+    "DN = 64 photoelectrons": "DN",
+    "dimensionless ratio": "",
+    "unitless number between 0 and 1": "",
+}
 
 
 def _t_obs(hdulist):
@@ -192,7 +199,7 @@ def _create_headers_wcs(hdulist, t_obs):
 
 def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
     """
-    Reads a SINGLE level 2 SJI FITS or the IRIS aligned AIA Cube.
+    Read one SJI, AIA, or Hinode/SOT FITS file supplied with IRIS data.
 
     Does not handle multiple files nor tar files.
 
@@ -213,12 +220,14 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         lazy Dask mask, computed only for the slices that are used.
         With ``memmap=False``, missing pixels are marked in the mask and replaced with ``NaN`` for
         floating-point data or ``-200`` for integer data.
+        Hinode/SOT data retain their units and ``NaN`` values with either setting.
         Compressed filenames are decompressed into memory once and cannot be memory-mapped.
 
     Returns
     -------
     `irispy.sji.SJICube`
-        The data cube, using a gWCS.
+        The data cube, using a gWCS. AIA and Hinode/SOT cubes are an
+        `irispy.sji.AIACube` and an `irispy.sji.SOTCube`.
     """
     if isinstance(filename, fits.HDUList):
         context = nullcontext(filename)
@@ -228,6 +237,10 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         context = fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
     with context as hdulist:
         instrume = hdulist[0].header["INSTRUME"]
+        is_sot = instrume.startswith("SOT")
+        if hdulist[1].data.ndim == 1:
+            # A one-frame cube, such as a Hinode/SOT-SP map, stores its auxiliary row as a 1D array
+            hdulist[1].data = hdulist[1].data[np.newaxis]
         t_obs = _t_obs(hdulist)
         _fill_dropped_pointing_rows(hdulist)
         extra_coords = [
@@ -264,13 +277,14 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         data = hdulist[0].data
         data_nan_masked = hdulist[0].data
         out_uncertainty = None
+        # Negative SOT magnetic values are valid measurements; only NaN marks missing pixels.
         if memmap:
-            mask = _memmap_fill_mask(data, hdulist[0].header)
+            mask = _memmap_fill_mask(data, hdulist[0].header, nan_only=is_sot)
             scaled = False
             unit = DN_UNIT["SJI_UNSCALED"]
         else:
             # This is a workaround for the AIA cubes being in int and not float
-            mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
+            mask = np.isnan(data) if is_sot else _fill_mask_values(data, *BAD_PIXEL_VALUES_SCALED)
             mask_value = BAD_PIXEL_VALUE_SCALED if np.issubdtype(data.dtype, np.integer) else np.nan
             if not data_nan_masked.flags["W"]:
                 data_nan_masked = data_nan_masked.copy()
@@ -282,6 +296,11 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
                     calculate_uncertainty(data_nan_masked, READOUT_NOISE["SJI"], DN_UNIT["SJI"])
                 )
         cube_class = SJICube if instrume in ["IRIS", "SJI"] else AIACube
+        if is_sot:
+            # Hinode/SOT cubes are floats without FITS scaling
+            cube_class, scaled = SOTCube, True
+            bunit = hdulist[0].header.get("BUNIT", "")
+            unit = u.Unit(_SOT_BUNIT.get(bunit, bunit), parse_strict="silent")
         meta = SJIMeta(hdulist[0].header)
         meta["frame_wcs_headers"] = _create_headers_wcs(hdulist, t_obs)  # root-relative, not axis-aware
         meta["scaled"] = scaled

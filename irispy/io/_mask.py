@@ -17,10 +17,11 @@ class _MappedArray:
 
 
 def _fill_mask_values(data, raw_m200, raw_m199):
-    return (data == raw_m200) | (data == raw_m199)
+    mask = (data == raw_m200) | (data == raw_m199)
+    return mask | np.isnan(data) if data.dtype.kind == "f" else mask
 
 
-def _memmap_fill_mask(data, header):
+def _memmap_fill_mask(data, header, *, nan_only=False):
     # Dask copies NumPy arrays at graph construction. Hide the mapped array behind
     # a slice-only wrapper, and skip tokenizing its contents or probing a slice.
     import dask.array as da  # NOQA: PLC0415
@@ -31,6 +32,8 @@ def _memmap_fill_mask(data, header):
         name=False,
         meta=np.empty((0,) * data.ndim, dtype=data.dtype),
     )
+    if nan_only:
+        return da.isnan(mapped)
     raw_fill = (np.asarray(BAD_PIXEL_VALUES_SCALED) - header.get("BZERO", 0)) / header.get("BSCALE", 1)
     # Integral raw codes compare directly as integers, without converting the data.
     raw_m200, raw_m199 = [int(value) if value.is_integer() else value for value in raw_fill]

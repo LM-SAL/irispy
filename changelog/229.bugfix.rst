@@ -1,0 +1,1 @@
+Fixed plotting of SunPy maps converted from AIA channels other than 1600 Å.

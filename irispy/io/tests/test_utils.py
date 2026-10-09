@@ -13,6 +13,7 @@ from astropy.io import fits
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
 from irispy.io.utils import _extract_tarfile, _get_spec_group_key, fits_info, read_files
+from irispy.sji import SOTCube
 
 
 @pytest.mark.parametrize("memmap", [False, True])
@@ -137,6 +138,34 @@ def test_read_files_grouped_spectrograph_honors_allow_errors(
 def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
     returns = read_files([sns_sji_1330_file, sns_sji_1400_file])
     assert len(returns) == 2
+
+
+def test_read_files_sot(tmp_path, sot_fg_file, sot_mg_file, sot_sp_file):
+    # A SOT-SP tar file can hold more than one map of a quantity
+    tar_path = tmp_path / "iris_l2_20160108_191211_3680100932_SOTSP.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(sot_sp_file, arcname="sotsp_a.fits")
+        tar.add(sot_sp_file, arcname="sotsp_b.fits")
+
+    returns = read_files([sot_fg_file, sot_mg_file, str(tar_path)])
+
+    assert set(returns.keys()) == {"G band 4305", "TF Na I 5896", "6302A B_LOS", "6302A B_LOS (sotsp_b)"}
+    assert all(isinstance(cube, SOTCube) for cube in returns.values())
+
+
+@pytest.mark.parametrize("source", ["files", "archive"], ids=["repeated-input", "same-stem-members"])
+def test_read_files_sot_repeated_names(tmp_path, sot_sp_file, source):
+    filenames = [sot_sp_file] * 4
+    if source == "archive":
+        tar_path = tmp_path / "obs_SOTSP.tar.gz"
+        with tarfile.open(tar_path, "w:gz") as tar:
+            for i in range(4):
+                tar.add(sot_sp_file, arcname=f"{i}/sotsp.fits")
+        filenames = [tar_path]
+
+    returns = read_files(filenames)
+
+    assert len(returns) == 4
 
 
 def test_read_files_raises_when_no_files_are_supported(tmp_path):

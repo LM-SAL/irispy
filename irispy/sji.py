@@ -3,6 +3,7 @@ import warnings
 from numbers import Integral
 from functools import cached_property
 
+import matplotlib as mpl
 import numpy as np
 
 import gwcs
@@ -20,7 +21,7 @@ from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import remove_dust as _remove_dust
 from irispy.visualization import SJIPlotter
 
-__all__ = ["AIACube", "SJICube"]
+__all__ = ["AIACube", "SJICube", "SOTCube"]
 
 
 class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
@@ -186,28 +187,37 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         else:
             idx_list = index
 
-        # We can shortcut if the Cube has been reduced to a 2D slice
-        if self.wcs.world_n_dim == 2:
-            # TODO: Missing metadata
-            return Map(self.data, self.fits_wcs)
-        # pixel_to_world does not wrap negative indices the way the data and fits_wcs lists do.
-        idx_list = [range(self.data.shape[0])[i] for i in idx_list]
-        data_wcs = ((self.data[i], self.fits_wcs[i]) for i in idx_list)
-        times_iso = (self.wcs.pixel_to_world(0, 0, i)[-1].utc.isot for i in idx_list)
+        # The original SOT BUNIT can be descriptive text; maps need the normalized unit.
+        unit_meta = {"BUNIT": self.unit.to_string()} if isinstance(self, SOTCube) and self.unit is not None else {}
+        is_2d = self.wcs.world_n_dim == 2
+        if is_2d:
+            data_wcs = [(self.data, self.fits_wcs)]
+            times_iso = [self.global_coords["Time (UTC)"].utc.isot]
+        else:
+            # pixel_to_world does not wrap negative indices the way the data and fits_wcs lists do.
+            idx_list = [range(self.data.shape[0])[i] for i in idx_list]
+            data_wcs = ((self.data[i], self.fits_wcs[i]) for i in idx_list)
+            times_iso = (self.wcs.pixel_to_world(0, 0, i)[-1].utc.isot for i in idx_list)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SunpyMetadataWarning)
             maps = Map(data_wcs, sequence=True)
         for m, t in zip(maps, times_iso, strict=True):
+            m.meta.update(unit_meta)
             m.meta["DATE-OBS"] = t
             m.meta["INSTRUME"] = self.meta.get("INSTRUME", "SJI")
             m.meta["TELESCOP"] = self.meta.get("TELESCOP", "IRIS")
             m.meta["EXPTIME"] = self.meta.get("EXPTIME", 0.0)
             m.meta["TWAVE1"] = self.meta.get("TWAVE1")
-            # sunpy reads the wavelength (shown in the map name and plot title) from these.
-            m.meta["WAVELNTH"] = self.meta.get("TWAVE1")
-            m.meta["WAVEUNIT"] = "Angstrom"
-            m.plot_settings["cmap"] = f"irissji{int(self.meta['TWAVE1'])}"
-        return maps[0] if isinstance(index, Integral) else maps
+            # Hinode/SOT cubes have no wavelength (TWAVE1 is 0)
+            if self.meta.get("TWAVE1"):
+                # sunpy reads the wavelength (shown in the map name and plot title) from these.
+                m.meta["WAVELNTH"] = self.meta.get("TWAVE1")
+                m.meta["WAVEUNIT"] = "Angstrom"
+            # Hinode/SOT cubes and most AIA channels have no IRIS colormap
+            cmap = f"irissji{int(self.meta['TWAVE1'])}"
+            if cmap in mpl.colormaps:
+                m.plot_settings["cmap"] = cmap
+        return maps[0] if is_2d or isinstance(index, Integral) else maps
 
 
 class AIACube(SJICube):
@@ -219,3 +229,12 @@ class AIACube(SJICube):
 
     def __str__(self) -> str:
         return super().__str__().replace("SJICube", "AIACube")
+
+
+class SOTCube(SJICube):
+    """
+    Hinode/SOT image and magnetic data supplied with IRIS observations :cite:p:`itn32`.
+    """
+
+    def __str__(self) -> str:
+        return super().__str__().replace("SJICube", "SOTCube")

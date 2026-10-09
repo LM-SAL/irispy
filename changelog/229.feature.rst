@@ -1,0 +1,1 @@
+Added support for the Hinode/SOT images and magnetic data supplied with IRIS observations. `~irispy.io.read_files` loads files or archives into an `~irispy.sji.SOTCube`, preserving units and masking missing pixels.
