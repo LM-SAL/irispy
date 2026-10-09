@@ -1,0 +1,1 @@
+`~irispy.io.read_files` now distinguishes cubes with the same band or quantity by filename, preserving data from separate observations.

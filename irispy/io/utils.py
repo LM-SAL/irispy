@@ -40,6 +40,9 @@ def _get_simple_metadata(file):
         header = fits.getheader(file)
     instrume = header.get("INSTRUME", "")
     describe = header.get("TDESC1", "")
+    if instrume == "SOT-SP":
+        # SOT-SP maps share a band name; BTYPE distinguishes the measured quantities.
+        describe = f"{describe} {header.get('BTYPE', '')}".strip()
     return instrume, describe
 
 
@@ -175,7 +178,7 @@ def fits_info(filename: str) -> None:
 
 def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=False, allow_errors=False, **kwargs):
     """
-    A wrapper function to read any number of raster, SJI or IRIS-aligned AIA data files.
+    Read raster, SJI, AIA, or Hinode/SOT data supplied with IRIS observations.
 
     The goal is be able to download an entire IRIS observation and read it
     in one go, without having to worry about the type of file.
@@ -207,7 +210,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
     Returns
     -------
     `ndcube.NDCollection`
-        With keys being the value of TDESC1, the values being the cube.
+        Cubes keyed by band or measured quantity. Repeated names include the filename.
     """
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
@@ -220,7 +223,7 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
             msg = f"{filename} is a full-disk mosaic; read it with irispy.io.read_mosaic"
             raise ValueError(msg)
         try:
-            sdo_tarfile = bool(filename.name.endswith("SDO.tar.gz"))
+            sji_tarfile = filename.name.endswith(("SDO.tar.gz", "SOTFG.tar.gz", "SOTSP.tar.gz"))
             raster_tarfile = bool(filename.name.endswith("_raster.tar.gz"))
             context = (
                 fits.open(filename, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
@@ -230,19 +233,19 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
             with context as hdulist:
                 instrume, describe = _get_simple_metadata(hdulist if hdulist is not None else filename)
                 log.debug(f"Processing file: {filename} with instrume: {instrume}")
-                if sdo_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith("AIA"):
-                    file = _extract_tarfile([filename]) if sdo_tarfile else [filename]
-                    for f in file:
+                if sji_tarfile or instrume in ["IRIS", "SJI"] or instrume.startswith(("AIA", "SOT")):
+                    file = _extract_tarfile([filename]) if sji_tarfile else [filename]
+                    for f in sorted(file):
                         sji_context = (
                             fits.open(f, memmap=memmap, do_not_scale_image_data=memmap, decompress_in_memory=True)
-                            if sdo_tarfile
+                            if sji_tarfile
                             else nullcontext(hdulist)
                         )
                         with sji_context as sji_hdulist:
                             instrume, describe = _get_simple_metadata(sji_hdulist)
-                            returns[f"{describe}"] = read_sji_lvl2(
-                                sji_hdulist, memmap=memmap, uncertainty=uncertainty, **kwargs
-                            )
+                            # SOT-SP archives may contain multiple observations of the same quantity.
+                            key = describe if describe not in returns else f"{describe} ({f.stem})"
+                            returns[key] = read_sji_lvl2(sji_hdulist, memmap=memmap, uncertainty=uncertainty, **kwargs)
                 elif raster_tarfile:
                     file = _extract_tarfile([filename]) if raster_tarfile else [filename]
                     instrume, describe = _get_simple_metadata(file[0])

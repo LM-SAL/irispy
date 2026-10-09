@@ -166,3 +166,18 @@ def bursts_si_iv_raster():
 @pytest.fixture(scope="module")
 def bursts_sjicube_1400():
     return read_sji_lvl2(get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits"))
+
+
+@pytest.fixture
+def sot_fg_file():
+    return get_test_filepath("sot/sot_l2_20150830_070953_3603259402_20150830100400_Gband4305_FG_test.fits")
+
+
+@pytest.fixture
+def sot_mg_file():
+    return get_test_filepath("sot/sot_l2_20160108_191211_3680100932_20160108181400_TFNaI5896_MG_test.fits")
+
+
+@pytest.fixture
+def sot_sp_file():
+    return get_test_filepath("sot/sotsp_l2_20160108_191211_3680100932_20160108_185006_blapp_index_test.fits")

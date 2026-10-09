@@ -1,0 +1,34 @@
+Test data for the Hinode/SOT cubes co-aligned with IRIS (IRIS Technical Note 32,
+https://iris.lmsal.com/itn32/). The whole files are in the SOTFG and SOTSP tar files
+beside the IRIS level 2 data of each observation:
+
+https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2015/08/30/20150830_070953_3603259402/iris_l2_20150830_070953_3603259402_SOTFG.tar.gz
+https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2016/01/08/20160108_191211_3680100932/iris_l2_20160108_191211_3680100932_SOTFG.tar.gz
+https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2016/01/08/20160108_191211_3680100932/iris_l2_20160108_191211_3680100932_SOTSP.tar.gz
+
+sot_l2_20150830_070953_3603259402_20150830100400_Gband4305_FG_test.fits
+    SOT broadband filtergrams (INSTRUME = 'SOT'), G band, BUNIT 'DN = 64 photoelectrons',
+    4 frames of 573x622 pixels. The top rows are NaN.
+sot_l2_20160108_191211_3680100932_20160108181400_TFNaI5896_MG_test.fits
+    SOT narrowband magnetograms (INSTRUME = 'SOT/NB'), Na I 5896, BUNIT 'dimensionless ratio',
+    14 frames of 226x216 pixels.
+sotsp_l2_20160108_191211_3680100932_20160108_185006_blapp_index_test.fits
+    One SOT-SP map (INSTRUME = 'SOT-SP') of the line-of-sight field, BUNIT 'Gauss', 577x525
+    pixels. Its auxiliary row is 1D and its DATE_OBS is a SolarSoft date.
+
+Kept:   every frame and every 8th pixel in x and y, from the first. The data values and the
+        auxiliary table are unchanged.
+Header: CDELT1/2 are 8 times larger and CRPIX1/2 = (CRPIX - 1) / 8 + 1.
+Dropped: the level 1 filename table, whose A0 columns astropy cannot read.
+Made:   for each whole file,
+
+    from astropy.io import fits
+
+    with fits.open(source) as hdulist:
+        header = hdulist[0].header.copy()
+        for axis in (1, 2):
+            header[f"CDELT{axis}"] *= 8
+            header[f"CRPIX{axis}"] = (header[f"CRPIX{axis}"] - 1) / 8 + 1
+        fits.HDUList(
+            [fits.PrimaryHDU(hdulist[0].data[:, ::8, ::8], header), fits.ImageHDU(hdulist[1].data, hdulist[1].header)]
+        ).writeto(output)
