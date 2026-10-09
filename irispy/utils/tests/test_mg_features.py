@@ -11,7 +11,6 @@ import astropy.units as u
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube
-from irispy.utils.constants import SATURATION_LIMIT
 from irispy.utils.mg_features import _center_vertex, _maxima, _peak_vertex, _peaks, _spline, calculate_mg_features
 
 TEST_FILE = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits"
@@ -90,56 +89,45 @@ def both_lines(raster):
 def test_both_lines(raster, both_lines):
     features = calculate_mg_features(both_lines)
     assert list(features.keys()) == [
-        f"{line}{feature}_{kind}"
+        key
         for line in "kh"
-        for feature in ("2v", "3", "2r")
-        for kind in ("velocity", "intensity")
+        for key in [
+            *(f"{line}{feature}_{kind}" for feature in ("2v", "3", "2r") for kind in ("velocity", "intensity")),
+            f"{line}_saturated",
+        ]
     ]
     for line, window in WINDOWS.items():
         for key, value in calculate_mg_features(raster[window][0], lines=(line,)).items():
             np.testing.assert_array_equal(features[key].data, value.data)
 
 
-def test_saturation_limit(both_lines):
+def test_saturated(both_lines):
     cube = copy.deepcopy(both_lines)
-    cube.data[1, 300, 10] = SATURATION_LIMIT.value  # at -17.0 km/s from k
-    cube.data[1, 400, 0] = SATURATION_LIMIT.value  # at -44.3 km/s, not searched
-    plain = calculate_mg_features(cube)
-    assert np.isfinite(plain["k3_velocity"].data[1, [300, 400]]).all()
-    features = calculate_mg_features(cube, saturation_limit=SATURATION_LIMIT)
+    cube.data[1, 300, 10] = np.inf  # at -17.0 km/s from k, as the readers set clipped samples
+    cube.data[1, 400, 0] = np.inf  # at -44.3 km/s, not searched
+    plain = calculate_mg_features(both_lines)
+    features = calculate_mg_features(cube)
     assert list(zip(*np.nonzero(features["k_saturated"].data), strict=True)) == [(1, 300)]
     assert not features["h_saturated"].data.any()
-    for key, value in features.items():
+    assert np.isfinite(features["k3_velocity"].data[1, 400])
+    for key, value in plain.items():
         if key.endswith("_saturated"):
             continue
-        expected = plain[key].data.copy()
+        expected = value.data.copy()
         if key.startswith("k"):
             expected[1, 300] = np.nan
-        np.testing.assert_array_equal(value.data, expected, err_msg=key)
-        np.testing.assert_array_equal(value.mask, np.isnan(expected), err_msg=key)
+        np.testing.assert_array_equal(features[key].data, expected, err_msg=key)
+        np.testing.assert_array_equal(features[key].mask, np.isnan(expected), err_msg=key)
 
 
-def test_saturation_limit_ignores_masked_samples(both_lines):
+def test_saturated_ignores_masked_samples(both_lines):
     cube = copy.deepcopy(both_lines)
-    cube.data[1, 300, 10] = SATURATION_LIMIT.value
+    cube.data[1, 300, 10] = np.inf
     cube.mask[1, 300, 10] = True
     cube.mask = cube.mask.astype(int) * 2  # not boolean, so `~` must not complement it bitwise
-    cube.data[1, 301, 10] = np.inf  # unmasked, so saturated like in calculate_moments, though not finite
-    saturated = calculate_mg_features(cube, lines=("k",), saturation_limit=SATURATION_LIMIT)["k_saturated"].data
+    cube.data[1, 301, 10] = np.inf  # unmasked, so saturated
+    saturated = calculate_mg_features(cube, lines=("k",))["k_saturated"].data
     assert list(zip(*np.nonzero(saturated), strict=True)) == [(1, 301)]
-
-
-def test_saturation_limit_per_second(raster):
-    # The same rate is 16182 DN in the 4 s step but not in the 1 s ones
-    cube = raster["Mg II k 2796"][0].apply_exposure_time_correction()
-    cube.meta.add("exposure time", [1, 4, 1] * u.s, None, 0, overwrite=True)
-    cube.data[:, 300, 10] = SATURATION_LIMIT.value / 4
-    expected = calculate_mg_features(cube, lines=("k",))["k3_velocity"].data
-    assert np.isfinite(expected[:, 300]).all()
-    expected[1, 300] = np.nan
-    for limit in (SATURATION_LIMIT, SATURATION_LIMIT.value):
-        velocity = calculate_mg_features(cube, lines=("k",), saturation_limit=limit)["k3_velocity"].data
-        np.testing.assert_array_equal(velocity, expected)
 
 
 def test_dask_data(raster):

@@ -192,9 +192,10 @@ def test_sji_frames_without_valid_pixels(bursts_sjicube_1400):
     sji.mask[1] = True
     _, events = find_sji_bursts(sji)
     assert 1 not in events["frame"]
-    sji.data[0, 100, 100] = np.inf  # spoils the frame's statistics, so it must warn
-    with pytest.warns(RuntimeWarning, match="invalid value"):
-        find_sji_bursts(sji)
+    sji.data[0, 100, 100:102] = np.inf  # clipped, as the readers set them: bright, and out of the statistics
+    labels, events = find_sji_bursts(sji)
+    assert np.isfinite(events["threshold"]).all()
+    assert labels.data[0, 100, 100] == labels.data[0, 100, 101] > 0
 
 
 def test_sji_errors(sns_sjicube_1330, bursts_sjicube_1400, bursts_sji_1400_file):

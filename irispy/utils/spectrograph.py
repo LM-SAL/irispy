@@ -9,7 +9,7 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
-from irispy.utils._spectral import check_scaled, in_windows, make_map_cube, standard_deviation
+from irispy.utils._spectral import _fit_background, check_scaled, make_map_cube, standard_deviation
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
@@ -144,7 +144,8 @@ def radiation_temperature(
       radiation whose source function is the Planck function (:cite:t:`rybicki1985`, Sections 1.4
       and 1.5), which holds only approximately for Mg II h & k :cite:p:`leenaarts2013` and not at
       all for optically thin lines.
-    * Samples with zero, negative or non-finite radiance are NaN and masked; the input mask is kept.
+    * Samples with zero, negative or NaN radiance are NaN and masked, and +Inf samples, as the readers
+      set the ones clipped at the level 2 ceiling, are +Inf and masked; the input mask is kept.
       Noise just above zero still gives several thousand kelvin.
     * The uncertainty is propagated to first order, so it is unreliable where it is comparable to the radiance.
     """
@@ -341,22 +342,9 @@ def subtract_background(cube, windows, *, degree=1):
     up coherently in a sum over wavelength, which a
     `~astropy.nddata.StdDevUncertainty` of independent samples cannot hold. For a constant
     (``degree=0``) fitted to :math:`n` samples of error :math:`\sigma`, it is :math:`\sigma / \sqrt{n}`.
+
+    +Inf samples, as the readers set the ones clipped at the level 2 ceiling, are left out of the fit
+    and stay +Inf.
     """
     check_scaled(cube)
-    wavelength_axis = cube.wavelength_axis
-    wavelengths = cube.axis_world_coords(wavelength_axis)[0]
-    index = np.flatnonzero(in_windows(wavelengths, windows))
-    # Centered wavelengths keep the fit well conditioned
-    vander = np.polynomial.polynomial.polyvander((wavelengths - wavelengths.mean()).to_value(u.AA), degree)
-    samples = np.moveaxis(cube.data, wavelength_axis, -1)[..., index].astype(float)
-    kept = np.isfinite(samples)
-    if cube.mask is not None:
-        kept &= ~np.moveaxis(np.broadcast_to(cube.mask, cube.data.shape), wavelength_axis, -1)[..., index]
-    # The normal equations of each spectrum, with its own samples
-    normal = np.einsum("...k,ki,kj->...ij", kept, vander[index], vander[index])
-    enough = kept.sum(axis=-1) > degree
-    normal[~enough] = np.eye(degree + 1)
-    rhs = np.einsum("...k,ki->...i", np.where(kept, samples, 0), vander[index])
-    coefficients = np.linalg.solve(normal, rhs[..., np.newaxis])[..., 0]
-    background = np.where(enough[..., np.newaxis], coefficients @ vander.T, np.nan)
-    return cube - u.Quantity(np.moveaxis(background, -1, wavelength_axis), cube.unit)
+    return cube - u.Quantity(_fit_background(cube, windows, degree), cube.unit)

@@ -18,7 +18,13 @@ from irispy.io._mask import _fill_mask_values, _memmap_fill_mask
 from irispy.meta import SJIMeta
 from irispy.sji import AIACube, SJICube, SOTCube
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, BAD_PIXEL_VALUES_SCALED, DN_UNIT, READOUT_NOISE
+from irispy.utils.constants import (
+    BAD_PIXEL_VALUE_SCALED,
+    BAD_PIXEL_VALUES_SCALED,
+    DN_UNIT,
+    READOUT_NOISE,
+    SATURATION_LIMIT,
+)
 
 __all__ = ["read_sji_lvl2"]
 
@@ -289,6 +295,9 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
             if not data_nan_masked.flags["W"]:
                 data_nan_masked = data_nan_masked.copy()
             data_nan_masked[mask] = mask_value
+            if instrume in ["IRIS", "SJI"] and np.issubdtype(data_nan_masked.dtype, np.floating):
+                # Level 2 clips at the ceiling, where iris_prep's +Inf saturation flags were lost
+                data_nan_masked[data_nan_masked >= SATURATION_LIMIT.value] = np.inf
             scaled = True
             unit = DN_UNIT["SJI"]
             if uncertainty and instrume in ["IRIS", "SJI"]:

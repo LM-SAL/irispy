@@ -71,14 +71,18 @@ si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
 ###############################################################################
 # `~irispy.utils.moments.calculate_moments` computes the moments along the spectral
-# axis for every spatial pixel. We restrict it to 0.05 nm either side of the rest
-# wavelength (``wings``) to keep out neighboring lines, give ``rest_wavelength`` so
+# axis for every spatial pixel. We restrict it to 100 km/s either side of the rest
+# wavelength (``velocity_range``) to keep out neighboring lines, give ``rest_wavelength`` so
 # that the centroid and width come out as velocities, and with ``min_intensity``
 # blank pixels whose total intensity is below 200 DN, where the window is mostly
 # noise (noise alone gives a width of about 60 km/s here).
 
 moments = calculate_moments(
-    si_iv_1403, rest_wavelength=si_iv_core, wings=0.05 * u.nm, integrated=False, min_intensity=200 * si_iv_1403.unit
+    si_iv_1403,
+    rest_wavelength=si_iv_core,
+    velocity_range=(-100, 100) * u.km / u.s,
+    integrated=False,
+    min_intensity=200 * si_iv_1403.unit,
 )
 # The result is a `~irispy.spectrograph.RasterCollection` of 2D maps with the spatial
 # WCS of the input, one per moment; it also has the "centroid" and "width" in wavelength units.

@@ -19,7 +19,7 @@ from irispy.io._mask import _memmap_fill_mask
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils import calculate_uncertainty
-from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, READOUT_NOISE
+from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, READOUT_NOISE, SATURATION_LIMIT
 
 __all__ = ["read_spectrograph_lvl2"]
 
@@ -260,6 +260,8 @@ def read_spectrograph_lvl2(
                         dn_unit = DN_UNIT[f"{meta.detector_band}_UNSCALED"]
                 else:
                     data_mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
+                    # Level 2 clips at the ceiling, where iris_prep's +Inf saturation flags were lost
+                    data[data >= SATURATION_LIMIT.value] = np.inf
                     # memmap data are unscaled integers, so the photon noise would be wrong
                     if uncertainty:
                         out_uncertainty = StdDevUncertainty(calculate_uncertainty(data, readout_noise, dn_unit))

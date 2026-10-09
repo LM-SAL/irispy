@@ -258,3 +258,16 @@ def test_subtract_background_rejects_unscaled_data():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 5), dtype=np.int16), np.linspace(1333, 1337, 5) * u.AA)
     with pytest.raises(ValueError, match="unscaled"):
         subtract_background(cube, [1333, 1334] * u.AA)
+
+
+def test_subtract_background_keeps_inf():
+    wavelengths = np.linspace(1333, 1337, 81) * u.AA
+    data = np.tile(3 + 0.5 * (wavelengths.to_value(u.AA) - 1335), (1, 2, 1))
+    data[0, 0, 0] = np.inf  # in a window, so left out of the fit
+    data[0, 1, 40] = np.inf  # as the readers set clipped samples
+    cube = make_test_spectrogram_cube(data, wavelengths)
+    corrected = subtract_background(cube, [[1333, 1334], [1336, 1337]] * u.AA)
+    assert np.isposinf(corrected.data[0, 0, 0])
+    assert np.isposinf(corrected.data[0, 1, 40])
+    corrected.data[0, 0, 0] = corrected.data[0, 1, 40] = 0
+    np.testing.assert_allclose(corrected.data, 0, atol=1e-9)

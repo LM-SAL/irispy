@@ -17,7 +17,6 @@ from irispy.utils._spectral import (
     _QualityFlag,
     check_scaled,
     drop_extra_coords_dependent_on_axis,
-    in_windows,
     make_map_cube,
     make_spatial_template,
     standard_deviation,
@@ -42,7 +41,7 @@ class RBAQualityFlag(_QualityFlag):
     PEAK_IS_ZERO = (5, "peak is zero or non-finite")
     INCOMPLETE_WINGS = (6, "incomplete red or blue wing coverage")
     LOW_SIGNAL = (7, "below min_intensity")
-    SATURATED = (8, "above saturation_limit")
+    SATURATED = (8, "saturated")
 
 
 def _make_velocity_wcs(array_shape, velocity_axis, velocity_grid):
@@ -79,12 +78,12 @@ def _make_profile_cube(cube, *, data, velocity_grid, wavelength_axis, meta, unce
     )
 
 
-def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
+def _prepare_data(cube, wavelength_axis):
     """
-    Extract data/errors, mask negatives, subtract continuum, move spectral axis to -1.
+    Data and errors, negatives masked, spectral axis last.
     """
     data = np.asarray(cube.data, dtype=float)
-    # Negative samples are left out, also of the continuum
+    # Negative samples are left out
     dropped = data < 0 if cube.mask is None else (data < 0) | cube.mask
     data = np.where(dropped, np.nan, data)
 
@@ -95,16 +94,6 @@ def _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows):
     data = np.moveaxis(data, wavelength_axis, -1)
     if errors is not None:
         errors = np.moveaxis(errors, wavelength_axis, -1)
-
-    if continuum_windows is not None:
-        continuum_mask = in_windows(wavelengths, continuum_windows)
-        data -= np.ma.masked_invalid(data[..., continuum_mask]).mean(axis=-1, keepdims=True).filled(np.nan)
-        if errors is not None:
-            n_finite = np.isfinite(errors[..., continuum_mask]).sum(axis=-1)
-            continuum_errors = np.sqrt(np.nansum(errors[..., continuum_mask] ** 2, axis=-1))
-            continuum_errors = np.where(n_finite > 0, continuum_errors / n_finite, np.nan)
-            errors = np.sqrt(errors**2 + continuum_errors[..., np.newaxis] ** 2)
-
     return data, errors
 
 
@@ -114,10 +103,8 @@ def calculate_red_blue_asymmetry(
     rest_wavelength=None,
     velocity_range=(50, 150) * u.km / u.s,
     dv=10 * u.km / u.s,
-    continuum_windows=None,
-    degree=3,
+    spline_degree=3,
     min_intensity=None,
-    saturation_limit=None,
     return_profiles=True,
 ):
     """
@@ -140,21 +127,12 @@ def calculate_red_blue_asymmetry(
         Two positive velocities defining the wing range to average.
     dv : `astropy.units.Quantity`, optional
         Velocity spacing for the interpolated profile.
-    continuum_windows : `astropy.units.Quantity`, optional
-        One or more wavelength windows whose mean, leaving out negative samples, is subtracted as
-        a constant continuum.
-    degree : `int`, optional
+    spline_degree : `int`, optional
         Spline degree for `scipy.interpolate.make_interp_spline`.
     min_intensity : `float` or `astropy.units.Quantity`, optional
         Minimum peak intensity required for a pixel to be processed.
         Pixels below this threshold are assigned quality flag
         `~irispy.utils.red_blue.RBAQualityFlag.LOW_SIGNAL`.
-    saturation_limit : `float` or `astropy.units.Quantity`, optional
-        Maximum allowed peak intensity. Pixels above this value are assigned
-        quality flag `~irispy.utils.red_blue.RBAQualityFlag.SATURATED`.
-        Unlike in `~irispy.utils.moments.calculate_moments`, it is in
-        ``cube.unit``, not converted with exposure times, and compared with
-        ``>`` to the peak after any continuum subtraction.
     return_profiles : `bool`, optional
         If `True`, include 3D ``"observed_profile"`` and
         ``"interpolated_profile"`` cubes in the output.
@@ -168,6 +146,12 @@ def calculate_red_blue_asymmetry(
         when ``return_profiles=True``. The interpolated profile velocity axis is
         peak-centered; the observed profile velocity axis is relative to
         ``rest_wavelength``.
+
+    Notes
+    -----
+    Pixels with an unmasked +Inf sample, as the readers set the samples clipped at the level 2
+    ceiling, are flagged `~irispy.utils.red_blue.RBAQualityFlag.SATURATED`. Subtract a background
+    first with `~irispy.utils.spectrograph.subtract_background` if the line sits on one.
     """
     check_scaled(cube)
     if rest_wavelength is None:
@@ -196,9 +180,9 @@ def calculate_red_blue_asymmetry(
     if dv <= 0:
         msg = "dv must be positive"
         raise ValueError(msg)
-    degree = int(degree)
-    if degree < 0:
-        msg = "degree must be a non-negative integer"
+    spline_degree = int(spline_degree)
+    if spline_degree < 0:
+        msg = "spline_degree must be a non-negative integer"
         raise ValueError(msg)
 
     wavelength_axis = cube.wavelength_axis
@@ -209,7 +193,7 @@ def calculate_red_blue_asymmetry(
     interp_velocity = np.arange(-interp_extent, interp_extent + dv, dv)
     velocity_range_kms = (velocity_low.to_value(u.km / u.s), velocity_high.to_value(u.km / u.s))
 
-    data, errors = _prepare_data(cube, wavelengths, wavelength_axis, continuum_windows)
+    data, errors = _prepare_data(cube, wavelength_axis)
 
     output_shape = data.shape[:-1]
 
@@ -227,9 +211,9 @@ def calculate_red_blue_asymmetry(
     if min_intensity is not None:
         low_signal = raw_peak < u.Quantity(min_intensity, cube.unit).value
         quality = np.where(low_signal, RBAQualityFlag.LOW_SIGNAL, quality).astype(np.uint8)
-    if saturation_limit is not None:
-        saturated = raw_peak > u.Quantity(saturation_limit, cube.unit).value
-        quality = np.where(saturated, RBAQualityFlag.SATURATED, quality).astype(np.uint8)
+    # Masked samples are NaN here, so they do not saturate, as in calculate_moments
+    saturated = np.isposinf(data).any(axis=-1)
+    quality = np.where(saturated, RBAQualityFlag.SATURATED, quality).astype(np.uint8)
 
     interpolated_profiles = (
         np.full((*output_shape, interp_velocity.size), np.nan, dtype=float) if return_profiles else None
@@ -240,7 +224,7 @@ def calculate_red_blue_asymmetry(
         else None
     )
 
-    min_points = degree + 1
+    min_points = spline_degree + 1
     for index in np.ndindex(output_shape):
         if quality[index] in (RBAQualityFlag.LOW_SIGNAL, RBAQualityFlag.SATURATED):
             continue
@@ -267,7 +251,7 @@ def calculate_red_blue_asymmetry(
         ordered_velocity = shifted_velocity[finite][order]
         ordered_profile = profile[finite][order]
         try:
-            interp_profile = make_interp_spline(ordered_velocity, ordered_profile, k=degree)(
+            interp_profile = make_interp_spline(ordered_velocity, ordered_profile, k=spline_degree)(
                 interp_velocity, extrapolate=False
             )
         except ValueError:
@@ -281,7 +265,7 @@ def calculate_red_blue_asymmetry(
             if finite_error.sum() >= min_points:
                 try:
                     interp_error = make_interp_spline(
-                        ordered_velocity[finite_error], ordered_error[finite_error], k=degree
+                        ordered_velocity[finite_error], ordered_error[finite_error], k=spline_degree
                     )(interp_velocity, extrapolate=False)
                 except ValueError:
                     quality[index] = RBAQualityFlag.INTERP_FAILED
@@ -331,10 +315,8 @@ def calculate_red_blue_asymmetry(
         "rba_rest_wavelength_unit": "nm",
         "rba_velocity_range": velocity_range_kms,
         "rba_dv": dv,
-        "rba_interpolation_degree": degree,
+        "rba_spline_degree": spline_degree,
     }
-    if continuum_windows is not None:
-        meta["rba_continuum_windows"] = str(continuum_windows)
 
     template = make_spatial_template(cube, wavelength_axis)
 

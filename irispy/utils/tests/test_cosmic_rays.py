@@ -219,3 +219,24 @@ def test_remove_cosmic_rays_missing_optional_dependency(sns_sjicube_1330, monkey
     assert excinfo.value.__cause__.name == method
     assert f"method='{method}'" in str(excinfo.value)
     assert f"pip install {method}" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("method", "kwargs"),
+    [
+        ("rsliding", {"sigma": 2.5, "max_iters": 7, "method_kwargs": {"kernel": 3, "threads": 1}}),
+        ("astroscrappy", {"sigma": 2.0, "max_iters": 3, "method_kwargs": {"readnoise": 1.0}}),
+    ],
+)
+def test_remove_cosmic_rays_keeps_clipped_pixels(sns_sjicube_1330, method, kwargs):
+    pytest.importorskip(method)
+    cube = sns_sjicube_1330[0, :10, :10]
+    data = np.full((10, 10), 10.0)
+    data[5, 5] = 500.0
+    data[2, 2] = np.inf  # as the readers set clipped pixels
+    cube.data[...] = data
+    cube.mask = np.zeros((10, 10), dtype=bool)
+    cleaned = remove_cosmic_rays(cube, method=method, **kwargs)
+    assert np.isposinf(cleaned.data[2, 2])
+    np.testing.assert_allclose(cleaned.data[5, 5], 10.0, atol=2.0)
+    assert np.isfinite(np.delete(cleaned.data, 22)).all()

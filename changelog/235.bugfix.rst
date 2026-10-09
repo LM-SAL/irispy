@@ -1,0 +1,1 @@
+`~irispy.utils.moments.calculate_moments` masks every map, ``"intensity"`` and ``"saturated"`` included, at pixels where no sample within ``velocity_range`` is unmasked and not NaN.

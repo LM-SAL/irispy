@@ -18,6 +18,7 @@ from sunpy.map.header_helper import make_fitswcs_header
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import _create_headers_wcs, _fill_dropped_pointing_rows, _t_obs, read_sji_lvl2
 from irispy.sji import AIACube, SOTCube
+from irispy.utils.constants import SATURATION_LIMIT
 
 
 def test_sns_read_sji_lvl2(sns_sji_2832_file):
@@ -146,6 +147,8 @@ def test_read_sji_lvl2_masks_both_fill_values_without_changing_raw_data(memmap):
     else:
         expected = raw.astype(float) * scale + offset
         expected[expected_mask] = np.nan
+        expected[expected >= SATURATION_LIMIT.value] = np.inf  # the clipped pixels of this flare
+        assert np.isposinf(expected).any()
         np.testing.assert_allclose(cube.data, expected)
         assert isinstance(cube.uncertainty, StdDevUncertainty)
         assert cube.uncertainty.array.shape == cube.data.shape

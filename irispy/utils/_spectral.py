@@ -60,6 +60,38 @@ def in_windows(wavelengths, windows):
     return inside
 
 
+def _fit_background(cube, windows, degree):
+    """
+    The background `~irispy.utils.spectrograph.subtract_background` fits to ``cube``, an
+    array of its shape.
+
+    Spectra with no more than ``degree`` samples to fit are NaN.
+    """
+    wavelength_axis = cube.wavelength_axis
+    wavelengths = cube.axis_world_coords(wavelength_axis)[0]
+    index = np.flatnonzero(in_windows(wavelengths, windows))
+    # Centered wavelengths keep the fit well conditioned
+    vander = np.polynomial.polynomial.polyvander((wavelengths - wavelengths.mean()).to_value(u.AA), degree)
+    samples = np.moveaxis(cube.data, wavelength_axis, -1)[..., index].astype(float)
+    kept = np.isfinite(samples)
+    if cube.mask is not None:
+        kept &= ~np.moveaxis(np.broadcast_to(cube.mask, cube.data.shape), wavelength_axis, -1)[..., index]
+    # Center each spectrum on its first kept sample. A constant the samples hold exactly is then
+    # fitted exactly, whatever order the contractions round in, so its residuals stay zero instead
+    # of crossing the sign cutoff in calculate_moments by a few ulps.
+    anchor = np.take_along_axis(samples, np.argmax(kept, axis=-1)[..., np.newaxis], axis=-1)
+    anchor = np.where(kept.any(axis=-1)[..., np.newaxis], anchor, 0.0)
+    samples = np.where(kept, samples - anchor, 0)
+    # The normal equations of each spectrum, with its own samples
+    normal = np.einsum("...k,ki,kj->...ij", kept, vander[index], vander[index], optimize=True)
+    enough = kept.sum(axis=-1) > degree
+    normal[~enough] = np.eye(degree + 1)
+    rhs = np.einsum("...k,ki->...i", samples, vander[index], optimize=True)
+    coefficients = np.linalg.solve(normal, rhs[..., np.newaxis])[..., 0]
+    background = np.where(enough[..., np.newaxis], anchor + coefficients @ vander.T, np.nan)
+    return np.moveaxis(background, -1, wavelength_axis)
+
+
 def standard_deviation(cube):
     """
     The standard deviation of each sample of ``cube``, in its unit, or `None`.

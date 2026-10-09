@@ -95,13 +95,14 @@ def _check_window(wavelength, rest_wavelength):
 
 def _spectra(cube):
     """
-    The data of ``cube`` with masked samples set to NaN, its spectra along the last
-    axis.
+    The data of ``cube`` with masked and non-finite samples set to NaN, its spectra
+    along the last axis.
     """
     data = np.asarray(cube.data, dtype=float)
+    kept = np.isfinite(data)  # not +Inf, as the readers set clipped samples
     if cube.mask is not None:
-        data = np.where(cube.mask, np.nan, data)
-    return np.moveaxis(data, cube.wavelength_axis, -1)
+        kept &= ~np.asarray(cube.mask, dtype=bool)
+    return np.moveaxis(np.where(kept, data, np.nan), cube.wavelength_axis, -1)
 
 
 def _background_level(spectra):
