@@ -4,11 +4,13 @@ import gzip
 import tarfile
 import threading
 from pathlib import Path
+from collections import Counter
 
 import numpy as np
 import pytest
 
 from astropy.io import fits
+from astropy.io.fits import file as fits_file
 
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
@@ -83,26 +85,10 @@ def test_read_files_raster_file_list(raster_sg_files):
     assert len(returns["Si IV 1403"]) == len(raster_sg_files)
 
 
-def test_get_spec_group_key_falls_back_when_metadata_is_missing(monkeypatch, tmp_path):
-    filename = tmp_path / "missing-grouping-metadata.fits"
-    filename.touch()
+def test_get_spec_group_key_falls_back_when_metadata_is_missing():
+    filename = Path("missing-grouping-metadata.fits")
 
-    monkeypatch.setattr("irispy.io.utils.fits.getheader", lambda _: {"OBSID": None, "STARTOBS": ""})
-
-    assert _get_spec_group_key(filename) == (filename, None)
-
-
-def test_get_spec_group_key_falls_back_when_header_read_fails(monkeypatch, tmp_path):
-    filename = tmp_path / "unreadable-header.fits"
-    filename.touch()
-
-    def raise_oserror(_):
-        msg = "cannot read header"
-        raise OSError(msg)
-
-    monkeypatch.setattr("irispy.io.utils.fits.getheader", raise_oserror)
-
-    assert _get_spec_group_key(filename) == (filename, None)
+    assert _get_spec_group_key(filename, {"OBSID": None, "STARTOBS": ""}) == (filename, None)
 
 
 def test_read_files_raster_file_list_multiple_observations_use_unique_keys(raster_sg_file, sns_sg_file):
@@ -114,6 +100,23 @@ def test_read_files_raster_file_list_multiple_observations_use_unique_keys(raste
 
     assert len(returns) == 2
     assert set(returns.keys()) == {first_describe, f"{first_describe} ({second_obsid})"}
+
+
+def test_read_files_opens_each_spectrograph_file_twice(monkeypatch, raster_sg_files, sns_sg_file):
+    # Two observations whose TDESC1 match, so the second needs its OBSID in the key.
+    filenames = [*raster_sg_files, sns_sg_file]
+    opens = []
+    real_init = fits_file._File.__init__
+
+    def tracked_init(self, fileobj=None, *args, **kwargs):
+        opens.append(Path(fileobj).name)
+        return real_init(self, fileobj, *args, **kwargs)
+
+    monkeypatch.setattr(fits_file._File, "__init__", tracked_init)
+
+    assert len(read_files(filenames)) == 2
+    # Once for the header that sorts the files into observations, once by the reader.
+    assert Counter(opens) == {Path(filename).name: 2 for filename in filenames}
 
 
 def test_read_files_grouped_spectrograph_honors_allow_errors(
