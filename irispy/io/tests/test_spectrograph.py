@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pytest
 
@@ -7,11 +9,13 @@ from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.time import Time
+from astropy.wcs import WCS
 
 from sunpy.coordinates import Helioprojective
 
+from irispy._wcs import _RasterWCS
 from irispy.data.test import get_test_filepath
-from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
+from irispy.io.spectrograph import _create_tabular_wcs, _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
 
 
@@ -295,6 +299,53 @@ def test_raster_wcs_steps_have_no_index_vector(raster_sg_file):
     world = cube.wcs.pixel_to_world_values(np.zeros(5), np.full(5, 50.0), steps)
     np.testing.assert_allclose(world[2][1], (world[2][0] + world[2][2]) / 2)
     np.testing.assert_allclose(cube.wcs.world_to_pixel_values(*world)[2], steps, atol=1e-6)
+
+
+def _sit_and_stare_wcs(sns_sg_file):
+    # A sit-and-stare tracks solar rotation in 0.05 arcsec jumps every few exposures and jitters
+    # by about 1 mas in between, so several exposures' slits pass through each point
+    with fits.open(sns_sg_file) as hdulist:
+        header, auxiliary_hdu = hdulist[1].header, hdulist[-2].copy()
+    longitude = auxiliary_hdu.data[:, auxiliary_hdu.header["XCENIX"]]
+    steps = np.arange(len(longitude))
+    longitude[:] = longitude[0] + 0.05 * (steps // 6) + np.random.default_rng(0).uniform(-1e-3, 1e-3, len(steps))
+    return _create_tabular_wcs(header, auxiliary_hdu, date_obs="2021-09-05T00:18:33")
+
+
+def test_raster_wcs_inverse_matches_wcslib(sns_sg_file):
+    wcs = _sit_and_stare_wcs(sns_sg_file)
+    assert type(wcs) is type(copy.copy(wcs)) is type(copy.deepcopy(wcs)) is _RasterWCS
+    rng = np.random.default_rng(1)
+    # Points from a little past the ends of the table, some of them beside the slit
+    pixel = [rng.uniform(-0.2, size - 0.8, 500) for size in wcs.pixel_shape]
+    wavelength, *position = wcs.pixel_to_world_values(*pixel)
+    world = (wavelength, *(coordinate + rng.normal(0, 2e-6, 500) for coordinate in position))
+
+    inverse = np.array(wcs.world_to_pixel_values(*world))
+    wcslib = np.array(WCS.world_to_pixel_values(wcs, *world))
+
+    assert 0 < np.isnan(inverse[2]).sum() < 100
+    # The first exposure whose slit passes through the point, as wcslib finds it
+    np.testing.assert_array_equal(np.floor(inverse[2] + 1e-6), np.floor(wcslib[2] + 1e-6))
+    # wcslib finds a point to within 1e-10 degrees, where these slits are about 3e-7 degrees apart
+    np.testing.assert_allclose(inverse, wcslib, atol=1e-3)
+    inside = np.isfinite(inverse[2])
+    back = wcs.pixel_to_world_values(*inverse[:, inside])
+    np.testing.assert_allclose(back[1:], np.array(world)[1:, inside], rtol=0, atol=1e-12)
+
+
+def test_raster_wcs_inverse_falls_back_to_wcslib(sns_sg_file):
+    celestial = _sit_and_stare_wcs(sns_sg_file).sub([2, 3])
+    world = celestial.pixel_to_world_values([3.0, 20.5], [4.0, 100.25])
+    np.testing.assert_array_equal(celestial.world_to_pixel_values(*world), WCS.world_to_pixel_values(celestial, *world))
+
+
+def test_raster_wcs_inverse_after_astropy_slicing(sns_sg_file):
+    # astropy's slicing moves CRPIX on every axis
+    wcs = _sit_and_stare_wcs(sns_sg_file).slice((slice(50, 150), slice(10, 30), slice(5, None)))
+    assert type(wcs) is _RasterWCS
+    world = wcs.pixel_to_world_values(*(np.linspace(0, size - 1, 7) for size in wcs.pixel_shape))
+    np.testing.assert_allclose(wcs.world_to_pixel_values(*world), WCS.world_to_pixel_values(wcs, *world), atol=1e-3)
 
 
 def test_read_spectrograph_memmap_has_no_uncertainty(raster_sg_file):

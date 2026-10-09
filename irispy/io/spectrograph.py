@@ -8,13 +8,13 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.time import Time, TimeDelta
-from astropy.wcs import WCS
 
 from sunpy import log as logger
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
+from irispy._wcs import _RasterWCS
 from irispy.io._mask import _memmap_fill_mask
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
@@ -110,7 +110,7 @@ def _create_tabular_wcs(header, auxiliary_hdu, *, date_obs, flip=False):
     # made every lookup cost O(step).
     header["PS2_2"] = "SPATIAL"
 
-    return WCS(header, fits.HDUList([fits.PrimaryHDU(), table]))
+    return _RasterWCS(header, fits.HDUList([fits.PrimaryHDU(), table]))
 
 
 def read_spectrograph_lvl2(
@@ -151,6 +151,13 @@ def read_spectrograph_lvl2(
     Returns
     -------
     `irispy.spectrograph.RasterCollection`
+
+    Notes
+    -----
+    Each cube's WCS finds the step of a sky position from the pointing of every
+    exposure. On a sit-and-stare, where the slit barely moves, ``world_to_pixel``
+    therefore gives the first exposure whose slit passed the point; use the cube's
+    ``"time"`` coordinate to choose an exposure.
     """
     if isinstance(filenames, (str, Path)):
         filenames = [filenames]
