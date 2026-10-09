@@ -12,7 +12,7 @@ from sunpy.coordinates import Helioprojective
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT
 
 
 def test_spectral_windows_order_read_spectrograph_lvl2(sns_sg_file):
@@ -341,3 +341,14 @@ def test_memmap_records_the_window_scaling():
     with fits.open(filename) as hdulist:
         header = hdulist[3].header
     assert (cube.meta["BSCALE"], cube.meta["BZERO"]) == (header["BSCALE"], header["BZERO"])
+
+
+@pytest.mark.parametrize(("window", "band"), [("O I 1356", "FUV"), ("Mg II k 2796", "NUV")])
+def test_memmap_unit_is_unscaled(window, band, raster_sg_file):
+    filename = get_test_filepath(
+        "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
+    )
+    assert read_spectrograph_lvl2(filename, memmap=True)[window][0].unit == DN_UNIT[f"{band}_UNSCALED"]
+    assert read_spectrograph_lvl2(filename)[window][0].unit == DN_UNIT[band]
+    # Float data hold DN already
+    assert read_spectrograph_lvl2(raster_sg_file, memmap=True)["C II 1336"][0].unit == DN_UNIT["FUV"]

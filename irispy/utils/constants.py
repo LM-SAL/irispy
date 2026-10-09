@@ -35,6 +35,8 @@ DN_UNIT = {
     "FUV": u.def_unit("DN_IRIS_FUV", DETECTOR_GAIN["FUV"] / DETECTOR_YIELD["FUV"] * u.photon),
     "SJI": u.def_unit("DN_IRIS_SJI", DETECTOR_GAIN["SJI"] / DETECTOR_YIELD["SJI"] * u.photon),
     "SJI_UNSCALED": u.def_unit("DN_IRIS_SJI_UNSCALED", u.ct),
+    "NUV_UNSCALED": u.def_unit("DN_IRIS_NUV_UNSCALED", u.ct),
+    "FUV_UNSCALED": u.def_unit("DN_IRIS_FUV_UNSCALED", u.ct),
 }
 READOUT_NOISE = {
     "NUV": 1.2 * DN_UNIT["NUV"],
