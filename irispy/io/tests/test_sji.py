@@ -375,15 +375,19 @@ def test_read_sot_magnetic_values_are_not_fill_values(sot_sp_file, memmap):
 @pytest.mark.parametrize("conversion", ["frame", "sequence", "2d"])
 def test_sot_cube_to_maps(kind, conversion, request):
     cube = read_sji_lvl2(request.getfixturevalue(f"sot_{kind.lower()}_file"))
+    index = cube.shape[0] - 1
     if conversion == "2d":
-        sot_map = cube[0].to_maps()
+        sot_map = cube[index].to_maps()
     elif conversion == "sequence":
-        sot_map = cube.to_maps([0])[0]
+        sot_map = cube.to_maps([index])[0]
     else:
-        sot_map = cube.to_maps(0)
+        sot_map = cube.to_maps(index)
     assert sot_map.unit == cube.unit
     assert sot_map.instrument == cube.meta["INSTRUME"]
     assert sot_map.observatory == cube.meta["TELESCOP"]
+    assert sot_map.exposure_time == cube.meta["EXPTIME"] * u.s
+    assert sot_map.meta["TWAVE1"] == cube.meta["TWAVE1"]
+    assert sot_map.date.utc.isot == cube.wcs.pixel_to_world(0, 0, index)[-1].utc.isot
     # The SOT cubes have no wavelength (TWAVE1 is 0), nor an IRIS colormap to plot with
     assert sot_map.wavelength is None
     sot_map.plot()

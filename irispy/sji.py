@@ -189,18 +189,15 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
 
         # The original SOT BUNIT can be descriptive text; maps need the normalized unit.
         unit_meta = {"BUNIT": self.unit.to_string()} if isinstance(self, SOTCube) and self.unit is not None else {}
-        # We can shortcut if the Cube has been reduced to a 2D slice
-        if self.wcs.world_n_dim == 2:
-            # TODO: Missing metadata
-            m = Map(self.data, self.fits_wcs)
-            m.meta.update(unit_meta)
-            m.meta["INSTRUME"] = self.meta.get("INSTRUME", "SJI")
-            m.meta["TELESCOP"] = self.meta.get("TELESCOP", "IRIS")
-            return m
-        # pixel_to_world does not wrap negative indices the way the data and fits_wcs lists do.
-        idx_list = [range(self.data.shape[0])[i] for i in idx_list]
-        data_wcs = ((self.data[i], self.fits_wcs[i]) for i in idx_list)
-        times_iso = (self.wcs.pixel_to_world(0, 0, i)[-1].utc.isot for i in idx_list)
+        is_2d = self.wcs.world_n_dim == 2
+        if is_2d:
+            data_wcs = [(self.data, self.fits_wcs)]
+            times_iso = [self.global_coords["Time (UTC)"].utc.isot]
+        else:
+            # pixel_to_world does not wrap negative indices the way the data and fits_wcs lists do.
+            idx_list = [range(self.data.shape[0])[i] for i in idx_list]
+            data_wcs = ((self.data[i], self.fits_wcs[i]) for i in idx_list)
+            times_iso = (self.wcs.pixel_to_world(0, 0, i)[-1].utc.isot for i in idx_list)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SunpyMetadataWarning)
             maps = Map(data_wcs, sequence=True)
@@ -220,7 +217,7 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
             cmap = f"irissji{int(self.meta['TWAVE1'])}"
             if cmap in mpl.colormaps:
                 m.plot_settings["cmap"] = cmap
-        return maps[0] if isinstance(index, Integral) else maps
+        return maps[0] if is_2d or isinstance(index, Integral) else maps
 
 
 class AIACube(SJICube):
