@@ -1,0 +1,1 @@
+`irispy.io.read_files` opens each spectrograph file twice instead of up to four times.
