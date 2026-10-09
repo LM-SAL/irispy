@@ -153,6 +153,21 @@ def test_read_files_sot(tmp_path, sot_fg_file, sot_mg_file, sot_sp_file):
     assert all(isinstance(cube, SOTCube) for cube in returns.values())
 
 
+@pytest.mark.parametrize("source", ["files", "archive"], ids=["repeated-input", "same-stem-members"])
+def test_read_files_sot_repeated_names(tmp_path, sot_sp_file, source):
+    filenames = [sot_sp_file] * 4
+    if source == "archive":
+        tar_path = tmp_path / "obs_SOTSP.tar.gz"
+        with tarfile.open(tar_path, "w:gz") as tar:
+            for i in range(4):
+                tar.add(sot_sp_file, arcname=f"{i}/sotsp.fits")
+        filenames = [tar_path]
+
+    returns = read_files(filenames)
+
+    assert len(returns) == 4
+
+
 def test_read_files_raises_when_no_files_are_supported(tmp_path):
     filename = tmp_path / "not-a-fits.txt"
     filename.write_text("not a supported IRIS file")

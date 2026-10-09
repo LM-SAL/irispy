@@ -194,6 +194,8 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
             # TODO: Missing metadata
             m = Map(self.data, self.fits_wcs)
             m.meta.update(unit_meta)
+            m.meta["INSTRUME"] = self.meta.get("INSTRUME", "SJI")
+            m.meta["TELESCOP"] = self.meta.get("TELESCOP", "IRIS")
             return m
         # pixel_to_world does not wrap negative indices the way the data and fits_wcs lists do.
         idx_list = [range(self.data.shape[0])[i] for i in idx_list]

@@ -382,6 +382,8 @@ def test_sot_cube_to_maps(kind, conversion, request):
     else:
         sot_map = cube.to_maps(0)
     assert sot_map.unit == cube.unit
+    assert sot_map.instrument == cube.meta["INSTRUME"]
+    assert sot_map.observatory == cube.meta["TELESCOP"]
     # The SOT cubes have no wavelength (TWAVE1 is 0), nor an IRIS colormap to plot with
     assert sot_map.wavelength is None
     sot_map.plot()

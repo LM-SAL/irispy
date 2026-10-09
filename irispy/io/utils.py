@@ -245,6 +245,10 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                             instrume, describe = _get_simple_metadata(sji_hdulist)
                             # SOT-SP archives may contain multiple observations of the same quantity.
                             key = describe if describe not in returns else f"{describe} ({f.stem})"
+                            suffix = 2
+                            while key in returns:
+                                key = f"{describe} ({f.stem}, {suffix})"
+                                suffix += 1
                             returns[key] = read_sji_lvl2(sji_hdulist, memmap=memmap, uncertainty=uncertainty, **kwargs)
                 elif raster_tarfile:
                     file = _extract_tarfile([filename]) if raster_tarfile else [filename]
