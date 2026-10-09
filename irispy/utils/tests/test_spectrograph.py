@@ -14,7 +14,7 @@ from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ, SLIT_WIDTH
-from irispy.utils.response import get_latest_response
+from irispy.utils.response import get_response
 from irispy.utils.spectrograph import (
     calculate_dn_to_radiance_factor,
     radiation_temperature,
@@ -55,7 +55,7 @@ def test_calculate_dn_to_radiance_factor(sns_sg_file, idl_input_rad_cal, idl_out
     spectral_dispersion_per_pixel = cube.wcs.wcs.cdelt[0] * cube.wcs.wcs.cunit[0]
     # The slit width is divided by 2 in the IDL code, unsure why.
     solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH / 2)
-    iris_response = get_latest_response(parse_time("2025-01-01"))
+    iris_response = get_response(parse_time("2025-01-01"))
     factor = calculate_dn_to_radiance_factor(
         iris_response=iris_response,
         wavelength=idl_wavelength,
@@ -129,7 +129,7 @@ def test_convert_photons_per_sec_to_radiance_vs_peter_young(sns_sg_file):
 
     solid_angle = cube.wcs.wcs.cdelt[1] * cube.wcs.wcs.cunit[1] * (SLIT_WIDTH)
     spectral_dispersion_per_pixel = cube.wcs.wcs.cdelt[0] * cube.wcs.wcs.cunit[0]
-    iris_response = get_latest_response(parse_time("2014-09-10"))
+    iris_response = get_response(parse_time("2014-09-10"))
     factor = calculate_dn_to_radiance_factor(
         iris_response=iris_response,
         wavelength=[1402.77] * u.Angstrom,

@@ -9,11 +9,16 @@ from numbers import Integral
 import numpy as np
 
 import astropy.units as u
+from astropy import constants
 from astropy.nddata import InverseVariance, StdDevUncertainty, UnknownUncertainty, VarianceUncertainty
 
 from ndcube import ExtraCoords, NDCube
 
 from irispy.spectrograph import SpectrogramCube, _wavelength_indices
+from irispy.utils.constants import DOCUMENTED_LINES
+
+# How close a TWAVE keyword must sit to a documented line to name it, as a Doppler fraction (100 km/s).
+_TWAVE_MATCH_FRACTION = 100 / constants.c.to_value(u.km / u.s)
 
 
 class _QualityFlag(IntEnum):
@@ -89,6 +94,70 @@ def standard_deviation(cube):
     if uncertainty.unit is not None and cube.unit is not None and uncertainty.unit != cube.unit:
         sigma = sigma * uncertainty.unit.to(cube.unit)
     return np.broadcast_to(sigma, cube.data.shape)
+
+
+def resolve_rest_wavelength(rest_wavelength=None, *, meta=None, wavelength_range=None):
+    r"""
+    Resolve the rest wavelength of a spectral line and where it came from.
+
+    Resolution order: the explicit ``rest_wavelength``, the one documented IRIS
+    transition within ``wavelength_range``, then the ``TWAVE`` metadata convention
+    (``meta.rest_wavelength``). With several documented transitions in range, the
+    ``TWAVE`` convention resolves only when it names one of them (within 100 km/s);
+    otherwise the ambiguity is rejected with `ValueError` so the caller chooses the
+    line rather than the inference guessing.
+
+    Parameters
+    ----------
+    rest_wavelength : `~astropy.units.Quantity`, optional
+        Explicit rest wavelength, in any wavelength unit.
+    meta : `~irispy.meta.BaseMeta`, optional
+        Metadata read for the ``TWAVE`` convention.
+    wavelength_range : `~astropy.units.Quantity`, optional
+        The wavelength coverage, e.g. ``(wavelengths.min(), wavelengths.max())``, in
+        any wavelength unit.
+
+    Returns
+    -------
+    rest_wavelength : `~astropy.units.Quantity` or `None`
+        The rest wavelength in nm, or `None` when no source resolves.
+    source : `str` or `None`
+        One of ``"explicit"``, ``"documented transition"``, or ``"TWAVE metadata"``;
+        `None` when nothing resolves.
+
+    Notes
+    -----
+    The resolved value and its source belong in derived-result metadata under the
+    ``rest_wavelength`` and ``rest_wavelength_source`` keys, so the Doppler velocities
+    of a result can be reproduced.
+    """
+    if rest_wavelength is not None:
+        return u.Quantity(rest_wavelength).to(u.nm), "explicit"
+    covered = []
+    if wavelength_range is not None:
+        low, high = sorted(u.Quantity(wavelength_range).to_value(u.AA))
+        covered = [(ion, line) for ion, line in DOCUMENTED_LINES if low <= line <= high]
+    if len(covered) == 1:
+        return (covered[0][1] * u.AA).to(u.nm), "documented transition"
+    meta_value = None if meta is None else getattr(meta, "rest_wavelength", None)
+    if meta_value is not None:
+        meta_angstrom = u.Quantity(meta_value).to_value(u.AA)
+        # With several documented lines, the TWAVE convention only resolves when it
+        # names one of them: real headers sit within a few km/s of their line, while
+        # placeholder values like a wavelength grid start are hundreds of km/s off.
+        names_a_line = any(abs(meta_angstrom - line) / line <= _TWAVE_MATCH_FRACTION for _, line in covered)
+        if not covered or names_a_line:
+            return u.Quantity(meta_value).to(u.nm), "TWAVE metadata"
+    if len(covered) > 1:
+        names = ", ".join(f"{ion} {line:.3f}" for ion, line in covered)
+        msg = (
+            f"The wavelength range covers several documented lines ({names} Å) with no rest wavelength to "
+            "choose between them; pass rest_wavelength explicitly."
+        )
+        raise ValueError(msg)
+    if meta is not None and (meta_value := getattr(meta, "rest_wavelength", None)) is not None:
+        return u.Quantity(meta_value).to(u.nm), "TWAVE metadata"
+    return None, None
 
 
 def make_map_cube(template, values, unit, *, mask=None, mask_invalid=False, uncertainty=None, cube_class=NDCube):

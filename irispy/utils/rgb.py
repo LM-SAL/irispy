@@ -14,6 +14,7 @@ import numpy as np
 
 import astropy.units as u
 
+from irispy.utils._spectral import resolve_rest_wavelength
 from irispy.utils.utils import _import_optional
 from irispy.visualization import LAT_AXIS_LABEL, LON_AXIS_LABEL
 
@@ -66,7 +67,7 @@ def _wavelength_limits(wavelength, rest_wavelength, wavelength_min, wavelength_m
     ``wavelength``.
     """
     if rest_wavelength is None:
-        msg = "The cube metadata has no usable TWAVE value. Pass rest_wavelength explicitly."
+        msg = "No rest wavelength resolves from the metadata or the documented lines. Pass rest_wavelength explicitly."
         raise ValueError(msg)
     lower, upper = wavelength.min(), wavelength.max()
     if lower <= rest_wavelength <= upper:
@@ -103,7 +104,8 @@ def calculate_rgb(
         range. Wavelengths outside contribute no color.
     rest_wavelength : `astropy.units.Quantity`, optional
         Rest wavelength the Doppler velocities are measured from. Defaults to
-        ``cube.meta.rest_wavelength``. Required if the metadata has no usable ``TWAVE`` value.
+        `~irispy.utils._spectral.resolve_rest_wavelength`: the one documented transition the cube
+        covers and otherwise ``cube.meta.rest_wavelength`` (the ``TWAVE`` convention).
     velocity_norm : `callable`, optional
         Monotonically increasing transform applied to velocity quantities, arrays and
         scalars alike, returning plain numbers. Defaults to `linear_velocity`;
@@ -141,7 +143,9 @@ def calculate_rgb(
         msg = f"The wavelength coordinate must be one dimensional, got shape {wavelength.shape}"
         raise ValueError(msg)
     if rest_wavelength is None:
-        rest_wavelength = cube.meta.rest_wavelength
+        rest_wavelength, _ = resolve_rest_wavelength(
+            meta=cube.meta, wavelength_range=(wavelength.min(), wavelength.max())
+        )
     wavelength_min, wavelength_max = _wavelength_limits(wavelength, rest_wavelength, wavelength_min, wavelength_max)
     doppler = u.doppler_optical(rest_wavelength)
 

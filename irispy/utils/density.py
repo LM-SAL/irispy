@@ -107,6 +107,7 @@ def density_diagnostic(
     intensity_numerator_uncertainty=None,
     intensity_denominator_uncertainty=None,
     temperature=None,
+    density_interval=None,
     bounds_error=False,
     fill_value=np.nan,
     line_ratio_kwargs=None,
@@ -127,16 +128,46 @@ def density_diagnostic(
     intensity_numerator_uncertainty, intensity_denominator_uncertainty :
         array-like or `~astropy.units.Quantity`, optional
         Uncertainties on the measured integrated intensities.
-    temperature : `~astropy.units.Quantity`, optional
-        Temperature at which to evaluate the theoretical ratio curve from
-        ``ion``. If omitted and scalar, uses the ion temperature; if omitted
-        and non-scalar, falls back to ``ion.formation_temperature``.
+    temperature : `~astropy.units.Quantity` or ``"formation"``, optional
+        Scalar temperature at which to evaluate the theoretical ratio curve from
+        ``ion``. ``"formation"`` uses ``ion.formation_temperature`` explicitly. A
+        temperature-dependent theoretical curve requires one or the other; the
+        formation temperature is never used implicitly.
+    density_interval : `~astropy.units.Quantity`, optional
+        The ``(lower, upper)`` density bounds of the monotonic branch to invert.
+        Required when the theoretical ratio has several monotonic branches; the
+        interval must itself be monotonic. Without it, a single monotonic branch
+        is used as is.
     bounds_error : `bool`, optional
         Passed through to `map_ratio_to_quantity`.
     fill_value : scalar or `~astropy.units.Quantity`, optional
         Passed through to `map_ratio_to_quantity`.
     line_ratio_kwargs : `dict`, optional
         Extra keyword arguments forwarded to ``fiasco.line_ratio``.
+
+    Returns
+    -------
+    `dict`
+        * ``"ratio"`` — `~astropy.units.Quantity`, dimensionless; the observed ratio
+          broadcast to the common shape of the intensity inputs.
+        * ``"ratio_uncertainty"`` — `~astropy.units.Quantity` or `None`; the propagated
+          ratio uncertainty, `None` when no uncertainties were given.
+        * ``"density"`` — `~astropy.units.Quantity`; the inferred electron density in the
+          units of ``density_grid``, with ``fill_value`` where the ratio falls outside the
+          theoretical range (and NaN where the ratio itself is undefined).
+        * ``"density_lower"``, ``"density_upper"`` — `~astropy.units.Quantity` or `None`;
+          the asymmetric density bounds from the ratio uncertainty, `None` when no
+          uncertainties were given.
+        * ``"density_grid"`` — `~astropy.units.Quantity`; the monotonic density grid of
+          the selected branch.
+        * ``"theoretical_ratio"`` — `~astropy.units.Quantity`, dimensionless; the
+          theoretical ratio of the selected branch.
+        * ``"temperature"`` — `~astropy.units.Quantity` or `None`; the resolved
+          temperature, `None` when the theoretical curve is temperature-independent.
+        * ``"density_interval"`` — `~astropy.units.Quantity`, shape ``(2,)``; the
+          ``(lower, upper)`` density bounds of the selected branch.
+        * ``"selection"`` — `str`; ``"sole monotonic branch"`` or ``"explicit
+          density_interval"``, recording how the branch was chosen.
     """
     if (intensity_numerator_uncertainty is None) != (intensity_denominator_uncertainty is None):
         msg = "Both numerator and denominator uncertainties must be provided together."
@@ -204,6 +235,7 @@ def density_diagnostic(
         **line_ratio_kwargs,
     )
     theoretical_ratio = u.Quantity(theoretical_ratio, u.dimensionless_unscaled).squeeze()
+    resolved_temperature = None
     if theoretical_ratio.ndim > 1:
         ion_temperature = u.Quantity(ion.temperature)
         if theoretical_ratio.shape[0] != ion_temperature.size:
@@ -211,15 +243,23 @@ def density_diagnostic(
             raise ValueError(msg)
 
         if temperature is None:
-            ratio_temperature = u.Quantity(ion.temperature)
-            if ratio_temperature.size != 1:
-                ratio_temperature = u.Quantity(ion.formation_temperature)
+            msg = (
+                "theoretical_ratio is temperature-dependent; pass a scalar temperature, or "
+                'temperature="formation" for ion.formation_temperature'
+            )
+            raise ValueError(msg)
+        if isinstance(temperature, str):
+            if temperature != "formation":
+                msg = f'temperature must be a scalar Quantity or "formation", not {temperature!r}'
+                raise ValueError(msg)
+            ratio_temperature = u.Quantity(ion.formation_temperature)
         else:
             ratio_temperature = u.Quantity(temperature)
         if ratio_temperature.size != 1:
             msg = "temperature must be scalar."
             raise ValueError(msg)
         ratio_temperature = ratio_temperature.flat[0]
+        resolved_temperature = ratio_temperature
 
         order = np.argsort(ion_temperature.to_value(u.K))
         temperature_grid = ion_temperature.to_value(u.K)[order]
@@ -236,45 +276,49 @@ def density_diagnostic(
     density_grid = density_grid[finite]
     theoretical_ratio = theoretical_ratio[finite]
 
-    segments = []
-    if density_grid.size < 2:
-        segments.append((density_grid, theoretical_ratio))
+    selection = "sole monotonic branch"
+    if density_interval is not None:
+        interval = u.Quantity(density_interval)
+        if interval.shape != (2,):
+            msg = "density_interval must contain two density bounds"
+            raise ValueError(msg)
+        low, high = sorted(interval.to_value(density_grid.unit))
+        in_interval = (density_grid.value >= low) & (density_grid.value <= high)
+        density_grid = density_grid[in_interval]
+        theoretical_ratio = theoretical_ratio[in_interval]
+        if density_grid.size < 2:
+            msg = "density_interval must contain at least two grid points of density_grid"
+            raise ValueError(msg)
+        selection = "explicit density_interval"
     else:
-        start = 0
-        previous_sign = None
-        for i, delta in enumerate(np.diff(theoretical_ratio.value)):
-            sign = np.sign(delta)
-            if sign == 0:
-                continue
-            if previous_sign is None:
-                previous_sign = sign
-                continue
-            if sign != previous_sign:
-                segments.append((density_grid[start : i + 1], theoretical_ratio[start : i + 1]))
-                start = i
-                previous_sign = sign
-        segments.append((density_grid[start:], theoretical_ratio[start:]))
-        segments = [(quantity, ratio_segment) for quantity, ratio_segment in segments if quantity.size >= 2]
-    if len(segments) == 1:
-        density_grid, theoretical_ratio = segments[0]
-    elif segments:
-        observed_ratio = ratio.value[np.isfinite(ratio.value)]
-        if ratio_uncertainty is not None:
-            ratio_min_obs = (ratio - ratio_uncertainty).value[np.isfinite((ratio - ratio_uncertainty).value)]
-            ratio_max_obs = (ratio + ratio_uncertainty).value[np.isfinite((ratio + ratio_uncertainty).value)]
-            observed_ratio_range = np.concatenate([ratio_min_obs, ratio_max_obs])
+        segments = []
+        if density_grid.size < 2:
+            segments.append((density_grid, theoretical_ratio))
         else:
-            observed_ratio_range = observed_ratio
-        best_score = None
-        for segment in segments:
-            quantity, ratio_segment = segment
-            ratio_min = np.nanmin(ratio_segment.value)
-            ratio_max = np.nanmax(ratio_segment.value)
-            in_range = np.logical_and(observed_ratio_range >= ratio_min, observed_ratio_range <= ratio_max).sum()
-            score = (in_range, quantity.size, ratio_max - ratio_min)
-            if best_score is None or score > best_score:
-                density_grid, theoretical_ratio = segment
-                best_score = score
+            start = 0
+            previous_sign = None
+            for i, delta in enumerate(np.diff(theoretical_ratio.value)):
+                sign = np.sign(delta)
+                if sign == 0:
+                    continue
+                if previous_sign is None:
+                    previous_sign = sign
+                    continue
+                if sign != previous_sign:
+                    segments.append((density_grid[start : i + 1], theoretical_ratio[start : i + 1]))
+                    start = i
+                    previous_sign = sign
+            segments.append((density_grid[start:], theoretical_ratio[start:]))
+            segments = [(quantity, ratio_segment) for quantity, ratio_segment in segments if quantity.size >= 2]
+        if len(segments) == 1:
+            density_grid, theoretical_ratio = segments[0]
+        elif segments:
+            bounds = ", ".join(f"({quantity.value[0]:g}, {quantity.value[-1]:g})" for quantity, _ in segments)
+            msg = (
+                f"The theoretical ratio has several monotonic branches at {bounds} {density_grid.unit}; "
+                "pass density_interval to choose one."
+            )
+            raise ValueError(msg)
 
     ratios = [ratio] if ratio_uncertainty is None else [ratio, ratio - ratio_uncertainty, ratio + ratio_uncertainty]
     densities = map_ratio_to_quantity(
@@ -300,4 +344,7 @@ def density_diagnostic(
         "density_upper": density_upper,
         "density_grid": u.Quantity(density_grid),
         "theoretical_ratio": u.Quantity(theoretical_ratio, u.dimensionless_unscaled),
+        "temperature": resolved_temperature,
+        "density_interval": u.Quantity([density_grid.min(), density_grid.max()]),
+        "selection": selection,
     }

@@ -106,6 +106,7 @@ def test_density_diagnostic_builds_theoretical_ratio_with_fiasco(monkeypatch):
         ion=fake_ion,
         numerator=1399.78 * u.angstrom,
         denominator=1401.16 * u.angstrom,
+        temperature="formation",
         line_ratio_kwargs={"use_two_ion_model": False},
     )
 
@@ -116,6 +117,8 @@ def test_density_diagnostic_builds_theoretical_ratio_with_fiasco(monkeypatch):
     assert calls["line_ratio_kwargs"] == {"use_two_ion_model": False}
     np.testing.assert_allclose(result["theoretical_ratio"].value, [0.2, 0.4, 0.6])
     assert u.allclose(result["density"], [2] * u.cm**-3)
+    assert u.allclose(result["temperature"], 2e5 * u.K)
+    assert result["selection"] == "sole monotonic branch"
 
 
 def test_density_diagnostic_requires_ion():
@@ -130,24 +133,65 @@ def test_density_diagnostic_requires_ion():
         )
 
 
-def test_density_diagnostic_selects_monotonic_branch(monkeypatch):
+def test_density_diagnostic_ambiguous_branch_requires_interval(monkeypatch):
+    # Two monotonic branches with overlapping ratio ranges: the caller must choose.
     _install_fake_fiasco(monkeypatch, [0.1, 0.2, 0.3, 0.25, 0.2])
     fake_ion = types.SimpleNamespace(
         temperature=[1e5, 2e5] * u.K,
         formation_temperature=2e5 * u.K,
     )
+    kwargs = {
+        "ion": fake_ion,
+        "numerator": 1399.78 * u.angstrom,
+        "denominator": 1401.16 * u.angstrom,
+    }
+
+    with pytest.raises(ValueError, match="pass density_interval"):
+        density_diagnostic([2.4, 2.8], [10.0, 10.0], [1, 2, 3, 4, 5] * u.cm**-3, **kwargs)
 
     result = density_diagnostic(
-        [2.4, 2.8],
-        [10.0, 10.0],
-        density_grid=[1, 2, 3, 4, 5] * u.cm**-3,
-        ion=fake_ion,
-        numerator=1399.78 * u.angstrom,
-        denominator=1401.16 * u.angstrom,
+        [2.4, 2.8], [10.0, 10.0], [1, 2, 3, 4, 5] * u.cm**-3, density_interval=[1, 3] * u.cm**-3, **kwargs
     )
-
     np.testing.assert_allclose(result["theoretical_ratio"].value, [0.1, 0.2, 0.3])
     np.testing.assert_allclose(result["density_grid"].value, [1, 2, 3])
+    assert result["selection"] == "explicit density_interval"
+    assert u.allclose(result["density_interval"], [1, 3] * u.cm**-3)
+
+    # The decreasing branch is selected the same way.
+    result = density_diagnostic(
+        [2.4, 2.8], [10.0, 10.0], [1, 2, 3, 4, 5] * u.cm**-3, density_interval=[3, 5] * u.cm**-3, **kwargs
+    )
+    np.testing.assert_allclose(result["theoretical_ratio"].value, [0.3, 0.25, 0.2])
+    np.testing.assert_allclose(result["density_grid"].value, [3, 4, 5])
+
+
+def test_density_diagnostic_temperature_grid_requires_explicit_choice(monkeypatch):
+    _install_fake_fiasco(
+        monkeypatch,
+        [
+            [0.1, 0.2, 0.3],
+            [0.2, 0.4, 0.6],
+            [0.3, 0.6, 0.9],
+        ],
+    )
+    fake_ion = types.SimpleNamespace(
+        temperature=[1e5, 2e5, 3e5] * u.K,
+        formation_temperature=1e5 * u.K,
+    )
+    kwargs = {
+        "ion": fake_ion,
+        "numerator": 1399.78 * u.angstrom,
+        "denominator": 1401.16 * u.angstrom,
+    }
+
+    # The formation temperature is only used on request.
+    with pytest.raises(ValueError, match="formation"):
+        density_diagnostic([0.4], [2.0], [1, 2, 3] * u.cm**-3, **kwargs)
+
+    result = density_diagnostic([0.4], [2.0], [1, 2, 3] * u.cm**-3, temperature="formation", **kwargs)
+    # formation_temperature=1e5 K uses the first row, where ratio 0.2 maps to density 2.
+    assert u.allclose(result["density"], [2] * u.cm**-3)
+    assert u.allclose(result["temperature"], 1e5 * u.K)
 
 
 def test_density_diagnostic_zero_denominator(monkeypatch):
@@ -263,3 +307,27 @@ def test_density_diagnostic_uncertainty_shape_mismatch(monkeypatch):
             intensity_numerator_uncertainty=[[0.1], [0.1]] * u.ct,
             intensity_denominator_uncertainty=[[0.2], [0.2]] * u.ct,
         )
+
+
+@pytest.mark.remote_data
+def test_density_diagnostic_real_fiasco_round_trip():
+    # Real atomic data: the mocked tests above do not validate CHIANTI physics.
+    fiasco = pytest.importorskip("fiasco", reason="density extra for real atomic data")
+    if not hasattr(fiasco, "line_ratio"):
+        pytest.skip("this fiasco version has no line_ratio")
+    ion = fiasco.Ion("O IV", [1e5, 1e6] * u.K, ask_before=False)
+    density_grid = np.logspace(9, 12, 20) * u.cm**-3
+    kwargs = {
+        "ion": ion,
+        "numerator": 1401.157 * u.angstrom,
+        "denominator": 1404.806 * u.angstrom,
+        "temperature": 1e6 * u.K,
+        "line_ratio_kwargs": {"use_two_ion_model": False},
+    }
+
+    curve = density_diagnostic(1 * u.ct, 1 * u.ct, density_grid, **kwargs)
+    index = curve["density_grid"].size // 2
+    ratio = curve["theoretical_ratio"][index]
+    result = density_diagnostic(ratio, 1 * u.one, curve["density_grid"], **kwargs)
+
+    assert u.isclose(result["density"], curve["density_grid"][index], rtol=0.05)

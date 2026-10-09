@@ -16,8 +16,15 @@ from astropy.nddata import StdDevUncertainty
 from ndcube import NDCollection
 
 from irispy.spectrograph import SpectrogramCube
-from irispy.utils._spectral import _QualityFlag, check_scaled, make_map_cube, make_spatial_template, standard_deviation
-from irispy.utils.constants import ATOMIC_MASS, INSTRUMENTAL_FWHM, PASSBAND_LIMITS
+from irispy.utils._spectral import (
+    _QualityFlag,
+    check_scaled,
+    make_map_cube,
+    make_spatial_template,
+    resolve_rest_wavelength,
+    standard_deviation,
+)
+from irispy.utils.constants import ATOMIC_MASS, DOCUMENTED_LINES, INSTRUMENTAL_FWHM, PASSBAND_LIMITS
 from irispy.utils.mg_features import calculate_mg_features
 
 __all__ = [
@@ -33,30 +40,11 @@ __all__ = [
 _PROFILES = {"gaussian": (models.Gaussian1D, "mean", "stddev"), "lorentzian": (models.Lorentz1D, "x_0", "fwhm")}
 _BACKGROUNDS = ("constant", "linear")
 _SPEED_OF_LIGHT = constants.c.to(u.km / u.s)
-# Vacuum rest wavelengths in Å of the IRIS lines documented in the FUV2 and NUV passbands, which the presets fit
-# and must not see beside their line: De Pontieu et al. (2014) Table 4, with O IV 1404.806 and S IV from
-# Polito et al. (2016), Mg II 2791.599 and the triplet from Pereira et al. (2015), Fe II and Ni I from
-# Wülser et al. (2018), and Ni II from IRIS Technical Note 38.
+# Vacuum rest wavelengths in Å of the lines the presets fit; the documented IRIS lines are in
+# `irispy.utils.constants.DOCUMENTED_LINES`, with their sources.
 _SI_IV_1403 = 1402.77
 _MG_II_K = 2796.352
 _MG_II_H = 2803.530
-_DOCUMENTED_LINES = (
-    ("Fe II", 1392.817),
-    ("Ni II", 1393.330),
-    ("Si IV", 1393.76),
-    ("O IV", 1399.776),
-    ("O IV", 1401.157),
-    ("Si IV", _SI_IV_1403),
-    ("O IV", 1404.806),
-    ("S IV", 1404.808),
-    ("S IV", 1406.009),
-    ("Mg II", 2791.599),
-    ("Mg II", _MG_II_K),
-    ("Mg II", 2798.754),
-    ("Mg II", 2798.823),
-    ("Ni I", 2799.47),
-    ("Mg II", _MG_II_H),
-)
 
 
 def _profile(profile):
@@ -82,7 +70,7 @@ def _covered_lines(wavelength):
     covers.
     """
     low, high = wavelength.min().to_value(u.AA), wavelength.max().to_value(u.AA)
-    return [(ion, line) for ion, line in _DOCUMENTED_LINES if low <= line <= high]
+    return [(ion, line) for ion, line in DOCUMENTED_LINES if low <= line <= high]
 
 
 def _check_window(wavelength, rest_wavelength):
@@ -408,8 +396,10 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
         relies on the ``success`` that `~astropy.modeling.fitting.TRFLSQFitter` and the other
         fitters built on `scipy.optimize.least_squares` report.
     rest_wavelength : `~astropy.units.Quantity`, optional
-        The rest wavelength for the Doppler velocities. Defaults to the one documented line that
-        the cube covers.
+        The rest wavelength for the Doppler velocities. Defaults to
+        `~irispy.utils._spectral.resolve_rest_wavelength`: the one documented line the cube covers
+        and otherwise ``cube.meta.rest_wavelength`` (the ``TWAVE`` convention). The resolved value
+        and its source are recorded in the metadata of the returned maps.
 
     Returns
     -------
@@ -454,12 +444,12 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
         raise ValueError(msg)
     covariance = None if fit_info is None else _fit_property(fit_info, "param_cov", np.nan)
     wavelength = _wavelength(cube)
+    rest_wavelength, rest_source = resolve_rest_wavelength(
+        rest_wavelength, meta=cube.meta, wavelength_range=(wavelength.min(), wavelength.max())
+    )
     if rest_wavelength is None:
-        lines = _covered_lines(wavelength)
-        if len(lines) != 1:
-            msg = f"The cube covers {len(lines)} documented lines; pass rest_wavelength."
-            raise ValueError(msg)
-        rest_wavelength = lines[0][1] * u.AA
+        msg = "No rest wavelength resolves from the metadata or the documented lines; pass rest_wavelength."
+        raise ValueError(msg)
 
     def variance(gradient):
         """
@@ -551,6 +541,8 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
         for name, value, error in maps
     ]
     cubes.append(("quality", make_map_cube(template, quality, u.dimensionless_unscaled)))
+    for _, map_cube in cubes:
+        map_cube.meta.update({"rest_wavelength": rest_wavelength, "rest_wavelength_source": rest_source})
     model_values = np.moveaxis(fitted_model(wavelength.reshape((-1,) + (1,) * len(shape))), 0, cube.wavelength_axis)
     residual = np.asarray(cube.data) - model_values.to_value(cube.unit)
     # Coordinates point back to their cube; copy them without copying its data.
@@ -561,9 +553,9 @@ def maps_from_fit(fitted_model, cube, *, fitter=None, rest_wavelength=None):
             SpectrogramCube(
                 residual,
                 cube.wcs,
-                cube.uncertainty,
-                cube.unit,
-                cube.meta,
+                uncertainty=cube.uncertainty,
+                unit=cube.unit,
+                meta=cube.meta,
                 mask=cube.mask,
                 extra_coords=deepcopy(cube.extra_coords, coordinate_memo),
                 global_coords=deepcopy(cube.global_coords, coordinate_memo),

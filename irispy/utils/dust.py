@@ -3,6 +3,7 @@ Utilities for repairing dust-darkened pixels in IRIS image cubes.
 """
 
 import warnings
+from copy import deepcopy
 
 import numpy as np
 
@@ -11,7 +12,7 @@ import astropy.units as u
 from ._spectral import check_scaled
 from .utils import calculate_dust_mask
 
-__all__ = ["remove_dust"]
+__all__ = ["mask_dust", "remove_dust"]
 
 
 def _coerce_dust_mask(data, dust_mask):
@@ -74,6 +75,40 @@ def _resolve_exposure_times(cube, frame_count, *, exposure_normalize):
         )
         return None
     return exposure_times
+
+
+def mask_dust(cube, *, dust_mask=None):
+    """
+    Return a new cube with dust-particle positions marked in the mask.
+
+    The input cube is not modified.
+
+    Parameters
+    ----------
+    cube : `~irispy.sji.SJICube`
+        The image cube to mask. Two-dimensional image slices are also supported.
+    dust_mask : `numpy.ndarray`, optional
+        Boolean mask marking the dust pixels. If omitted, it is derived from
+        `irispy.utils.calculate_dust_mask`. For a 3D cube, a 2D mask is broadcast over time.
+
+    Returns
+    -------
+    `~irispy.sji.SJICube`
+        A new cube whose mask additionally flags the dust pixels. ``meta["dust_masked"]`` is set to `True`.
+    """
+    data = cube.data
+    dust_mask = _coerce_dust_mask(data, dust_mask)
+    base_mask = np.zeros(data.shape, dtype=bool) if cube.mask is None else cube.mask
+    output_mask = base_mask | dust_mask
+    masked_cube = cube.to_nddata(
+        mask=output_mask,
+        nddata_type=type(cube),
+        extra_coords="copy",
+        global_coords="copy",
+        meta=deepcopy(cube.meta),
+    )
+    masked_cube.meta["dust_masked"] = True
+    return masked_cube
 
 
 def remove_dust(
@@ -198,8 +233,8 @@ def remove_dust(
         "nddata_type": type(cube),
         "extra_coords": "copy",
         "global_coords": "copy",
+        "meta": deepcopy(cube.meta),
     }
     cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
-    if hasattr(cleaned_cube, "dust_masked"):
-        cleaned_cube.dust_masked = bool(np.any(output_mask & dust_mask))
+    cleaned_cube.meta["dust_masked"] = bool(np.any(output_mask & dust_mask))
     return cleaned_cube

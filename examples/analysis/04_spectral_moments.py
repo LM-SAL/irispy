@@ -81,10 +81,10 @@ moments = calculate_moments(
     si_iv_1403, rest_wavelength=si_iv_core, wings=0.05 * u.nm, integrated=False, min_intensity=200 * si_iv_1403.unit
 )
 # The result is an `~ndcube.NDCollection` of native 2D maps with the spatial
-# WCS of the input, one per moment; it also has the "centroid" and "width" in wavelength units.
-intensity = moments["intensity"]
+# WCS of the input, one per moment; it also has the "centroid" and "sigma" in wavelength units.
+intensity = moments["summed_intensity"]
 velocity = moments["velocity"]
-velocity_width = moments["velocity_width"]
+velocity_width = moments["sigma_velocity"]
 
 ###############################################################################
 # We will now visualize the moments.

@@ -234,8 +234,13 @@ class BaseMeta(NDMeta):
         """
         Rest wavelength of the spectral line for this window.
 
-        `None` when the window has no usable ``TWAVE`` keyword.
+        The value recorded on a derived result (``meta["rest_wavelength"]``) when
+        present, otherwise the window's ``TWAVE`` keyword. `None` when neither is
+        usable.
         """
+        recorded = self.get("rest_wavelength")
+        if recorded is not None:
+            return recorded
         twave = self.get(f"TWAVE{self._iwin}")
         try:
             return (float(twave) * u.AA).to(u.nm)

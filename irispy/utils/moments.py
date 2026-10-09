@@ -11,7 +11,13 @@ from astropy.nddata import NDDataArray, StdDevUncertainty
 from ndcube import NDCollection
 
 from irispy.spectrograph import _wavelength_indices
-from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, standard_deviation
+from irispy.utils._spectral import (
+    check_scaled,
+    make_map_cube,
+    make_spatial_template,
+    resolve_rest_wavelength,
+    standard_deviation,
+)
 
 __all__ = ["average_window", "calculate_moments"]
 
@@ -33,7 +39,10 @@ def calculate_moments(
     cube : `irispy.spectrograph.SpectrogramCube`
         Input cube with a wavelength axis.
     rest_wavelength : `astropy.units.Quantity`, optional
-        Rest wavelength of the line. Defaults to ``cube.meta.rest_wavelength``, if present.
+        Rest wavelength of the line. Defaults to `~irispy.utils._spectral.resolve_rest_wavelength`:
+        the one documented transition the cube covers and otherwise ``cube.meta.rest_wavelength``
+        (the ``TWAVE`` convention). Ambiguous cases raise `ValueError`; the velocity maps are
+        omitted when nothing resolves.
     wings : `astropy.units.Quantity` or `tuple` of `astropy.units.Quantity`, optional
         Wavelength range to use around ``rest_wavelength``: one offset for both sides, or
         ``(lower, upper)`` offsets.
@@ -51,22 +60,24 @@ def calculate_moments(
     `ndcube.NDCollection`
         `~ndcube.NDCube` maps with the spatial WCS of ``cube``:
 
-        * ``"intensity"`` — 0th moment
+        * ``"summed_intensity"`` (or ``"integrated_intensity"`` when ``integrated=True``)
+          — 0th moment, in ``cube.unit`` (or ``cube.unit * nm``)
         * ``"centroid"`` — 1st moment, in nm
-        * ``"width"`` — 2nd moment, in nm
+        * ``"sigma"`` — 2nd moment, a standard deviation in nm
         * ``"velocity"`` — Doppler velocity of the centroid in km/s, if ``rest_wavelength`` is known
-        * ``"velocity_width"`` — width in km/s, if ``rest_wavelength`` is known
+        * ``"sigma_velocity"`` — sigma in km/s, if ``rest_wavelength`` is known
 
         Each map has a `~astropy.nddata.StdDevUncertainty` if ``cube`` has an uncertainty
-        (e.g. read with ``uncertainty=True``).
+        (e.g. read with ``uncertainty=True``) and records the resolved ``rest_wavelength`` and
+        its ``rest_wavelength_source`` in its metadata.
 
     Notes
     -----
     * Negative, non-finite and masked samples are set to zero and add no uncertainty.
     * Typed uncertainties are propagated to first order. Unknown uncertainty types raise `TypeError`.
       Errors are NaN where undefined: the intensity error where no sample is
-      left, the centroid and velocity errors where fewer than two are left, and the width and velocity
-      width errors where the width is 0.
+      left, the centroid and velocity errors where fewer than two are left, and the sigma and
+      sigma_velocity errors where sigma is 0.
     * The uncertainties are statistical only and unreliable below a signal-to-noise ratio of about 5.
       They leave out the wavelength calibration and orbital drift (several km/s, see
       `#198 <https://github.com/LM-SAL/irispy/pull/198>`__) and the bias from zeroing negative samples,
@@ -82,10 +93,11 @@ def calculate_moments(
     * :cite:t:`cheung2022`, Appendix C
     """
     check_scaled(cube)
-    if rest_wavelength is None:
-        rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
     wavelength_axis = cube.wavelength_axis
     wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
+    rest_wavelength, rest_source = resolve_rest_wavelength(
+        rest_wavelength, meta=cube.meta, wavelength_range=(wavelengths.min(), wavelengths.max())
+    )
     data = np.asarray(cube.data)
     mask = None if cube.mask is None else np.asarray(cube.mask, dtype=bool)
     sigma = standard_deviation(cube)
@@ -150,6 +162,7 @@ def calculate_moments(
         centroid_value = np.where(saturated, np.nan, centroid_value)
         stddev_value = np.where(saturated, np.nan, stddev_value)
 
+    intensity_name = "integrated_intensity" if integrated else "summed_intensity"
     errors = {}
     if sigma is not None:
         # First-order propagation of independent sample errors.
@@ -157,36 +170,38 @@ def calculate_moments(
         weight_variance = weight_sigma**2
         kept = (~dropped).sum(axis=wavelength_axis)
         with np.errstate(invalid="ignore", divide="ignore"):
-            errors["intensity"] = np.where(kept > 0, np.sqrt(weight_variance.sum(axis=-1)), np.nan)
+            errors[intensity_name] = np.where(kept > 0, np.sqrt(weight_variance.sum(axis=-1)), np.nan)
             centroid_error = np.sqrt((offset_squared * weight_variance).sum(axis=-1)) / intensity_value
             errors["centroid"] = np.where(kept > 1, centroid_error, np.nan)
             width_terms = (offset_squared - variance_value[..., np.newaxis]) ** 2 * weight_variance
             width_error = np.sqrt(width_terms.sum(axis=-1)) / intensity_value / (2 * stddev_value)
             # Count the samples, as roundoff can leave a width of 0 at about 1e-14
-            errors["width"] = np.where(np.count_nonzero(weights, axis=-1) > 1, width_error, np.nan)
+            errors["sigma"] = np.where(np.count_nonzero(weights, axis=-1) > 1, width_error, np.nan)
 
     maps = [
-        ("intensity", intensity_value, intensity_unit),
+        (intensity_name, intensity_value, intensity_unit),
         ("centroid", centroid_value, wavelengths.unit),
-        ("width", stddev_value, wavelengths.unit),
+        ("sigma", stddev_value, wavelengths.unit),
     ]
     if rest_wavelength is not None:
-        rest_wavelength = u.Quantity(rest_wavelength)
 
         def to_velocity(delta_wavelength):
             with np.errstate(invalid="ignore"):
                 return (delta_wavelength * wavelengths.unit / rest_wavelength * constants.c).to_value(u.km / u.s)
 
         if sigma is not None:
-            errors["velocity"], errors["velocity_width"] = to_velocity(errors["centroid"]), to_velocity(errors["width"])
+            errors["velocity"], errors["sigma_velocity"] = to_velocity(errors["centroid"]), to_velocity(errors["sigma"])
         velocity = to_velocity(centroid_value - rest_wavelength.to_value(wavelengths.unit))
-        maps += [("velocity", velocity, u.km / u.s), ("velocity_width", to_velocity(stddev_value), u.km / u.s)]
+        maps += [("velocity", velocity, u.km / u.s), ("sigma_velocity", to_velocity(stddev_value), u.km / u.s)]
 
     template = make_spatial_template(cube, wavelength_axis)
 
     def _make_cube(name, values, unit):
         uncertainty = None if sigma is None else StdDevUncertainty(np.where(np.isnan(values), np.nan, errors[name]))
-        return make_map_cube(template, values, unit, mask_invalid=True, uncertainty=uncertainty)
+        result = make_map_cube(template, values, unit, mask_invalid=True, uncertainty=uncertainty)
+        if rest_source is not None:
+            result.meta.update({"rest_wavelength": rest_wavelength, "rest_wavelength_source": rest_source})
+        return result
 
     cubes = [(name, _make_cube(name, values, unit)) for name, values, unit in maps]
     return NDCollection(cubes, aligned_axes=tuple(range(len(template.shape))))

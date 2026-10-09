@@ -146,7 +146,7 @@ def dust_cube():
     return dust_cube
 
 
-def test_sjicube_apply_dust_mask(dust_cube):
+def test_sjicube_mask_dust(dust_cube):
     # TODO: The expected values are not correct.
     dust_mask_expected = np.array(
         [
@@ -154,25 +154,24 @@ def test_sjicube_apply_dust_mask(dust_cube):
             [[True, True, True, False], [True, True, True, True], [True, True, True, True]],
         ]
     )
-    dust_cube.apply_dust_mask()
-    np.testing.assert_array_equal(dust_cube.mask, dust_mask_expected)
-    dust_cube.apply_dust_mask(undo=True)
-    before_mask = np.array(
-        [
-            [[False, False, False, False], [False, False, False, False], [False, False, False, False]],
-            [[False, False, False, False], [False, False, False, False], [False, False, False, False]],
-        ]
-    )
-    np.testing.assert_array_equal(dust_cube.mask, before_mask)
+    original_mask = None if dust_cube.mask is None else np.asarray(dust_cube.mask).copy()
+    masked = dust_cube.mask_dust()
+    np.testing.assert_array_equal(masked.mask, dust_mask_expected)
+    assert masked.meta["dust_masked"] is True
+    # The input cube is left unchanged.
+    if original_mask is None:
+        assert dust_cube.mask is None
+    else:
+        np.testing.assert_array_equal(np.asarray(dust_cube.mask), original_mask)
 
 
-def test_sjicube_apply_dust_mask_initializes_missing_mask(dust_cube):
+def test_sjicube_mask_dust_initializes_missing_mask(dust_cube):
     dust_cube.mask = None
 
-    dust_cube.apply_dust_mask()
+    masked = dust_cube.mask_dust()
 
-    assert dust_cube.mask is not None
-    assert dust_cube.mask.any()
+    assert masked.mask is not None
+    assert masked.mask.any()
 
 
 @pytest.mark.parametrize(
@@ -259,7 +258,7 @@ def test_sjicube_remove_cosmic_rays(cube_2d, monkeypatch):
     np.testing.assert_array_equal(cleaned_cube.data, cube_2d.data + 1)
     np.testing.assert_array_equal(cleaned_cube.mask, cube_2d.mask)
     assert cleaned_cube.meta["scaled"] == cube_2d.meta["scaled"]
-    assert cleaned_cube.dust_masked == cube_2d.dust_masked
+    assert cleaned_cube.meta.get("dust_masked") == cube_2d.meta.get("dust_masked")
     assert list(cleaned_cube.extra_coords.keys()) == list(cube_2d.extra_coords.keys())
     assert captured["sigma"] == 2.0
     assert captured["max_iters"] == 3

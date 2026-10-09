@@ -8,7 +8,7 @@ from scipy import ndimage
 from astropy import units as u
 
 from irispy.tests.helpers import figure_test
-from irispy.utils.dust import _local_median_fill, remove_dust
+from irispy.utils.dust import _local_median_fill, mask_dust, remove_dust
 
 
 @pytest.mark.parametrize("method", [False, True])
@@ -192,7 +192,7 @@ def test_remove_dust_spatial_fallback_for_single_images(sns_sjicube_1330, fallba
 
     assert cleaned.data[1, 1] == expected
     np.testing.assert_array_equal(cleaned.mask, dust_mask if unfilled else np.zeros_like(dust_mask))
-    assert cleaned.dust_masked is unfilled
+    assert cleaned.meta.get("dust_masked") is unfilled
 
 
 def test_remove_dust_rejects_string_none_fallback(sns_sjicube_1330):
@@ -223,6 +223,39 @@ def test_sjicube_remove_dust_method_matches_function(sns_sjicube_1330):
 
     np.testing.assert_allclose(cleaned_by_method.data, cleaned_by_function.data)
     np.testing.assert_array_equal(cleaned_by_method.mask, cleaned_by_function.mask)
+
+
+def test_mask_dust_keeps_existing_mask_and_broadcasts_2d_mask(sns_sjicube_1330):
+    cube = sns_sjicube_1330[:2, :5, :5]
+    base_mask = np.zeros(cube.shape, dtype=bool)
+    base_mask[0, 2, 2] = True  # inside the dust region
+    base_mask[1, 0, 0] = True  # outside the dust region
+    cube.mask = base_mask
+    dust_mask_2d = np.zeros((5, 5), dtype=bool)
+    dust_mask_2d[1:4, 1:4] = True
+
+    masked = mask_dust(cube, dust_mask=dust_mask_2d)
+
+    np.testing.assert_array_equal(masked.mask, base_mask | np.broadcast_to(dust_mask_2d, cube.shape))
+    assert masked.meta["dust_masked"] is True
+    # The input cube is left unchanged.
+    np.testing.assert_array_equal(cube.mask, base_mask)
+    assert "dust_masked" not in cube.meta
+
+
+@pytest.mark.parametrize("index", [np.s_[:, :5, :5], np.s_[0, :5, :5]], ids=["3d", "2d_slice"])
+def test_mask_dust_method_matches_function(sns_sjicube_1330, index):
+    cube = sns_sjicube_1330[index]
+    cube.mask = None
+    dust_mask = np.zeros(cube.shape, dtype=bool)
+    dust_mask[(1, 1) if cube.data.ndim == 2 else (0, 1, 1)] = True
+
+    masked_by_function = mask_dust(cube, dust_mask=dust_mask)
+    masked_by_method = cube.mask_dust(dust_mask=dust_mask)
+
+    np.testing.assert_array_equal(masked_by_function.mask, dust_mask)  # no initial mask
+    np.testing.assert_array_equal(masked_by_method.mask, masked_by_function.mask)
+    assert masked_by_method.meta["dust_masked"] is True
 
 
 @figure_test

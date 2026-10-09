@@ -8,7 +8,7 @@ import astropy.units as u
 import sunpy.map
 
 
-def test_apply_dust_mask_with_lazy_mask(sns_sjicube_1330):
+def test_mask_dust_with_lazy_mask(sns_sjicube_1330):
     cube = sns_sjicube_1330[:1, :5, :5]
     cube.data[:] = 10
     cube.data[0, 2, 2] = 0
@@ -16,17 +16,16 @@ def test_apply_dust_mask_with_lazy_mask(sns_sjicube_1330):
     original_mask[0, 0, 0] = True
     cube.mask = da.from_array(original_mask, chunks=(1, 5, 5))
 
-    cube.apply_dust_mask()
+    masked = cube.mask_dust()
     expected = original_mask.copy()
     expected[0, 1:4, 1:4] = True
-    assert isinstance(cube.mask, da.Array)
-    np.testing.assert_array_equal(cube.mask.compute(), expected)
-    assert cube.dust_masked
+    assert isinstance(masked.mask, da.Array)
+    np.testing.assert_array_equal(masked.mask.compute(), expected)
+    assert masked.meta["dust_masked"] is True
 
-    cube.apply_dust_mask(undo=True)
-    assert isinstance(cube.mask, da.Array)
+    # The input cube is left unchanged.
     np.testing.assert_array_equal(cube.mask.compute(), original_mask)
-    assert not cube.dust_masked
+    assert "dust_masked" not in cube.meta
 
 
 AXIS = [

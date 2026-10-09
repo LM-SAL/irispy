@@ -15,7 +15,7 @@ def test_remove_cosmic_rays_rsliding(sns_sjicube_1330):
     mask = np.array([[False, False, False], [False, False, False], [True, False, False]])
     cube.data[...] = data
     cube.mask = mask.copy()
-    original_dust_masked = cube.dust_masked
+    original_dust_masked = cube.meta.get("dust_masked")
 
     cleaned_cube = remove_cosmic_rays(
         cube,
@@ -26,7 +26,7 @@ def test_remove_cosmic_rays_rsliding(sns_sjicube_1330):
 
     np.testing.assert_allclose(cleaned_cube.data[1, 1], 5.0, atol=2.0)
     np.testing.assert_array_equal(cleaned_cube.mask, mask)
-    assert cleaned_cube.dust_masked == original_dust_masked
+    assert cleaned_cube.meta.get("dust_masked") == original_dust_masked
 
 
 def test_remove_cosmic_rays_astroscrappy(sns_sjicube_1330):
@@ -38,7 +38,7 @@ def test_remove_cosmic_rays_astroscrappy(sns_sjicube_1330):
     mask[0, 0] = True
     cube.data[...] = data
     cube.mask = mask.copy()
-    original_dust_masked = cube.dust_masked
+    original_dust_masked = cube.meta.get("dust_masked")
 
     cleaned_cube = remove_cosmic_rays(
         cube,
@@ -51,7 +51,7 @@ def test_remove_cosmic_rays_astroscrappy(sns_sjicube_1330):
     assert not np.isclose(cleaned_cube.data[5, 5], 500.0)
     np.testing.assert_allclose(cleaned_cube.data[5, 5], 10.0, atol=1.0)
     np.testing.assert_array_equal(cleaned_cube.mask, mask)
-    assert cleaned_cube.dust_masked == original_dust_masked
+    assert cleaned_cube.meta.get("dust_masked") == original_dust_masked
 
 
 def test_remove_cosmic_rays_rsliding_kwargs_forwarded(sns_sjicube_1330, monkeypatch):
@@ -146,7 +146,7 @@ def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch, 
             extra_coords="copy",
             global_coords="copy",
         )
-    cube.dust_masked = True
+    cube.meta["dust_masked"] = True
 
     cleaned = remove_cosmic_rays(cube, method="astroscrappy")
 
@@ -161,7 +161,7 @@ def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch, 
     assert isinstance(cleaned.data, np.ndarray)
     np.testing.assert_array_equal(cleaned.data, expected_frames - 1)
     np.testing.assert_array_equal(cleaned.mask, mask)
-    assert cleaned.dust_masked is True
+    assert cleaned.meta.get("dust_masked") is True
     assert cleaned.unit == cube.unit
     assert cleaned.meta["scaled"] == cube.meta["scaled"]
     assert list(cleaned.extra_coords.keys()) == list(cube.extra_coords.keys())

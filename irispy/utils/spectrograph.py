@@ -2,6 +2,8 @@
 This module provides general utility functions called by code in spectrograph.
 """
 
+from copy import deepcopy
+
 import numpy as np
 
 import astropy.units as u
@@ -11,14 +13,13 @@ from astropy.nddata import StdDevUncertainty
 from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
 from irispy.utils._spectral import check_scaled, in_windows, make_map_cube, standard_deviation
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
-from irispy.utils.response import get_interpolated_effective_area, get_latest_response
+from irispy.utils.response import get_interpolated_effective_area, get_response
 
 __all__ = [
     "calculate_dn_to_radiance_factor",
     "convert_photons_per_sec_to_radiance",
     "radiation_temperature",
     "radiometric_calibration",
-    "reshape_1d_wavelength_dimensions_for_broadcast",
     "subtract_background",
 ]
 
@@ -76,7 +77,7 @@ def radiometric_calibration(
     wavelength_axis_index = cube.wavelength_axis
     wavelength = cube.axis_world_coords(wavelength_axis_index)[0]
     time_obs = cube.meta.date_reference
-    iris_response = get_latest_response(time_obs)
+    iris_response = get_response(time_obs)
     exp_corrected_cube = cube.apply_exposure_time_correction()
     # Convert to radiance units.
     data_quantities = (exp_corrected_cube.data * exp_corrected_cube.unit.to(u.photon / u.s) * (u.photon / u.s),)
@@ -99,11 +100,13 @@ def radiometric_calibration(
     new_cube = SpectrogramCube(
         new_data,
         cube.wcs,
-        new_uncertainty,
-        new_unit,
-        cube.meta,
+        uncertainty=new_uncertainty,
+        unit=new_unit,
+        meta=deepcopy(cube.meta),
         mask=cube.mask,
     )
+    new_cube.meta["response_version"] = iris_response["VERSION"]
+    new_cube.meta["response_version_date"] = iris_response["VERSION_DATE"]
     new_cube._extra_coords = cube.extra_coords
     return new_cube
 
@@ -195,7 +198,7 @@ def convert_photons_per_sec_to_radiance(
         Quantities to be converted.  Must have units of counts/s or
         radiance equivalent counts, e.g. erg / cm**2 / s / sr / Angstrom.
     iris_response: dict
-        The IRIS response data loaded from `irispy.utils.response.get_latest_response`.
+        The IRIS response data loaded from `irispy.utils.response.get_response`.
     wavelength: `astropy.units.Quantity`
         Wavelength at each element along spectral axis of data quantities.
     detector_type: `str`
@@ -258,7 +261,7 @@ def calculate_dn_to_radiance_factor(
     Parameters
     ----------
     iris_response: dict
-        The IRIS response data loaded from `irispy.utils.response.get_latest_response`.
+        The IRIS response data loaded from `irispy.utils.response.get_response`.
     wavelength: `astropy.units.Quantity`
         Wavelengths for which counts/s-to-radiance factor is to be calculated
     detector_type: `str`

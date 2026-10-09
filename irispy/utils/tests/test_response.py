@@ -13,7 +13,7 @@ from sunpy.time import parse_time
 
 from irispy.data.test import ROOTDIR, get_test_filepath
 from irispy.tests.helpers import figure_test
-from irispy.utils.response import _fit_xput_lite, get_interpolated_effective_area, get_latest_response
+from irispy.utils.response import _fit_xput_lite, get_interpolated_effective_area, get_response
 
 
 @pytest.mark.parametrize(
@@ -93,8 +93,8 @@ def test_fit_iris_xput_lite_old_nuv(old_iris_response_data, coeff_index, expecte
     )
 
 
-def test_get_latest_response_to_idl(idl_response):
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+def test_get_response_to_idl(idl_response):
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
 
     np_test.assert_equal(iris_response["VERSION"], int(idl_response["VERSION"]))
     np_test.assert_equal(iris_response["DATE_OBS"], idl_response["DATE_OBS"].decode())
@@ -111,20 +111,52 @@ def test_get_latest_response_to_idl(idl_response):
     np_test.assert_almost_equal(iris_response["AREA_SJI"][3].to_value(), idl_response["AREA_SJI"][3], decimal=4)
 
 
-def test_get_latest_response_multiple_inputs():
+def test_get_response_multiple_inputs():
     times = parse_time(["2025-08-05T22:25:04.723", "2025-08-06T22:25:04.723", "2025-08-07T22:25:04.723"])
-    iris_response = get_latest_response(times)
-    assert len(iris_response) == 3
+    iris_response = get_response(times)
+    assert iris_response["AREA_SG"].shape[0] == 3  # time axis
+    assert iris_response["AREA_SJI"].shape[0] == 3
+    assert len(iris_response["DATE_OBS"]) == 3
 
 
-def test_get_latest_response_no_observation_time():
-    iris_response = get_latest_response()
-    assert iris_response is not None
+def test_get_response_requires_observation_time():
+    with pytest.raises(TypeError):
+        get_response()
+
+
+def test_get_response_time_dependence():
+    # Regression: per-time effective areas must vary with time (a shallow dict copy
+    # once collapsed them all to the last time's values).
+    iris_response = get_response(parse_time(["2013-01-01", "2023-01-01"]))
+    assert not np.allclose(iris_response["AREA_SG"][0], iris_response["AREA_SG"][1])
+    assert not np.allclose(iris_response["AREA_SJI"][0], iris_response["AREA_SJI"][1])
+
+
+def test_get_response_time_axis_contract():
+    # Scalar input -> scalar quantities; array input -> array quantities with a leading
+    # time axis, including a length-one array.
+    scalar = get_response(parse_time("2025-08-05T22:25:04.723"))
+    one = get_response(parse_time(["2025-08-05T22:25:04.723"]))
+    many = get_response(parse_time(["2025-08-05T22:25:04.723", "2026-01-01T00:00:00"]))
+    assert isinstance(scalar["DATE_OBS"], str)
+    assert scalar["AREA_SG"].shape == one["AREA_SG"].shape[1:] == many["AREA_SG"].shape[1:]
+    assert scalar["AREA_SJI"].shape == one["AREA_SJI"].shape[1:] == many["AREA_SJI"].shape[1:]
+    np_test.assert_equal(one["DATE_OBS"], [scalar["DATE_OBS"]])
+    assert many["DATE_OBS"].shape == (2,)
+    np_test.assert_equal(one["AREA_SG"].value, scalar["AREA_SG"].value[np.newaxis])
+    np_test.assert_equal(one["AREA_SJI"].value, scalar["AREA_SJI"].value[np.newaxis])
+    for response in (scalar, one, many):
+        assert response["AREA_SG"].unit == u.cm**2
+        assert response["AREA_SJI"].unit == u.cm**2
+        assert response["LAMBDA"].unit == u.nm
+    # Returned responses are independent objects.
+    one["AREA_SG"].value[0, 0] = -1
+    assert scalar["AREA_SG"].value[0, 0] != -1
 
 
 @figure_test
 def test_plot_idl_vs_python_fuv_sg(idl_response):
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
 
     fig, ax = plt.subplots()
     aslice = slice(235, 425)
@@ -140,7 +172,7 @@ def test_plot_idl_vs_python_fuv_sg(idl_response):
 
 @figure_test
 def test_plot_idl_vs_python_nuv_sg(idl_response):
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
 
     fig, ax = plt.subplots()
     aslice = slice(3125, 3275)
@@ -156,7 +188,7 @@ def test_plot_idl_vs_python_nuv_sg(idl_response):
 
 @figure_test
 def test_plot_idl_vs_python_sji_1(idl_response):
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
 
     aslice = slice(175, 525)
     fig, ax = plt.subplots()
@@ -184,7 +216,7 @@ def test_plot_idl_vs_python_sji_1(idl_response):
 
 @figure_test
 def test_plot_idl_vs_python_sji_2(idl_response):
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
 
     aslice = slice(200, 550)
     fig, ax = plt.subplots()
@@ -212,7 +244,7 @@ def test_plot_idl_vs_python_sji_2(idl_response):
 
 @figure_test
 def test_plot_idl_vs_python_sji_3(idl_response):
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
 
     aslice = slice(3110, 3290)
     fig, ax = plt.subplots()
@@ -240,7 +272,7 @@ def test_plot_idl_vs_python_sji_3(idl_response):
 
 @figure_test
 def test_plot_idl_vs_python_sji_4(idl_response):
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
 
     aslice = slice(3210, 3290)
     fig, ax = plt.subplots()
@@ -270,7 +302,7 @@ def test_get_interpolated_effective_area_uncovered_wavelengths_are_nan():
     # Wavelengths outside the spectral ranges covered by the response file
     # (including the gap between the two FUV CCDs) must come back as NaN
     # instead of zero/near-zero values that blow up the calibration.
-    iris_response = get_latest_response(parse_time("2025-08-05T22:25:04.723"))
+    iris_response = get_response(parse_time("2025-08-05T22:25:04.723"))
     # 1385 A is in the FUV1/FUV2 gap, 1394 A and 2796 A are covered.
     fuv_area = get_interpolated_effective_area(
         iris_response,
@@ -291,7 +323,7 @@ def test_get_interpolated_effective_area_uncovered_wavelengths_are_nan():
 def test_plot_get_interpolated_effective_area():
     # The idea is that this plot should look the same as the plot for test_plot_idl_vs_python_fuv_sg
     start_obs = parse_time("2025-08-05T22:25:04.723")
-    iris_response = get_latest_response(start_obs)
+    iris_response = get_response(start_obs)
     obs_wavelength = np.linspace(1400.5, 1404.9915000926703, num=692, endpoint=True) * u.Angstrom
     effective_area = get_interpolated_effective_area(
         iris_response,

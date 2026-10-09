@@ -35,6 +35,12 @@ def test_sgmeta_rest_wavelength():
     assert u.isclose(meta.rest_wavelength, 140.277 * u.nm, rtol=1e-4)
 
 
+def test_sgmeta_rest_wavelength_prefers_recorded_value():
+    meta = SGMeta(_make_sg_header(), "Si IV 1403")
+    meta["rest_wavelength"] = 140.2 * u.nm
+    assert u.isclose(meta.rest_wavelength, 140.2 * u.nm)
+
+
 def test_sgmeta_detector_band_fuv():
     meta = SGMeta(_make_sg_header(), "Si IV 1403")
     assert meta.detector_band == "FUV"

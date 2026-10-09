@@ -10,6 +10,7 @@ __all__ = [
     "BAD_PIXEL_VALUE_SCALED",
     "BAD_PIXEL_VALUE_UNSCALED",
     "DN_UNIT",
+    "DOCUMENTED_LINES",
     "INSTRUMENTAL_FWHM",
     "PASSBAND_LIMITS",
     "RADIANCE_UNIT",
@@ -49,6 +50,29 @@ SLIT_WIDTH = 0.33 * u.arcsec
 INSTRUMENTAL_FWHM = {"FUV1": 26 * u.mAA, "FUV2": 26 * u.mAA, "NUV": 53 * u.mAA}
 # Vacuum wavelength limits of the spectrograph passbands: De Pontieu et al. (2014) Table 2.
 PASSBAND_LIMITS = {"FUV1": [1331.7, 1358.4] * u.AA, "FUV2": [1389.0, 1407.0] * u.AA, "NUV": [2782.7, 2835.1] * u.AA}
+
+# Vacuum rest wavelengths in Å of the IRIS lines documented in the FUV2 and NUV passbands, which the fitting
+# presets fit and must not see beside their line, and which resolve rest wavelengths when the metadata does
+# not: De Pontieu et al. (2014) Table 4, with O IV 1404.806 and S IV from Polito et al. (2016), Mg II 2791.599
+# and the triplet from Pereira et al. (2015), Fe II and Ni I from Wülser et al. (2018), and Ni II from IRIS
+# Technical Note 38.
+DOCUMENTED_LINES = (
+    ("Fe II", 1392.817),
+    ("Ni II", 1393.330),
+    ("Si IV", 1393.76),
+    ("O IV", 1399.776),
+    ("O IV", 1401.157),
+    ("Si IV", 1402.77),
+    ("O IV", 1404.806),
+    ("S IV", 1404.808),
+    ("S IV", 1406.009),
+    ("Mg II", 2791.599),
+    ("Mg II", 2796.352),
+    ("Mg II", 2798.754),
+    ("Mg II", 2798.823),
+    ("Ni I", 2799.47),
+    ("Mg II", 2803.530),
+)
 # Abridged standard atomic weights of the elements of the IRIS lines: Prohaska et al. (2022), via ciaaw.org.
 ATOMIC_MASS = {
     "H": 1.0080 * u.u,

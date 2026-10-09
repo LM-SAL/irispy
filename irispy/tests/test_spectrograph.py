@@ -145,6 +145,11 @@ def test_spectral_properties_raise_without_wave(property_name, message):
         getattr(cube, property_name)
 
 
+def test_spectrogram_cube_options_are_keyword_only():
+    with pytest.raises(TypeError, match="positional"):
+        SpectrogramCube(np.ones((2, 5)), WCS(naxis=2), None, u.DN)
+
+
 def test_solid_angle_missing_hplt_raises():
     header = fits.Header()
     header["NAXIS"] = 3

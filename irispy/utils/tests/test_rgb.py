@@ -54,7 +54,7 @@ def test_calculate_rgb_metadata_defaults(si_iv_cube):
 @pytest.mark.parametrize("render", [calculate_rgb, plot_rgb])
 def test_rgb_requires_rest_wavelength_without_metadata(si_iv_cube, render):
     si_iv_cube.meta.pop(f"TWAVE{si_iv_cube.meta._iwin}")
-    with pytest.raises(ValueError, match="Pass rest_wavelength explicitly"):
+    with pytest.raises(ValueError, match="rest_wavelength explicitly"):
         render(si_iv_cube)
 
 

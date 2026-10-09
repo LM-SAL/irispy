@@ -2,6 +2,7 @@
 Utilities for removing cosmic rays from IRIS data.
 """
 
+from copy import deepcopy
 from typing import Any
 from collections.abc import Mapping
 
@@ -140,8 +141,6 @@ def remove_cosmic_rays(
         "nddata_type": type(cube),
         "extra_coords": "copy",
         "global_coords": "copy",
+        "meta": deepcopy(cube.meta),
     }
-    cleaned_cube = cube.to_nddata(**cleaned_cube_kwargs)
-    if hasattr(cleaned_cube, "dust_masked") and hasattr(cube, "dust_masked"):
-        cleaned_cube.dust_masked = cube.dust_masked
-    return cleaned_cube
+    return cube.to_nddata(**cleaned_cube_kwargs)

@@ -30,9 +30,9 @@ The latest calibration data are included in ``irispy`` and can be read:
 
    >>> from sunpy.time import parse_time
 
-   >>> from irispy.utils.response import get_interpolated_effective_area, get_latest_response
+   >>> from irispy.utils.response import get_interpolated_effective_area, get_response
 
-   >>> response = get_latest_response(observation_time=parse_time("2020-01-01T00:00:00"))
+   >>> response = get_response(observation_time=parse_time("2020-01-01T00:00:00"))
 
 where ``observation_time`` is an astropy Time object with the time of the observations (compatible with `sunpy.time.parse_time`).
 The output is a dictionary with the following keys:
@@ -47,7 +47,7 @@ The ``DN2PHOT_*`` tags give the conversion from DN counts to photons.
 
 .. warning::
 
-   ``get_latest_response`` will only apply the most up to date calibration.
+   ``get_response`` applies the calibration data packaged with this ``irispy`` installation; it does not download newer data.
    It is not possible to specify a particular version of the calibration data, it is only possible to specify the time of the observation, and the routine will return the appropriate calibration for that time.
 
 To convert the spectral units from DN to flux one must do the following conversion:

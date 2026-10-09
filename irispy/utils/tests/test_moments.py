@@ -30,12 +30,12 @@ def test_calculate_moments_basic(sns_sg_file):
     rest_wvl = 1335.71 * u.Angstrom
     moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=1.0 * u.Angstrom)
     assert isinstance(moments, NDCollection)
-    assert set(moments.keys()) == {"intensity", "centroid", "width", "velocity", "velocity_width"}
-    intensity = moments["intensity"]
+    assert set(moments.keys()) == {"summed_intensity", "centroid", "sigma", "velocity", "sigma_velocity"}
+    intensity = moments["summed_intensity"]
     centroid = moments["centroid"]
-    width = moments["width"]
+    width = moments["sigma"]
     velocity = moments["velocity"]
-    velocity_width = moments["velocity_width"]
+    velocity_width = moments["sigma_velocity"]
     # Check shapes: cube is (nt, ny, nwl), so moments should be (nt, ny)
     assert intensity.shape == cube.shape[:-1]
     assert centroid.shape == cube.shape[:-1]
@@ -76,12 +76,12 @@ def test_calculate_moments_sliced_cube(sns_sg_file):
     cube = raster_collection["C II 1336"][0]
     cube_slice = cube[10, :, :]
     moments = calculate_moments(cube_slice)
-    assert "intensity" in moments
+    assert "summed_intensity" in moments
     assert "centroid" in moments
-    assert "width" in moments
-    assert moments["intensity"].shape == cube_slice.shape[:-1]
+    assert "sigma" in moments
+    assert moments["summed_intensity"].shape == cube_slice.shape[:-1]
     assert moments["centroid"].shape == cube_slice.shape[:-1]
-    assert moments["width"].shape == cube_slice.shape[:-1]
+    assert moments["sigma"].shape == cube_slice.shape[:-1]
 
 
 @pytest.mark.parametrize("wings", [(1.1 * u.nm, 0.1 * u.nm), (1.1, 0.1) * u.nm])
@@ -92,7 +92,7 @@ def test_calculate_moments_asymmetric_wings(wings):
     wvls = np.linspace(1.0, 5.0, 5) * u.nm
     cube = make_test_spectrogram_cube(np.ones((1, 1, len(wvls))), wvls)
     moments = calculate_moments(cube, rest_wavelength=3 * u.nm, wings=wings)
-    assert_quantity_allclose(moments["intensity"].data[0, 0] * moments["intensity"].unit, 2 * u.DN)
+    assert_quantity_allclose(moments["summed_intensity"].data[0, 0] * moments["summed_intensity"].unit, 2 * u.DN)
     assert_quantity_allclose(moments["centroid"].data[0, 0] * moments["centroid"].unit, 2.5 * u.nm)
 
 
@@ -177,11 +177,11 @@ def test_calculate_moments_known_gaussian():
     data = spectrum.reshape(1, 1, -1)
     cube = make_test_spectrogram_cube(data, wvls)
     moments = calculate_moments(cube, rest_wavelength=1402.77 * u.Angstrom, wings=1.0 * u.Angstrom)
-    intensity = moments["intensity"]
+    intensity = moments["summed_intensity"]
     centroid = moments["centroid"]
-    width = moments["width"]
+    width = moments["sigma"]
     velocity = moments["velocity"]
-    velocity_width = moments["velocity_width"]
+    velocity_width = moments["sigma_velocity"]
     # Intensity is the per-pixel sum (default integrated=False)
     expected_intensity = np.sum(gauss(wvls.value))
     assert_quantity_allclose(intensity.data[0, 0] * intensity.unit, expected_intensity * u.DN, rtol=0.01)
@@ -218,9 +218,9 @@ def test_calculate_moments_known_gaussian_figure():
         data[row, :, :] = spectrum
     cube = make_test_spectrogram_cube(data, wvls)
     moments = calculate_moments(cube, rest_wavelength=rest_wvl, wings=0.5 * u.Angstrom)
-    intensity = moments["intensity"]
+    intensity = moments["summed_intensity"]
     velocity = moments["velocity"]
-    width = moments["width"]
+    width = moments["sigma"]
     centroid = moments["centroid"]
     fig, axes = plt.subplots(2, 2, figsize=(10, 8))
     # Panel 1: all three Gaussian profiles overlaid
@@ -273,9 +273,9 @@ def test_calculate_moments_zero_intensity():
     data = spectrum.reshape(1, 1, -1)
     cube = make_test_spectrogram_cube(data, wvls)
     moments = calculate_moments(cube)
-    intensity = moments["intensity"]
+    intensity = moments["summed_intensity"]
     centroid = moments["centroid"]
-    width = moments["width"]
+    width = moments["sigma"]
     assert intensity.data[0, 0] == 0
     assert np.isnan(centroid.data[0, 0])
     assert np.isnan(width.data[0, 0])
@@ -289,9 +289,9 @@ def test_calculate_moments_min_intensity():
     spectrum = Gaussian1D(amplitude=10.0, mean=1402.77, stddev=0.05)(wvls.value)
     # Pixels above, at and below the threshold
     cube = make_test_spectrogram_cube(np.stack([2 * spectrum, spectrum, 0.5 * spectrum]).reshape(1, 3, -1), wvls)
-    threshold = calculate_moments(cube)["intensity"].data[0, 1] * u.DN
+    threshold = calculate_moments(cube)["summed_intensity"].data[0, 1] * u.DN
     moments = calculate_moments(cube, rest_wavelength=1402.77 * u.Angstrom, min_intensity=threshold)
-    for key in ("intensity", "centroid", "width", "velocity", "velocity_width"):
+    for key in ("summed_intensity", "centroid", "sigma", "velocity", "sigma_velocity"):
         np.testing.assert_array_equal(moments[key].mask[0], [False, False, True], err_msg=key)
         assert np.isfinite(moments[key].data[0, :2]).all(), key
         assert np.isnan(moments[key].data[0, 2]), key
@@ -367,9 +367,9 @@ def test_calculate_moments_saturation_limit():
     data = spectrum.reshape(1, 1, -1)
     cube = make_test_spectrogram_cube(data, wvls)
     moments = calculate_moments(cube, saturation_limit=1e4)
-    assert np.isnan(moments["intensity"].data[0, 0])
+    assert np.isnan(moments["summed_intensity"].data[0, 0])
     assert np.isnan(moments["centroid"].data[0, 0])
-    assert np.isnan(moments["width"].data[0, 0])
+    assert np.isnan(moments["sigma"].data[0, 0])
 
 
 def test_calculate_moments_integrated():
@@ -382,7 +382,7 @@ def test_calculate_moments_integrated():
     data = spectrum.reshape(1, 1, -1)
     cube = make_test_spectrogram_cube(data, wvls)
     moments = calculate_moments(cube, rest_wavelength=1402.77 * u.Angstrom, wings=1.0 * u.Angstrom, integrated=True)
-    intensity = moments["intensity"]
+    intensity = moments["integrated_intensity"]
     assert intensity.unit == u.DN * u.nm
     # Intensity value should be the analytic integral
     expected_intensity = np.sqrt(2 * np.pi) * 10.0 * 0.005
@@ -396,7 +396,7 @@ def test_calculate_moments_preserves_time_without_spectral_global_coord(sns_sg_f
     raster_collection = read_spectrograph_lvl2(sns_sg_file)
     cube = raster_collection["C II 1336"][0]
     moments = calculate_moments(cube)
-    intensity = moments["intensity"]
+    intensity = moments["summed_intensity"]
     assert "time" in tuple(intensity.extra_coords.keys())
     assert "em.wl" not in tuple(intensity.global_coords.keys())
     np.testing.assert_array_equal(
@@ -415,11 +415,11 @@ def test_calculate_moments_uncertainty_by_hand():
     width_error = np.sqrt(75.32) / 98 / np.sqrt(26)
     speed = constants.c.to_value(u.km / u.s) / 500.5
     expected = {
-        "intensity": np.sqrt(0.14),
+        "summed_intensity": np.sqrt(0.14),
         "centroid": centroid_error,
-        "width": width_error,
+        "sigma": width_error,
         "velocity": centroid_error * speed,
-        "velocity_width": width_error * speed,
+        "sigma_velocity": width_error * speed,
     }
     for key, error in expected.items():
         assert isinstance(moments[key].uncertainty, StdDevUncertainty)
@@ -477,9 +477,12 @@ def test_calculate_moments_uncertainty_integrated():
     for cube in (ascending, descending):
         integrated = calculate_moments(cube, rest_wavelength=500.5 * u.nm, integrated=True)
         for key, moment in summed.items():
-            scale = 0.5 if key == "intensity" else 1
-            np.testing.assert_allclose(integrated[key].data, scale * moment.data, err_msg=key)
-            np.testing.assert_allclose(integrated[key].uncertainty.array, scale * moment.uncertainty.array, err_msg=key)
+            integrated_key = "integrated_intensity" if key == "summed_intensity" else key
+            scale = 0.5 if key == "summed_intensity" else 1
+            np.testing.assert_allclose(integrated[integrated_key].data, scale * moment.data, err_msg=key)
+            np.testing.assert_allclose(
+                integrated[integrated_key].uncertainty.array, scale * moment.uncertainty.array, err_msg=key
+            )
 
 
 def test_calculate_moments_uncertainty_nan_where_undefined():
@@ -491,11 +494,11 @@ def test_calculate_moments_uncertainty_nan_where_undefined():
     moments = calculate_moments(cube, rest_wavelength=501 * u.nm)
     centroid_error = np.sqrt(0.02) / 33.9
     expected = {
-        "intensity": [0.1, np.nan, np.sqrt(0.03)],
+        "summed_intensity": [0.1, np.nan, np.sqrt(0.03)],
         "centroid": [np.nan, np.nan, centroid_error],
         "velocity": [np.nan, np.nan, centroid_error * constants.c.to_value(u.km / u.s) / 501],
-        "width": [np.nan, np.nan, np.nan],
-        "velocity_width": [np.nan, np.nan, np.nan],
+        "sigma": [np.nan, np.nan, np.nan],
+        "sigma_velocity": [np.nan, np.nan, np.nan],
     }
     for key, error in expected.items():
         np.testing.assert_allclose(moments[key].uncertainty.array[0], error, err_msg=key)
@@ -505,13 +508,47 @@ def test_calculate_moments_scalar_uncertainty_with_wings():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), (500 + np.arange(5)) * u.nm)
     cube.uncertainty = StdDevUncertainty(3.0)
     moments = calculate_moments(cube, rest_wavelength=502 * u.nm, wings=1.5 * u.nm)
-    np.testing.assert_allclose(moments["intensity"].uncertainty.array, 3 * np.sqrt(3))
+    np.testing.assert_allclose(moments["summed_intensity"].uncertainty.array, 3 * np.sqrt(3))
 
 
 def test_calculate_moments_zero_rest_wavelength_warns():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), [500.0, 501.0, 502.0] * u.nm)
     with pytest.warns(RuntimeWarning, match="divide by zero"):
         calculate_moments(cube, rest_wavelength=0 * u.nm)
+
+
+def test_calculate_moments_rest_wavelength_resolution():
+    # A cube covering exactly one documented line resolves it over the TWAVE test header.
+    cube = make_test_spectrogram_cube(np.ones((2, 2, 5)), (1402.5 + 0.1 * np.arange(5)) * u.AA)
+    moments = calculate_moments(cube)
+    assert moments["velocity"].meta["rest_wavelength_source"] == "documented transition"
+    assert_quantity_allclose(moments["velocity"].meta["rest_wavelength"], 1402.77 * u.AA)
+    # An explicit rest wavelength in another unit wins and is recorded, and a redshift is positive.
+    moments = calculate_moments(cube, rest_wavelength=140.25 * u.nm)
+    assert moments["velocity"].meta["rest_wavelength_source"] == "explicit"
+    assert_quantity_allclose(moments["velocity"].meta["rest_wavelength"], 1402.5 * u.AA)
+    assert moments["velocity"].data[0, 0] > 0  # the centroid is above the rest wavelength
+    # Without a documented line the TWAVE convention resolves.
+    cube = make_test_spectrogram_cube(np.ones((2, 2, 5)), (1335.5 + 0.1 * np.arange(5)) * u.AA)
+    moments = calculate_moments(cube)
+    assert moments["velocity"].meta["rest_wavelength_source"] == "TWAVE metadata"
+    assert_quantity_allclose(moments["velocity"].meta["rest_wavelength"], 1335.5 * u.AA)
+
+
+def test_calculate_moments_ambiguous_rest_wavelength_rejected():
+    # Several documented lines with no TWAVE naming one refuse to guess.
+    cube = make_test_spectrogram_cube(np.ones((2, 2, 40)), (1399.0 + 0.1 * np.arange(40)) * u.AA)
+    with pytest.raises(ValueError, match="several documented lines"):
+        calculate_moments(cube)
+    moments = calculate_moments(cube, rest_wavelength=1402.77 * u.AA)
+    assert moments["velocity"].meta["rest_wavelength_source"] == "explicit"
+
+
+def test_calculate_moments_unresolved_rest_wavelength_omits_velocity_maps():
+    cube = make_test_spectrogram_cube(np.ones((2, 2, 5)), (1335.5 + 0.1 * np.arange(5)) * u.AA)
+    del cube.meta["TWAVE1"]
+    moments = calculate_moments(cube)
+    assert set(moments.keys()) == {"summed_intensity", "centroid", "sigma"}
 
 
 @pytest.mark.parametrize(

@@ -16,9 +16,9 @@ from astropy.time import Time
 from ndcube import NDCubeSequence
 
 from irispy.spectrograph import SpectrogramCubeSequence
-from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
+from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, resolve_rest_wavelength
 from irispy.utils.constants import DN_UNIT
-from irispy.utils.response import get_interpolated_effective_area, get_latest_response
+from irispy.utils.response import get_interpolated_effective_area, get_response
 
 __all__ = ["find_bright_image_events", "find_bright_spectral_events", "find_si_iv_bursts", "find_sji_bursts"]
 
@@ -81,7 +81,7 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range=50 * u.km / u.s,
     meta = (raster.data[0] if isinstance(raster, SpectrogramCubeSequence) else raster).meta
     if threshold is None:
         now, then = (
-            get_interpolated_effective_area(get_latest_response(time), "FUV", _SI_IV)
+            get_interpolated_effective_area(get_response(time), "FUV", _SI_IV)
             for time in (meta.date_reference, _REFERENCE_TIME)
         )
         threshold = 500 * (now / then).to_value(u.one)
@@ -112,7 +112,9 @@ def find_bright_spectral_events(
         ``u.DN`` per unit time is read as the data's DN; any other unit must convert to the
         DN of the window's detector per second, ``DN_UNIT[band] / u.s`` from `irispy.utils.constants`.
     rest_wavelength : `~astropy.units.Quantity`, optional
-        Rest wavelength of the line. Defaults to that of the window, ``meta.rest_wavelength``.
+        Rest wavelength of the line. Defaults to `~irispy.utils._spectral.resolve_rest_wavelength`:
+        the one documented transition the window covers and otherwise ``meta.rest_wavelength``
+        (the ``TWAVE`` convention).
     velocity_range : `~astropy.units.Quantity`, optional
         Half-width of the averaged wavelength range, as a Doppler velocity.
     median_factor : `float` or `None`, optional
@@ -131,11 +133,6 @@ def find_bright_spectral_events(
     """
     cubes = raster.data if isinstance(raster, SpectrogramCubeSequence) else [raster]
     meta = cubes[0].meta
-    if rest_wavelength is None:
-        rest_wavelength = meta.rest_wavelength
-        if rest_wavelength is None:
-            msg = f"The {meta.spectral_window} window has no rest wavelength; pass rest_wavelength"
-            raise ValueError(msg)
     unit = DN_UNIT[meta.detector_band] / u.s
     if isinstance(threshold, u.Quantity):
         threshold = threshold.to(unit, equivalencies=[(u.DN / u.s, unit)])
@@ -150,6 +147,13 @@ def find_bright_spectral_events(
             msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
             raise ValueError(msg)
         wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
+        if index == 0:
+            rest_wavelength, rest_source = resolve_rest_wavelength(
+                rest_wavelength, meta=meta, wavelength_range=(wavelength.min(), wavelength.max())
+            )
+            if rest_wavelength is None:
+                msg = f"The {meta.spectral_window} window has no rest wavelength; pass rest_wavelength"
+                raise ValueError(msg)
         bins = np.abs(wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(rest_wavelength))) <= velocity_range
         if not bins.any():
             msg = f"The spectral window has no wavelength bins within {velocity_range} of {rest_wavelength}"
@@ -183,7 +187,11 @@ def find_bright_spectral_events(
                 "coordinate": coordinate,
                 "intensity": intensity[step, y] * cube.unit / u.s,
             },
-            meta={"threshold": threshold},
+            meta={
+                "threshold": threshold,
+                "rest_wavelength": rest_wavelength,
+                "rest_wavelength_source": rest_source,
+            },
         )
         maps.append(make_map_cube(template, labels, u.one))
         tables.append(table)

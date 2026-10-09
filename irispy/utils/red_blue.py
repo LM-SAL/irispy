@@ -22,6 +22,7 @@ from irispy.utils._spectral import (
     in_windows,
     make_map_cube,
     make_spatial_template,
+    resolve_rest_wavelength,
     standard_deviation,
 )
 
@@ -136,8 +137,9 @@ def calculate_red_blue_asymmetry(
         Input spectrogram cube.
     rest_wavelength : `astropy.units.Quantity`, optional
         Rest wavelength used to convert the spectral axis to Doppler velocity.
-        If omitted, read from ``cube.meta.rest_wavelength`` (requires an
-        `~irispy.meta.SGMeta` instance with a ``TWAVE<n>`` FITS keyword).
+        Defaults to `~irispy.utils._spectral.resolve_rest_wavelength`: the one
+        documented transition the cube covers and otherwise ``cube.meta.rest_wavelength``
+        (the ``TWAVE`` convention).
     velocity_range : `astropy.units.Quantity`, optional
         Two positive velocities defining the wing range to average.
     dv : `astropy.units.Quantity`, optional
@@ -169,15 +171,17 @@ def calculate_red_blue_asymmetry(
         ``rest_wavelength``.
     """
     check_scaled(cube)
+    wavelength_axis = cube.wavelength_axis
+    wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
+    rest_wavelength, rest_source = resolve_rest_wavelength(
+        rest_wavelength, meta=cube.meta, wavelength_range=(wavelengths.min(), wavelengths.max())
+    )
     if rest_wavelength is None:
-        rest_wavelength = getattr(cube.meta, "rest_wavelength", None)
-        if rest_wavelength is None:
-            msg = (
-                "rest_wavelength was not provided and could not be read from cube.meta. "
-                "Pass rest_wavelength explicitly or provide a cube with SGMeta containing TWAVE keywords."
-            )
-            raise ValueError(msg)
-    rest_wavelength = u.Quantity(rest_wavelength).to(u.nm)
+        msg = (
+            "rest_wavelength was not provided and could not be resolved from the TWAVE metadata or the "
+            "documented lines. Pass rest_wavelength explicitly."
+        )
+        raise ValueError(msg)
     if rest_wavelength.shape != () or not np.isfinite(rest_wavelength.value) or rest_wavelength <= 0 * u.nm:
         msg = "rest_wavelength must be a positive finite scalar wavelength"
         raise ValueError(msg)
@@ -200,8 +204,6 @@ def calculate_red_blue_asymmetry(
         msg = "degree must be a non-negative integer"
         raise ValueError(msg)
 
-    wavelength_axis = cube.wavelength_axis
-    wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
     rest_wavelength = rest_wavelength.to(wavelengths.unit)
     velocity = ((wavelengths - rest_wavelength) / rest_wavelength * constants.c).to_value(u.km / u.s)
     interp_extent = velocity_high.to_value(u.km / u.s) + dv
@@ -326,6 +328,8 @@ def calculate_red_blue_asymmetry(
                 red_blue_error[index] = np.sqrt(variance)
 
     meta = {
+        "rest_wavelength": rest_wavelength,
+        "rest_wavelength_source": rest_source,
         "rba_rest_wavelength": rest_wavelength.to_value(u.nm),
         "rba_rest_wavelength_unit": "nm",
         "rba_velocity_range": velocity_range_kms,

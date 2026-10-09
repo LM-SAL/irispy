@@ -3,8 +3,6 @@ import warnings
 from numbers import Integral
 from functools import cached_property
 
-import numpy as np
-
 import gwcs
 from astropy.wcs import WCS
 from astropy.wcs.wcsapi import SlicedLowLevelWCS
@@ -15,8 +13,8 @@ from sunpy.util.exceptions import SunpyMetadataWarning
 from sunraster import SpectrogramCube
 
 from irispy._wcs import _celestial_frame_from_cube, _ResolveNegativeIndicesMixin
-from irispy.utils import calculate_dust_mask
 from irispy.utils.cosmic_rays import remove_cosmic_rays
+from irispy.utils.dust import mask_dust as _mask_dust
 from irispy.utils.dust import remove_dust as _remove_dust
 from irispy.visualization import SJIPlotter
 
@@ -72,7 +70,6 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         copy=False,
         **kwargs,
     ) -> None:
-        self.dust_masked = False
         super().__init__(
             data,
             wcs,
@@ -111,32 +108,9 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
             """,
         )
 
-    def apply_dust_mask(self, *, undo=False):
-        """
-        Applies or undoes an update of the mask with the dust particles positions.
-
-        Rewrite self.mask with/without the dust positions.
-
-        Parameters
-        ----------
-        undo: `bool`
-            If False, dust particles positions mask will be applied.
-            If True, dust particles positions mask will be removed.
-            Default=False
-        """
-        dust_mask = calculate_dust_mask(self.data)
-        if undo:
-            if self.mask is not None:
-                self.mask = self.mask & ~dust_mask
-            self.dust_masked = False
-        else:
-            if self.mask is None:
-                self.mask = np.zeros(self.shape, dtype=bool)
-            self.mask = self.mask | dust_mask
-            self.dust_masked = True
-
     remove_cosmic_rays = remove_cosmic_rays
     remove_dust = _remove_dust
+    mask_dust = _mask_dust
 
     celestial_frame = property(_celestial_frame_from_cube)
 

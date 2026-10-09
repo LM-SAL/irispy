@@ -15,22 +15,43 @@ from sunpy.time import parse_time
 
 from irispy.data import ROOTDIR
 
-__all__ = ["_fit_xput_lite", "get_interpolated_effective_area", "get_latest_response"]
+__all__ = ["get_interpolated_effective_area", "get_response"]
 
 
-def get_latest_response(
-    observation_time=None,
+_TIME_DEPENDENT_KEYS = ("DATE_OBS", "AREA_SG", "AREA_SJI")
+
+
+def _combine_time_axis(iris_response):
+    """
+    Combine per-time response dicts into a single response.
+
+    Time-dependent values (``DATE_OBS``, ``AREA_SG``, ``AREA_SJI``) gain a leading time
+    axis; shared, time-independent values are kept as-is.
+    """
+    combined = {}
+    for key, first in iris_response[0].items():
+        if key in _TIME_DEPENDENT_KEYS:
+            values = [response[key] for response in iris_response]
+            combined[key] = np.stack(values) if isinstance(first, Quantity) else np.array(values)
+        else:
+            combined[key] = first
+    return combined
+
+
+def get_response(
+    observation_time,
 ):
     """
-    Returns the latest IRIS response structure.
+    Returns the IRIS response structure for the given observation time(s).
 
-    This is not downloading the latest response file from the IRIS website,'
-    but rather reading the latest response file from the local data directory.
+    This reads the response file packaged with this installation (it does not download
+    the latest response from the IRIS website). The observation time is required so that
+    results are reproducible.
 
     Goal is to replicate the base functionality of the IDL routine
     ``iris_get_response.pro`` in the SSWIDL package.
 
-    There are no plans to support anything but the latest response file.
+    There are no plans to support anything but the packaged response file.
 
     This routine does calculate time dependent effective areas using
     as is done in the SSWIDL version of this code.
@@ -41,38 +62,55 @@ def get_latest_response(
 
     Parameters
     ----------
-    observation_time: `astropy.time.Time`, optional
-        Observation times of the datapoints.
-        Must be in a parsable time format.
-        If not provided, the current time is used.
+    observation_time: `astropy.time.Time`
+        Observation time(s) of the datapoints. Must be in a parsable time format.
 
     Returns
     -------
     `dict`
-        Various parameters regarding IRIS response or effective area structure.
+        IRIS response or effective area structure. The return is a single object
+        regardless of the number of observation times; the time-dependent quantities
+        ``DATE_OBS``, ``AREA_SG``, and ``AREA_SJI`` carry a leading time axis (scalar
+        time -> scalar quantities, array time -> array quantities). Includes the
+        following keys:
 
-        Includes the following keys:
+        DATE_OBS : `str` or `numpy.ndarray` of `str`
+            Observation time(s) in isot format. A plain string for scalar input,
+            otherwise one string per input time along the leading time axis.
+        LAMBDA : `~astropy.units.Quantity`
+            Wavelength grid in nm, shape ``(3601,)``. Time-independent.
+        AREA_SG : `~astropy.units.Quantity`
+            Spectrograph effective area in cm2, shape ``(2, 3601)`` (plus the leading
+            time axis for array input). Row 0 covers FUV and row 1 covers NUV.
+        NAME_SG : `numpy.ndarray`
+            Names of the two spectrograph bands, shape ``(2,)``.
+        DN2PHOT_SG : `numpy.ndarray`
+            DN-to-photon conversion factors for the spectrograph bands, shape ``(2,)``.
+        AREA_SJI : `~astropy.units.Quantity`
+            Slit-jaw imager effective area in cm2, shape ``(4, 3601)`` (plus the
+            leading time axis for array input).
+        NAME_SJI : `numpy.ndarray`
+            Names of the four slit-jaw filters, shape ``(4,)``.
+        DN2PHOT_SJI : `numpy.ndarray`
+            DN-to-photon conversion factors for the slit-jaw filters, shape ``(4,)``.
+        COMMENT : `bytes`
+        VERSION : `int`
+            Version of the packaged response file.
+        VERSION_DATE : `astropy.time.Time`
+            Date of the packaged response version. Time-independent.
 
-        date_obs : `astropy.time.Time`
-        lambda : `astropy.units.Quantity`
-        area_sg : `astropy.units.Quantity`
-        name_sg : `str`
-        dn2phot_sg : `tuple` of length 2
-        area_sji : `astropy.units.Quantity`
-        name_sji : `str`
-        dn2phot_sji : `tuple` of length 4
-        comment : `str`
-        version : `int`
-        version_date : `astropy.time.Time`
+        The dictionary also carries the IDL formula inputs (e.g. ``COEFFS_FUV``,
+        ``ELEMENTS``) retained for numerical comparison with SSWIDL. They are not part
+        of the supported interface and may change without notice.
     """
     # Avoid circular imports
     from irispy.utils import record_to_dict  # NOQA: PLC0415
 
-    if observation_time is None:
-        observation_time = parse_time("now")
+    observation_time = parse_time(observation_time)
 
+    scalar_time = observation_time.isscalar
     number_of_obs_times = observation_time.size
-    if observation_time.size == 1:
+    if scalar_time:
         observation_time = [observation_time]
     raw_response_data = scipy.io.readsav(ROOTDIR / "iris_sra_c_20231106.geny", python_dict=True)
     iris_response = record_to_dict(raw_response_data["p0"])
@@ -95,8 +133,12 @@ def get_latest_response(
     iris_response["VERSION_DATE"] = parse_time(iris_response["VERSION_DATE"])
     iris_response["AREA_SG"] = np.zeros(iris_response["AREA_SG"].shape)
     iris_response["AREA_SJI"] = np.zeros(iris_response["AREA_SJI"].shape)
-    # Handle multiple observation times by creating a list of responses
+    # Handle multiple observation times by creating a list of responses. The dict copy
+    # is shallow, so give each time its own effective-area arrays to fill independently.
     iris_response = [iris_response.copy() for _ in range(number_of_obs_times)]
+    for response in iris_response:
+        response["AREA_SG"] = response["AREA_SG"].copy()
+        response["AREA_SJI"] = response["AREA_SJI"].copy()
     # Set DATE_OBS to the observation time.
     for i in range(number_of_obs_times):
         iris_response[i]["DATE_OBS"] = observation_time[i].isot
@@ -252,9 +294,9 @@ def get_latest_response(
             response["AREA_SG"] = Quantity(response["AREA_SG"], unit=u.cm**2)
         if not isinstance(response["AREA_SJI"], Quantity):
             response["AREA_SJI"] = Quantity(response["AREA_SJI"], unit=u.cm**2)
-    if number_of_obs_times == 1:
-        iris_response = iris_response[0]
-    return iris_response
+    if scalar_time:
+        return iris_response[0]
+    return _combine_time_axis(iris_response)
 
 
 def _fit_xput_lite(observation_time, time_cal_coeffs, cal_coeffs):
@@ -342,7 +384,7 @@ def get_interpolated_effective_area(iris_response, detector_type, obs_wavelength
     Parameters
     ----------
     iris_response : dict
-        The IRIS response data loaded from `irispy.utils.response.get_latest_response`.
+        The IRIS response data loaded from `irispy.utils.response.get_response`.
     detector_type : `str`
         Detector type: 'FUV' or 'NUV'.
     obs_wavelength : `astropy.units.Quantity`
