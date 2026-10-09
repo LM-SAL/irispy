@@ -57,6 +57,13 @@ mg_ii = raster["Mg II k 2796"][0]
 (mg_wave,) = mg_ii.axis_world_coords("wl")
 
 ###############################################################################
+# The reader masks the Level 2 fill values (-200 and -199 DN). With memory mapping
+# the mask is lazy: it is computed from the data each time it is used, so it would
+# follow the changes we make to the data below. We compute it once now instead.
+
+mg_ii.mask = mg_ii.mask.compute()
+
+###############################################################################
 # This very large dense raster took more than three hours to complete
 # across the 400 raster steps (with 30 s exposures). Over that time the
 # spacecraft's orbital velocity and the temperature of the spectrograph
@@ -70,9 +77,8 @@ lower_corner = [SpectralCoord(280.19, unit=u.nm), None]
 upper_corner = [SpectralCoord(280.19, unit=u.nm), None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 # Save the on-disk part of the slit (roughly its first 600 pixels) before modifying
-# the data, masking the raw fill value (-32768). We will compare this below.
-before = mg_crop.data[:, :600].astype(float)
-before[before == BAD_PIXEL_VALUE_UNSCALED] = np.nan
+# the data, with the masked samples as NaN. We will compare this below.
+before = np.where(mg_crop.mask[:, :600], np.nan, mg_crop.data[:, :600])
 vmin, vmax = np.nanpercentile(before, [1, 99])
 
 ###############################################################################
@@ -109,16 +115,16 @@ fig.legend(loc="outside upper center", ncols=5)
 # Adding the drift to the wavelengths of a step corrects them. To look at the
 # whole image at a given wavelength, we instead interpolate each step back onto
 # the original wavelength grid. Unsupported wavelengths and interpolation through
-# bad pixels stay invalid. We work on one floating-point step at a time and store
-# invalid results as the FITS fill value in the integer array.
+# bad pixels stay invalid. We work on one floating-point step at a time, mask
+# invalid results and store them as the FITS fill value in the integer array.
 
 for i, shift in enumerate(drift["nuv"]):
-    data = mg_ii.data[i].astype(float)
-    data[data == BAD_PIXEL_VALUE_UNSCALED] = np.nan
+    data = np.where(mg_ii.mask[i], np.nan, mg_ii.data[i])
     corrected = make_interp_spline((mg_wave + shift).to_value(u.nm), data, k=1, axis=-1, check_finite=False)(
         mg_wave.to_value(u.nm), extrapolate=False
     )
-    mg_ii.data[i] = np.where(np.isfinite(corrected), corrected, BAD_PIXEL_VALUE_UNSCALED)
+    mg_ii.mask[i] = ~np.isfinite(corrected)
+    mg_ii.data[i] = np.where(mg_ii.mask[i], BAD_PIXEL_VALUE_UNSCALED, corrected)
 
 ###############################################################################
 # Before the correction, the Mn I intensity shows a regular bright-dark pattern
@@ -129,8 +135,7 @@ for i, shift in enumerate(drift["nuv"]):
 
 # Since we changed the underlying data, we need to re-crop
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
-after = mg_crop.data[:, :600].astype(float)
-after[after == BAD_PIXEL_VALUE_UNSCALED] = np.nan
+after = np.where(mg_crop.mask[:, :600], np.nan, mg_crop.data[:, :600])
 difference = after - before
 limit = np.nanpercentile(np.abs(difference), 99)
 
@@ -161,8 +166,7 @@ velocity = ((mg_wave - mg_k_center) * constants.c / mg_k_center).to(u.km / u.s)
 index_p = np.argmin(np.abs(velocity - pos))
 index_m = np.argmin(np.abs(velocity + pos))
 # Use floats for the subtraction and leave the result invalid if either wing is bad.
-wings = mg_ii.data[..., [index_m, index_p]].astype(float)
-wings[wings == BAD_PIXEL_VALUE_UNSCALED] = np.nan
+wings = np.where(mg_ii.mask[..., [index_m, index_p]], np.nan, mg_ii.data[..., [index_m, index_p]])
 doppler = wings[..., 0] - wings[..., 1]
 
 ###############################################################################
