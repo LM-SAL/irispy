@@ -40,7 +40,7 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
     lines : `tuple` of `str`, optional
         The lines to measure, ``"k"`` (279.635 nm) and/or ``"h"`` (280.353 nm, both in vacuum).
     saturation_limit : `float` or `astropy.units.Quantity`, optional
-        In DN. A line's features are NaN and masked where any sample it is searched over
+        In DN. A line's features are NaN and masked where any unmasked sample it is searched over
         (``velocity_range`` widened by 3 km/s) is at or above it.
         ``cube`` must be in DN, or in DN per second with the reader's per-step ``"exposure time"``
         metadata, which converts the limit step by step; anything else raises `ValueError`.
@@ -65,8 +65,9 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
     * The peaks are refined by the parabola through their highest grid point and its neighbors.
       IDL evaluates its peak spline at decreasing velocities, which ``SPLINE`` does not support:
       it extrapolates the last interval, moving the peaks by about 0.1 km/s, rarely more than 0.7 km/s.
-    * Spectra with missing data in the velocity range give no features; IDL interpolates through
-      the -200 fill values and uses the line centers it finds there in its guesses along the slit.
+    * Spectra with missing data (non-finite, fill or masked samples) in the velocity range give no
+      features; IDL interpolates through the -200 fill values and uses the line centers it finds
+      there in its guesses along the slit.
       Beyond the first and last good line centers, the guess is held at their values instead.
     * The line centers that are redone start from a guess spline along the slit through the others.
       For unevenly spaced knots, as when slit positions are left out, IDL's ``SPLINE`` reuses the
@@ -117,9 +118,9 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
             msg = f"Too few wavelength points of Mg II {line} between {low} and {high} km/s"
             raise ValueError(msg)
         window = np.asarray(cube.data[..., inside])
-        missing = ~np.isfinite(window) | np.isin(window, BAD_PIXEL_VALUES_SCALED)
-        if cube.mask is not None:
-            missing |= np.broadcast_to(cube.mask, cube.data.shape)[..., inside]
+        mask = False if cube.mask is None else np.asarray(cube.mask, dtype=bool)
+        masked = np.broadcast_to(mask, cube.data.shape)[..., inside]
+        missing = ~np.isfinite(window) | np.isin(window, BAD_PIXEL_VALUES_SCALED) | masked
         grid = np.linspace(velocity[inside][0], velocity[inside][-1], 300)
         features = np.full((*window.shape[:2], 3, 2), np.nan)  # blue peak, center, red peak
         for step, (data, bad) in enumerate(zip(window, missing, strict=True)):
@@ -128,8 +129,9 @@ def calculate_mg_features(cube, *, velocity_range=(-40, 40) * u.km / u.s, lines=
                 spectra = _spline(velocity[inside], data[valid].T, grid, tension=0).T
                 features[step, valid] = _slit_features(grid, spectra, valid)
         if saturation_limit is not None:
-            # After the search, so the other spectra's features stay as they are
-            saturated = np.any(window >= saturation_limit, axis=-1)
+            # After the search, so the other spectra's features stay as they are.
+            # Masked samples are not searched, so they do not saturate either, as in calculate_moments.
+            saturated = np.any((window >= saturation_limit) & ~masked, axis=-1)
             features[saturated] = np.nan
         maps += [
             (f"{line}{feature}_{kind}", make_map_cube(template, features[..., index, part], unit, mask_invalid=True))
