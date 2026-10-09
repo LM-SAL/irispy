@@ -1,0 +1,1 @@
+Converting world coordinates to pixels with a raster's WCS from `~irispy.io.spectrograph.read_spectrograph_lvl2` now inverts the pointing table with numpy instead of wcslib's search: many-point calls are 130 to 4400 times faster on a sit-and-stare and 8 to 50 times faster on scans, and return the same cells, while a single-point call now takes about 0.1-0.2 ms on any raster.
