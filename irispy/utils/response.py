@@ -2,9 +2,12 @@
 This module provides general utility functions for IRIS Responses.
 """
 
+import warnings
+
 import numpy as np
 import scipy
 import scipy.io
+from erfa import ErfaWarning
 from scipy.interpolate import make_interp_spline
 
 import astropy.units as u
@@ -298,7 +301,10 @@ def _fit_xput_lite(observation_time, time_cal_coeffs, cal_coeffs):
         aux_cal_coeffs = np.zeros(2 * time_cal_coeffs.shape[0])
         # Looking for the closest time in the calibration time intervals.
         # Differences are given in years before passing to the next stage.
-        t_diff = t - time_cal_coeffs
+        # The last interval ends in 2049, past ERFA's leap-second table, which gives a "dubious year" warning.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ErfaWarning)
+            t_diff = t - time_cal_coeffs
         t_diff = t_diff.flatten()
         # To convert to an array, quantities need to be dimensionless, hence dividing out the unit.
         t_diff = np.array([x.to(u.year).value for x in t_diff])
