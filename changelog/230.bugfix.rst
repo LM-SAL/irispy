@@ -1,0 +1,1 @@
+`irispy.sji.SJICube.apply_dust_mask` now raises a `ValueError` for unscaled data read with ``memmap=True``, which it silently left without a dust mask.

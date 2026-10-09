@@ -7,6 +7,8 @@ import astropy.units as u
 
 import sunpy.map
 
+from irispy.io.utils import read_files
+
 
 def test_apply_dust_mask_with_lazy_mask(sns_sjicube_1330):
     cube = sns_sjicube_1330[:1, :5, :5]
@@ -27,6 +29,12 @@ def test_apply_dust_mask_with_lazy_mask(sns_sjicube_1330):
     assert isinstance(cube.mask, da.Array)
     np.testing.assert_array_equal(cube.mask.compute(), original_mask)
     assert not cube.dust_masked
+
+
+def test_apply_dust_mask_rejects_unscaled_data(sns_sji_1330_file):
+    cube = read_files(sns_sji_1330_file, memmap=True)
+    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
+        cube.apply_dust_mask()
 
 
 AXIS = [
