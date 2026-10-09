@@ -1,0 +1,1 @@
+The Mg II Dopplergram example now uses the reader's fill mask, so the -199 DN fill values are excluded too, and keeps that mask fixed while it edits the memory-mapped data.
