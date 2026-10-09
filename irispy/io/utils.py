@@ -87,26 +87,23 @@ def _extract_tarfile(filenames):
     return expanded_files
 
 
-def _get_spec_group_key(file):
+def _get_spec_group_key(file, header):
     """
     Group spectrograph FITS files that belong to the same observation.
 
     Parameters
     ----------
     file : `pathlib.Path`
-        The FITS file to inspect.
+        The FITS file.
+    header : `astropy.io.fits.Header`
+        Its primary header.
 
     Returns
     -------
     `tuple`
         Key built from stable observation-identifying header metadata.
-        Falls back to a per-file key if the header cannot be read or if
-        the observation-grouping metadata is missing.
+        Falls back to a per-file key if the observation-grouping metadata is missing.
     """
-    try:
-        header = fits.getheader(file)
-    except OSError:
-        return file, None
     obsid = header.get("OBSID")
     startobs = header.get("STARTOBS")
     if obsid is None or not startobs:
@@ -114,11 +111,10 @@ def _get_spec_group_key(file):
     return obsid, startobs
 
 
-def _get_spec_return_key(file_group, describe, returns):
+def _get_spec_return_key(group_key, describe, returns):
     key = f"{describe}"
     if key not in returns:
         return key
-    group_key = _get_spec_group_key(file_group[0])
     obsid, startobs = group_key
     if startobs is None:
         return f"{describe} ({Path(obsid).stem})"
@@ -250,8 +246,9 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                         file, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
                     )
                 elif instrume == "SPEC":
-                    group_key = _get_spec_group_key(filename)
-                    spec_groups.setdefault(group_key, []).append(filename)
+                    # Keep the first file's description, so the group needs no second header read.
+                    group_key = _get_spec_group_key(filename, hdulist[0].header)
+                    spec_groups.setdefault(group_key, (describe, []))[1].append(filename)
                 else:
                     log.warning(f"File {filename} has unrecognized INSTRUME={instrume!r} and was not loaded")
         except Exception as e:
@@ -259,10 +256,9 @@ def read_files(filenames, *, spectral_windows=None, uncertainty=False, memmap=Fa
                 log.warning(f"File {filename} failed to load with {e}")
                 continue
             raise
-    for file_group in spec_groups.values():
+    for group_key, (describe, file_group) in spec_groups.items():
         try:
-            instrume, describe = _get_simple_metadata(file_group[0])
-            key = _get_spec_return_key(file_group, describe, returns)
+            key = _get_spec_return_key(group_key, describe, returns)
             returns[key] = read_spectrograph_lvl2(
                 file_group, spectral_windows=spectral_windows, memmap=memmap, uncertainty=uncertainty, **kwargs
             )
