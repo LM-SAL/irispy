@@ -141,7 +141,8 @@ def read_spectrograph_lvl2(
         If `True` (not the default), will not load arrays into memory, and will only read from
         the file into memory when needed. This option is faster and uses a
         lot less memory. However, because FITS scaling is not done on-the-fly,
-        the data units will be unscaled, not the usual data numbers (DN).
+        integer data stay unscaled, in ``DN_IRIS_FUV_UNSCALED`` or ``DN_IRIS_NUV_UNSCALED``,
+        not the usual data numbers (DN).
         The fill mask is a lazy Dask array, computed only for the slices that are used.
     revert_v34 : `bool`, optional.
         Will undo the flipping of the raster step axis made to V34 observations
@@ -255,6 +256,8 @@ def read_spectrograph_lvl2(
                 out_uncertainty = None
                 if memmap:
                     data_mask = _memmap_fill_mask(data, header)
+                    if np.issubdtype(data.dtype, np.integer):  # the FITS integers, not DN
+                        dn_unit = DN_UNIT[f"{meta.detector_band}_UNSCALED"]
                 else:
                     data_mask = np.isin(data, BAD_PIXEL_VALUES_SCALED)
                     # memmap data are unscaled integers, so the photon noise would be wrong
