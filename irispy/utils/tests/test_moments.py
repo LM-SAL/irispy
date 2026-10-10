@@ -415,10 +415,14 @@ def test_calculate_moments_saturated_survives_exposure_time_correction(sns_sg_fi
 def test_calculate_moments_saturated_survives_subtract_background():
     data = si_iv_on_background(1)
     data[1, 2, 80] = np.inf  # 1403.0 Å, within velocity_range
+    data[0, 1, 1:] = np.inf  # one finite sample in the windows, too few to fit a straight line
     cube = make_test_spectrogram_cube(data, SI_IV_WAVELENGTHS)
-    moments = calculate_moments(subtract_background(cube, SI_IV_WINDOWS), **SI_IV_MOMENTS)
+    corrected = subtract_background(cube, SI_IV_WINDOWS)
+    assert np.isnan(corrected.data[0, 1, 0])
+    assert np.isposinf(corrected.data[0, 1, 1:]).all()
+    moments = calculate_moments(corrected, **SI_IV_MOMENTS)
     saturated = np.zeros((2, 3), dtype=bool)
-    saturated[1, 2] = True
+    saturated[0, 1] = saturated[1, 2] = True
     np.testing.assert_array_equal(moments["saturated"].data, saturated)
     assert np.isnan(moments["intensity"].data[1, 2])
     assert np.isfinite(moments["intensity"].data[0, 0])
