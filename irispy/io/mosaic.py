@@ -10,7 +10,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
 from irispy.meta import MosaicMeta
 from irispy.spectrograph import MosaicCube, _wavelength_indices
-from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT
+from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, SATURATION_LIMIT
 
 __all__ = ["read_mosaic"]
 
@@ -78,6 +78,8 @@ def read_mosaic(filename, *, wavelength_range=None):
     uncovered = np.isnan(time_offset)
     mask = np.isin(data, BAD_PIXEL_VALUES_SCALED) | uncovered
     data[mask] = np.nan
+    # Scaled like level 2, which clips at the ceiling where iris_prep's +Inf saturation flags were lost
+    data[data >= SATURATION_LIMIT.value] = np.inf
     times = date_obs + np.nan_to_num(time_offset) * u.s
     times[uncovered] = np.ma.masked
     meta = MosaicMeta(header, data_shape=data.shape)

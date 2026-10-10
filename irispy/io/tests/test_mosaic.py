@@ -53,6 +53,7 @@ def _write_mosaic(filename, **keywords):
     data[:, 0, 0] = 0  # no raster covered this position
     data[1, 2, 1] = -199  # Level 2 fill value
     data[:, 3, 2] = 0  # covered, with zero counts
+    data[4, 1, 2] = 16182  # clipped at the level 2 ceiling
     primary = fits.PrimaryHDU(data, fits.Header({**HEADER, **keywords}))
     primary.scale("int16", bscale=0.25, bzero=7992)
     time_offsets = np.arange(12, dtype=np.float32).reshape(4, 3) * 100
@@ -88,6 +89,9 @@ def test_read_mosaic(mosaic_file):
     assert cube.mask[1, 2, 1]
     assert np.isnan(cube.data[cube.mask]).all()
     np.testing.assert_array_equal(cube.data[:, 3, 2], 0)
+    # The clipped sample is +Inf, as in level 2 cubes, and not masked
+    assert np.isposinf(cube.data[4, 1, 2])
+    assert not cube.mask[4, 1, 2]
 
     # The FITS reference pixel (CRPIX, 1-based) is at the reference value (CRVAL).
     coord, wavelength = cube.wcs.pixel_to_world(1, 2, 2)

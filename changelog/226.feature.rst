@@ -1,2 +1,0 @@
-`~irispy.utils.moments.calculate_moments` now takes ``saturation_limit`` in DN (converted per step for a cube in DN per second), counts +Inf and at-limit samples as saturated, and returns a boolean ``"saturated"`` map.
-Added ``irispy.utils.constants.SATURATION_LIMIT``, the 16182 DN at which level 2 files clip every sample, saturated ones included.

@@ -12,7 +12,7 @@ from sunpy.coordinates import Helioprojective
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
-from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT
+from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, SATURATION_LIMIT
 
 
 def test_spectral_windows_order_read_spectrograph_lvl2(sns_sg_file):
@@ -352,3 +352,17 @@ def test_memmap_unit_is_unscaled(window, band, raster_sg_file):
     assert read_spectrograph_lvl2(filename)[window][0].unit == DN_UNIT[band]
     # Float data hold DN already
     assert read_spectrograph_lvl2(raster_sg_file, memmap=True)["C II 1336"][0].unit == DN_UNIT["FUV"]
+
+
+def test_read_spectrograph_sets_clipped_samples_to_inf(tmp_path, sns_sg_file):
+    with fits.open(sns_sg_file) as hdul:
+        window = hdul[0].header["TDESC1"]
+        data = hdul[1].data.astype("float32")
+        data.flat[7] = SATURATION_LIMIT.value
+        hdul[1].data = data
+        hdul.writeto(tmp_path / "clipped.fits")
+    cube = read_spectrograph_lvl2(tmp_path / "clipped.fits", uncertainty=True)[window][0]
+    clipped = np.isposinf(cube.data)
+    assert clipped.sum() == 1
+    assert not cube.mask[clipped].any()
+    assert np.isposinf(cube.uncertainty.array[clipped]).all()

@@ -136,6 +136,7 @@ def calculate_rgb(
     # The mask may cover only some axes.
     mask = None if cube.mask is None else np.broadcast_to(np.asarray(cube.mask, dtype=bool), np.shape(cube.data))
     data = np.ma.filled(np.ma.MaskedArray(cube.data, mask=mask, dtype=float), np.nan)
+    data[np.isinf(data)] = np.nan  # +Inf, as the readers set clipped samples, is blank like a masked one
     wavelength = u.Quantity(cube.spectral_axis).to(u.AA)
     if wavelength.ndim != 1:
         msg = f"The wavelength coordinate must be one dimensional, got shape {wavelength.shape}"

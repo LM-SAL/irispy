@@ -15,7 +15,7 @@ from astropy.time import Time
 
 from irispy.spectrograph import SpectrogramCubeSequence
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template
-from irispy.utils.constants import DN_UNIT
+from irispy.utils.constants import DN_UNIT, SATURATION_LIMIT
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 
 __all__ = ["find_bright_image_events", "find_bright_spectral_events", "find_si_iv_bursts", "find_sji_bursts"]
@@ -270,7 +270,9 @@ def find_bright_image_events(cube, *, sigma_factor=10, min_pixels=2):
         msg = "The slit-jaw cube must have axes (frame, y, x); slice with a range, such as [0:1], not an index"
         raise ValueError(msg)
     data = cube.data if cube.mask is None else np.where(cube.mask, np.nan, cube.data)
-    frames = data.reshape(len(data), -1)
+    # The statistics see clipped pixels at the ceiling, as IDL does; their +Inf would make the deviation NaN.
+    # shortcut: the ceiling is in DN, as the readers give; a cube in DN per second would see it in the wrong unit
+    frames = np.where(np.isposinf(data), SATURATION_LIMIT.value, data).reshape(len(data), -1)
     with warnings.catch_warnings():
         # Frames without valid pixels, or with only one
         warnings.filterwarnings("ignore", "All-NaN slice encountered", RuntimeWarning)

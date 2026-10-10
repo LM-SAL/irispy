@@ -10,14 +10,11 @@ from astropy.nddata import NDDataArray, StdDevUncertainty
 
 from irispy.spectrograph import RasterCollection, _wavelength_indices
 from irispy.utils._spectral import check_scaled, make_map_cube, make_spatial_template, standard_deviation
-from irispy.utils.constants import DN_UNIT
 
 __all__ = ["average_window", "calculate_moments"]
 
 
-def calculate_moments(
-    cube, *, rest_wavelength=None, wings=None, integrated=False, min_intensity=None, saturation_limit=None
-):
+def calculate_moments(cube, *, rest_wavelength=None, velocity_range=None, integrated=False, min_intensity=None):
     r"""
     Calculate the 0th, 1st and 2nd spectral moments of a spectrogram cube.
 
@@ -33,20 +30,15 @@ def calculate_moments(
         Input cube with a wavelength axis.
     rest_wavelength : `astropy.units.Quantity`, optional
         Rest wavelength of the line. Defaults to ``cube.meta.rest_wavelength``, if present.
-    wings : `astropy.units.Quantity` or `tuple` of `astropy.units.Quantity`, optional
-        Wavelength range to use around ``rest_wavelength``: one offset for both sides, or
-        ``(lower, upper)`` offsets.
+    velocity_range : `astropy.units.Quantity`, optional
+        ``(lower, upper)`` Doppler velocities from ``rest_wavelength`` within which to use the samples
+        (km/s if unitless). Defaults to the whole spectrum.
     integrated : `bool`, optional
         If `True`, multiply the 0th moment by the mean wavelength spacing, giving
         :math:`\int I(\lambda) \, d\lambda` in ``cube.unit * nm``; the other moments do not change.
         Defaults to `False`, a sum in ``cube.unit`` as in Gaussian fitting.
     min_intensity : `float` or `astropy.units.Quantity`, optional
         Pixels whose 0th moment is below this get NaN in every map.
-    saturation_limit : `float` or `astropy.units.Quantity`, optional
-        In DN. Pixels with any unmasked sample at or above it, +Inf included, get NaN in every map.
-        ``cube`` must be in DN, or in DN per second with the reader's per-step ``"exposure time"``
-        metadata, which converts the limit step by step; anything else raises `ValueError`.
-        Level 2 files clip at ``irispy.utils.constants.SATURATION_LIMIT``, saturated samples included.
 
     Returns
     -------
@@ -58,7 +50,7 @@ def calculate_moments(
         * ``"width"`` — 2nd moment, in nm
         * ``"velocity"`` — Doppler velocity of the centroid in km/s, if ``rest_wavelength`` is known
         * ``"velocity_width"`` — width in km/s, if ``rest_wavelength`` is known
-        * ``"saturated"`` — `True` where ``saturation_limit`` was reached, if it is given
+        * ``"saturated"`` — `True` where a sample used is +Inf
 
         Each moment map has a `~astropy.nddata.StdDevUncertainty` if ``cube`` has an uncertainty
         (e.g. read with ``uncertainty=True``).
@@ -66,9 +58,12 @@ def calculate_moments(
     Notes
     -----
     * Negative, non-finite and masked samples are set to zero and add no uncertainty.
-    * ``saturation_limit`` is checked before that zeroing, so +Inf samples count. Level 2 files hold
-      no +Inf: saturated and merely bright samples are both clipped at
-      ``irispy.utils.constants.SATURATION_LIMIT`` (see the comment on the constant).
+    * Pixels with an unmasked +Inf sample within ``velocity_range`` are saturated: NaN in every moment
+      map and `True` in ``"saturated"``. The level 2 readers set the samples clipped at
+      ``irispy.utils.constants.SATURATION_LIMIT`` to +Inf (see the comment on the constant), and +Inf
+      survives `~irispy.utils.spectrograph.subtract_background`, exposure time correction and
+      calibration. For a stricter limit, set ``cube.data[cube.data >= limit] = np.inf`` first.
+    * Every map is masked where no sample within ``velocity_range`` is unmasked and not NaN.
     * Uncertainties are propagated to first order, treating an `~astropy.nddata.UnknownUncertainty`
       as a standard deviation. They are NaN where undefined: the intensity error where no sample is
       left, the centroid and velocity errors where fewer than two are left, and the width and velocity
@@ -95,19 +90,17 @@ def calculate_moments(
     data = np.asarray(cube.data)
     mask = None if cube.mask is None else np.asarray(cube.mask, dtype=bool)
     sigma = standard_deviation(cube)
-    if wings is not None:
+    if velocity_range is not None:
         if rest_wavelength is None:
-            msg = "rest_wavelength must be provided (or detectable from cube metadata) when wings is given"
+            msg = "rest_wavelength must be provided (or detectable from cube metadata) when velocity_range is given"
             raise ValueError(msg)
         rest_wavelength = u.Quantity(rest_wavelength)
-        wings = u.Quantity(wings)
-        if wings.shape not in {(), (2,)}:
-            msg = "wings must be one offset or a (lower, upper) pair"
+        velocity_range = u.Quantity(velocity_range, u.km / u.s)
+        if velocity_range.shape != (2,) or not velocity_range[0] < velocity_range[1]:
+            msg = f"velocity_range must be two increasing velocities, not {velocity_range}"
             raise ValueError(msg)
-        wing_low, wing_high = (wings, wings) if wings.isscalar else wings
-        crop_indices = _wavelength_indices(
-            wavelengths, u.Quantity([rest_wavelength - wing_low, rest_wavelength + wing_high])
-        )
+        limits = rest_wavelength * (1 + (velocity_range / constants.c).to_value(u.one))
+        crop_indices = _wavelength_indices(wavelengths, limits)
         slicer = [slice(None)] * data.ndim
         slicer[wavelength_axis] = crop_indices
         data = data[tuple(slicer)]
@@ -117,11 +110,11 @@ def calculate_moments(
             sigma = sigma[tuple(slicer)]
         wavelengths = wavelengths[crop_indices]
     data = np.array(data, dtype=float, copy=True)
-    if saturation_limit is not None:
-        reached = data >= _saturation_limit(cube, saturation_limit)
-        if mask is not None:
-            reached &= ~mask  # left out of the moments, so not saturating them either
-        saturated = np.any(reached, axis=wavelength_axis)
+    unmasked = True if mask is None else ~mask
+    # Masked samples are left out of the moments, so they do not saturate them either
+    saturated = np.any(np.isposinf(data) & unmasked, axis=wavelength_axis)
+    # The template is masked where all of cube is, the maps also where no sample is used
+    used_mask = ~np.any(~np.isnan(data) & unmasked, axis=wavelength_axis)
     dropped = (data < 0) | ~np.isfinite(data) | (False if mask is None else mask)
     data[dropped] = 0
 
@@ -155,10 +148,9 @@ def calculate_moments(
         centroid_value = np.where(low_intensity, np.nan, centroid_value)
         stddev_value = np.where(low_intensity, np.nan, stddev_value)
 
-    if saturation_limit is not None:
-        intensity_value = np.where(saturated, np.nan, intensity_value)
-        centroid_value = np.where(saturated, np.nan, centroid_value)
-        stddev_value = np.where(saturated, np.nan, stddev_value)
+    intensity_value = np.where(saturated, np.nan, intensity_value)
+    centroid_value = np.where(saturated, np.nan, centroid_value)
+    stddev_value = np.where(saturated, np.nan, stddev_value)
 
     errors = {}
     if sigma is not None:
@@ -196,43 +188,11 @@ def calculate_moments(
 
     def _make_cube(name, values, unit):
         uncertainty = None if sigma is None else StdDevUncertainty(np.where(np.isnan(values), np.nan, errors[name]))
-        return make_map_cube(template, values, unit, mask_invalid=True, uncertainty=uncertainty)
+        return make_map_cube(template, values, unit, mask=used_mask, mask_invalid=True, uncertainty=uncertainty)
 
     cubes = [(name, _make_cube(name, values, unit)) for name, values, unit in maps]
-    if saturation_limit is not None:
-        cubes.append(("saturated", make_map_cube(template, saturated, u.dimensionless_unscaled)))
+    cubes.append(("saturated", make_map_cube(template, saturated, u.dimensionless_unscaled, mask=used_mask)))
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
-
-
-def _saturation_limit(cube, saturation_limit):
-    """
-    ``saturation_limit``, in DN, in ``cube.unit``, broadcastable to ``cube.data``.
-    """
-    unit = cube.unit
-    # The same test sunraster's apply_exposure_time_correction uses
-    per_second = unit is not None and u.s in unit.decompose().bases
-    dn_unit = unit * u.s if per_second else unit
-    if dn_unit is None or not (dn_unit.is_equivalent(u.DN) or dn_unit in DN_UNIT.values()):
-        msg = f"saturation_limit needs a cube in DN or DN per second, not {unit}"
-        raise ValueError(msg)
-    if not isinstance(saturation_limit, u.Quantity):
-        saturation_limit *= u.DN
-    # Also scales a limit for a cube in a multiple of DN, or of DN per second, such as DN per minute
-    saturation_limit = saturation_limit.to_value(dn_unit, equivalencies=[(u.DN, dn_unit)])
-    if not per_second:
-        return saturation_limit
-    exposure_time = cube.meta.get("exposure time")
-    if exposure_time is None:
-        msg = 'saturation_limit needs the "exposure time" metadata of a cube in DN per second'
-        raise ValueError(msg)
-    exposure_time = exposure_time.to_value(u.s)
-    if np.ndim(exposure_time):
-        shape = [1] * cube.data.ndim
-        shape[cube.meta.axes["exposure time"][0]] = -1
-        exposure_time = exposure_time.reshape(shape)
-    # Steps of 0 s, with no data, get an infinite limit that only +Inf reaches
-    with np.errstate(divide="ignore"):
-        return saturation_limit / exposure_time
 
 
 def average_window(cube, wavelength_range, *, method="mean"):
@@ -256,8 +216,9 @@ def average_window(cube, wavelength_range, *, method="mean"):
 
     Notes
     -----
-    * Masked and non-finite samples are left out, so a sum over a partly masked window is low.
-      Pixels with no sample left are NaN and masked.
+    * Masked and NaN samples are left out, so a sum over a partly masked window is low. Pixels with
+      no sample left are NaN and masked, as are pixels with a +Inf sample, as the readers set clipped
+      ones.
     * Uncertainties are propagated taking the samples as independent, treating an
       `~astropy.nddata.UnknownUncertainty` as a standard deviation, as in `calculate_moments`.
     * For :math:`\int I(\lambda) \, d\lambda`, multiply a sum by the absolute wavelength step,
@@ -270,7 +231,7 @@ def average_window(cube, wavelength_range, *, method="mean"):
     wavelength_axis = cube.wavelength_axis
     window = _wavelength_indices(cube.axis_world_coords(wavelength_axis)[0], wavelength_range)
     data = np.take(cube.data, window, axis=wavelength_axis).astype(float)
-    dropped = ~np.isfinite(data)
+    dropped = np.isnan(data)  # +Inf, as the readers set clipped samples, makes the pixel NaN and masked
     if cube.mask is not None:
         mask = np.broadcast_to(np.asarray(cube.mask, dtype=bool), cube.data.shape)
         dropped |= np.take(mask, window, axis=wavelength_axis)

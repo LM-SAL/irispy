@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pytest
 
@@ -170,6 +172,25 @@ def test_si_iv_1403_model_recovers_parameters(profile):
     fitted, fitter = _fit(model, cube.data, cube.uncertainty.array, unit=cube.unit)
     _assert_recovered(fitted, truth, _errors(fitter), cube.data, cube.uncertainty.array, max_local_minima=0.01)
     _assert_within_bounds(fitted, model)
+
+
+def test_si_iv_1403_model_ignores_clipped_samples():
+    rng = np.random.default_rng(7)
+    truth = profiles_on_background(
+        (1402.77 + rng.normal(0, 0.02, SHAPE))[np.newaxis] * u.AA,
+        amplitudes=rng.uniform(100, 300, (1, *SHAPE)) * u.DN,
+        widths=rng.uniform(0.05, 0.09, (1, *SHAPE)) * u.AA,
+        background_level=5 * u.DN,
+    )
+    clipped = _cube(truth, WAVELENGTH, rng)
+    masked = copy.deepcopy(clipped)
+    clipped.data[3, 4, 30] = np.inf  # as the readers set clipped samples
+    masked.mask = np.zeros(masked.data.shape, dtype=bool)
+    masked.mask[3, 4, 30] = True
+    for name in truth.param_names:
+        np.testing.assert_array_equal(
+            getattr(si_iv_1403_model(clipped), name).value, getattr(si_iv_1403_model(masked), name).value, err_msg=name
+        )
 
 
 def test_mg_ii_model_recovers_parameters():

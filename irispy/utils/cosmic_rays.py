@@ -32,8 +32,10 @@ def _remove_cosmic_rays_rsliding(
     method_kwargs["masked_array"] = True
     working_data = data.astype(np.float64, copy=True)
     working_data[mask] = np.nan
-    clipped = slidingsigmaclipping(data=working_data, **method_kwargs).clipped
-    return np.ma.getdata(clipped)
+    cleaned = np.ma.getdata(slidingsigmaclipping(data=working_data, **method_kwargs).clipped)
+    # Clipped samples stay +Inf, as the readers set them; they were masked, not cleaned
+    cleaned[np.isposinf(data)] = np.inf
+    return cleaned
 
 
 def _mask_for_frame(mask, index, data_shape, frame_shape):
@@ -68,12 +70,14 @@ def _remove_cosmic_rays_astroscrappy(
     for index in np.ndindex(data_shape[:-2]):
         frame = np.asarray(data[index]).copy()
         frame_mask = _mask_for_frame(mask, index, data_shape, frame.shape)
+        clipped = np.isposinf(frame)  # as the readers set clipped samples: masked, not cleaned
         if np.issubdtype(frame.dtype, np.floating):
-            frame_mask = frame_mask | np.isnan(frame)
+            frame_mask = frame_mask | ~np.isfinite(frame)
         if inmask is not None:
             frame_mask = frame_mask | _mask_for_frame(inmask, index, data_shape, frame.shape)
         frame[frame_mask] = 0.0
         _, cleaned_frame = astroscrappy.detect_cosmics(frame, inmask=frame_mask, **method_kwargs)
+        cleaned_frame[clipped] = np.inf
         cleaned_data[index] = cleaned_frame
     return cleaned_data
 
@@ -125,7 +129,7 @@ def remove_cosmic_rays(
     if not dask_backed:
         working_mask = np.zeros(cube.data.shape, dtype=bool) if cube.mask is None else np.asarray(cube.mask, dtype=bool)
         if np.issubdtype(cube.data.dtype, np.floating):
-            working_mask = working_mask | np.isnan(cube.data)
+            working_mask = working_mask | ~np.isfinite(cube.data)
     backends = {
         "rsliding": _remove_cosmic_rays_rsliding,
         "astroscrappy": _remove_cosmic_rays_astroscrappy,
