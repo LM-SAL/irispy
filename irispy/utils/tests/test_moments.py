@@ -424,6 +424,7 @@ def test_calculate_moments_saturated_survives_subtract_background():
     saturated = np.zeros((2, 3), dtype=bool)
     saturated[0, 1] = saturated[1, 2] = True
     np.testing.assert_array_equal(moments["saturated"].data, saturated)
+    assert not moments["saturated"].mask[0, 1]
     assert np.isnan(moments["intensity"].data[1, 2])
     assert np.isfinite(moments["intensity"].data[0, 0])
 

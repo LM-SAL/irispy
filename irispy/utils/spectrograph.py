@@ -345,7 +345,8 @@ def subtract_background(cube, windows, *, degree=1):
 
     +Inf samples, as the readers set the ones clipped at the level 2 ceiling, are left out of the fit
     and stay +Inf, also in spectra with too few samples to fit, so that
-    `~irispy.utils.moments.calculate_moments` still flags a spectrum saturated across its windows.
+    `~irispy.utils.moments.calculate_moments` still flags a spectrum saturated across its line and its
+    windows.
     """
     check_scaled(cube)
     background = _fit_background(cube, windows, degree)
