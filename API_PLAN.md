@@ -188,6 +188,8 @@ so the irispy subclasses are not covered.
 
 ### 9a. When sunraster is retired
 
+The review of what retiring sunraster takes, upstream and here, is in `SUNRASTER_RETIREMENT.md`.
+
 - [ ] Base `SpectrogramCube` and `SJICube` on `ndcube.NDCube`, the sequence on
       `NDCubeSequence`, the meta classes on `NDMeta` without the abstract bases.
 - [ ] Port the four properties irispy uses, about forty lines: `spectral_axis`, `time`,
