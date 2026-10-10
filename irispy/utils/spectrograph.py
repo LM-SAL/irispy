@@ -334,7 +334,7 @@ def subtract_background(cube, windows, *, degree=1):
     -------
     `irispy.spectrograph.SpectrogramCube`
         ``cube`` minus the fitted background, with the same mask, uncertainty and coordinates.
-        Spectra with no more than ``degree`` samples to fit are NaN.
+        Spectra with no more than ``degree`` samples to fit are NaN, except their +Inf samples.
 
     Notes
     -----
@@ -344,7 +344,12 @@ def subtract_background(cube, windows, *, degree=1):
     (``degree=0``) fitted to :math:`n` samples of error :math:`\sigma`, it is :math:`\sigma / \sqrt{n}`.
 
     +Inf samples, as the readers set the ones clipped at the level 2 ceiling, are left out of the fit
-    and stay +Inf.
+    and stay +Inf, also in spectra with too few samples to fit, so that
+    `~irispy.utils.moments.calculate_moments` still flags a spectrum saturated across its line and its
+    windows.
     """
     check_scaled(cube)
-    return cube - u.Quantity(_fit_background(cube, windows, degree), cube.unit)
+    background = _fit_background(cube, windows, degree)
+    # +Inf - NaN would be NaN
+    background[np.isposinf(cube.data)] = 0
+    return cube - u.Quantity(background, cube.unit)

@@ -1,0 +1,1 @@
+`~irispy.utils.spectrograph.subtract_background` now keeps +Inf samples +Inf in spectra with too few samples to fit a background, so `~irispy.utils.moments.calculate_moments`, `~irispy.utils.mg_features.calculate_mg_features` and `~irispy.utils.red_blue.calculate_red_blue_asymmetry` flag a pixel saturated across its line and background windows instead of only masking it.
