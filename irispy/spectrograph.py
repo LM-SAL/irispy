@@ -110,9 +110,12 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
     @property
     def fits_wcs(self):
         """
-        The plain FITS WCS built from the window header, the WCS of a cube built on a
-        FITS WCS (such as a mosaic), or `None` when no single FITS WCS describes this
-        cube (for example a combined multi-file cube).
+        The FITS WCS of the cube, following its slicing.
+
+        For the cube of a raster window, a list with the FITS ``-TAB`` WCS of each
+        raster, with the pointing of each exposure, as `irispy.sji.SJICube.fits_wcs`
+        gives one per frame; for one raster, ``cube[k]``, its WCS. A mosaic's own WCS.
+        `None` when the cube has none, as after rebinning.
         """
         root, low = self.meta.get("fits_wcs"), self.wcs.low_level_wcs
         item = [slice(None)] * low.pixel_n_dim
@@ -124,9 +127,9 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
             return None
         if isinstance(root, list):
             if not isinstance(item[0], Integral):
-                return None
+                return [_sliced(wcs, item[1:]) for wcs in root[item[0]]]
             root, item = root[item[0]], item[1:]
-        return root if all(i == slice(None) for i in item) else root.slice(tuple(item), numpy_order=True)
+        return _sliced(root, item)
 
     def apply_exposure_time_correction(self, undo=False, force=False):  # NOQA: FBT002 (sunraster signature)
         exposure_time = self.exposure_time.to_value(u.s)
@@ -216,6 +219,10 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         except StopIteration:
             msg = "Could not identify a spectral wavelength axis on the cube"
             raise ValueError(msg) from None
+
+
+def _sliced(wcs, item):
+    return wcs if all(index == slice(None) for index in item) else wcs.slice(tuple(item), numpy_order=True)
 
 
 def _wavelength_indices(wavelengths, wavelength_range, *, allow_empty=False):

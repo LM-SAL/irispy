@@ -143,7 +143,8 @@ def test_read_spectrograph_lvl2_metadata(request, files):
     assert si_iv.wcs.world_axis_physical_types == (*physical_types, "custom:STEP", "custom:SCAN")
     assert si_iv.time.format == "isot"
     assert si_iv.time.shape == si_iv.shape[:-2]
-    assert si_iv[0].fits_wcs is not None
+    assert len(si_iv.fits_wcs) == n_rasters
+    assert si_iv[0].fits_wcs.pixel_shape == si_iv.fits_wcs[0].pixel_shape == si_iv.shape[:0:-1]
 
 
 def test_combined_raster_metadata_and_time_match_its_rasters(raster_sg_files):
@@ -496,7 +497,7 @@ def test_celestial_frame_is_slicing_invariant(raster_sg_files):
 
     frame = cube.celestial_frame
     assert isinstance(frame, Helioprojective)
-    # Combined cube has fits_wcs None; slices must still agree.
+    # Every slice of a combined cube has the frame of its first file
     assert cube[0].celestial_frame == frame
     assert cube[0, 2].celestial_frame == frame
     assert cube[:, 1:3].celestial_frame == frame
