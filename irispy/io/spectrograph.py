@@ -20,7 +20,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from irispy._spectrograph_wcs import _sanitize_raster_wcs_tables
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _memmap_fill_mask
-from irispy.io._raster_combine import _combine_raster_cubes, _lazy_window_data
+from irispy.io._raster_combine import _combine_raster_cubes
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection
 from irispy.utils import calculate_uncertainty
@@ -341,9 +341,6 @@ def read_spectrograph_lvl2(
                 ext = window_fits_indices[i]
                 window_header = hdulist[ext].header
                 data = hdulist[ext].data[steps]
-                if memmap and len(filenames) > 1 and not isinstance(filename, fits.HDUList):
-                    # Each memmap of many files would hold its file open until the cube is gone
-                    data = _lazy_window_data(filename, ext, flip, data)
                 meta = SGMeta(primary, window_name, data_shape=data.shape)
                 # As if made from the header itself, which NDMeta keeps as the meta's original_meta
                 meta._original_meta = meta._fits_header = hdulist[0].header
@@ -388,7 +385,8 @@ def read_spectrograph_lvl2(
                 fits_wcs = _with_spectral_axis(file_wcs, window_header)
                 if memmap:  # the data stay the FITS integers, which these scale to DN
                     meta["BSCALE"], meta["BZERO"] = window_header.get("BSCALE", 1), window_header.get("BZERO", 0)
-                    mask = _memmap_fill_mask(data, window_header)
+                    # The cube of several files makes its own
+                    mask = None if len(filenames) > 1 else _memmap_fill_mask(data, window_header)
                     if np.issubdtype(data.dtype, np.integer):  # the FITS integers, not DN
                         dn_unit = DN_UNIT[f"{meta.detector_band}_UNSCALED"]
                 else:
@@ -407,13 +405,17 @@ def read_spectrograph_lvl2(
                 # Only the combined cube is made: a cube for each file would be left for the cyclic garbage
                 # collector, which then takes a second or more over the cubes of a long observation
                 read = SimpleNamespace(
-                    data=data,
+                    # The cube of several files reads them on demand: a memmap would hold its file open
+                    data=(filename, ext, flip)
+                    if memmap and len(filenames) > 1 and not isinstance(filename, fits.HDUList)
+                    else data,
                     mask=mask,
                     uncertainty=out_uncertainty,
                     unit=dn_unit,
                     meta=meta,
                     time=times,
                     shape=data.shape,
+                    dtype=data.dtype,
                 )
                 data_dict[window_name].append((read, window_header, *wcs_tables))
     window_data_pairs = [
