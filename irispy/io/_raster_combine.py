@@ -2,15 +2,13 @@ from copy import deepcopy
 
 import dask.array as da
 import numpy as np
-from dask import delayed
 
 import astropy.units as u
 from astropy.io import fits
 
 from irispy._spectrograph_wcs import _create_raster_gwcs
+from irispy.io._mask import _memmap_fill_mask
 from irispy.spectrograph import SpectrogramCube
-
-LAZY_RASTER_CHUNK_TARGET_BYTES = 64 * 1024 * 1024
 
 
 def _combine_raster_metas(metas, combined_shape):
@@ -35,32 +33,36 @@ def _combine_raster_metas(metas, combined_shape):
     return meta
 
 
-def _lazy_raster_scan_chunk_rows(data):
-    row_bytes = int(np.prod(data.shape[1:]) * data.dtype.itemsize)
-    return max(1, min(data.shape[0], LAZY_RASTER_CHUNK_TARGET_BYTES // max(row_bytes, 1)))
+def _read_window(source, index):
+    if isinstance(source, tuple):
+        filename, ext, flip = source
+        with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
+            data = hdulist[ext].data
+            return np.array((data[::-1] if flip else data)[index])
+    return np.array(source[index])
 
 
-def _read_memmap_window_chunk(filename, ext, flip, start, stop):
+class _WindowFiles:
     """
-    Read one scan-axis chunk from disk after the public reader has returned.
-    """
-    with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
-        data = hdulist[ext].data
-        return np.array((data[::-1] if flip else data)[start:stop])
+    One window of several raster files, stacked along a new first axis, that reads each
+    file on indexing.
 
+    Each source is the ``(filename, ext, flip)`` of a file, which stays closed until it
+    is read, or the window's array of an HDU list given to the reader. Dask makes one
+    graph layer of this array for all the files.
+    """
 
-def _lazy_window_data(filename, ext, flip, data):
-    """
-    Return a Dask array of one window's (memmap) ``data`` that reads the file on demand.
-    """
-    chunk_rows = _lazy_raster_scan_chunk_rows(data)
-    chunks = []
-    for start in range(0, data.shape[0], chunk_rows):
-        stop = min(start + chunk_rows, data.shape[0])
-        chunk = delayed(_read_memmap_window_chunk)(filename, ext, flip, start, stop)
-        chunks.append(da.from_delayed(chunk, shape=(stop - start, *data.shape[1:]), dtype=data.dtype))
-    # Most windows are one chunk, which concatenating would only wrap
-    return chunks[0] if len(chunks) == 1 else da.concatenate(chunks, axis=0)
+    def __init__(self, sources, shape, dtype):
+        self.sources = sources
+        self.shape = (len(sources), *shape)
+        self.dtype = dtype
+        self.ndim = len(self.shape)
+
+    def __getitem__(self, item):
+        raster, *rest = item
+        if isinstance(raster, slice):
+            return np.stack([_read_window(source, tuple(rest)) for source in self.sources[raster]])
+        return _read_window(self.sources[raster], tuple(rest))
 
 
 def _stack(arrays):
@@ -71,11 +73,25 @@ def _stack(arrays):
 def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, *, memmap=False):
     """
     One cube of the rasters of one window, each read from its own file (``cubes``: its
-    data, mask, uncertainty, unit, meta, time and shape), with a leading raster axis.
+    data, mask, uncertainty, unit, meta, time, shape and dtype; with ``memmap`` and
+    several files, the data are a source of ``_WindowFiles`` and the mask is not used),
+    with a leading raster axis.
     """
-    # The memmap of one file stays one, as when it was read alone
-    stack = da.stack if memmap and len(cubes) > 1 else _stack
-    data, mask = stack([cube.data for cube in cubes]), stack([cube.mask for cube in cubes])
+    if memmap and len(cubes) > 1:
+        shape, dtype = cubes[0].shape, cubes[0].dtype
+        # Chunks of up to 64 MiB of steps, one file each
+        steps = max(1, min(shape[0], 64 * 2**20 // (int(np.prod(shape[1:])) * dtype.itemsize)))
+        data = da.from_array(
+            _WindowFiles([cube.data for cube in cubes], shape, dtype),
+            chunks=(1, steps, *shape[1:]),
+            name=False,
+            fancy=False,
+            meta=np.empty((0,) * (len(shape) + 1), dtype=dtype),
+        )
+        mask = _memmap_fill_mask(data, window_headers[0])
+    else:
+        # The memmap of one file stays one, as when it was read alone
+        data, mask = _stack([cube.data for cube in cubes]), _stack([cube.mask for cube in cubes])
     uncertainty = cubes[0].uncertainty
     if uncertainty is not None:
         uncertainty = type(uncertainty)(_stack([cube.uncertainty.array for cube in cubes]))
