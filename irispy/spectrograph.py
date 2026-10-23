@@ -84,7 +84,7 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
 
     plotter = PlotterDescriptor(default_type=IRISPlotter)
 
-    def __init__(self, data, wcs, uncertainty=None, unit=None, meta=None, *, mask=None, copy=False, **kwargs) -> None:
+    def __init__(self, data, wcs, *, uncertainty=None, unit=None, meta=None, mask=None, copy=False, **kwargs) -> None:
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     def __repr__(self) -> str:
