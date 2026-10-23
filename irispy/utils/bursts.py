@@ -11,7 +11,7 @@ from scipy import ndimage
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from astropy.table import QTable, vstack
+from astropy.table import QTable
 from astropy.time import Time
 
 from irispy.spectrograph import MosaicCube
@@ -29,7 +29,7 @@ _EIGHT_CONNECTED = np.ones((3, 3), dtype=bool)
 
 
 @u.quantity_input
-def find_si_iv_bursts(raster, *, threshold=None, velocity_range: u.km / u.s = (-50, 50) * u.km / u.s, median_factor=10):
+def find_si_iv_bursts(cube, *, threshold=None, velocity_range: u.km / u.s = (-50, 50) * u.km / u.s, median_factor=10):
     """
     Find UV bursts in Si IV 1402.77 Å spectra.
 
@@ -38,7 +38,7 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range: u.km / u.s = (-
 
     Parameters
     ----------
-    raster : `~irispy.spectrograph.SpectrogramCube`
+    cube : `~irispy.spectrograph.SpectrogramCube`
         Level 2 spectra of a window covering 1402.77 Å, in DN with axes (step, slit, wavelength),
         or (raster, step, slit, wavelength) for several rasters read together.
     threshold : `~astropy.units.Quantity`, optional
@@ -81,7 +81,7 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range: u.km / u.s = (-
     ----------
     * :cite:t:`young2018`
     """
-    meta = raster.meta
+    meta = cube.meta
     unit = DN_UNIT["FUV"] / u.s
     if threshold is None:
         now, then = (
@@ -91,13 +91,13 @@ def find_si_iv_bursts(raster, *, threshold=None, velocity_range: u.km / u.s = (-
         threshold = 500 * (now / then).to_value(u.one) * unit
     threshold = _to_unit(threshold, unit, "threshold") * meta.spatial_summing_factor * meta.spectral_summing_factor / 2
     return find_bright_spectral_events(
-        raster, threshold, rest_wavelength=_SI_IV, velocity_range=velocity_range, median_factor=median_factor
+        cube, threshold, rest_wavelength=_SI_IV, velocity_range=velocity_range, median_factor=median_factor
     )
 
 
 @u.quantity_input
 def find_bright_spectral_events(
-    raster,
+    cube,
     threshold,
     *,
     rest_wavelength: u.AA = None,
@@ -116,7 +116,7 @@ def find_bright_spectral_events(
 
     Parameters
     ----------
-    raster : `~irispy.spectrograph.SpectrogramCube`
+    cube : `~irispy.spectrograph.SpectrogramCube`
         Level 2 spectra of one window, in DN with axes (step, slit, wavelength), or
         (raster, step, slit, wavelength) for several rasters read together.
     threshold : `~astropy.units.Quantity`
@@ -142,10 +142,10 @@ def find_bright_spectral_events(
         The coordinates of several rasters are in the frame of the first.
         ``events.meta["threshold"]`` is the threshold.
     """
-    if isinstance(raster, MosaicCube):
+    if isinstance(cube, MosaicCube):
         msg = "The burst finders need the exposure time of each raster step, which a mosaic does not have"
         raise TypeError(msg)
-    meta = raster.meta
+    meta = cube.meta
     if rest_wavelength is None:
         rest_wavelength = meta.rest_wavelength
         if rest_wavelength is None:
@@ -153,61 +153,56 @@ def find_bright_spectral_events(
             raise ValueError(msg)
     threshold = _to_unit(threshold, DN_UNIT[meta.detector_band] / u.s, "threshold")
     check_velocity_range(velocity_range)
-    maps, tables, offset = [], [], 0
-    # Several raster files read together have a raster axis
-    for index, cube in enumerate(list(raster) if raster.data.ndim == 4 else [raster]):
-        check_scaled(cube)
-        if cube.data.ndim != 3 or cube.wavelength_axis != 2:
-            msg = "The spectra must have axes (step, slit, wavelength); slice with a range, not an index"
-            raise ValueError(msg)
-        if not DN_UNIT[cube.meta.detector_band].is_equivalent(cube.unit):
-            msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
-            raise ValueError(msg)
-        wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
-        velocity = wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(rest_wavelength))
-        bins = (velocity >= velocity_range[0]) & (velocity <= velocity_range[1])
-        if not bins.any():
-            msg = (
-                f"The spectral window has no wavelength bins between {velocity_range[0]} and {velocity_range[1]} "
-                f"from {rest_wavelength}"
-            )
-            raise ValueError(msg)
-        data = cube.data[..., bins]
-        # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
-        data = np.ma.masked_where(~(data >= -10), data)
-        if cube.mask is not None:
-            # Saturated samples are masked, but count at their value, as in IDL
-            left_out = _boolean_mask(cube) & ~_saturated_samples(cube)
-            data[left_out[..., bins]] = np.ma.masked
-        mean = data.mean(axis=-1, dtype=float)
-        intensity = (mean / cube.meta["exposure time"].to_value(u.s)[:, np.newaxis]).filled(np.nan)
-        burst = intensity >= threshold.to_value(cube.unit / u.s)
-        if median_factor is not None:
-            burst[burst] = mean[burst] < median_factor * np.ma.median(data[burst], axis=-1)
-        labels, count = ndimage.label(burst, structure=_EIGHT_CONNECTED)
-        label, npix, (step, y) = _events(intensity, labels, count)
-        labels[labels > 0] += offset
-        template = make_spatial_template(cube, cube.wavelength_axis)
-        # A raster's gWCS also gives the time and raster step of each pixel
-        coordinate = next(world for world in template.wcs.array_index_to_world(step, y) if isinstance(world, SkyCoord))
-        table = QTable(
-            {
-                "label": label + offset,
-                "raster": np.full(count, index),
-                "npix": npix,
-                "step": step,
-                "y": y,
-                "time": cube.time[step],
-                "coordinate": coordinate,
-                "intensity": intensity[step, y] * cube.unit / u.s,
-            },
-            meta={"threshold": threshold},
+    check_scaled(cube)
+    if cube.data.ndim not in (3, 4) or cube.wavelength_axis != cube.data.ndim - 1:
+        msg = "The spectra must have axes ([raster,] step, slit, wavelength); slice with a range, not an index"
+        raise ValueError(msg)
+    if not DN_UNIT[meta.detector_band].is_equivalent(cube.unit):
+        msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
+        raise ValueError(msg)
+    wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
+    velocity = wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(rest_wavelength))
+    bins = (velocity >= velocity_range[0]) & (velocity <= velocity_range[1])
+    if not bins.any():
+        msg = (
+            f"The spectral window has no wavelength bins between {velocity_range[0]} and {velocity_range[1]} "
+            f"from {rest_wavelength}"
         )
-        maps.append(labels)
-        tables.append(table)
-        offset += count
-    template = make_spatial_template(raster, raster.wavelength_axis)
-    return make_map_cube(template, np.reshape(maps, template.data.shape), u.one), vstack(tables)
+        raise ValueError(msg)
+    data = cube.data[..., bins]
+    # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
+    data = np.ma.masked_where(~(data >= -10), data)
+    if cube.mask is not None:
+        # Saturated samples are masked, but count at their value, as in IDL
+        left_out = _boolean_mask(cube) & ~_saturated_samples(cube)
+        data[left_out[..., bins]] = np.ma.masked
+    mean = data.mean(axis=-1, dtype=float)
+    intensity = (mean / meta["exposure time"].to_value(u.s)[..., np.newaxis]).filled(np.nan)
+    burst = intensity >= threshold.to_value(cube.unit / u.s)
+    if median_factor is not None:
+        burst[burst] = mean[burst] < median_factor * np.ma.median(data[burst], axis=-1)
+    # Pixels touch within a raster, not across rasters
+    structure = np.zeros((3,) * burst.ndim, dtype=bool)
+    structure[(1,) * (burst.ndim - 2)] = _EIGHT_CONNECTED
+    labels, count = ndimage.label(burst, structure=structure)
+    label, npix, index = _events(intensity, labels, count)
+    template = make_spatial_template(cube, cube.wavelength_axis)
+    # A raster's gWCS also gives the time and raster step of each pixel
+    coordinate = next(world for world in template.wcs.array_index_to_world(*index) if isinstance(world, SkyCoord))
+    events = QTable(
+        {
+            "label": label,
+            "raster": index[0] if burst.ndim == 3 else np.zeros(count, dtype=int),
+            "npix": npix,
+            "step": index[-2],
+            "y": index[-1],
+            "time": cube.time[index[:-1]],
+            "coordinate": coordinate,
+            "intensity": intensity[index] * cube.unit / u.s,
+        },
+        meta={"threshold": threshold},
+    )
+    return make_map_cube(template, labels, u.one), events
 
 
 def find_bright_image_events(cube, *, sigma_factor=10, min_pixels=2):
