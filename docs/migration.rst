@@ -164,6 +164,20 @@ position, time and raster step, and raster scan for the cube of a whole window,
 which has a raster axis. ``None`` leaves one uncropped. The sky position, time
 and raster step (and scan) must be given together.
 
+Building a cube
+===============
+
+Only the data and the WCS of `~irispy.spectrograph.SpectrogramCube` can be given
+positionally, as for `~irispy.sji.SJICube`:
+
+.. code-block:: python
+
+    # Old
+    SpectrogramCube(data, wcs, uncertainty, unit, meta)
+
+    # New
+    SpectrogramCube(data, wcs, uncertainty=uncertainty, unit=unit, meta=meta)
+
 Memmap reads
 ============
 
