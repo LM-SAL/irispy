@@ -171,7 +171,7 @@ We can print the ``raster`` object to get some basic information about the raste
     <BLANKLINE>
     Raster Collection
     -----------------
-    Spectral Windows (cube keys): ('C II 1336', 'Si IV 1394', 'Mg II k 2796')
+    Keys: ('C II 1336', 'Si IV 1394', 'Mg II k 2796')
     Number of Cubes: 3
     Aligned dimensions: [5 16 548]
     Aligned physical types: [...]

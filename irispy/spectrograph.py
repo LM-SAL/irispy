@@ -334,9 +334,11 @@ class MosaicCube(SpectrogramCube):
 
 class RasterCollection(NDCollection):
     """
-    Subclass of NDCollection for raster spectral windows keyed by window name.
+    A `~ndcube.NDCollection` of `SpectrogramCube` objects with aligned raster axes.
 
-    Each value is a `SpectrogramCube`.
+    `irispy.io.read_files` and `irispy.io.read_spectrograph_lvl2` key it by spectral
+    window, and the analysis functions that return several maps, such as
+    `irispy.utils.mg_features.calculate_mg_features`, by map name.
     """
 
     def __str__(self) -> str:
@@ -344,7 +346,7 @@ class RasterCollection(NDCollection):
             f"""
             Raster Collection
             -----------------
-            Spectral Windows (cube keys): {tuple(self.keys())}
+            Keys: {tuple(self.keys())}
             Number of Cubes: {len(self)}
             Aligned dimensions: {self.aligned_dimensions}
             Aligned physical types: {self.aligned_axis_physical_types}
