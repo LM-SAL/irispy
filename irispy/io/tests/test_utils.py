@@ -152,14 +152,11 @@ def test_read_files_with_mix(tmp_path, sns_sg_file, sns_sji_1330_file, kwargs):
     reference = read_spectrograph_lvl2(sg_file, spectral_windows="C II 1336", revert_v34=revert_v34)["C II 1336"][0]
     other = read_spectrograph_lvl2(sg_file, spectral_windows="C II 1336", revert_v34=not revert_v34)["C II 1336"][0]
 
-    def step_times(cube):
-        return cube.axis_world_coords("time", wcs=cube.extra_coords)[0].jd
-
     np.testing.assert_array_equal(cube.data, reference.data)
-    np.testing.assert_array_equal(step_times(cube), step_times(reference))
+    np.testing.assert_array_equal(cube.time.jd, reference.time.jd)
     assert not np.array_equal(cube.data, other.data)
     np.testing.assert_array_equal(cube.data, other.data[::-1])
-    np.testing.assert_array_equal(step_times(cube), step_times(other)[::-1])
+    np.testing.assert_array_equal(cube.time.jd, other.time.jd[::-1])
 
 
 @pytest.mark.parametrize(
@@ -230,7 +227,8 @@ def test_read_files_raster_file_list(raster_sg_files):
         "2814",
         "Mg II k 2796",
     }
-    assert len(returns["Si IV 1403"]) == len(raster_sg_files)
+    si_iv = returns["Si IV 1403"]
+    assert si_iv.shape == (len(raster_sg_files), 8, 109, 29)
 
 
 def test_get_spec_group_key_falls_back_when_metadata_is_missing():
@@ -313,7 +311,7 @@ def test_read_files_skips_a_bad_tar_member_with_allow_errors(tmp_path, raster_sg
     returns = read_files(tar_path, allow_errors=True)
 
     # The other members still load
-    assert len(returns["Si IV 1403"]) == len(raster_sg_files)
+    assert returns["Si IV 1403"].shape[0] == len(raster_sg_files)
 
 
 def test_read_files_sji_more_than_one(sns_sji_1330_file, sns_sji_1400_file):
@@ -367,13 +365,12 @@ def test_read_files_raster_tarball_matches_the_loose_files(tmp_path, raster_sg_f
     assert list(returns.keys()) == list(expected.keys())
     np.testing.assert_array_equal(returns.aligned_dimensions, expected.aligned_dimensions)
     for key in expected:
-        assert len(returns[key]) == len(expected[key]) == len(raster_sg_files)
-        for cube, reference in zip(returns[key], expected[key], strict=True):
-            np.testing.assert_array_equal(cube.data, reference.data)
-            np.testing.assert_array_equal(cube.mask, reference.mask)
-            assert cube.meta["DATE_OBS"] == reference.meta["DATE_OBS"]
-            times = cube.axis_world_coords(wcs=cube.extra_coords["time"])[0]
-            assert (times == reference.axis_world_coords(wcs=reference.extra_coords["time"])[0]).all()
+        cube, reference = returns[key], expected[key]
+        assert cube.shape[0] == reference.shape[0] == len(raster_sg_files)
+        np.testing.assert_array_equal(cube.data, reference.data)
+        np.testing.assert_array_equal(cube.mask, reference.mask)
+        assert cube.meta["DATE_OBS"] == reference.meta["DATE_OBS"]
+        assert (cube.time == reference.time).all()
 
 
 @pytest.mark.remote_data
@@ -382,7 +379,7 @@ def test_read_files_raster_scanning(remote_raster_scanning_tar):
     assert len(returns) == 8  # spectral windows
     np.testing.assert_array_equal(
         returns["C II 1336"].shape, (29, 4, 388, 186)
-    )  # 29 time steps, 4 steps, 388 spatial pixels, 186 spectral pixels
+    )  # 29 rasters, 4 scan steps, 388 spatial pixels, 186 spectral pixels
     np.testing.assert_array_equal(returns.aligned_dimensions, [29, 4, 388])
 
 

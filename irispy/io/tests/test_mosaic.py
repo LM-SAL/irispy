@@ -208,6 +208,20 @@ def test_mosaic_to_map(mosaic_file):
     assert_quantity_allclose([sub_coord.Tx, sub_coord.Ty], [core_coord.Tx, core_coord.Ty])
 
 
+def test_mosaic_fits_wcs_and_celestial_frame(mosaic_file):
+    cube = read_mosaic(mosaic_file)
+    # A mosaic is built on a FITS WCS
+    assert cube.fits_wcs is cube.wcs
+    # Rebinning keeps the pixel scales of the mosaic, as of a raster
+    rebinned = cube.rebin((3, 2, 1))
+    assert rebinned.spectral_dispersion == cube.spectral_dispersion
+    assert rebinned.solid_angle == cube.solid_angle
+    assert cube.celestial_frame.obstime == Time("2015-02-22T20:47:42.140")
+    assert_quantity_allclose(cube.celestial_frame.observer.radius, get_earth("2015-02-22T20:47:42.140").radius)
+    for item in (2, np.s_[:, 1:, 1:], np.s_[:, 2, 1]):
+        assert cube[item].celestial_frame == cube.celestial_frame
+
+
 @pytest.mark.parametrize(
     ("keywords", "detector", "spectral_summing", "cmap"),
     [({}, "NUV", 2, "irissji2796"), (FUV_KEYWORDS, "FUV", 4, "irissji1400")],

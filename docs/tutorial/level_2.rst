@@ -159,15 +159,14 @@ Let us retrieve the header of the raster file and display the description of the
 
 .. note::
     By default, this will load the data into memory.
-    You can pass ``memmap=True`` to avoid this; the data array will be a `numpy.memmap` instead.
-    In this case, the data stay in the FITS file and are read from the disk when a slice of the cube is used.
+    You can pass ``memmap=True`` to read the data from the files only when they are used.
     Memmapped data are the raw, unscaled integers stored in the file, not data numbers (DN).
 
 We can print the ``raster`` object to get some basic information about the raster file: what spectral windows were observed, the size of the cube, and the wavelength keys.
 
 .. code-block:: python
 
-    >>> raster  # doctest: +REMOTE_DATA
+    >>> raster  # doctest: +REMOTE_DATA, +ELLIPSIS
     <irispy.spectrograph.RasterCollection object at ...>
     <BLANKLINE>
     Raster Collection
@@ -175,8 +174,11 @@ We can print the ``raster`` object to get some basic information about the raste
     Spectral Windows (cube keys): ('C II 1336', 'Si IV 1394', 'Mg II k 2796')
     Number of Cubes: 3
     Aligned dimensions: [5 16 548]
-    Aligned physical types: [('meta.obs.sequence',), ...]
+    Aligned physical types: [...]
     <BLANKLINE>
+
+Each value in the ``RasterCollection`` is a spectral-window cube. For repeated rasters,
+that cube spans the full observation along the scan axis.
 
 Let us check the metadata of this collection, this is stored as a ``meta`` attribute:
 
@@ -199,7 +201,8 @@ Let us check the metadata of this collection, this is stored as a ``meta`` attri
     OBS Description: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
     <BLANKLINE>
 
-Note this is not on the main object but each individual element, in this case the spectral window.
+The `~irispy.spectrograph.RasterCollection` itself groups spectral windows, so the metadata lives on each
+spectral-window cube rather than on the collection.
 While SJI files contain just one spectral window per file, raster files have several spectral windows per file.
 
 If we want to check the primary header of the raster, we can do the following:
@@ -495,6 +498,7 @@ This only applies to the slit-jaw images, as the raster cubes do not have a sing
     plt.show()
 
 Since they are both series of images, the plot method will automatically create a slider to scroll through the different time steps or raster steps.
+Use the ``slider_labels`` keyword to override the slider text, for example ``iris_sji.plot(slider_labels=["Frame"])``.
 Furthermore, the tick and axes labels have been automatically set based on the coordinate system of the cube and are colored according to the axis direction.
 
 The raster plot shows the spectrograms of the Mg II k window, one for each position of the slit.
@@ -522,7 +526,7 @@ Slicing a raster down to one dimension gives a single spectrum, here raster step
 
     import matplotlib.pyplot as plt
 
-    raster["Mg II k 2796"][0][0, 274].plot()
+    raster["Mg II k 2796"][0, 0, 274].plot()
 
     plt.show()
 

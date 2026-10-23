@@ -196,7 +196,7 @@ def test_remove_cosmic_rays_rejects_unscaled_data(bursts_sji_1400_file):
 @pytest.mark.parametrize("method", ["rsliding", "astroscrappy"])
 def test_remove_cosmic_rays_keeps_masked_and_nan_samples(sns_sg_file, sns_sjicube_1330, method):
     pytest.importorskip(method)
-    spectrogram = read_spectrograph_lvl2(sns_sg_file)["Si IV 1403"][0, 0]  # masked -200 fills
+    spectrogram = read_spectrograph_lvl2(sns_sg_file)["Si IV 1403"][0]  # masked -200 fills
     for cube in (spectrogram, sns_sjicube_1330[0]):  # NaN outside the field of view
         kept = np.asarray(cube.mask) | ~np.isfinite(cube.data)
         assert kept.any()
@@ -281,8 +281,8 @@ def test_remove_cosmic_rays_spectrogram_cube(sns_sg_file, monkeypatch):
     assert list(cleaned_cube.extra_coords.keys()) == list(cube.extra_coords.keys())
     assert captured["method_kwargs"]["batch_size"] == 16
     np.testing.assert_array_equal(captured["mask"], cube.mask)
-    # WCS is deep-copied, so check equivalence not identity
-    assert dict(cleaned_cube.wcs.to_header()) == dict(cube.wcs.to_header())
+    array_index = (3, 20, 10)
+    assert cleaned_cube.wcs.world_to_array_index(*cube.wcs.array_index_to_world(*array_index)) == array_index
     assert list(cleaned_cube.global_coords) == list(cube.global_coords)
     assert cleaned_cube.unit == cube.unit
     # meta is an NDMeta subclass that may contain arrays; compare keys only

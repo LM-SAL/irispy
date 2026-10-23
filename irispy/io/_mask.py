@@ -26,11 +26,16 @@ def _memmap_fill_mask(data, header, *, nan_only=False):
     # a slice-only wrapper, and skip tokenizing its contents or probing a slice.
     import dask.array as da  # NOQA: PLC0415
 
-    mapped = da.from_array(
-        _MappedArray(data),
-        chunks=(1, *data.shape[1:]),
-        name=False,
-        meta=np.empty((0,) * data.ndim, dtype=data.dtype),
+    # A multi-file memmap raster is already a Dask array that reads its file on demand.
+    mapped = (
+        data
+        if isinstance(data, da.Array)
+        else da.from_array(
+            _MappedArray(data),
+            chunks=(1, *data.shape[1:]),
+            name=False,
+            meta=np.empty((0,) * data.ndim, dtype=data.dtype),
+        )
     )
     if nan_only:
         return da.isnan(mapped)

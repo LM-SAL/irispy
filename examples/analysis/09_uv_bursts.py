@@ -54,7 +54,7 @@ events
 # the events on the raster at the Si IV line core.
 
 si_iv_core = SpectralCoord(1402.77 * u.AA)
-core_image = si_iv.crop([si_iv_core, None], [si_iv_core, None])
+core_image = si_iv.crop([si_iv_core, None, None, None], [si_iv_core, None, None, None])
 
 fig = plt.figure(figsize=(7, 7))
 ax = fig.add_subplot(111, projection=core_image.wcs)

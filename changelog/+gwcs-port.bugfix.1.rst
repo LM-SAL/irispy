@@ -1,0 +1,1 @@
+The ``spectral_dispersion`` and ``solid_angle`` of a rebinned ``SpectrogramCube``, and so ``irispy.utils.spectrograph.radiometric_calibration`` of it, now use the pixel scales of the file, where the binned ones made the calibrated intensities too low by the bin factor.

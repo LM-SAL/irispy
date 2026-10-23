@@ -94,7 +94,7 @@ def test_rgb_defaults_to_the_line_the_cube_covers(raster_sg_file):
     """
     cube = read_files(raster_sg_file)["Mg II k 2796"][0]
     for limits, rest_wavelength in (((2802, 2805), 2803.53 * u.AA), ((2793, 2796.352), 2796.352 * u.AA)):
-        crop = cube.crop(*([SpectralCoord(wavelength * u.AA), None] for wavelength in limits))
+        crop = cube.crop(*([SpectralCoord(wavelength * u.AA), None, None, None] for wavelength in limits))
         expected, _ = calculate_rgb(crop, rest_wavelength=rest_wavelength)
         np.testing.assert_allclose(calculate_rgb(crop)[0], expected)
         fig, ax = plt.subplots()

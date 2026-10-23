@@ -41,6 +41,8 @@ def _celestial_frame_from_cube(cube):
             fits_wcs = cube.meta.get("fits_wcs")
     if isinstance(fits_wcs, list):
         fits_wcs = fits_wcs[0] if fits_wcs else None
+    # An integer index leaves a sliced FITS WCS, in the frame of the WCS it slices
+    fits_wcs = getattr(fits_wcs, "_wcs", fits_wcs)
     if fits_wcs is None or not hasattr(fits_wcs, "celestial"):
         msg = "This cube does not carry the WCS metadata needed to derive a celestial frame."
         raise ValueError(msg)

@@ -86,7 +86,7 @@ def calculate_rgb(
     Parameters
     ----------
     cube : `irispy.spectrograph.SpectrogramCube`
-        A three dimensional cube with one spectral axis.
+        A three dimensional cube with one spectral axis, such as one raster, ``raster[window][0]``.
     velocity_range : `astropy.units.Quantity` or `None`, optional
         ``(lower, upper)`` Doppler velocities from ``rest_wavelength`` mapped to the blue
         and red ends of the visible range, or `None` to map the whole window. Wavelengths
@@ -200,7 +200,7 @@ def plot_rgb(
     Parameters
     ----------
     cube : `irispy.spectrograph.SpectrogramCube`
-        A three dimensional cube with one spectral axis.
+        A three dimensional cube with one spectral axis, such as one raster, ``raster[window][0]``.
     ax : `matplotlib.axes.Axes`, optional
         Axes to draw on. A new figure is created if not given.
     cax : `matplotlib.axes.Axes`, optional

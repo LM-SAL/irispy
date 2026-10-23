@@ -1,1 +1,1 @@
-An exposure missing on both detectors of a raster file now has a NaN pointing in the WCS and in ``meta["exposure FOV center"]`` instead of 0.
+An exposure missing on both detectors of a raster file now has a NaN pointing in ``cube.fits_wcs`` and in ``meta["exposure FOV center"]`` instead of 0.

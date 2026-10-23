@@ -1,5 +1,5 @@
-Test data for raster files written during a data gap, from the same observation as
-raster/. The whole level 2 files are in
+Test data for raster files written during a data gap: r00066 and r00067 from the same
+observation as raster/, and r00102 of OBS 3630104144. The whole level 2 files are in
 https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2014/03/29/
 
 OBS 3860258481: Very large coarse 8-step raster 14x175 8s  Si IV   Mg II h/k   Mg II
@@ -31,3 +31,18 @@ wavelength sample of all 9 windows. The windows hold the scaled values as float3
 cut; the filename table declares TFIELDS = 9 for its 9 columns (the source says 7, see
 tools/compress.py). Every other keyword and both tables are as in the source files.
 Made:   python tools/compress.py <folder with the two source files>
+
+iris_l2_20150917_073915_3630104144_raster_t000_r00102_test.fits
+---------------------------------------------------------------
+
+OBS 3630104144: Medium dense 32-step raster 10.24x60 32s  C II   Si IV   Mg II h/k (OBS_DESC
+as written). The first step of r00102 has no exposure: EXPTIMEF, EXPTIMEN, XCENIX, YCENIX
+and the PC entries are 0 in row 0 of the auxiliary table, and its data are fill. Rows 1 to
+3 have their pointing; row 1 has no NUV exposure. The whole level 2 file is in
+https://www.lmsal.com/solarsoft/irisa/data/level2_compressed/2015/09/17/
+Source: iris_l2_20150917_073915_3630104144_raster_t000_r00102.fits,
+        sha256 1bde79b4cffdf14b5e7abf3257586cac92d4b495625d791b8c59562dee8f4567
+Keeps steps 0 to 3, slit rows 100 to 103 (CRPIX2 of the cut is 4, the slit center) and
+wavelength samples 140 to 143 of the Si IV 1403 window.
+Made:   python tools/cut.py <source> data_gap/iris_l2_20150917_073915_3630104144_raster_t000_r00102_test.fits \
+            --exposures 0:4 --rows 100:104 --window "Si IV 1403" 140:144

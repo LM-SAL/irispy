@@ -73,8 +73,8 @@ mg_ii.mask = mg_ii.mask.compute()
 # Mn I line at 280.19 nm, in between the Mg II k and h lines, before and
 # after the correction. We crop in wavelength space.
 
-lower_corner = [SpectralCoord(280.19, unit=u.nm), None]
-upper_corner = [SpectralCoord(280.19, unit=u.nm), None]
+lower_corner = [SpectralCoord(280.19, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(280.19, unit=u.nm), None, None, None]
 mg_crop = mg_ii.crop(lower_corner, upper_corner)
 # Save the on-disk part of the slit (roughly its first 600 pixels) before modifying
 # the data, with the masked samples as NaN. We will compare this below.

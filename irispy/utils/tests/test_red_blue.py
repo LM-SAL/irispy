@@ -458,7 +458,7 @@ def test_calculate_red_blue_asymmetry_real_cube_shape_and_coords(sns_sg_file):
     result["interpolated_profile"].meta["exposure time"][0] = 0 * u.s
     assert cube.meta["exposure time"][0] > 0 * u.s
     assert result["red_blue_asymmetry"].shape == cube.shape[:-1]
-    assert "time" in tuple(result["red_blue_asymmetry"].extra_coords.keys())
+    np.testing.assert_array_equal(result["red_blue_asymmetry"].time.isot, cube.time.isot)
     error = result["red_blue_asymmetry"].uncertainty.array
     np.testing.assert_array_equal(np.isfinite(error), result["quality"].data == RBAQualityFlag.OK)
     for item in (np.s_[0:3], np.s_[:, 10:20]):
@@ -474,7 +474,7 @@ def test_calculate_red_blue_asymmetry_rest_wavelength_required_without_meta():
 
 
 def _crop(cube, limits):
-    return cube.crop(*([SpectralCoord(wavelength * u.AA), None] for wavelength in limits))
+    return cube.crop(*([SpectralCoord(wavelength * u.AA), None, None, None] for wavelength in limits))
 
 
 def test_calculate_red_blue_asymmetry_default_rest_wavelength(raster_sg_file):

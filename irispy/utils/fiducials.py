@@ -7,7 +7,6 @@ from scipy import ndimage, signal
 
 import astropy.units as u
 
-from irispy.spectrograph import SpectrogramCubeSequence
 from irispy.utils._spectral import check_scaled
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.utils import _boolean_mask
@@ -27,10 +26,6 @@ _MARK_ROWS = np.array([238.0, 777.1])
 # Some FUV windows show a dark row that is not a mark this far below the lower mark, measured in Level 2
 # observations from 2014 to 2021; it can stand out from the noise more than the mark
 _DARK_ROW = 10.1 * u.arcsec
-
-
-def _cubes(cube_or_sequence):
-    return cube_or_sequence.data if isinstance(cube_or_sequence, SpectrogramCubeSequence) else [cube_or_sequence]
 
 
 def _plate_scale(cube):
@@ -53,18 +48,16 @@ def _mark_rows(cube):
     return (_MARK_ROWS - (summing - 1) / 2) / summing - (start - 1)
 
 
-def _candidates(cube_or_sequence, min_depth):
+def _candidates(cube, min_depth):
     """
     Dark rows along the slit: their positions, depths and significance.
     """
-    sums = counts = 0
-    for cube in _cubes(cube_or_sequence):
-        check_scaled(cube)
-        data = np.ma.masked_array(cube.data, mask=_boolean_mask(cube) | ~np.isfinite(cube.data))
-        # Level 2 arrays are (..., slit, wavelength)
-        axes = tuple(axis for axis in range(data.ndim) if axis != cube.wavelength_axis - 1)
-        sums = sums + data.sum(axis=axes, dtype=float).filled(0)
-        counts = counts + data.count(axis=axes)
+    check_scaled(cube)
+    data = np.ma.masked_array(cube.data, mask=_boolean_mask(cube) | ~np.isfinite(cube.data))
+    # Level 2 arrays are (..., slit, wavelength)
+    axes = tuple(axis for axis in range(data.ndim) if axis != cube.wavelength_axis - 1)
+    sums = data.sum(axis=axes, dtype=float).filled(0)
+    counts = data.count(axis=axes)
     with np.errstate(invalid="ignore", divide="ignore"):
         profile = sums / counts
     valid = np.isfinite(profile)
@@ -103,14 +96,14 @@ def find_fiducials(cube, *, min_depth=0.5):
 
     The fiducial marks are two short gaps in the slit, one in each half, that let no light into the
     spectrograph, so they show up as dark rows across the whole spectrum :cite:p:`depontieu2014`.
-    The marks are the dips in the slit profile, the mean of the data over raster steps and
-    wavelengths, and over the cubes of a sequence, leaving out masked and non-finite values.
+    The marks are the dips in the slit profile, the mean of the data over rasters, raster steps
+    and wavelengths, leaving out masked and non-finite values.
     Each mark is placed to a fraction of a pixel, as the IRIS team measures the marks
     (:cite:t:`depontieu2014`, Section 7.6.1).
 
     Parameters
     ----------
-    cube : `~irispy.spectrograph.SpectrogramCube` or `~irispy.spectrograph.SpectrogramCubeSequence`
+    cube : `~irispy.spectrograph.SpectrogramCube`
         One spectral window, read with ``memmap=False``. The slit axis is the axis before the
         wavelength axis, as in the cubes from `irispy.io.read_files`.
     min_depth : `float`, optional
@@ -148,8 +141,7 @@ def find_fiducials(cube, *, min_depth=0.5):
     positions, depths, significance = _candidates(cube, min_depth)
     if positions.size < 2:
         return positions, depths
-    window = _cubes(cube)[0]
-    plate_scale = _plate_scale(window)
+    plate_scale = _plate_scale(cube)
     separation = (_SEPARATION / plate_scale).to_value(u.pix)
     first, second = np.nonzero(np.abs(positions - positions[:, np.newaxis] - separation) < 2)
     if first.size:
@@ -158,7 +150,7 @@ def find_fiducials(cube, *, min_depth=0.5):
     else:
         # Where the header puts a mark beats significance: noise and the edges of the window make
         # dips that stand out more than a faint mark
-        rows = _mark_rows(window)
+        rows = _mark_rows(cube)
         distance = np.inf if rows is None else np.min(np.abs(positions[:, np.newaxis] - rows), axis=1)
         if np.min(distance) < 2:
             keep = [np.argmin(distance)]
