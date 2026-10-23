@@ -55,7 +55,9 @@ raster = raster["Si IV 1403"][0][4]
 # depends on the spectral sampling. For ~0.0254 Å pixels, 3 (the default) misses some spikes
 # but tolerates real jumps in the continuum, while 5 catches most spikes but sometimes replaces
 # real features; this dataset is binned to ~0.051 Å per pixel. ``threads`` sets how many CPU
-# cores are used.
+# cores are used. An integer ``kernel`` is a window of that size along every axis, so on the
+# cube of several rasters read together it also spans neighboring rasters; a tuple, such as
+# ``(1, 5, 5, 5)``, keeps each raster to itself.
 
 # These settings smooth more around each spike (thanks to Juraj).
 method_kwargs = {"kernel": 5, "center_choice": "median", "borders": "reflect"}

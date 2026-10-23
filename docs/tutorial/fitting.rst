@@ -79,7 +79,7 @@ Now we fit every spectrum:
     ...     data_unit=cube.unit,
     ...     weights=np.where(good, 1 / cube.uncertainty.array, 0),
     ...     world=(wavelength,),
-    ...     fitting_axes=2,
+    ...     fitting_axes=cube.wavelength_axis,
     ...     fit_info=True,
     ...     scheduler="single-threaded",
     ... )  # doctest: +REMOTE_DATA
@@ -203,7 +203,7 @@ Both components then start at the peak of each spectrum, shared in the ratio of 
     ...     data_unit=clean_cube.unit,
     ...     weights=np.where(clean_good, 1 / clean_cube.uncertainty.array, 0),
     ...     world=(wavelength,),
-    ...     fitting_axes=2,
+    ...     fitting_axes=clean_cube.wavelength_axis,
     ...     scheduler="single-threaded",
     ... )  # doctest: +REMOTE_DATA
     >>> cube_fit[core].amplitude.shape  # doctest: +REMOTE_DATA
