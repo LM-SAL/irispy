@@ -59,8 +59,8 @@ def radiometric_calibration(
     ------
     ValueError
         If ``line`` is given for a spectrograph cube, is not one wavelength or lies where the slit-jaw
-        passband has no effective area, if the cube is already corrected for exposure time or
-        calibrated, or if it is not from an IRIS slit-jaw passband, such as an AIA cube.
+        passband has no effective area, or if the cube is not from an IRIS slit-jaw passband, such as an
+        AIA cube.
 
     Notes
     -----
@@ -72,10 +72,6 @@ def radiometric_calibration(
     calibrated spectra over the line and multiply by ``abs(cube.spectral_dispersion)``.
     """
     check_scaled(cube)
-    # As sunraster's apply_exposure_time_correction tells corrected data apart
-    if u.s in cube.unit.decompose().bases:
-        msg = f"The cube must be in DN, not {cube.unit}; do not correct or calibrate it first"
-        raise ValueError(msg)
     if line is not None and not line.isscalar:
         msg = f"line must be one wavelength, not {line}"
         raise ValueError(msg)

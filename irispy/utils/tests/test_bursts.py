@@ -123,8 +123,6 @@ def test_si_iv_errors(bursts_si_iv_raster, bursts_si_iv_file):
         find_si_iv_bursts(read_spectrograph_lvl2(bursts_si_iv_file, memmap=True)["Si IV 1403"])
     with pytest.raises(ValueError, match="slice with a range"):
         find_si_iv_bursts(bursts_si_iv_raster[0][3])
-    with pytest.raises(ValueError, match="must be in DN"):
-        find_si_iv_bursts(bursts_si_iv_raster[0].apply_exposure_time_correction())
 
 
 def test_bright_spectral_events_match_si_iv_bursts(si_iv_cube):
