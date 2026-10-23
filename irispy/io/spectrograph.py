@@ -160,20 +160,26 @@ def read_spectrograph_lvl2(
     revert_v34=False,
 ):
     """
-    Reads either a SINGLE IRIS level 2 spectrograph FITs or a list of them.
+    Read IRIS Level 2 raster files, one cube per spectral window.
 
-    Does not handle tar files.
+    Each window is one cube with axes (raster, step, slit, wavelength), with one raster for
+    each file, in time order, so ``cube[k]`` is raster ``k`` and one file, such as a
+    sit-and-stare, gives one raster. Tar files are read by `irispy.io.read_files`.
+
+    The ``-200`` DN fill value and the ``-199`` DN floor that lower samples are clipped to stay
+    in the data, as the raw integers ``-32768`` and ``-32764`` with ``memmap=True``, and are
+    marked in the mask.
 
     Parameters
     ----------
-    filenames: `str`, `pathlib.Path`, `astropy.io.fits.HDUList` or a `list` of them
-        Files to be read, or files already opened, which are left open. They must all be
-        associated with the same OBS number. They are read in order of their ``DATE_OBS``,
-        whatever their order here. Open files with ``do_not_scale_image_data=True`` when using
-        ``memmap=True``, and without it otherwise. Open gzipped files with ``decompress_in_memory=True``.
-    spectral_windows: iterable of `str` or `str`
-        Spectral windows to extract from files. Default=None, implies, extract all
-        spectral windows.
+    filenames : `str`, `pathlib.Path`, `astropy.io.fits.HDUList` or a `list` of them
+        Files to be read, or files already opened, which are left open. They must all be of the
+        same observation, with the same ``OBSID`` and ``STARTOBS``. They are read in order of
+        their ``DATE_OBS``, whatever their order here. Open files with
+        ``do_not_scale_image_data=True`` when using ``memmap=True``, and without it otherwise.
+        Open gzipped files with ``decompress_in_memory=True``.
+    spectral_windows : `str` or iterable of `str`, optional
+        The spectral windows to read. Defaults to `None`, every window of the files.
     uncertainty : `bool`, optional
         If `True` (not the default), will compute the uncertainty for the data (slower and
         uses more memory). If ``memmap=True``, the uncertainty is never computed.
@@ -182,15 +188,12 @@ def read_spectrograph_lvl2(
         the file into memory when needed. This option is faster and uses a
         lot less memory. However, because FITS scaling is not done on-the-fly,
         integer data stay unscaled, in ``DN_IRIS_FUV_UNSCALED`` or ``DN_IRIS_NUV_UNSCALED``,
-        not the usual data numbers (DN).
-        The ``-200`` DN fill value and the ``-199`` DN floor that lower samples are clipped to (the
-        raw integers ``-32768`` and ``-32764`` with ``memmap=True``) keep their value and are marked
-        in the mask in either mode; with ``memmap=True`` it is a lazy Dask array, computed only for
-        the slices that are used.
+        not the usual data numbers (DN). The mask is a lazy Dask array, computed only for the
+        slices that are used, and so are the data of several files read together.
         With ``memmap=False``, the samples at the level 2 ceiling,
         `irispy.utils.constants.SATURATION_LIMIT`, keep their value and are marked in the mask
         and, if there are any, in ``meta["saturated"]`` (see :ref:`irispy-tutorial-saturated-data`).
-    revert_v34 : `bool`, optional.
+    revert_v34 : `bool`, optional
         Will undo the flipping of the raster step axis made to V34 observations
         (data, mask, uncertainty, WCS, times and per-step metadata).
         Defaults to `False`.
@@ -198,6 +201,12 @@ def read_spectrograph_lvl2(
     Returns
     -------
     `irispy.spectrograph.RasterCollection`
+        The cubes, keyed by spectral window.
+
+    Raises
+    ------
+    ValueError
+        If a file does not have one of ``spectral_windows``.
 
     Examples
     --------
