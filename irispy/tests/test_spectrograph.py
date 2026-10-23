@@ -199,8 +199,8 @@ def test_raster_animation_axis_layout_survives_update(raster_sg_files, axes_coor
 
 @pytest.mark.parametrize(
     ("plot_axes", "edges"),
-    [(None, {LAT: "b", LON: "l"}), (["x", "y"], {LON: "b", LAT: "l"})],
-    ids=["slit_on_x", "step_on_x"],
+    [(["y", "x"], {LAT: "b", LON: "l"}), (None, {LON: "b", LAT: "l"})],
+    ids=["slit_on_x", "step_on_x_by_default"],
 )
 def test_raster_image_labels_latitude_on_slit_edge_and_longitude_on_step_edge(
     mg_ii_raster, mg_ii_image, plot_axes, edges
@@ -424,6 +424,13 @@ def test_spectrogram_plot_labels_narrow_window(sns_sg_file, kwargs, labels):
     assert re.findall(r">(283\.\d+)</text>", svg.getvalue()) == labels
 
 
+@pytest.mark.filterwarnings("ignore:Animating a NDCube does not support transposing")
+def test_combined_raster_animation_uses_the_detector_colormap(combined_si_iv):
+    animation = combined_si_iv.plot()
+    assert [image.get_cmap().name for image in animation.axes.images] == ["irissjiFUV"]
+    plt.close("all")
+
+
 def test_default_colormap_falls_back_to_viridis():
     assert _registered_colormap("irissjiNUV") == "irissjiNUV"
     assert _registered_colormap("irissji1700") == "viridis"
@@ -433,8 +440,8 @@ def test_default_colormap_falls_back_to_viridis():
     ("file_fixture", "plot_axes", "expected"),
     [
         # The 2" steps of this raster are 12 times its 0.17" slit pixels: CDELT2 / CDELT3 is 0.0834
-        ("bursts_si_iv_file", ["x", "y"], 0.0834),
-        ("bursts_si_iv_file", None, 1 / 0.0834),
+        ("bursts_si_iv_file", None, 0.0834),
+        ("bursts_si_iv_file", ["y", "x"], 1 / 0.0834),
         # The steps of a sit-and-stare are times, so its maps keep square pixels
         ("sns_sg_file", None, 1),
     ],

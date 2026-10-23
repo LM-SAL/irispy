@@ -485,8 +485,7 @@ The same argument works for the raster plot below.
 
     Under the hood, irispy via `ndcube` via astropy using `matplotlib` to visualize the image meaning that plots built with irispy can be further customized using either `astropy's WCSAxes <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__ or `matplotlib` API.
 
-Note that the colormap has been set by ``irispy`` based on the wavelength of the observation.
-This only applies to the slit-jaw images, as the raster cubes do not have a single wavelength thus the colormap is set to a default matplotlib one.
+Note that the colormap has been set by ``irispy``: the color table of the passband for slit-jaw images, and the FUV or NUV color table of the detector for rasters.
 
 .. plot::
     :include-source:
