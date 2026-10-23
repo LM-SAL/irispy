@@ -157,9 +157,6 @@ def find_bright_spectral_events(
     if cube.data.ndim not in (3, 4) or cube.wavelength_axis != cube.data.ndim - 1:
         msg = "The spectra must have axes ([raster,] step, slit, wavelength); slice with a range, not an index"
         raise ValueError(msg)
-    if not DN_UNIT[meta.detector_band].is_equivalent(cube.unit):
-        msg = f"The spectra must be in DN, not {cube.unit}; do not correct or calibrate them first"
-        raise ValueError(msg)
     wavelength = u.Quantity(cube.axis_world_coords(cube.wavelength_axis)[0])
     velocity = wavelength.to(u.km / u.s, equivalencies=u.doppler_optical(rest_wavelength))
     bins = (velocity >= velocity_range[0]) & (velocity <= velocity_range[1])

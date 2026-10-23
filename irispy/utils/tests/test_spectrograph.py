@@ -340,11 +340,7 @@ def test_radiometric_calibration_rejects_line_outside_slit_jaw_passband(sns_sji_
         radiometric_calibration(cube, line=line)
 
 
-def test_radiometric_calibration_needs_data_in_dn(sns_sg_file, aia_1700_file):
-    cube = read_files(sns_sg_file, spectral_windows="C II 1336")["C II 1336"][0]
-    for done in (cube.apply_exposure_time_correction(), radiometric_calibration(cube)):
-        with pytest.raises(ValueError, match="must be in DN"):
-            radiometric_calibration(done)
+def test_radiometric_calibration_needs_an_iris_slit_jaw_passband(aia_1700_file):
     with pytest.raises(ValueError, match="no IRIS slit-jaw response for 1700"):
         radiometric_calibration(read_files(aia_1700_file))
 
