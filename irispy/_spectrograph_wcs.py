@@ -13,6 +13,7 @@ from sunpy.coordinates.frames import Helioprojective
 from sunpy.time import parse_time
 
 from irispy._interpolation import _time_lookup
+from irispy._wcs import _one_pass
 
 
 def _sanitize_raster_wcs_tables(pc, crval, *, pc_only=False):
@@ -82,23 +83,18 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     if not sit_and_stare:
         crpix[..., 0] = np.indices(pc_all.shape[:-2])[0]
     crpix[..., 1] = window_header["CRPIX2"] - 1
-    # dkist picks each exposure's row with np.round, which takes the far edge (pixel n - 0.5)
-    # to the missing row n when n is even. Repeating the last row keeps that edge finite.
-    # TODO: remove once irispy requires a dkist release with DKISTDC/dkist#764, which fixes #761.
-    lookup_axes = pc_all.ndim - 2
-    pc_all, crval_all, crpix = (
-        np.pad(table, [(0, 1)] * lookup_axes + [(0, 0)] * (table.ndim - lookup_axes), mode="edge")
-        for table in (pc_all, crval_all, crpix)
-    )
     # Sit-and-stare AUX PC is an unscaled rotation, so the (virtual) step scale is the slit scale.
     cdelt3 = window_header["CDELT2"] if sit_and_stare else window_header["CDELT3"]
-    celestial = VaryingCelestialTransform2D(
-        cdelt=[cdelt3, window_header["CDELT2"]] * (u.arcsec / u.pix),
-        # Reversing both PC axes turns the FITS (lat, lon) order into the gWCS (lon, lat) one.
-        pc_table=pc_all[..., ::-1, ::-1],
-        crval_table=crval_all,
-        crpix_table=crpix * u.pix,
+    celestial = _one_pass(
+        VaryingCelestialTransform2D(
+            cdelt=[cdelt3, window_header["CDELT2"]] * (u.arcsec / u.pix),
+            # Reversing both PC axes turns the FITS (lat, lon) order into the gWCS (lon, lat) one.
+            pc_table=pc_all[..., ::-1, ::-1],
+            crval_table=crval_all,
+            crpix_table=crpix * u.pix,
+        )
     )
+    celestial_inverse = _one_pass(celestial.inverse)
     sky = celestial
     if sit_and_stare:
         # The slit does not move between exposures, so the step only picks the exposure (dkist's
@@ -111,7 +107,7 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     non_spectral = CoupledCompoundModel("&", left=sky_time, right=m.Identity(2, name="step_scan"), shared_inputs=2)
     non_spectral.inverse = (
         m.Mapping((0, 1, 3, 4, 3, 4), n_inputs=5, name="SelectSkyStepScan")
-        | (celestial.inverse & m.Identity(2, name="step_scan"))
+        | (celestial_inverse & m.Identity(2, name="step_scan"))
         | m.Mapping((1, 2, 3), n_inputs=4, name="SelectSlitStepScan")
     )
     forward_transform = spectral & non_spectral

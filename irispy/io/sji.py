@@ -14,6 +14,7 @@ from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 from sunpy.util import MetaDict
 
 from irispy._interpolation import _time_lookup
+from irispy._wcs import _one_pass
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _fill_mask_values, _is_scaled, _memmap_fill_mask
 from irispy.meta import SJIMeta
@@ -105,11 +106,15 @@ def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     # FITS CRPIX is 1-based and the transform takes 0-based pixels
     crpix_table = [hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1]
     cdelt = [hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]
-    celestial = VaryingCelestialTransform(
-        cdelt=cdelt * u.arcsec / u.pixel,
-        pc_table=pc_table * u.pixel,
-        crval_table=crval_table * u.arcsec,
-        crpix_table=crpix_table * u.pixel,
+    # The inverse, which dkist's coupled model builds anew at each call, keeps dkist's loop: an image of one
+    # frame uses one table row
+    celestial = _one_pass(
+        VaryingCelestialTransform(
+            cdelt=cdelt * u.arcsec / u.pixel,
+            pc_table=pc_table * u.pixel,
+            crval_table=crval_table * u.arcsec,
+            crpix_table=crpix_table * u.pixel,
+        )
     )
     start_time = t_obs[0]
     cadence = (t_obs - start_time).to_value(u.s) * u.s

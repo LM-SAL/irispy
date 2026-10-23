@@ -1,11 +1,95 @@
+from functools import reduce, partial
+
 import numpy as np
 
+import astropy.units as u
+from astropy.coordinates.matrix_utilities import rotation_matrix
+from astropy.modeling.rotations import cartesian2spherical, spherical2cartesian
 from astropy.utils.shapes import simplify_basic_index
 from astropy.wcs import WCS
 from astropy.wcs.utils import wcs_to_celestial_frame
 
 from ndcube.utils.wcs import pixel_axis_to_physical_types
 from sunpy.coordinates.frames import Helioprojective
+
+
+def _euler(phi, theta, psi):
+    # The "zxz" Euler matrices of RotateNative2Celestial and RotateCelestial2Native, one per table row: astropy's
+    # rotation models take only scalar angles
+    return reduce(
+        np.matmul,
+        [rotation_matrix(angle, axis, unit=u.rad) for angle, axis in zip((psi, theta, phi), "zxz", strict=True)],
+    )
+
+
+def _rotate(matrix, lon, lat):
+    xyz = np.stack(spherical2cartesian(lon, lat), axis=-1)[..., None]
+    return cartesian2spherical(*np.moveaxis((matrix @ xyz)[..., 0], -1, 0))
+
+
+def _value(quantity, unit):
+    return quantity.to_value(unit) if isinstance(quantity, u.Quantity) else np.asarray(quantity, dtype=float)
+
+
+def _map_transform(transform, *arrays, cdelt, lon_pole, inverse=False):
+    """
+    ``transform._map_transform``, for a dkist varying celestial transform, in one pass
+    over all the points.
+
+    Each point uses the table row that dkist would pick, and points outside the tables
+    are NaN, as in dkist.
+    """
+    arrays = np.broadcast_arrays(*arrays, subok=True)
+    has_units = isinstance(arrays[0], u.Quantity)
+    x, y, *lookups = (np.asarray(array.value if has_units else array, dtype=float) for array in arrays)
+    rows = []
+    for lookup, size in zip(lookups, transform.table_shape, strict=True):
+        row = transform.sanitize_index(lookup)
+        # The outer pixel edge, size - 0.5, stays on the last row, as in dkist's own loop since DKISTDC/dkist#764
+        rows.append(np.where(lookup <= size - 0.5, np.minimum(row, size - 1), row))
+    valid = np.logical_and.reduce(
+        [(row >= 0) & (row < size) for row, size in zip(rows, transform.table_shape, strict=True)]
+    )
+    rows = tuple(np.where(valid, row, 0) for row in rows)
+    # The matrices are built once per table row and then picked for each point
+    pc = _value(transform.pc_table, u.pix)
+    crpix = _value(transform.crpix_table, u.pix)[rows]
+    lon0, lat0 = np.moveaxis(np.deg2rad(_value(transform.crval_table, u.deg)), -1, 0)
+    cdelt = _value(cdelt, u.deg / u.pix).reshape(-1, 2)[0]
+    pole = np.deg2rad(_value(lon_pole, u.deg).ravel()[0])
+    if inverse:
+        # RotateCelestial2Native | projection.inverse | cdelt | pc | crpix, as dkist's model for one row
+        phi, theta = _rotate(_euler(np.pi / 2 + lon0, np.pi / 2 - lat0, -(pole - np.pi / 2))[rows], x, y)
+        phi = np.where(phi < 0, phi + 360, phi)
+        intermediate = np.stack(transform.projection.inverse(phi, theta), axis=-1) / cdelt
+        offset = (np.linalg.inv(pc)[rows] @ intermediate[..., None])[..., 0]
+        out_x, out_y = offset[..., 0] + crpix[..., 0], offset[..., 1] + crpix[..., 1]
+    else:
+        offset = np.stack([x - crpix[..., 0], y - crpix[..., 1]], axis=-1)[..., None]
+        intermediate = (pc[rows] @ offset)[..., 0] * cdelt
+        phi, theta = transform.projection(intermediate[..., 0], intermediate[..., 1])
+        rotation = _euler(pole - np.pi / 2, -(np.pi / 2 - lat0), -(np.pi / 2 + lon0))[rows]
+        out_x, out_y = _rotate(rotation, phi, theta)
+        out_x = np.where(out_x < 0, out_x + 360, out_x)
+    out_x, out_y = np.where(valid, out_x, np.nan), np.where(valid, out_y, np.nan)
+    if has_units:
+        unit = u.pix if transform._is_inverse else u.deg
+        return out_x << unit, out_y << unit
+    return out_x, out_y
+
+
+def _one_pass(transform):
+    """
+    ``transform``, a dkist varying celestial transform, evaluated in one pass over its
+    points instead of one modeling call per table row.
+    """
+    # TODO: delete once irispy requires a dkist release that evaluates a VaryingCelestialTransform in one pass over
+    # its points (DKISTDC/dkist#762, which did, was closed unmerged). dkist evaluates its model once per table row,
+    # ~0.2 ms each, so an exposure-by-slit image of a long sit-and-stare took 6-9 s to plot against 0.05-0.09 s with a
+    # FITS WCS. Replaced on these instances only, so dkist's classes and their asdf converters are unchanged; a
+    # partial, unlike a bound method, survives pickling and copying. The edge clamp of _map_transform goes with it.
+    transform._map_transform = partial(_map_transform, transform)
+    return transform
 
 
 def _wcs_array_axis_physical_types(cube):
