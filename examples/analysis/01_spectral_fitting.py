@@ -103,7 +103,7 @@ iris_model_fit = parallel_fit_dask(
     data_unit=si_iv_1403.unit,
     weights=np.where(good, 1 / si_iv_1403.uncertainty.array, 0),
     world=(wavelength,),
-    fitting_axes=2,
+    fitting_axes=si_iv_1403.wavelength_axis,
     fit_info=True,
     scheduler="single-threaded",
 )

@@ -92,7 +92,7 @@ mg_ii_model_fit = parallel_fit_dask(
     data_unit=mg_ii_k.unit,
     weights=np.where(good, 1 / mg_ii_k.uncertainty.array, 0),
     world=(wavelength,),
-    fitting_axes=2,
+    fitting_axes=mg_ii_k.wavelength_axis,
     fit_info=True,
     scheduler="single-threaded",
 )
