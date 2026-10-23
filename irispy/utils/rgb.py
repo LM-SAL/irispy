@@ -14,6 +14,7 @@ import numpy as np
 
 import astropy.units as u
 
+from irispy._wcs import _is_sit_and_stare
 from irispy.spectrograph import _wavelength_indices
 from irispy.utils._spectral import _to_unit, check_scaled, check_velocity_range, default_rest_wavelength
 from irispy.utils.utils import _boolean_mask, _import_optional
@@ -217,9 +218,8 @@ def plot_rgb(
     stretch : `callable`, optional
         Applied to the intensity once scaled to [0, 1], for example `numpy.sqrt`.
     coordinates : ``{"helioprojective", "time"}`` or `None`, optional
-        Horizontal axis: longitude, or time. Defaults to time for a sit-and-stare
-        (``NRASTERP`` of 1), whose longitude would only show solar rotation, and to
-        longitude otherwise.
+        Horizontal axis: longitude, or time. Defaults to time for a sit-and-stare, whose
+        longitude would only show solar rotation, and to longitude otherwise.
     aspect : `str` or `float`, optional
         Aspect ratio of the image axes. Defaults to ``"equal"`` for helioprojective
         coordinates and ``"auto"`` for time; use ``"auto"`` for a raster with few steps too.
@@ -247,7 +247,7 @@ def plot_rgb(
     and asymmetry. The colorbar cannot uniquely determine a line's intensity or velocity.
     """
     if coordinates is None:
-        coordinates = "time" if (cube.meta or {}).get("NRASTERP") == 1 else "helioprojective"
+        coordinates = "time" if _is_sit_and_stare(cube) else "helioprojective"
     if coordinates not in {"helioprojective", "time"}:
         msg = f"`coordinates` must be 'helioprojective' or 'time', got {coordinates!r}"
         raise ValueError(msg)

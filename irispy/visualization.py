@@ -11,6 +11,8 @@ import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
 from ndcube.visualization.plotting_utils import prep_plot_kwargs
 
+from irispy._wcs import _is_sit_and_stare
+
 __all__ = []
 
 
@@ -182,9 +184,8 @@ def _map_aspect(cube, wcs, plot_axes):
     types = set(wcs.world_axis_physical_types)
     # A raster's gWCS also gives each exposure's time and step, which follow the step axis
     spatial = {"custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"} <= types and "em.wl" not in types
-    # The step axis of a sit-and-stare is time, along which the slit only follows solar rotation; without
-    # metadata a cube cannot tell one from a raster.
-    if not spatial or not cube.meta or cube.meta.get("NRASTERP") == 1:
+    # The step axis of a sit-and-stare is time, along which the slit only follows solar rotation
+    if not spatial or _is_sit_and_stare(cube):
         return None
     nx, ny = cube.data.shape[::-1]
     wcs = HighLevelWCSWrapper(wcs)
@@ -272,7 +273,8 @@ class IRISPlotter(MatplotlibPlotter):
 
         A 2D map, such as a cut of a scanning raster at one wavelength, a moment map or
         a Hinode/SOT-SP scan, is drawn with its true proportions unless ``aspect`` is
-        given. Maps of a sit-and-stare keep square pixels.
+        given. Maps of a sit-and-stare keep square pixels. A raster map has its raster steps,
+        or the exposures of a sit-and-stare, along x unless ``plot_axes`` is given.
 
         By default the colors run linearly from the minimum to the maximum of the image,
         or of the first frame of an animation, which the other frames keep, so a few
@@ -281,6 +283,12 @@ class IRISPlotter(MatplotlibPlotter):
         ``clip_interval=(1, 99.5) * u.percent`` sets them to those percentiles of the
         image, or of each frame.
         """
+        if plot_axes is None and list(self._ndcube.wcs.low_level_wcs.pixel_axis_names) == [
+            "spatial along slit",
+            "raster step",
+        ]:
+            # Solar X along x, as in a map; plot_axes is in array order, (step, slit)
+            plot_axes = ["x", "y"]
         if len(self._ndcube.shape) == 1:
             kwargs.pop("cmap", None)
         else:

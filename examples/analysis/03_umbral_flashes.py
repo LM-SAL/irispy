@@ -62,12 +62,12 @@ mg_crop = mg_ii.crop(lower_corner, upper_corner)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_crop.wcs)
-# The image is much taller than it is wide, so we let it fill the axes.
+# The image is much wider than it is tall, so we let it fill the axes.
 mg_crop.plot(axes=ax, aspect="auto")
 
 ###############################################################################
 # This is a sit-and-stare observation, so the slit stays in almost the same place and
-# the vertical axis is really time: the small change in longitude along it is the slit
+# the horizontal axis is really time: the small change in longitude along it is the slit
 # following the solar rotation.
 #
 # The middle section between 60"-75" is on the umbra of a sunspot, even though it is

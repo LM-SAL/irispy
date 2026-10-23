@@ -8,8 +8,10 @@ from astropy.modeling.rotations import cartesian2spherical, spherical2cartesian
 from astropy.utils.shapes import simplify_basic_index
 from astropy.wcs import WCS
 from astropy.wcs.utils import wcs_to_celestial_frame
+from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube.utils.wcs import pixel_axis_to_physical_types
+from ndcube.wcs.wrappers import ResampledLowLevelWCS
 from sunpy.coordinates.frames import Helioprojective
 
 
@@ -90,6 +92,18 @@ def _one_pass(transform):
     # partial, unlike a bound method, survives pickling and copying. The edge clamp of _map_transform goes with it.
     transform._map_transform = partial(_map_transform, transform)
     return transform
+
+
+def _is_sit_and_stare(cube):
+    """
+    Whether ``cube`` is of a sit-and-stare, whose gWCS holds the slit at one position
+    (the ``FixedSlit`` model of a window with ``CDELT3 = 0``).
+    """
+    wcs = cube.wcs.low_level_wcs
+    while isinstance(wcs, (SlicedLowLevelWCS, ResampledLowLevelWCS)):
+        wcs = wcs._wcs
+    transform = getattr(wcs, "forward_transform", None)
+    return transform is not None and any(model.name == "FixedSlit" for model in transform)
 
 
 def _wcs_array_axis_physical_types(cube):
