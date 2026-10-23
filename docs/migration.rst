@@ -32,6 +32,20 @@ The cube has the header metadata of its first file, with the ``DATE_END`` of its
 last. The per-exposure metadata, such as ``cube.meta["exposure time"]``, and
 ``cube.time`` have shape (raster, step).
 
+When `~irispy.io.read_files` reads several products, such as a downloaded
+observation folder, the `~irispy.spectrograph.RasterCollection` of the rasters is
+keyed ``"raster"``, not by its first spectral window:
+
+.. code-block:: python
+
+    files = read_files("20211001_060925_3683602040/")
+
+    # Old
+    mg_ii = files["C II 1336"]["Mg II k 2796"]
+
+    # New
+    mg_ii = files["raster"]["Mg II k 2796"]
+
 The ``wcs`` vs ``fits_wcs`` split
 =================================
 

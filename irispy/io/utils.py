@@ -143,17 +143,16 @@ def _get_spec_group_key(file, header):
     return obsid, startobs
 
 
-def _get_spec_return_key(group_key, describe, returns):
-    key = f"{describe}"
-    if key not in returns:
-        return key
+def _get_spec_return_key(group_key, returns):
+    if "raster" not in returns:
+        return "raster"
     obsid, startobs = group_key
     if startobs is None:
-        return f"{describe} ({Path(obsid).stem})"
-    key = f"{describe} ({obsid})"
+        return f"raster ({Path(obsid).stem})"
+    key = f"raster ({obsid})"
     if key not in returns:
         return key
-    return f"{describe} ({obsid}, {startobs})"
+    return f"raster ({obsid}, {startobs})"
 
 
 def fits_info(filename: str) -> None:
@@ -282,8 +281,8 @@ def read_files(
         What the files hold, if they hold one product: an `~irispy.sji.SJICube` (or AIA or SOT cube) for a slit-jaw file,
         a `~irispy.spectrograph.RasterCollection` keyed by spectral window for the raster files of one observation.
         Several products come back in an `~ndcube.NDCollection` keyed by band or measured quantity, with the
-        filename added to repeated names; rasters are keyed by the file's first spectral window, such as
-        ``"C II 1336"``, with the OBSID, then also STARTOBS, added to repeated names.
+        filename added to repeated names; the rasters of an observation are keyed ``"raster"``, with the OBSID,
+        then also STARTOBS, added to repeated keys, such as ``"raster (3620258102)"``.
 
     Raises
     ------
@@ -384,17 +383,15 @@ def read_files(
                         suffix += 1
                     returns[key] = read_sji_lvl2(file, memmap=memmap, uncertainty=uncertainty)
                 else:
-                    # Keep the first file's description, so the group needs no second header read.
-                    group_key = _get_spec_group_key(file, header)
-                    spec_groups.setdefault(group_key, (describe, []))[1].append(file)
+                    spec_groups.setdefault(_get_spec_group_key(file, header), []).append(file)
             except Exception as e:
                 if allow_errors:
                     log.warning(f"File {file} failed to load with {e}")
                     continue
                 raise
-    for group_key, (describe, file_group) in spec_groups.items():
+    for group_key, file_group in spec_groups.items():
         try:
-            key = _get_spec_return_key(group_key, describe, returns)
+            key = _get_spec_return_key(group_key, returns)
             returns[key] = read_spectrograph_lvl2(
                 file_group,
                 spectral_windows=spectral_windows,
