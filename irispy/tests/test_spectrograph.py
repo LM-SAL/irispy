@@ -87,6 +87,15 @@ def test_integer_index_gives_the_fits_wcs_of_that_raster(combined_si_iv, item, s
     assert_quantity_allclose(sliced_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
 
 
+def test_combined_cube_has_one_fits_wcs_per_raster(combined_si_iv):
+    sliced = combined_si_iv[1:3, 2:4]
+    assert len(sliced.fits_wcs) == 2
+    for raster, wcs in enumerate(sliced.fits_wcs, start=1):
+        expected = combined_si_iv[raster, 2:4].fits_wcs
+        assert wcs.pixel_shape == expected.pixel_shape == sliced.data.shape[:0:-1]
+        np.testing.assert_allclose(wcs.pixel_to_world_values(3, 50, 1), expected.pixel_to_world_values(3, 50, 1))
+
+
 def test_spectrogram_cube_crop_slices_fits_wcs(combined_si_iv):
     cube = combined_si_iv[0]
     wavelength_index = len(cube.spectral_axis) // 2

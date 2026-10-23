@@ -60,9 +60,10 @@ It is kept for interoperability with code that needs a FITS WCS, for example
 reprojection, as ``SJICube.fits_wcs`` is for slit-jaw cubes.
 
 The two agree to well under a milliarcsecond on the sky.
-The cube of a window has no single FITS WCS, so its ``fits_wcs`` is `None`; take
-one raster first, for example ``cube[0].fits_wcs``.
-Each raster's ``fits_wcs`` uses its own file's observer and date, while the
+The ``fits_wcs`` of the cube of a window is a list with one FITS WCS per raster,
+as ``SJICube.fits_wcs`` has one per frame, and ``cube.fits_wcs[k]`` is that of
+raster ``k``, as is ``cube[k].fits_wcs``.
+Each raster's FITS WCS uses its own file's observer and date, while the
 celestial frame of the cube uses the first file's for every raster, so
 frame-aware transforms between the two differ by the observer's motion between
 files (about 0.15 arcseconds for rasters 15 minutes apart).
