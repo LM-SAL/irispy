@@ -12,7 +12,7 @@ from astropy.time import Time
 from irispy.data.test import get_test_filepath
 from irispy.io.sji import read_sji_lvl2
 from irispy.io.spectrograph import read_spectrograph_lvl2
-from irispy.spectrograph import SpectrogramCubeSequence
+from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import mark_saturated
 from irispy.utils.bursts import find_bright_image_events, find_bright_spectral_events, find_si_iv_bursts
 from irispy.utils.constants import DN_UNIT, SATURATION_LIMIT
@@ -54,10 +54,10 @@ def assert_si_iv_matches_idl(labels, events, idl, y_offset):
 @pytest.mark.parametrize("threshold", [80 * u.DN / u.s, 4800 * DN_UNIT["FUV"] / u.min])
 def test_si_iv_matches_idl(bursts_si_iv_raster, idl_si_iv, threshold):
     # IDL ran with 40 DN/s on data not summed in wavelength, which is 80 DN/s here
-    labels, events = find_si_iv_bursts(bursts_si_iv_raster, threshold=threshold)
-    assert isinstance(labels, SpectrogramCubeSequence)
+    labels, events = find_si_iv_bursts(bursts_si_iv_raster[0], threshold=threshold)
+    assert isinstance(labels, SpectrogramCube)
     assert events.meta["threshold"].value == 40
-    assert_si_iv_matches_idl(labels.data[0].data, events, idl_si_iv, idl_si_iv.meta["y_offset"])
+    assert_si_iv_matches_idl(labels.data, events, idl_si_iv, idl_si_iv.meta["y_offset"])
     cube = bursts_si_iv_raster[0]
     step = events["step"]
     assert isinstance(events["time"], Time)
@@ -74,18 +74,17 @@ def test_si_iv_default_threshold(si_iv_cube, idl_si_iv):
     assert not labels.data.any()
 
 
-def test_si_iv_sequence_numbers_events_on(si_iv_cube):
-    later = copy.deepcopy(si_iv_cube)
-    later.wcs.wcs.dateobs = "2013-09-02T18:40:00"  # its own obstime, as a separate read gives
-    sequence = SpectrogramCubeSequence([si_iv_cube, later], meta={"OBSID": si_iv_cube.meta["OBSID"]})
-    labels, events = find_si_iv_bursts(sequence, threshold=80 * u.DN / u.s)
+def test_si_iv_rasters_number_events_on(bursts_si_iv_file):
+    # The same file twice reads as two rasters
+    rasters = read_spectrograph_lvl2([bursts_si_iv_file] * 2)["Si IV 1403"]
+    labels, events = find_si_iv_bursts(rasters, threshold=80 * u.DN / u.s)
     assert list(events["label"]) == [1, 2, 3, 4, 5, 6]
     assert list(events["raster"]) == [0, 0, 0, 1, 1, 1]
-    first, second = (cube.data for cube in labels.data)
+    first, second = labels.data
     np.testing.assert_array_equal(second, np.where(first > 0, first + 3, 0))
     assert all(events["coordinate"][3:] == events["coordinate"][:3])
     labels.meta["note"] = "changed"
-    assert "note" not in sequence.meta
+    assert "note" not in rasters.meta
 
 
 def test_si_iv_threshold_scales_with_summing(si_iv_cube):
@@ -239,8 +238,8 @@ def test_si_iv_whole_file_matches_idl(idl_si_iv):
         f"{IRISPY_DATA}/iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv.fits.gz",
         known_hash="ac50a0255b73af1610702653e17d3b3b9c8fc37bc487a313e1c9fb3a2983428a",
     )
-    labels, events = find_si_iv_bursts(read_spectrograph_lvl2(filename)["Si IV 1403"], threshold=80 * u.DN / u.s)
-    assert_si_iv_matches_idl(labels.data[0].data, events, idl_si_iv, 0)
+    labels, events = find_si_iv_bursts(read_spectrograph_lvl2(filename)["Si IV 1403"][0], threshold=80 * u.DN / u.s)
+    assert_si_iv_matches_idl(labels.data, events, idl_si_iv, 0)
 
 
 @pytest.mark.remote_data

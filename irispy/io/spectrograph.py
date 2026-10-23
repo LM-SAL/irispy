@@ -1,4 +1,5 @@
 from copy import copy, deepcopy
+from types import SimpleNamespace
 from pathlib import Path
 from contextlib import nullcontext
 
@@ -12,14 +13,16 @@ from astropy.time import Time, TimeDelta
 from astropy.wcs import WCS
 
 from sunpy import log as logger
-from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
+from sunpy.coordinates import get_earth
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
+from irispy._spectrograph_wcs import _sanitize_raster_wcs_tables
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _memmap_fill_mask
+from irispy.io._raster_combine import _combine_raster_cubes, _lazy_window_data
 from irispy.meta import SGMeta
-from irispy.spectrograph import RasterCollection, SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import RasterCollection
 from irispy.utils import calculate_uncertainty
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, READOUT_NOISE, SATURATION_LIMIT
 
@@ -206,9 +209,9 @@ def read_spectrograph_lvl2(
     >>> raster = read_spectrograph_lvl2(
     ...     filename, spectral_windows=["Si IV 1403", "Mg II k 2796"]
     ... )
-    >>> len(raster), raster["Si IV 1403"][0].shape, raster["Mg II k 2796"][0].shape
-    (2, (187, 40, 29), (187, 40, 52))
-    >>> raster["Si IV 1403"][0].unit, raster["Mg II k 2796"][0].unit
+    >>> len(raster), raster["Si IV 1403"].shape, raster["Mg II k 2796"].shape
+    (2, (1, 187, 40, 29), (1, 187, 40, 52))
+    >>> raster["Si IV 1403"].unit, raster["Mg II k 2796"].unit
     (Unit("DN_IRIS_FUV"), Unit("DN_IRIS_NUV"))
     """
     if isinstance(filenames, (str, bytes, Path, fits.HDUList)):
@@ -230,7 +233,13 @@ def read_spectrograph_lvl2(
             if not date_obs[-1]:  # a file with no data
                 with nullcontext(filename) if isinstance(filename, fits.HDUList) else fits.open(filename) as hdulist:
                     date_obs[-1] = _auxiliary_times(hdulist)[0].isot
-        filenames = [filenames[i] for i in Time(date_obs).argsort()]
+        date_obs = Time(date_obs)
+        order = date_obs.argsort()
+        filenames = [filenames[i] for i in order]
+        # Each file's WCS has its own observer, at its own DATE_OBS as SGMeta.observer: one ephemeris call for all
+        observers = get_earth(date_obs[order])
+    # The files are combined into one cube per window, with a raster axis, whose gWCS is built once from all of them
+    compute_uncertainty = uncertainty and not memmap
     for file_index, filename in enumerate(filenames):
         if isinstance(filename, fits.HDUList):
             context = nullcontext(filename)
@@ -249,22 +258,13 @@ def read_spectrograph_lvl2(
             # as an unquoted NAN, such as STEPT_DV, which astropy cannot parse: it becomes the string "NAN",
             # as IDL's sxpar reads it
             hdulist[0].verify("silentfix")
-            aux_times = _auxiliary_times(hdulist)
-            # The archive writes a file with no data with DATE_OBS and DATE_END empty and its pointing and roll as 0
-            no_data = {}
-            if not hdulist[0].header["DATE_OBS"]:
-                no_data = {
-                    "DATE_OBS": (aux_times[0].isot, "STARTOBS plus the auxiliary TIME of the first exposure"),
-                    "DATE_END": (aux_times[-1].isot, "STARTOBS plus the auxiliary TIME of the last exposure"),
-                    **dict.fromkeys(("XCEN", "YCEN", "SAT_ROT"), (np.nan, "Unknown: the file has no data")),
-                }
-                logger.warning(f"{given} has no data: its exposures are masked and its pointing and roll are NaN.")
             if file_index == 0:
                 # After a discussion with the IRIS team, it was decided that instead of the
                 # OBSID, we will use STEPS_AV less than -0.01 to identify V34 observations.
                 v34 = hdulist[0].header["STEPS_AV"] < -0.01
+                flip = v34 and not revert_v34
                 # V34 rasters are flipped along the step axis: everything indexed by step must follow.
-                steps = slice(None, None, -1) if v34 and not revert_v34 else slice(None)
+                steps = slice(None, None, -1) if flip else slice(None)
                 windows_in_obs = np.array(
                     [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)],
                 )
@@ -294,40 +294,67 @@ def read_spectrograph_lvl2(
                     ]
                 spectral_windows_req = spectral_windows_req.tolist()  # the keys are str, not numpy.str_
                 data_dict = {window_name: [] for window_name in spectral_windows_req}
-                base_time = Time(hdulist[0].header["DATE_OBS"] or aux_times[0])
-                observer = get_body_heliographic_stonyhurst("Earth", base_time)
-            # Extract axis-aligned metadata.
+            aux = hdulist[-2]
+            file_times = _auxiliary_times(hdulist)
+            aux_times = file_times[steps]
+            # The archive writes a file with no data with DATE_OBS and DATE_END empty and its pointing and roll as 0
+            no_data = {}
+            if not hdulist[0].header["DATE_OBS"]:
+                no_data = {
+                    "DATE_OBS": (file_times[0].isot, "STARTOBS plus the auxiliary TIME of the first exposure"),
+                    "DATE_END": (file_times[-1].isot, "STARTOBS plus the auxiliary TIME of the last exposure"),
+                    **dict.fromkeys(("XCEN", "YCEN", "SAT_ROT"), (np.nan, "Unknown: the file has no data")),
+                }
+                logger.warning(f"{given} has no data: its exposures are masked and its pointing and roll are NaN.")
+            if len(filenames) == 1:
+                observer = get_earth(Time(hdulist[0].header["DATE_OBS"] or file_times[0]))
+            else:
+                observer = observers[file_index]
+            if file_index == 0:
+                # The pointing of a multi-file read is in the frame of its first file, as its gWCS
+                first_observer = observer
+            aux_data = aux.data[steps]
             fov_center = SkyCoord(
-                *_exposure_pointing(hdulist[-2].data, hdulist[-2].header),
+                *_exposure_pointing(aux_data, aux.header),
                 unit=u.arcsec,
                 frame=Helioprojective,
-                observer=observer,
-                obstime=base_time,
+                observer=first_observer,
+                obstime=first_observer.obstime,
             )
-            obs_vrix = hdulist[-2].data[:, hdulist[-2].header["OBS_VRIX"]] * u.m / u.s
-            ophaseix = hdulist[-2].data[:, hdulist[-2].header["OPHASEIX"]]
-            exposure_times_fuv = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEF"]] * u.s
-            exposure_times_nuv = hdulist[-2].data[:, hdulist[-2].header["EXPTIMEN"]] * u.s
+            obs_vrix = aux_data[:, aux.header["OBS_VRIX"]] * u.m / u.s
+            ophaseix = aux_data[:, aux.header["OPHASEIX"]]
+            exposure_times_fuv = aux_data[:, aux.header["EXPTIMEF"]] * u.s
+            exposure_times_nuv = aux_data[:, aux.header["EXPTIMEN"]] * u.s
+            pc_indices = [aux.header[key] for key in ("PC2_2IX", "PC2_3IX", "PC3_2IX", "PC3_3IX")]
+            pc = aux_data[:, pc_indices].reshape(-1, 2, 2) * u.pix
+            if flip:
+                # Reversing the step axis reverses its PC column.
+                pc[:, :, 1] *= -1
+            # Every exposure, sit-and-stare included, is pointed at its own FOV center.
+            crval = np.column_stack((aux_data[:, aux.header["XCENIX"]], aux_data[:, aux.header["YCENIX"]])) * u.arcsec
+            # Exposure midpoints (T_OBS); NUV ones come from the source filenames.
             t_obs_nuv = None
-            file_wcs = None
+            file_wcs = wcs_tables = None
             # The meta of each window copies one dict of the primary header: walking its cards is slow
             primary = dict(hdulist[0].header.items())
             for i, window_name in enumerate(spectral_windows_req):
-                meta = SGMeta(
-                    primary,
-                    window_name,
-                    data_shape=hdulist[window_fits_indices[i]].data.shape,
-                )
+                ext = window_fits_indices[i]
+                window_header = hdulist[ext].header
+                data = hdulist[ext].data[steps]
+                if memmap and len(filenames) > 1 and not isinstance(filename, fits.HDUList):
+                    # Each memmap of many files would hold its file open until the cube is gone
+                    data = _lazy_window_data(filename, ext, flip, data)
+                meta = SGMeta(primary, window_name, data_shape=data.shape)
                 # As if made from the header itself, which NDMeta keeps as the meta's original_meta
                 meta._original_meta = meta._fits_header = hdulist[0].header
                 for key, (value, comment) in no_data.items():
                     meta.add(key, value, comment, overwrite=True)
-                meta.add("auxiliary times", aux_times[steps], None, 0)
+                meta.add("auxiliary times", aux_times, None, 0)
                 if "FUV" in meta.detector:
                     exposure_times = exposure_times_fuv
                     dn_unit = DN_UNIT["FUV"]
                     readout_noise = READOUT_NOISE["FUV"]
-                    t_obs = aux_times + exposure_times_fuv / 2
+                    times = aux_times + exposure_times_fuv / 2
                 else:
                     exposure_times = exposure_times_nuv
                     dn_unit = DN_UNIT["NUV"]
@@ -336,68 +363,61 @@ def read_spectrograph_lvl2(
                         # Its own warning covers the missing NUV exposures
                         t_obs_nuv = aux_times
                     elif t_obs_nuv is None:
-                        # The archive writes the NUV source filenames of a file without NUV exposures as A0 columns,
-                        # which astropy cannot read
+                        # The source filename table is in file order, so undo (and redo) any flip. The archive
+                        # writes the NUV source filenames of a file without NUV exposures as A0 columns,
+                        # which astropy cannot read.
                         t_obs_nuv = _nuv_t_obs_from_source_filenames(
-                            hdulist[-1].data if np.any(exposure_times > 0 * u.s) else None,
-                            exposure_times,
-                            aux_times,
+                            hdulist[-1].data if np.any(exposure_times_nuv > 0 * u.s) else None,
+                            exposure_times_nuv[steps],
+                            aux_times[steps],
                             filename=given,
-                        )
-                    t_obs = t_obs_nuv
-                meta.add("exposure time", exposure_times[steps], None, 0)
-                meta.add("exposure FOV center", fov_center[steps], None, 0)
-                meta.add("observer radial velocity", obs_vrix[steps], None, 0)
-                meta.add("orbital phase", ophaseix[steps], None, 0)
-                header = hdulist[window_fits_indices[i]].header
+                        )[steps]
+                    times = t_obs_nuv
+                meta.add("exposure time", exposure_times, None, 0)
+                meta.add("exposure FOV center", fov_center, None, 0)
+                meta.add("observer radial velocity", obs_vrix, None, 0)
+                meta.add("orbital phase", ophaseix, None, 0)
+                # The windows of a raster file differ only in NAXIS1, CRVAL1, CDELT1 and CRPIX1
+                # (3374 files of 20 observations, 2013-2026, checked), so their pointing is the file's
+                if wcs_tables is None:
+                    wcs_tables = _sanitize_raster_wcs_tables(pc, crval, pc_only=window_header["CDELT3"] == 0)
+                # Building the FITS-TAB WCS is most of the read
+                if file_wcs is None:
+                    file_wcs = _create_tabular_wcs(window_header, aux, date_obs=observer.obstime.utc.isot, flip=flip)
+                    _set_wcs_aux_obs_coord(file_wcs, observer)
+                fits_wcs = _with_spectral_axis(file_wcs, window_header)
                 if memmap:  # the data stay the FITS integers, which these scale to DN
-                    meta["BSCALE"], meta["BZERO"] = header.get("BSCALE", 1), header.get("BZERO", 0)
-                try:
-                    # Building the FITS-TAB WCS is most of the read, and the windows of a raster file differ only in
-                    # NAXIS1, CRVAL1, CDELT1 and CRPIX1 (3374 files of 20 observations, 2013-2026, checked)
-                    if file_wcs is None:
-                        file_wcs = _create_tabular_wcs(
-                            header, hdulist[-2], date_obs=base_time.utc.isot, flip=v34 and not revert_v34
-                        )
-                    wcs = _with_spectral_axis(file_wcs, header)
-                except Exception as e:  # NOQA: BLE001
-                    msg = (
-                        f"WCS failed to load while reading one step of the raster due to {e}"
-                        "The loading will continue but this will be missing in the final cube. "
-                        f"Spectral window: {window_name}, step {i} in file: {given}"
-                    )
-                    logger.warning(msg)
-                    continue
-                data = hdulist[window_fits_indices[i]].data[steps]
-                times = t_obs[steps]
-                out_uncertainty = None
-                if memmap:
-                    data_mask = _memmap_fill_mask(data, header)
+                    meta["BSCALE"], meta["BZERO"] = window_header.get("BSCALE", 1), window_header.get("BZERO", 0)
+                    mask = _memmap_fill_mask(data, window_header)
                     if np.issubdtype(data.dtype, np.integer):  # the FITS integers, not DN
                         dn_unit = DN_UNIT[f"{meta.detector_band}_UNSCALED"]
                 else:
-                    _check_scaled(header)
+                    _check_scaled(window_header)
                     # Level 2 clips at the ceiling, where iris_prep's +Inf saturation flags were lost
                     saturated = data >= SATURATION_LIMIT.value
-                    data_mask = np.isin(data, BAD_PIXEL_VALUES_SCALED) | saturated
+                    mask = np.isin(data, BAD_PIXEL_VALUES_SCALED) | saturated
                     if saturated.any():
                         meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", (0, 1, 2))
-                    # memmap data are unscaled integers, so the photon noise would be wrong
-                    if uncertainty:
-                        out_uncertainty = StdDevUncertainty(calculate_uncertainty(data, readout_noise, dn_unit))
-                _set_wcs_aux_obs_coord(wcs, observer)
-                cube = SpectrogramCube(
-                    data,
-                    wcs=wcs,
+                out_uncertainty = (
+                    StdDevUncertainty(calculate_uncertainty(data, readout_noise, dn_unit))
+                    if compute_uncertainty
+                    else None
+                )
+                meta.add("fits_wcs", fits_wcs)
+                # Only the combined cube is made: a cube for each file would be left for the cyclic garbage
+                # collector, which then takes a second or more over the cubes of a long observation
+                read = SimpleNamespace(
+                    data=data,
+                    mask=mask,
                     uncertainty=out_uncertainty,
                     unit=dn_unit,
                     meta=meta,
-                    mask=data_mask,
+                    time=times,
+                    shape=data.shape,
                 )
-                cube.extra_coords.add("time", 0, times, physical_types="time")
-                data_dict[window_name].append(cube)
+                data_dict[window_name].append((read, window_header, *wcs_tables))
     window_data_pairs = [
-        (window_name, SpectrogramCubeSequence(data_dict[window_name], common_axis=0, meta=hdulist[0].header))
-        for window_name in spectral_windows_req
+        (window_name, _combine_raster_cubes(*zip(*reads, strict=True), memmap=memmap))
+        for window_name, reads in data_dict.items()
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1, 2))

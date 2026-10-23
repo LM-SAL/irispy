@@ -34,8 +34,8 @@ def _remove_cosmic_rays_rsliding(
 
 
 def _remove_cosmic_rays_astroscrappy(
-    data: np.ndarray,
-    mask: np.ndarray,
+    data,
+    mask,
     *,
     method_kwargs: dict[str, Any],
 ) -> np.ndarray:

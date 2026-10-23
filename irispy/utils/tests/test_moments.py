@@ -207,7 +207,7 @@ def test_calculate_moments_default_rest_wavelength(raster_sg_file, limits, rest_
     """
     cube = read_files(raster_sg_file)["Mg II k 2796"][0]
     if limits is not None:
-        cube = cube.crop(*([SpectralCoord(wavelength * u.AA), None] for wavelength in limits))
+        cube = cube.crop(*([SpectralCoord(wavelength * u.AA), None, None, None] for wavelength in limits))
     moments = calculate_moments(cube, velocity_range=None)
     assert_quantity_allclose(moments["velocity"].meta["moments_rest_wavelength"], rest_wavelength)
     expected = calculate_moments(cube, rest_wavelength=rest_wavelength, velocity_range=None)
@@ -544,12 +544,8 @@ def test_calculate_moments_preserves_time_without_spectral_global_coord(sns_sg_f
     cube = raster_collection["C II 1336"][0]
     moments = calculate_moments(cube, velocity_range=None)
     intensity = moments["intensity"]
-    assert "time" in tuple(intensity.extra_coords.keys())
     assert "em.wl" not in tuple(intensity.global_coords.keys())
-    np.testing.assert_array_equal(
-        intensity.axis_world_coords("time", wcs=intensity.extra_coords)[0].isot,
-        cube.axis_world_coords("time", wcs=cube.extra_coords)[0].isot,
-    )
+    np.testing.assert_array_equal(intensity.time.isot, cube.time.isot)
 
 
 def test_calculate_moments_uncertainty_by_hand():
@@ -733,8 +729,8 @@ def test_average_window_real_data(sns_sg_file):
     cube = read_files(sns_sg_file, uncertainty=True)["C II 1336"][0]
     window = average_window(cube, [1335.2, 1336.2] * u.AA)
     assert window.shape == cube.shape[:-1]
-    assert window.wcs.world_axis_physical_types == cube.wcs.world_axis_physical_types[1:]
-    assert "time" in tuple(window.extra_coords.keys())
+    assert list(window.wcs.world_axis_physical_types) == list(cube.wcs.world_axis_physical_types[1:])
+    np.testing.assert_array_equal(window.time.isot, cube.time.isot)
     assert np.isfinite(window.data[~window.mask]).all()
     assert np.isfinite(window.uncertainty.array[~window.mask]).all()
     np.testing.assert_array_equal(average_window(cube, [1336.2, 1335.2] * u.AA).data, window.data)

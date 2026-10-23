@@ -1,0 +1,1 @@
+Several raster files read with ``memmap=True`` now give one cube per spectral window whose ``cube.data`` is a ``dask.array.Array``, which reads each file when its data are used, instead of a ``numpy`` array per file.

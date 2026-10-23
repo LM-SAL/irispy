@@ -48,11 +48,11 @@ sji_2796 = read_files(sji_filename)
 mg_ii = raster["Mg II k 2796"][0]
 c_ii = raster["C II 1336"][0]
 
-times_SG = mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords)
+times_SG = mg_ii.time
 (time_2796,) = sji_2796.axis_world_coords("time")
 # We picked randomly.
 raster_idx = 55
-time_target = times_SG[0][raster_idx]
+time_target = times_SG[raster_idx]
 
 time_idx_2796 = np.abs(time_2796 - time_target).argmin()
 time_stamp_2796 = time_2796[time_idx_2796].isot
@@ -67,7 +67,7 @@ sji_slit_location_pixel_x = sji_2796.axis_world_coords(wcs=sji_2796.extra_coords
 sji_slit_location_pixel_y = sji_2796.axis_world_coords(wcs=sji_2796.extra_coords["slit y position"])[0][time_idx_2796]
 
 ###############################################################################
-# We can now get the slit locations from the raster FITS WCSes.
+# We can now get the slit locations from the raster WCSes.
 
 sji_2796_closest = sji_2796[time_idx_2796]
 sji_2796_frame = sji_2796_closest.celestial_frame
@@ -98,7 +98,7 @@ slit_location_from_sji_aux = sji_2796[time_idx_2796].wcs.pixel_to_world(
 )
 ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="SJI auxiliary slit")
 
-# These are the matching NUV and FUV raster slit coordinates from their FITS WCSes.
+# These are the matching NUV and FUV raster slit coordinates from their WCSes.
 ax.plot_coord(nuv_slit, color="red", linestyle="-", linewidth=1, label="NUV raster slit")
 ax.plot_coord(fuv_slit, color="cyan", linestyle="--", linewidth=1, label="FUV raster slit")
 ax.legend()

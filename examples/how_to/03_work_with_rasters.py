@@ -12,9 +12,6 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.visualization import quantity_support
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.data import sample
 from irispy.io import read_files
@@ -49,14 +46,11 @@ print(raster.keys())
 # We can get the Mg II k window:
 
 mg_ii = raster["Mg II k 2796"]
-print(mg_ii)
 
 ###############################################################################
-# This is an `irispy.spectrograph.SpectrogramCubeSequence` which contains each
-# complete raster as one individual `irispy.spectrograph.SpectrogramCube` object.
-# In this case, there were five complete rasters, so the first axis has length 5.
-#
-# So we will index to get the first raster and work with that.
+# This observation has five complete rasters, so the spectral window is one
+# `irispy.spectrograph.SpectrogramCube` with raster scan, raster step, slit and
+# wavelength axes. Its first index is the raster, so ``mg_ii[0]`` is the first raster, which we work with.
 
 mg_ii = mg_ii[0]
 print(mg_ii)
@@ -79,7 +73,9 @@ raster_animation = mg_ii.plot(fig=fig).get_animation()
 # starts on real data. We also set the vmin and vmax, as by default "plot" works them out
 # from the first slice only.
 
-mg_ii_k_line = mg_ii.crop([SpectralCoord(279.4, unit=u.nm), None], [SpectralCoord(279.9, unit=u.nm), None])
+mg_ii_k_line = mg_ii.crop(
+    [SpectralCoord(279.4, unit=u.nm), None, None, None], [SpectralCoord(279.9, unit=u.nm), None, None, None]
+)
 fig = plt.figure()
 wavelength_animation = mg_ii_k_line.plot(fig=fig, plot_axes=["x", "y", None], vmin=0, vmax=100).get_animation()
 
@@ -106,9 +102,8 @@ ax.set_ylabel(f"Intensity [{mg_ii.unit}]")
 #
 # For example, which wavelength pixel corresponds to the Mg II k core (279.63 nm)?
 
-iris_observer = wcs_to_celestial_frame(mg_ii.wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
-wcs_loc = mg_ii.wcs.world_to_pixel(
+iris_frame = mg_ii.celestial_frame
+wcs_loc = mg_ii.fits_wcs.world_to_pixel(
     SpectralCoord(279.63, unit=u.nm),
     SkyCoord(0 * u.arcsec, 0 * u.arcsec, frame=iris_frame),
 )
@@ -119,15 +114,25 @@ print(mg_index)
 # Now we will plot a spectroheliogram at the Mg II k core wavelength, by cropping
 # with a `~astropy.coordinates.SpectralCoord`.
 
-# The bounds are in world axis order and ``None`` means that axis is not cropped.
-lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
-upper_corner = [SpectralCoord(279.63, unit=u.nm), None]
+# A crop takes one entry per world coordinate of the cube: wavelength, sky position,
+# time and raster step, and raster scan for the cube of a whole window, which has a
+# raster axis. ``None`` leaves one uncropped. The sky position, time and raster step
+# (and scan) must be given together.
+lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)
 
+###############################################################################
+# By default, the plot shows only spatial coordinates. Include ``"time"`` in
+# ``axes_coordinates`` to add the exposure times to the Mg II k core spectroheliogram.
+# We put the raster steps along x, so that longitude and time run horizontally.
+
 fig = plt.figure()
-ax = fig.add_subplot(111, projection=mg_spec_crop.wcs)
-# Put the raster steps along x, so that longitude runs horizontally.
-mg_spec_crop.plot(axes=ax, plot_axes=["x", "y"])
+mg_spec_crop.plot(
+    plot_axes=["x", "y"],
+    axes_coordinates=["custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat", "time"],
+)
+fig.tight_layout()
 
 ###############################################################################
 # `~irispy.utils.moments.average_window` averages the samples in a wavelength window
@@ -143,9 +148,12 @@ mg_ii_k_map.plot(axes=ax, plot_axes=["x", "y"])
 # Imagine there's a really cool feature at (-320", 400"), how can you plot
 # the spectrum at that location?
 
-lower_corner = [None, SkyCoord(-320 * u.arcsec, 400 * u.arcsec, frame=iris_frame)]
-upper_corner = [None, SkyCoord(-320 * u.arcsec, 400 * u.arcsec, frame=iris_frame)]
-mg_ii_cut = mg_ii.crop(lower_corner, upper_corner)
+target = SkyCoord(-320 * u.arcsec, 400 * u.arcsec, frame=iris_frame)
+raster_step, slit_pixel, _ = mg_ii.fits_wcs.world_to_array_index(SpectralCoord(279.63, unit=u.nm), target)
+mg_ii_cut = mg_ii.crop(
+    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, 0),
+    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, mg_ii.data.shape[-1] - 1),
+)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii_cut.wcs)

@@ -310,8 +310,8 @@ def read_files(
     ...     "sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits"
     ... )
     >>> raster = read_files(filename)
-    >>> len(raster), raster["Si IV 1403"][0].shape
-    (8, (187, 40, 29))
+    >>> len(raster), raster["Si IV 1403"].shape
+    (8, (1, 187, 40, 29))
 
     The same on the sample data, reading one spectral window of the rasters:
 

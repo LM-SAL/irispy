@@ -1,0 +1,1 @@
+Raster plots now label the raster step and scan sliders, put latitude on the edge of the slit axis and longitude on the edge of the step axis, and show the time, raster step and raster scan coordinates only when they are asked for with ``axes_coordinates``.

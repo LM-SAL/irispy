@@ -9,7 +9,7 @@ from astropy.table import QTable
 from irispy.data.test import get_test_filepath
 from irispy.io import _mask
 from irispy.io.spectrograph import read_spectrograph_lvl2
-from irispy.spectrograph import RasterCollection, SpectrogramCubeSequence
+from irispy.spectrograph import RasterCollection
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils.wavelength_drift import _LINES, _fit_drift, _line_shifts, _wavelengths, calculate_wavelength_drift
 
@@ -71,21 +71,6 @@ def test_shifts_match_idl():
     # Each drift is fitted to its own line, and follows IDL's fit through all 400 steps
     for drift, atol in [("NUV", 4e-3), ("FUV", 2e-3)]:
         np.testing.assert_allclose(table[drift].to_value(u.AA), idl[drift].to_value(u.AA), atol=atol)
-
-
-def test_rasters_out_of_time_order():
-    raster = read_spectrograph_lvl2(CROP)
-    table = calculate_wavelength_drift(raster)
-    later_first = RasterCollection(
-        [(key, SpectrogramCubeSequence([window.data[0][3:], window.data[0][:3]])) for key, window in raster.items()],
-        aligned_axes=(0, 1, 2),
-    )
-    swapped = calculate_wavelength_drift(later_first)
-    assert list(swapped["raster"]) == [1, 1, 1, 0, 0, 0, 0, 0]
-    assert list(swapped["step"]) == [0, 1, 2, 0, 1, 2, 3, 4]
-    assert all(swapped["time"] == table["time"])
-    for name in [*LINES, "NUV", "FUV"]:
-        np.testing.assert_array_equal(swapped[name], table[name])
 
 
 def test_drift_fit_matches_idl():
@@ -218,7 +203,7 @@ def test_line_shifts_of_a_synthetic_line(parameters, expected):
 
 
 def test_masked_pixels_count_as_zero():
-    cube = read_spectrograph_lvl2(CROP, spectral_windows="Mg II k 2796")["Mg II k 2796"].data[0]
+    cube = read_spectrograph_lvl2(CROP, spectral_windows="Mg II k 2796")["Mg II k 2796"]
     wavelength = _wavelengths(cube)
     cube.data[:, :300] = 0
     zeroed = _line_shifts(cube, wavelength, *_LINES["Ni I"])
@@ -232,9 +217,9 @@ def test_masked_pixels_count_as_zero():
 
 def test_window_chosen_by_its_wavelengths():
     raster = read_spectrograph_lvl2(CROP)
-    cut = raster["Mg II k 2796"].data[0][..., :5]
+    cut = raster["Mg II k 2796"][..., :5]
     assert cut.meta.spectral_range[1] > _LINES["Ni I"][0] * u.AA  # fixture check: the header still covers Ni I
-    first_cut = RasterCollection([("cut", SpectrogramCubeSequence([cut])), *raster.items()], aligned_axes=(0, 1, 2))
+    first_cut = RasterCollection([("cut", cut), *raster.items()], aligned_axes=(0, 1))
     np.testing.assert_array_equal(
         calculate_wavelength_drift(first_cut)["Ni I"], calculate_wavelength_drift(raster)["Ni I"]
     )
@@ -243,7 +228,7 @@ def test_window_chosen_by_its_wavelengths():
 def test_memmap_mask_is_not_computed(monkeypatch):
     # The lazy fill mask of memmap=True spans the whole raster, which the fit never reads
     monkeypatch.setattr(_mask, "_fill_mask_values", lambda *_: pytest.fail("the lazy mask was computed"))
-    cube = read_spectrograph_lvl2(CROP, memmap=True)["Mg II k 2796"].data[0]
+    cube = read_spectrograph_lvl2(CROP, memmap=True)["Mg II k 2796"][0]
     assert isinstance(cube.mask, da.Array)  # fixture check
     assert np.isfinite(_line_shifts(cube, _wavelengths(cube), *_LINES["Ni I"])).any()
 
@@ -266,10 +251,12 @@ def test_dask_mask_on_scaled_data_is_applied():
     np.testing.assert_array_equal(_line_shifts(cube, wavelength, *_LINES["O I"]), masked)
 
 
-def test_memmap_data_give_the_same_table():
-    # memmap=True leaves the FITS integers, which are scaled to DN for the fit ranges only
-    table = calculate_wavelength_drift(read_spectrograph_lvl2(CROP))
-    memmap = calculate_wavelength_drift(read_spectrograph_lvl2(CROP, memmap=True))
+@pytest.mark.parametrize("files", [CROP, [CROP, CROP]], ids=["one-raster", "two-rasters"])
+def test_memmap_data_give_the_same_table(files):
+    # memmap=True leaves the FITS integers, which are scaled to DN for the fit ranges only;
+    # several files read together give a Dask array
+    table = calculate_wavelength_drift(read_spectrograph_lvl2(files))
+    memmap = calculate_wavelength_drift(read_spectrograph_lvl2(files, memmap=True))
     for name in [*LINES, "NUV", "FUV"]:
         np.testing.assert_array_equal(memmap[name], table[name])
 
