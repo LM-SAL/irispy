@@ -4,9 +4,180 @@
 Acquiring Data
 **************
 
-This section of the tutorial will introduce methods to obtain IRIS data from two different places.
-The main section will focus on using the IRIS data search tool from the official IRIS website.
-But we will also cover the `~sunpy.net.Fido` interface for searching and downloading data from a variety of different sources, including IRIS data from the Virtual Solar Observatory (VSO).
+IRIS data are kept in the `IRIS archive <https://iris.lmsal.com/data.html>`__ at LMSAL.
+``irispy`` searches the archive and downloads its files with sunpy's `~sunpy.net.Fido`.
+The `IRIS data search webpage <https://iris.lmsal.com/search/>`__ browses the same archive, with images of each observation; the second part of this section shows how to use it.
+
+Searching and downloading with ``Fido``
+=======================================
+
+`~sunpy.net.Fido` is sunpy's interface for searching and downloading solar data; :ref:`sunpy-tutorial-acquiring-data-index` introduces it.
+Importing `irispy.net` adds `~irispy.net.IRISClient`, which searches the IRIS archive, to ``Fido``, and the IRIS search attributes to ``a.iris``:
+
+.. code-block:: python
+
+    >>> import astropy.units as u
+    >>> from sunpy.net import Fido, attrs as a
+
+    >>> import irispy.net
+
+A search needs a time range, `a.Time <sunpy.net.attrs.Time>`, and ``a.Instrument.iris`` or ``a.Provider("LMSAL")``; it finds the observations that overlap the time range, and the ``a.iris`` attributes below narrow it.
+Here are the active region observations of the morning of 1 October 2021:
+
+.. code-block:: python
+
+    >>> result = Fido.search(
+    ...     a.Time("2021-10-01 06:00", "2021-10-01 07:00"),
+    ...     a.Provider("LMSAL"),
+    ...     a.iris.Target("AR"),
+    ... )  # doctest: +REMOTE_DATA
+    >>> result.show("Start Time", "OBSID", "Title", "Product", "Filename", "Size")  # doctest: +REMOTE_DATA
+    <sunpy.net.fido_factory.UnifiedResponse object at ...>
+    Results from 1 Provider:
+    <BLANKLINE>
+    5 Results from the IRISClient:
+    Source: https://iris.lmsal.com/search/
+    Total estimated size: 104.858 Mbyte
+    <BLANKLINE>
+           Start Time         OBSID         Title       Product                         Filename                          Size
+                                                                                                                         Mibyte
+    ----------------------- ---------- ---------------- ------- -------------------------------------------------------- ------
+    2021-10-01 06:09:25.000 3683602040 Observation test     sji iris_l2_20211001_060925_3683602040_SJI_1330_t000.fits.gz    3.0
+    2021-10-01 06:09:30.000 3683602040 Observation test     sji iris_l2_20211001_060925_3683602040_SJI_1400_t000.fits.gz    3.0
+    2021-10-01 06:09:26.000 3683602040 Observation test     sji iris_l2_20211001_060925_3683602040_SJI_2796_t000.fits.gz    5.0
+    2021-10-01 06:09:28.000 3683602040 Observation test     sji iris_l2_20211001_060925_3683602040_SJI_2832_t000.fits.gz    6.0
+    2021-10-01 06:09:25.000 3683602040 Observation test  raster         iris_l2_20211001_060925_3683602040_raster.tar.gz   83.0
+    <BLANKLINE>
+    <BLANKLINE>
+
+Each row is one file: by default the raster tarball and the slit-jaw files of each observation.
+Sizes are the archive's, in whole MiB, and what the archive does not give is masked.
+The printed table shows the main columns; ``result["iris"].keys()`` lists them all, and ``show`` shows those it is given, or all with no names:
+
+.. code-block:: python
+
+    >>> print(result["iris"].show("Filename", "Exposure Time", "Cadence", "Rasters", "Steps"))  # doctest: +REMOTE_DATA
+                            Filename                         Exposure Time Cadence Rasters Steps
+                                                                   s          s
+    -------------------------------------------------------- ------------- ------- ------- -----
+    iris_l2_20211001_060925_3683602040_SJI_1330_t000.fits.gz      0.500264 6.97684      --    --
+    iris_l2_20211001_060925_3683602040_SJI_1400_t000.fits.gz      0.500267 6.97897      --    --
+    iris_l2_20211001_060925_3683602040_SJI_2796_t000.fits.gz      0.500259 6.97792      --    --
+    iris_l2_20211001_060925_3683602040_SJI_2832_t000.fits.gz      0.500255 6.97871      --    --
+            iris_l2_20211001_060925_3683602040_raster.tar.gz           ——— 27.7355       5    16
+
+The other search attributes are:
+
+* `a.iris.ObsID <irispy.net.attrs.ObsID>`: an OBS ID.
+* `a.iris.Description <irispy.net.attrs.Description>`: text in the title, goal or science objectives.
+* `a.iris.Target <irispy.net.attrs.Target>`: the target, such as ``"AR"`` or ``"QS"``.
+* `a.iris.XCen <irispy.net.attrs.XCen>` and `a.iris.YCen <irispy.net.attrs.YCen>`: a range of the pointing.
+* `a.iris.Product <irispy.net.attrs.Product>`: other files in place of the raster tarball and slit-jaw files, such as the co-aligned AIA cubes (``"sdo"``); ``Fido`` returns one table for each product combined with ``|``.
+
+The Virtual Solar Observatory lists the same files under the same instrument and provider, so a search without an ``a.iris`` attribute returns its table too; fetch ``result["iris"]`` to download the IRIS archive's files only.
+A search of a month takes about a minute and finds at most 5000 observations; ``ObsID``, ``Target``, ``XCen`` and ``YCen`` make it faster.
+
+For example, the Hinode/SOT and AIA data of the observations made with Hinode near the west limb on 3 March 2020:
+
+.. code-block:: python
+
+    >>> limb_result = Fido.search(
+    ...     a.Time("2020-03-03", "2020-03-04"),
+    ...     a.Provider("LMSAL"),
+    ...     a.iris.Description("Hinode"),
+    ...     a.iris.XCen(700 * u.arcsec, 1000 * u.arcsec),
+    ...     a.iris.Product("sot") | a.iris.Product("sdo"),
+    ... )  # doctest: +REMOTE_DATA
+    >>> limb_result.show("Start Time", "XCen", "Filename", "Size")  # doctest: +REMOTE_DATA
+    <sunpy.net.fido_factory.UnifiedResponse object at ...>
+    Results from 2 Providers:
+    <BLANKLINE>
+    6 Results from the IRISClient:
+    Source: https://iris.lmsal.com/search/
+    Total estimated size: 39.846 Mbyte
+    <BLANKLINE>
+           Start Time         XCen                       Filename                     Size
+                             arcsec                                                  Mibyte
+    ----------------------- -------- ----------------------------------------------- ------
+    2020-03-03 14:44:35.000 742.0411 iris_l2_20200303_144435_3605202860_SOTSP.tar.gz    9.0
+    2020-03-03 16:24:05.000 755.9626 iris_l2_20200303_162405_3605202860_SOTSP.tar.gz    6.0
+    2020-03-03 18:04:05.000 764.1443 iris_l2_20200303_180405_3605202860_SOTSP.tar.gz    6.0
+    2020-03-03 19:43:05.000 773.2471 iris_l2_20200303_194305_3605202860_SOTSP.tar.gz    4.0
+    2020-03-03 21:18:35.000 783.6635 iris_l2_20200303_211835_3605202860_SOTSP.tar.gz    4.0
+    2020-03-03 22:53:35.000 790.7757 iris_l2_20200303_225335_3605202860_SOTSP.tar.gz    9.0
+    <BLANKLINE>
+    6 Results from the IRISClient:
+    Source: https://iris.lmsal.com/search/
+    Total estimated size: 4.948 Gbyte
+    <BLANKLINE>
+           Start Time         XCen                      Filename                    Size
+                             arcsec                                                Mibyte
+    ----------------------- -------- --------------------------------------------- ------
+    2020-03-03 14:44:35.000 742.0411 iris_l2_20200303_144435_3605202860_SDO.tar.gz  715.0
+    2020-03-03 16:24:05.000 755.9626 iris_l2_20200303_162405_3605202860_SDO.tar.gz  691.0
+    2020-03-03 18:04:05.000 764.1443 iris_l2_20200303_180405_3605202860_SDO.tar.gz  657.0
+    2020-03-03 19:43:05.000 773.2471 iris_l2_20200303_194305_3605202860_SDO.tar.gz  530.0
+    2020-03-03 21:18:35.000 783.6635 iris_l2_20200303_211835_3605202860_SDO.tar.gz  700.0
+    2020-03-03 22:53:35.000 790.7757 iris_l2_20200303_225335_3605202860_SDO.tar.gz 1426.0
+    <BLANKLINE>
+    <BLANKLINE>
+
+Failed searches are reported in the returned `~sunpy.net.fido_factory.UnifiedResponse` and in the ``errors`` attribute of each `~sunpy.net.base_client.QueryResponseTable` in it.
+
+Downloading data
+----------------
+
+`Fido.fetch <sunpy.net.fido_factory.UnifiedDownloaderFactory.fetch>` downloads the files of a search result, a table of it or one row.
+Here we download the 1400 slit-jaw file, 3 MiB, of the active region observation:
+
+.. code-block:: python
+
+    >>> table = result["iris"]  # doctest: +REMOTE_DATA
+    >>> sji_1400 = table[table["Filename"] == "iris_l2_20211001_060925_3683602040_SJI_1400_t000.fits.gz"]  # doctest: +REMOTE_DATA
+    >>> files = Fido.fetch(sji_1400)  # doctest: +REMOTE_DATA
+    >>> files  # doctest: +REMOTE_DATA
+    <parfive.results.Results object at ...>
+    ['.../20211001_060925_3683602040/iris_l2_20211001_060925_3683602040_SJI_1400_t000.fits.gz']
+
+If any files failed to download, the `parfive.Results` object lists the URLs that failed and why in its ``errors`` attribute:
+
+.. code-block:: python
+
+    >>> print(files.errors)  # doctest: +REMOTE_DATA
+    []
+
+To retry, pass the `parfive.Results` object back to `Fido.fetch <sunpy.net.fido_factory.UnifiedDownloaderFactory.fetch>`:
+
+.. code-block:: python
+
+    >>> files = Fido.fetch(files)  # doctest: +SKIP
+
+Organizing downloaded data
+--------------------------
+
+``Fido`` downloads into sunpy's download folder, ``~/sunpy/data``, unless ``path`` names another.
+The files of each observation go into a folder named after the observation, its date, time and OBS ID, such as ``20211001_060925_3683602040``, so `~irispy.io.read_files` reads one observation from its folder:
+
+.. code-block:: python
+
+    >>> from pathlib import Path
+    >>> from irispy.io import read_files
+
+    >>> folder = Path(files[0]).parent  # doctest: +REMOTE_DATA
+    >>> folder.name  # doctest: +REMOTE_DATA
+    '20211001_060925_3683602040'
+    >>> read_files(folder).meta.observing_mode_id  # doctest: +REMOTE_DATA
+    3683602040
+
+To keep the archive's own layout, ``level2/YYYY/MM/DD/<observation>/``, put the date of the observation, from the hidden ``Observation Start`` column, in ``path``:
+
+.. code-block:: python
+
+    >>> files = Fido.fetch(result, path="~/iris/level2/{observation_start.datetime:%Y/%m/%d}/{file}")  # doctest: +SKIP
+
+which puts the files in ``~/iris/level2/2021/10/01/20211001_060925_3683602040/``.
+
+`~irispy.io.read_files` extracts the raster, SDO and Hinode/SOT tarballs into the ``irispy`` cache folder, not next to the tarballs; :ref:`irispy-known-issues-extracted-archives` says how much space they take and how to extract them elsewhere.
 
 IRIS data search website
 ========================
@@ -91,136 +262,4 @@ Co-aligned data
 The latest version of the search engine includes the option to find all IRIS observations for which co-aligned SDO and/or Hinode data cubes are available.
 This can be done by checking the appropriate option buttons located under the "More" button.
 The co-aligned data is explained in detail by `ITN32 <https://iris.lmsal.com/itn32/introduction.html>`__.
-
-`~sunpy.net.Fido`
-=================
-
-Now we will describe how to search for and download IRIS data using sunpy's `~sunpy.net.Fido`.
-`~sunpy.net.Fido` is a unified interface for searching and fetching solar physics data irrespective of the underlying client or web service through which the data is obtained.
-This is not a general tutorial for `~sunpy.net.Fido`, please read :ref:`sunpy-tutorial-acquiring-data-index` for a more in depth introduction to using `~sunpy.net.Fido` to search for and download data from a variety of different sources.
-
-The following examples will use ``Fido``, so let's start by importing it:
-
-.. code-block:: python
-
-    >>> import astropy.units as u
-
-    >>> from sunpy.net import Fido, attrs as a
-
-Searching for data
-------------------
-
-To search for data with `~sunpy.net.Fido`, you need to specify attributes to search with.
-For IRIS data, the most important attribute is `a.Time <sunpy.net.attrs.Time>` and `a.Instrument.iris <sunpy.net.attrs.Instrument>`.
-
-Some search attributes need one or more values specifying, for example ``Time`` needs at least a start and an end date to specify a time range:
-
-.. code-block:: python
-
-    >>> a.Time('2020/3/4', '2020/3/5')
-    <sunpy.net.attrs.Time(2020-03-04 00:00:00.000, 2020-03-05 00:00:00.000)>
-
-To search for data use the ``Fido.search`` method:
-
-.. code-block:: python
-
-    >>> result = Fido.search(a.Time('2020/3/4', '2020/3/4'), a.Instrument.iris) # doctest: +REMOTE_DATA
-
-this returns an `~sunpy.net.fido_factory.UnifiedResponse` object containing all the search results that match the search attributes.
-This does not download the files.
-To see a summary of the results print the result variable that came back from the previous search.
-The VSO returns the results in no fixed order, so we sort them by file size first:
-
-.. code-block:: python
-
-    >>> result[0].sort("Size")  # doctest: +REMOTE_DATA
-    >>> print(result)  # doctest: +REMOTE_DATA
-    Results from 1 Provider:
-    <BLANKLINE>
-    4 Results from the VSOClient:
-    Source: https://sdac.virtualsolar.org/cgi/search
-    Data retrieval status: http://docs.virtualsolar.org/wiki/VSOHealthReport
-    Total estimated size: 2.375 Gbyte
-    <BLANKLINE>
-           Start Time               End Time        Source Instrument    Wavelength    Provider  Physobs  Wavetype     Extent X         Extent Y       Extent Width   Extent Type  Size
-                                                                          Angstrom                                                                                                Mibyte
-    ----------------------- ----------------------- ------ ---------- ---------------- -------- --------- -------- ---------------- ---------------- ---------------- ----------- ------
-    2020-03-03 22:53:41.000 2020-03-04 01:59:11.000   IRIS       IRIS 1400.0 .. 1400.0    LMSAL intensity   NARROW 790.775695800781 16.8814430236816 230.227996826172 PARTIAL_SUN   54.0
-    2020-03-03 22:53:35.000 2020-03-04 01:59:05.000   IRIS       IRIS 2796.0 .. 2796.0    LMSAL intensity   NARROW 790.774841308594 16.8615531921387 230.227996826172 PARTIAL_SUN   88.0
-    2020-03-03 22:53:38.000 2020-03-04 01:59:09.000   IRIS       IRIS 2832.0 .. 2832.0    LMSAL intensity   NARROW    790.775390625 16.8734436035156 230.227996826172 PARTIAL_SUN  104.0
-    2020-03-03 22:53:35.000 2020-03-04 01:59:14.000   IRIS       IRIS 1332.0 .. 2835.0    LMSAL intensity   NARROW 790.775695800781 16.8814430236816 230.227996826172 PARTIAL_SUN 2019.0
-    <BLANKLINE>
-    <BLANKLINE>
-
-This shows that there are 4 results from the Virtual Solar Observatory (VSO), which is a service which indexes many solar datasets and provides access to them.
-Note that the results are not from the IRIS website, but from the VSO, which is a different service and as such does not have the full set of data products available on the IRIS website.
-
-We shall detail the returned results a bit more.
-The last result is the spectrograph data, we know this for two reasons, first because the wavelength range covers the full IRIS spectrograph range, and second because the size of the file is much larger than the slit jaw images.
-The other three results are slit jaw images, we know this because the wavelength range covers only a single slit jaw wavelength and the file size is much smaller than the spectrograph data.
-
-We can also filter by other attributes, for example if we only wanted the slit jaw images we could add a filter for the wavelength:
-
-.. code-block:: python
-
-    >>> filtered_result = Fido.search(a.Time('2020/3/4', '2020/3/4'), a.Instrument.iris, a.Wavelength(2796*u.AA)) # doctest: +REMOTE_DATA
-    >>> filtered_result[0].sort("Size")  # doctest: +REMOTE_DATA
-    >>> filtered_result # doctest: +REMOTE_DATA
-    <sunpy.net.fido_factory.UnifiedResponse object at ...>
-    Results from 1 Provider:
-    <BLANKLINE>
-    2 Results from the VSOClient:
-    Source: https://sdac.virtualsolar.org/cgi/search
-    Data retrieval status: http://docs.virtualsolar.org/wiki/VSOHealthReport
-    Total estimated size: 2.209 Gbyte
-    <BLANKLINE>
-           Start Time               End Time        Source Instrument    Wavelength    Provider  Physobs  Wavetype     Extent X         Extent Y       Extent Width   Extent Type  Size
-                                                                          Angstrom                                                                                                Mibyte
-    ----------------------- ----------------------- ------ ---------- ---------------- -------- --------- -------- ---------------- ---------------- ---------------- ----------- ------
-    2020-03-03 22:53:35.000 2020-03-04 01:59:05.000   IRIS       IRIS 2796.0 .. 2796.0    LMSAL intensity   NARROW 790.774841308594 16.8615531921387 230.227996826172 PARTIAL_SUN   88.0
-    2020-03-03 22:53:35.000 2020-03-04 01:59:14.000   IRIS       IRIS 1332.0 .. 2835.0    LMSAL intensity   NARROW 790.775695800781 16.8814430236816 230.227996826172 PARTIAL_SUN 2019.0
-    <BLANKLINE>
-    <BLANKLINE>
-
-But we still get the spectrograph data because it also matches the wavelength filter.
-If we want to only get the raster, we can simply index the results to get just the second result, which is the spectrograph data:
-
-.. code-block:: python
-
-    >>> filtered_result[0][1] # doctest: +REMOTE_DATA
-    <QueryResponseRow index=1>
-        Start Time               End Time        Source Instrument    Wavelength    Provider  Physobs  Wavetype     Extent X         Extent Y       Extent Width   Extent Type   Size                                                          fileid
-                                                                        Angstrom                                                                                                 Mibyte
-            Time                    Time           str4     str4       float64[2]      str5      str9     str6        str16            str16            str16          str11    float64                                                         str117
-    ----------------------- ----------------------- ------ ---------- ---------------- -------- --------- -------- ---------------- ---------------- ---------------- ----------- ------- ---------------------------------------------------------------------------------------------------------------------
-    2020-03-03 22:53:35.000 2020-03-04 01:59:14.000   IRIS       IRIS 1332.0 .. 2835.0    LMSAL intensity   NARROW 790.775695800781 16.8814430236816 230.227996826172 PARTIAL_SUN  2019.0 Raster:ivo://sot.lmsal.com/VOEvent#VOEvent_IRIS_20200303_225335_3605202860_2020-03-03T22:53:352020-03-03T22:53:35.xml
-
-Failed client errors are reported in the returned `~sunpy.net.fido_factory.UnifiedResponse` and also on the individual `~sunpy.net.base_client.QueryResponseTable` responses in the ``.errors`` attributes.
-
-Downloading data
-****************
-
-Once you have located your files via a `Fido.search <sunpy.net.fido_factory.UnifiedDownloaderFactory.search>`, you can download them via `Fido.fetch <sunpy.net.fido_factory.UnifiedDownloaderFactory.fetch>`.
-Here we'll just download the first file in the result:
-
-.. code-block:: python
-
-    >>> downloaded_files = Fido.fetch(filtered_result[0][0]) # doctest: +SKIP
-    >>> downloaded_files # doctest: +SKIP
-    <parfive.results.Results object at ...>
-    ['.../iris_l2_20200303_225335_3605202860_SJI_2796_t000.fits.gz']
-
-If any files failed to download, the progress bar will show an incomplete number of files and the `parfive.Results` object will contain a list of the URLs that failed to transfer and the error associated with them.
-This can be accessed with the ``.errors`` attribute or by printing the `~parfive.Results` object:
-
-.. code-block:: python
-
-    >>> print(downloaded_files.errors)  # doctest: +SKIP
-
-The transfer can be retried by passing the `parfive.Results` object back to `Fido.fetch <sunpy.net.fido_factory.UnifiedDownloaderFactory.fetch>`:
-
-.. code-block:: python
-
-    >>> downloaded_files = Fido.fetch(downloaded_files)  # doctest: +SKIP
-
-doing this will append any newly downloaded file names to the list and replace the ``.errors`` list with any errors that occurred during the second attempt.
+``a.iris.Product("sdo")`` and ``a.iris.Product("sot")`` find the same files with ``Fido``.

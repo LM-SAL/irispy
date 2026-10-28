@@ -130,8 +130,8 @@ Reading Level 2 Data
 ====================
 
 ``irispy`` is designed to allow the user to easily read and access the data and keywords contained in IRIS level 2 FITS files.
-Currently, ``irispy`` does not provide a way to download the data from the `IRIS archive. <https://iris.lmsal.com/data.html>`__
-We recommend browsing the catalog using your web browser.
+`irispy.net.IRISClient` searches the `IRIS archive <https://iris.lmsal.com/data.html>`__ and downloads its data with sunpy's `~sunpy.net.Fido`, as :ref:`irispy-tutorial-acquiring-data` shows.
+The `IRIS data search webpage <https://iris.lmsal.com/search/>`__ browses the same archive, with images of each observation.
 
 The following examples in this section will showcase how to read the FITS file header, load an IRIS raster window (region) into memory, as well as locate important auxiliary information.
 
