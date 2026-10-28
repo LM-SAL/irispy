@@ -1,0 +1,1 @@
+Added ``irispy.net.IRISClient``, a ``sunpy.net.Fido`` client that searches the IRIS archive at LMSAL and downloads its data; ``import irispy.net`` to use it.

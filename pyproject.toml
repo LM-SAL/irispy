@@ -38,7 +38,7 @@ dependencies = [
   "mpl-animators>=1.2.3",
   "ndcube>=2.4.0",
   "scipy>=1.17.0",
-  "sunpy>=7.1.0",
+  "sunpy[net]>=7.1.0",
   "sunraster>=0.7.0",
 ]
 

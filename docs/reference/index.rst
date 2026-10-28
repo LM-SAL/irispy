@@ -8,6 +8,7 @@ API Reference
    :maxdepth: 2
 
    io
+   net
    meta
    sji
    spectrograph

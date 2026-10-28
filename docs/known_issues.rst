@@ -79,3 +79,8 @@ To use less disk space:
 * Delete the folders of the archives you no longer read, or the whole cache folder.
 * Pass ``extract_dir`` to extract the archives somewhere else, such as a scratch disk.
   With ``memmap=False`` (the default) the data are read into memory, so ``extract_dir`` can be a `tempfile.TemporaryDirectory` on a disk with room (``dir=``), deleted with the extracted files at the end of its ``with`` block.
+
+Searching the IRIS archive
+==========================
+
+Searches of the IRIS archive run in parallel, such as from several threads or processes, can return wrong start and end times; run one at a time.
