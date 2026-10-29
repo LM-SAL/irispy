@@ -78,6 +78,10 @@ World coordinates
 ``cube[k]``), and ``world_to_pixel`` needs all of them. The wavelengths are in nm, where they were
 in m, and the longitude and latitude in arcsec, where they were in deg, so the
 ``.value`` of a coordinate and ``axis_world_coords_values`` change with them.
+The low-level values, such as those of ``axis_world_coords_values``, give the
+longitude from 0 to 360 degrees, so a Tx of -329 arcsec is 1295671 arcsec there.
+Read the sky position from the ``SkyCoord`` of ``pixel_to_world`` or
+``axis_world_coords``, whose Tx is -329 arcsec.
 
 To find the pixel of a sky position, ask the FITS WCS of one raster, which needs
 only a wavelength and the position:
