@@ -60,7 +60,7 @@ print(mg_ii_k)
 # To see the effect of the v34 handling, we will plot a spectroheliogram at the
 # Mg II k core wavelength, by cropping with a `~astropy.coordinates.SpectralCoord`.
 
-# ``None`` means that the world component is not cropped, and the same bound twice selects a single wavelength.
+# ``None`` leaves that world coordinate uncropped, and the same wavelength as both bounds selects that wavelength.
 lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
 
 mg_spec_crop = mg_ii_k.crop(lower_corner, lower_corner)
@@ -92,22 +92,10 @@ print(f"Unflipped time: {mg_ii_k_unflipped.time[:5]}")
 # We choose a specific helioprojective location on the disk and crop the spectrogram
 # down to the spectrum at that point.
 
-iris_frame = mg_ii_k.celestial_frame
-target = SkyCoord(-912 * u.arcsec, 298 * u.arcsec, frame=iris_frame)
-wavelength = SpectralCoord(279.63, unit=u.nm)
-
-unflipped_step, unflipped_slit_pixel, _ = mg_ii_k_unflipped.fits_wcs.world_to_array_index(wavelength, target)
-mg_ii_k_unflipped_spectra = mg_ii_k_unflipped.crop(
-    mg_ii_k_unflipped.wcs.array_index_to_world(unflipped_step, unflipped_slit_pixel, 0),
-    mg_ii_k_unflipped.wcs.array_index_to_world(
-        unflipped_step, unflipped_slit_pixel, mg_ii_k_unflipped.data.shape[-1] - 1
-    ),
-)
-step, slit_pixel, _ = mg_ii_k.fits_wcs.world_to_array_index(wavelength, target)
-mg_ii_k_spectra = mg_ii_k.crop(
-    mg_ii_k.wcs.array_index_to_world(step, slit_pixel, 0),
-    mg_ii_k.wcs.array_index_to_world(step, slit_pixel, mg_ii_k.data.shape[-1] - 1),
-)
+# The FITS WCS finds pixels from a sky position alone; the gWCS also needs the time and raster step
+target = [None, SkyCoord(-912 * u.arcsec, 298 * u.arcsec, frame=mg_ii_k.celestial_frame)]
+mg_ii_k_unflipped_spectra = mg_ii_k_unflipped.crop(target, target, wcs=mg_ii_k_unflipped.fits_wcs)
+mg_ii_k_spectra = mg_ii_k.crop(target, target, wcs=mg_ii_k.fits_wcs)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii_k_unflipped_spectra.wcs)

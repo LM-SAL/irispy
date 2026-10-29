@@ -67,11 +67,12 @@ def set_axis_properties(ax, axes_coordinates=None, slices=None):
     Set IRIS axis labels and choose the coordinates shown on the plot edges.
 
     The time, raster step and raster scan coordinates are hidden unless they are in
-    ``axes_coordinates``; with ``axes_coordinates``, only the requested coordinates are
+    ``axes_coordinates``. With ``axes_coordinates``, only the requested coordinates are
     shown. Latitude is labeled on the edge of the slit axis and longitude on the edge of
-    the raster step axis, the other one on the opposite edge, so a raster image is laid
-    out like its FITS WCS. ``slices`` are the WCSAxes slices (``"x"``, ``"y"`` or an
-    index per pixel axis, in WCS order); an animator provides its own.
+    the raster step axis. When only one of those axes is plotted, the other coordinate
+    goes on its opposite edge, so a raster image is laid out like its FITS WCS.
+    ``slices`` are the WCSAxes slices (``"x"``, ``"y"`` or an index per pixel axis, in
+    WCS order); an animator provides its own.
     """
     pixel_axis_names = getattr(ax, "_iris_pixel_axis_names", None)
     if hasattr(ax, "axes") and not hasattr(ax, "coords"):
@@ -157,7 +158,8 @@ def _place_celestial_coords(ax, shown, slices, pixel_axis_names=None):
                 celestial.append(coord)
                 if pixel_axis in plotted:
                     edges[coord] = plotted[pixel_axis]
-    # Two coordinates along one image axis take its opposite edges, each with its ticks on its own edge only
+    # When both celestial coordinates follow one image axis, they take its two opposite edges, with ticks on their own
+    # edge only
     opposite = len(edges) == 1 and len(celestial) == 2
     if opposite:
         ((placed, edge),) = edges.items()

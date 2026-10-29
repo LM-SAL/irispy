@@ -102,7 +102,7 @@ def calculate_wavelength_drift(raster):
     if not used:
         msg = f"The raster has no window with any of the reference lines {list(_LINES)}"
         raise ValueError(msg)
-    # The rasters of each window used, with their wavelengths; several raster files read together have a raster axis
+    # The rasters of each window used, with their wavelengths. A cube of several raster files has a raster axis
     rasters = {key: list(raster[key]) if raster[key].data.ndim == 4 else [raster[key]] for key in used}
     cubes = {key: [(cube, _wavelengths(cube)) for cube in rasters[key]] for key in used}
     table = vstack(

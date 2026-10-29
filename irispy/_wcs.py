@@ -35,7 +35,7 @@ def _value(quantity, unit):
 
 def _map_transform(transform, *arrays, cdelt, lon_pole, inverse=False):
     """
-    ``transform._map_transform``, for a dkist varying celestial transform, in one pass
+    The ``_map_transform`` of a dkist varying celestial transform, computed in one pass
     over all the points.
 
     Each point uses the table row that dkist would pick, and points outside the tables

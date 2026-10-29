@@ -48,9 +48,9 @@ print(raster.keys())
 mg_ii = raster["Mg II k 2796"]
 
 ###############################################################################
-# This observation has five complete rasters, so the spectral window is one
-# `irispy.spectrograph.SpectrogramCube` with raster scan, raster step, slit and
-# wavelength axes. Its first index is the raster, so ``mg_ii[0]`` is the first raster, which we work with.
+# This observation has five complete rasters. Each spectral window is one
+# `irispy.spectrograph.SpectrogramCube` with raster, raster step, slit and
+# wavelength axes, so ``mg_ii[0]`` is the first raster. We work with that one.
 
 mg_ii = mg_ii[0]
 print(mg_ii)
@@ -114,13 +114,12 @@ print(mg_index)
 # Now we will plot a spectroheliogram at the Mg II k core wavelength, by cropping
 # with a `~astropy.coordinates.SpectralCoord`.
 
-# A crop takes one entry per world coordinate of the cube: wavelength, sky position,
-# time and raster step, and raster scan for the cube of a whole window, which has a
-# raster axis. ``None`` leaves one uncropped. The sky position, time and raster step
-# (and scan) must be given together.
-lower_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
-upper_corner = [SpectralCoord(279.63, unit=u.nm), None, None, None]
-mg_spec_crop = mg_ii.crop(lower_corner, upper_corner)
+# A crop takes one entry per world coordinate of the cube: the wavelength, sky position,
+# time and raster step, plus the raster scan for the cube of a whole window. ``None``
+# leaves that coordinate uncropped. The sky position, time and raster step (and scan)
+# must be given together. The same bound twice selects a single wavelength.
+k_core = [SpectralCoord(279.63, unit=u.nm), None, None, None]
+mg_spec_crop = mg_ii.crop(k_core, k_core)
 
 ###############################################################################
 # By default, the plot shows only spatial coordinates. Include ``"time"`` in
@@ -148,12 +147,9 @@ mg_ii_k_map.plot(axes=ax, plot_axes=["x", "y"])
 # Imagine there's a really cool feature at (-320", 400"), how can you plot
 # the spectrum at that location?
 
-target = SkyCoord(-320 * u.arcsec, 400 * u.arcsec, frame=iris_frame)
-raster_step, slit_pixel, _ = mg_ii.fits_wcs.world_to_array_index(SpectralCoord(279.63, unit=u.nm), target)
-mg_ii_cut = mg_ii.crop(
-    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, 0),
-    mg_ii.wcs.array_index_to_world(raster_step, slit_pixel, mg_ii.data.shape[-1] - 1),
-)
+# The FITS WCS finds pixels from a sky position alone; the gWCS also needs the time and raster step
+target = [None, SkyCoord(-320 * u.arcsec, 400 * u.arcsec, frame=iris_frame)]
+mg_ii_cut = mg_ii.crop(target, target, wcs=mg_ii.fits_wcs)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_ii_cut.wcs)

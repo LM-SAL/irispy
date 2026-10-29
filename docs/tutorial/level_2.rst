@@ -174,11 +174,13 @@ We can print the ``raster`` object to get some basic information about the raste
     Keys: ('C II 1336', 'Si IV 1394', 'Mg II k 2796')
     Number of Cubes: 3
     Aligned dimensions: [5 16 548]
-    Aligned physical types: [...]
+    Aligned physical types: [('custom:SCAN', 'custom:pos.helioprojective.lat', 'custom:pos.helioprojective.lon', 'time'),
+                             ('custom:STEP', 'custom:pos.helioprojective.lat', 'custom:pos.helioprojective.lon', 'time'),
+                             ('custom:pos.helioprojective.lat', 'custom:pos.helioprojective.lon')]
     <BLANKLINE>
 
-Each value in the ``RasterCollection`` is a spectral-window cube. For repeated rasters,
-that cube spans the full observation along the scan axis.
+Each value in the ``RasterCollection`` is the cube of one spectral window.
+For a repeated raster, that cube holds every raster of the observation along its first axis.
 
 Let us check the metadata of this collection, this is stored as a ``meta`` attribute:
 
@@ -201,8 +203,7 @@ Let us check the metadata of this collection, this is stored as a ``meta`` attri
     OBS Description: Very large sparse 16-step raster 15x175 16s   Deep x 0.5 Spatial x 2
     <BLANKLINE>
 
-The `~irispy.spectrograph.RasterCollection` itself groups spectral windows, so the metadata lives on each
-spectral-window cube rather than on the collection.
+The metadata is on each spectral-window cube, not on the `~irispy.spectrograph.RasterCollection` that groups them.
 While SJI files contain just one spectral window per file, raster files have several spectral windows per file.
 
 If we want to check the primary header of the raster, we can do the following:
@@ -485,7 +486,7 @@ The same argument works for the raster plot below.
 
     Under the hood, irispy via `ndcube` via astropy using `matplotlib` to visualize the image meaning that plots built with irispy can be further customized using either `astropy's WCSAxes <https://docs.astropy.org/en/stable/visualization/wcsaxes/index.html>`__ or `matplotlib` API.
 
-Note that the colormap has been set by ``irispy``: the color table of the passband for slit-jaw images, and the FUV or NUV color table of the detector for rasters.
+``irispy`` sets the colormap: the passband's color table for slit-jaw images, and the detector's FUV or NUV color table for rasters.
 
 .. plot::
     :include-source:

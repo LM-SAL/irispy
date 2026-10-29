@@ -33,8 +33,8 @@ def radiometric_calibration(
     Converts a cube from DN to radiance.
 
     The data are divided by their exposure times and converted with the effective areas at the
-    observation time (`~irispy.utils.response.get_latest_response`), that of the first file for
-    raster files read together.
+    observation time (`~irispy.utils.response.get_latest_response`). For raster files read
+    together, that is the time of the first file.
 
     Parameters
     ----------
@@ -92,8 +92,8 @@ def radiometric_calibration(
 
 def _calibrate(cube, factor, unit):
     # Multiplies cube by factor (photons per second to unit) over each exposure time, in the cube's
-    # data type. The exposures lie along the first axes: raster step or time, after the raster of a
-    # multi-file cube.
+    # data type. The exposures lie along the first axes: the raster, for several files, then the
+    # raster step or time.
     exposure_time = cube.exposure_time.to_value(u.s)
     exposure_time = exposure_time.reshape(exposure_time.shape + (1,) * (cube.data.ndim - exposure_time.ndim))
     factor = ((cube.unit / u.s * factor).to_value(unit) / exposure_time).astype(cube.data.dtype)

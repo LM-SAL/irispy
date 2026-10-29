@@ -135,7 +135,7 @@ def find_bright_spectral_events(
     -------
     labels : `~irispy.spectrograph.SpectrogramCube`
         Event labels on the (step, slit) plane of each raster: 0 outside events, and 1 to N
-        for the N events, numbered on through the rasters.
+        for the N events, numbered across all the rasters.
     events : `~astropy.table.QTable`
         One row per event: ``label``, ``raster`` index, number of pixels ``npix``, and the
         ``step``, ``y``, ``time``, ``coordinate`` and mean ``intensity`` of its brightest pixel.

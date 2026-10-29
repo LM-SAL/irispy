@@ -159,23 +159,23 @@ def read_spectrograph_lvl2(
     revert_v34=False,
 ):
     """
-    Read IRIS Level 2 raster files, one cube per spectral window.
+    Read IRIS Level 2 raster files into one cube per spectral window.
 
-    Each window is one cube with axes (raster, step, slit, wavelength), with one raster for
-    each file, in time order, so ``cube[k]`` is raster ``k`` and one file, such as a
-    sit-and-stare, gives one raster. Tar files are read by `irispy.io.read_files`.
+    Each cube has axes (raster, step, slit, wavelength), with one raster per file in time
+    order. ``cube[k]`` is raster ``k``, and a single file, such as a sit-and-stare, gives
+    one raster. Use `irispy.io.read_files` for tar files.
 
-    The ``-200`` DN fill value and the ``-199`` DN floor that lower samples are clipped to stay
-    in the data, as the raw integers ``-32768`` and ``-32764`` with ``memmap=True``, and are
-    marked in the mask.
+    Samples with the ``-200`` DN fill value, or clipped to the ``-199`` DN floor, keep their
+    value and are marked in the mask. With ``memmap=True`` these are the raw integers
+    ``-32768`` and ``-32764``.
 
     Parameters
     ----------
     filenames : `str`, `pathlib.Path`, `astropy.io.fits.HDUList` or a `list` of them
-        Files to be read, or files already opened, which are left open. They must all be of the
-        same observation, with the same ``OBSID`` and ``STARTOBS``. They are read in order of
-        their ``DATE_OBS``, whatever their order here. Open files with
-        ``do_not_scale_image_data=True`` when using ``memmap=True``, and without it otherwise.
+        Files to read, or open HDU lists, which are left open. They must all come from one
+        observation, with the same ``OBSID`` and ``STARTOBS``, and are read in order of
+        ``DATE_OBS``, whatever the order given. Open HDU lists with
+        ``do_not_scale_image_data=True`` for ``memmap=True``, and without it otherwise.
         Open gzipped files with ``decompress_in_memory=True``.
     spectral_windows : `str` or iterable of `str`, optional
         The spectral windows to read. Defaults to `None`, every window of the files.
@@ -188,11 +188,11 @@ def read_spectrograph_lvl2(
         lot less memory. However, because FITS scaling is not done on-the-fly,
         integer data stay unscaled, in ``DN_IRIS_FUV_UNSCALED`` or ``DN_IRIS_NUV_UNSCALED``,
         not the usual data numbers (DN). The mask is a lazy Dask array, computed only for the
-        slices that are used, and so are the data of several files read together.
+        slices that are used. The data of several files read together are a lazy Dask array too.
         With ``memmap=False``, the samples at the level 2 ceiling,
         `irispy.utils.constants.SATURATION_LIMIT`, keep their value and are marked in the mask
-        and, if there are any, in ``meta["saturated"]``, which holds only their positions when they
-        are few; ``np.asarray`` gives the `True`/`False` array (see
+        and, if there are any, in ``meta["saturated"]``. When there are few, it stores only their
+        positions, and ``np.asarray`` gives the `True`/`False` array (see
         :ref:`irispy-tutorial-saturated-data`).
     revert_v34 : `bool`, optional
         Will undo the flipping of the raster step axis made to V34 observations
@@ -246,7 +246,7 @@ def read_spectrograph_lvl2(
         date_obs = Time(date_obs)
         order = date_obs.argsort()
         filenames = [filenames[i] for i in order]
-        # Each file's WCS has its own observer, at its own DATE_OBS as SGMeta.observer: one ephemeris call for all
+        # Each file's WCS uses the observer at its own DATE_OBS, as SGMeta.observer does; one ephemeris call gets all
         observers = get_earth(date_obs[order])
     # The files are combined into one cube per window, with a raster axis, whose gWCS is built once from all of them
     compute_uncertainty = uncertainty and not memmap
@@ -322,7 +322,7 @@ def read_spectrograph_lvl2(
             else:
                 observer = observers[file_index]
             if file_index == 0:
-                # The pointing of a multi-file read is in the frame of its first file, as its gWCS
+                # For several files, the pointing is in the frame of the first file, as is the gWCS
                 first_observer = observer
             aux_data = aux.data[steps]
             fov_center = SkyCoord(
@@ -396,7 +396,7 @@ def read_spectrograph_lvl2(
                 fits_wcs = _with_spectral_axis(file_wcs, window_header)
                 if memmap:  # the data stay the FITS integers, which these scale to DN
                     meta["BSCALE"], meta["BZERO"] = window_header.get("BSCALE", 1), window_header.get("BZERO", 0)
-                    # The cube of several files makes its own
+                    # For several files, _combine_raster_cubes makes the mask
                     mask = None if len(filenames) > 1 else _memmap_fill_mask(data, window_header)
                     if np.issubdtype(data.dtype, np.integer):  # the FITS integers, not DN
                         dn_unit = DN_UNIT[f"{meta.detector_band}_UNSCALED"]
@@ -408,11 +408,11 @@ def read_spectrograph_lvl2(
                     if saturated.any():
                         _add_saturated(rasters[window_name], file_index, len(filenames), saturated)
                 meta.add("fits_wcs", fits_wcs)
-                # Only the combined cube is made: a cube for each file would be left for the cyclic garbage
-                # collector, which then takes a second or more over the cubes of a long observation
+                # Only the combined cube is built. A cube for each file would be left to the cyclic garbage
+                # collector, which then takes a second or more for a long observation
                 read = SimpleNamespace(unit=dn_unit, meta=meta, time=times, shape=data.shape, dtype=data.dtype)
                 if memmap and len(filenames) > 1:
-                    # The cube of several files reads them on demand: a memmap would hold its file open
+                    # For several files, the cube reads each file on demand; a memmap would keep every file open
                     read.data = data if isinstance(filename, fits.HDUList) else (filename, ext, flip)
                 else:
                     _add_raster(

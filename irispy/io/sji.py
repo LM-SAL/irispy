@@ -106,8 +106,8 @@ def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     # FITS CRPIX is 1-based and the transform takes 0-based pixels
     crpix_table = [hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1]
     cdelt = [hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]
-    # The inverse, which dkist's coupled model builds anew at each call, keeps dkist's loop: an image of one
-    # frame uses one table row
+    # The inverse keeps dkist's per-row loop: dkist's coupled model rebuilds it at every call, and an image of one
+    # frame uses only one table row anyway
     celestial = _one_pass(
         VaryingCelestialTransform(
             cdelt=cdelt * u.arcsec / u.pixel,

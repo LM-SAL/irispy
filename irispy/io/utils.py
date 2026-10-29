@@ -281,8 +281,8 @@ def read_files(
         What the files hold, if they hold one product: an `~irispy.sji.SJICube` (or AIA or SOT cube) for a slit-jaw file,
         a `~irispy.spectrograph.RasterCollection` keyed by spectral window for the raster files of one observation.
         Several products come back in an `~ndcube.NDCollection` keyed by band or measured quantity, with the
-        filename added to repeated names; the rasters of an observation are keyed ``"raster"``, with the OBSID,
-        then also STARTOBS, added to repeated keys, such as ``"raster (3620258102)"``.
+        filename added to repeated names. The rasters of an observation are keyed ``"raster"``; further
+        observations add their OBSID, then also STARTOBS, such as ``"raster (3620258102)"``.
 
     Raises
     ------
