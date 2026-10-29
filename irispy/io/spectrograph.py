@@ -19,7 +19,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from irispy._spectrograph_wcs import _sanitize_raster_wcs_tables
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _memmap_fill_mask
-from irispy.io._raster_combine import _add_raster, _combine_raster_cubes
+from irispy.io._raster_combine import _add_raster, _add_saturated, _combine_raster_cubes
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection
 from irispy.utils import calculate_uncertainty
@@ -191,7 +191,9 @@ def read_spectrograph_lvl2(
         slices that are used, and so are the data of several files read together.
         With ``memmap=False``, the samples at the level 2 ceiling,
         `irispy.utils.constants.SATURATION_LIMIT`, keep their value and are marked in the mask
-        and, if there are any, in ``meta["saturated"]`` (see :ref:`irispy-tutorial-saturated-data`).
+        and, if there are any, in ``meta["saturated"]``, which holds only their positions when they
+        are few; ``np.asarray`` gives the `True`/`False` array (see
+        :ref:`irispy-tutorial-saturated-data`).
     revert_v34 : `bool`, optional
         Will undo the flipping of the raster step axis made to V34 observations
         (data, mask, uncertainty, WCS, times and per-step metadata).
@@ -404,7 +406,7 @@ def read_spectrograph_lvl2(
                     saturated = data >= SATURATION_LIMIT.value
                     mask = np.isin(data, BAD_PIXEL_VALUES_SCALED) | saturated
                     if saturated.any():
-                        meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", (0, 1, 2))
+                        _add_saturated(rasters[window_name], file_index, len(filenames), saturated)
                 meta.add("fits_wcs", fits_wcs)
                 # Only the combined cube is made: a cube for each file would be left for the cyclic garbage
                 # collector, which then takes a second or more over the cubes of a long observation

@@ -31,6 +31,8 @@ sit-and-stare, gives a cube with one raster:
 The cube has the header metadata of its first file, with the ``DATE_END`` of its
 last. The per-exposure metadata, such as ``cube.meta["exposure time"]``, and
 ``cube.time`` have shape (raster, step).
+``cube.meta["saturated"]``, if there are a few saturated samples, holds only their positions:
+``np.asarray(cube.meta["saturated"])`` gives the `True`/`False` array, and it cannot be changed in place.
 
 When `~irispy.io.read_files` reads several products, such as a downloaded
 observation folder, the `~irispy.spectrograph.RasterCollection` of the rasters is
