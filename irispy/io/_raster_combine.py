@@ -1,4 +1,5 @@
 from copy import deepcopy
+from numbers import Integral
 
 import dask.array as da
 import numpy as np
@@ -18,20 +19,63 @@ def _combine_raster_metas(metas, combined_shape):
     meta._data_shape = np.asarray(combined_shape, dtype=int)
     if len(metas) > 1 and (date_end := metas[-1].get("DATE_END")) is not None:
         meta["DATE_END"] = meta.fits_header["DATE_END"] = date_end
-    for key in {key for source in metas for key in source.axes}:
-        axes = next(source.axes[key] for source in metas if key in source.axes)
-        if key == "saturated" and len(metas) == 1:
-            values = meta[key][np.newaxis]  # a view, as large as the data
-        elif key == "saturated":
-            # Only the files with saturated samples carry them
-            values = np.zeros(combined_shape, dtype=bool)
-            for index, source in enumerate(metas):
-                if key in source:
-                    values[index] = source[key]
-        else:
-            values = np.stack([source[key] for source in metas])
+    for key, axes in list(metas[0].axes.items()):
+        values = np.stack([source[key] for source in metas])
         meta.add(key, values, axes=(0, *(axis + 1 for axis in axes)), overwrite=True)
     return meta
+
+
+class _SaturatedSamples:
+    """
+    `True` at the saturated samples of one window and `False` elsewhere, as an array
+    that holds only their positions.
+
+    A window has few saturated samples, so their positions take a few bytes where an
+    array as large as the data takes one byte a sample. Slicing it with integers and
+    slices, as `~ndcube.NDMeta` does with the cube, keeps the positions inside the
+    slice, and `numpy.asarray` builds the array.
+    """
+
+    def __init__(self, positions, shape):
+        self.positions = positions  # the array indices of the samples, one row per axis
+        self.shape = tuple(shape)
+        self.ndim = len(self.shape)
+        self.dtype = np.dtype(bool)
+
+    def __len__(self):
+        return self.shape[0]
+
+    def __repr__(self):
+        return f"<{self.positions.shape[1]} saturated samples in an array of shape {self.shape}>"
+
+    def __array__(self, dtype=None, copy=None):
+        if copy is False:
+            msg = "The saturated samples are built from their positions, which needs a copy"
+            raise ValueError(msg)
+        samples = np.zeros(self.shape, dtype=bool)
+        samples[tuple(self.positions)] = True
+        return samples if dtype is None else samples.astype(dtype, copy=False)
+
+    def __getitem__(self, item):
+        item = item if isinstance(item, tuple) else (item,)
+        if len(item) > self.ndim or not all(isinstance(index, Integral | slice) for index in item):
+            # Any other index, as numpy takes it
+            return np.asarray(self)[item]
+        item += (slice(None),) * (self.ndim - len(item))
+        shape, positions = [], []
+        inside = np.ones(self.positions.shape[1], dtype=bool)
+        for index, size, axis_positions in zip(item, self.shape, self.positions, strict=True):
+            selected = np.arange(size)[index]
+            # Where each index of the axis lands in the slice, -1 outside it
+            lookup = np.full(size, -1)
+            lookup[selected] = np.arange(np.size(selected)).reshape(np.shape(selected))
+            inside &= lookup[axis_positions] >= 0
+            if np.ndim(selected):  # an integer drops its axis
+                shape.append(selected.size)
+                positions.append(lookup[axis_positions])
+        if not shape:
+            return np.bool_(inside.any())
+        return _SaturatedSamples(np.stack([axis[inside] for axis in positions]).astype(self.positions.dtype), shape)
 
 
 def _read_window(source, index):
@@ -87,6 +131,16 @@ def _add_raster(rasters, index, count, **arrays):
         rasters[name][index] = array
 
 
+def _add_saturated(rasters, index, count, saturated):
+    """
+    Add to ``rasters`` the array indices of the ``saturated`` samples of raster
+    ``index`` of ``count``, after the raster, in the smallest integers that hold the
+    indices of the window.
+    """
+    positions = np.insert(np.argwhere(saturated), 0, index, axis=1)
+    rasters.setdefault("saturated", []).append(positions.astype(np.min_scalar_type(max(count, *saturated.shape))))
+
+
 def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, rasters, *, memmap=False):
     """
     One cube of the rasters of one window, each read from its own file (``cubes``: its
@@ -95,7 +149,7 @@ def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, raster
 
     ``rasters`` holds the data, mask and any uncertainty of the window from
     ``_add_raster``, except with ``memmap`` and several files, whose data and mask are
-    made here.
+    made here, and any ``"saturated"`` samples from ``_add_saturated``.
     """
     if memmap and len(cubes) > 1:
         shape, dtype = cubes[0].shape, cubes[0].dtype
@@ -115,6 +169,13 @@ def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, raster
     times = np.stack([cube.time for cube in cubes])
     meta = _combine_raster_metas([cube.meta for cube in cubes], data.shape)
     meta["fits_wcs"] = [cube.meta["fits_wcs"] for cube in cubes]
+    if "saturated" in rasters:
+        saturated = _SaturatedSamples(np.concatenate(rasters["saturated"]).T, data.shape)
+        if saturated.positions.nbytes >= data.size:
+            # So many saturated samples, such as 1 in 8 with 2-byte indices, that an array of them, a byte each, is
+            # smaller. The read held their positions until here, so it needed more memory than such an array.
+            saturated = np.asarray(saturated)
+        meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", tuple(range(data.ndim)))
     return SpectrogramCube(
         data,
         wcs=_create_raster_gwcs(

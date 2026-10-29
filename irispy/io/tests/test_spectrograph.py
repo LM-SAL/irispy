@@ -614,6 +614,16 @@ def test_read_spectrograph_masks_clipped_samples(tmp_path, sns_sg_file):
     assert not any("saturated" in other.meta for name, other in raster.items() if name != window)
 
 
+def test_read_spectrograph_marks_a_window_clipped_throughout(tmp_path, sns_sg_file):
+    with fits.open(sns_sg_file) as hdul:
+        window = hdul[0].header["TDESC1"]
+        hdul[1].data = np.full(hdul[1].data.shape, SATURATION_LIMIT.value, dtype="float32")
+        hdul.writeto(tmp_path / "clipped.fits")
+    cube = read_spectrograph_lvl2(tmp_path / "clipped.fits", spectral_windows=window)[window]
+    assert np.asarray(cube.meta["saturated"]).all()
+    assert np.asarray(cube[0, 1:3, 5].meta["saturated"]).shape == (2, cube.shape[-1])
+
+
 def test_combined_rasters_mark_clipped_samples(tmp_path, raster_sg_files):
     # Only the second file has a clipped sample
     clipped = tmp_path / "clipped.fits"
@@ -630,3 +640,8 @@ def test_combined_rasters_mark_clipped_samples(tmp_path, raster_sg_files):
     np.testing.assert_array_equal(cube.meta["saturated"], expected)
     assert cube.mask[1, 2, 50, 10]
     np.testing.assert_array_equal(cube[1].meta["saturated"], expected[1])
+    items = (1, -2, np.s_[:, 2], np.s_[1, 1:5, 40:60], np.s_[:, ::2, ::-3], np.s_[..., 10], np.s_[[0, 1], 2])
+    for item in (*items, np.s_[1, 2, 50, 10], np.s_[0, 2, 50, 10]):
+        np.testing.assert_array_equal(cube.meta["saturated"][item], expected[item], err_msg=str(item))
+    # A slice of a slice
+    np.testing.assert_array_equal(cube.meta["saturated"][1, 2:4][0, 45:55], expected[1, 2:4][0, 45:55])
