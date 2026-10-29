@@ -19,6 +19,12 @@ def _combine_raster_metas(metas, combined_shape):
     meta._data_shape = np.asarray(combined_shape, dtype=int)
     if len(metas) > 1 and (date_end := metas[-1].get("DATE_END")) is not None:
         meta["DATE_END"] = meta.fits_header["DATE_END"] = date_end
+    with_data = next((source for source in metas if source.fits_header["DATE_OBS"]), metas[0])
+    if with_data is not metas[0]:
+        # A file with no data has no pointing or roll: those of the first file with data
+        for key in ("XCEN", "YCEN", "SAT_ROT"):
+            meta.add(key, with_data[key], with_data.key_comments.get(key), overwrite=True)
+            meta.fits_header[key] = with_data.fits_header[key]
     for key, axes in list(metas[0].axes.items()):
         values = np.stack([source[key] for source in metas])
         meta.add(key, values, axes=(0, *(axis + 1 for axis in axes)), overwrite=True)
@@ -182,6 +188,7 @@ def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, raster
             window_headers[0],
             np.stack(pc_tables),
             np.stack(crval_tables),
+            [header["CRPIX2"] for header in window_headers],
             (times - times[0, 0]).to_value(u.s) * u.s,
             times[0, 0],
             cubes[0].meta.observer,

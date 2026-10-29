@@ -176,11 +176,14 @@ def _show_coord_on_edge(coord, edge, ticks=None):
 
 def _map_aspect(cube, wcs, plot_axes):
     """
-    The ``aspect`` that draws a 2D map with its true proportions, `None` for other
-    images.
+    The ``aspect`` that draws a 2D map with its true proportions, ``"auto"`` for an
+    image along the raster axis and `None` for other images.
 
     ``plot_axes`` is in pixel order, as `ndcube` passes it to ``_plot_2D_cube``.
     """
+    # The rasters are times, often only a few, so square pixels would draw a sliver
+    if "raster scan" in cube.wcs.low_level_wcs.pixel_axis_names:
+        return "auto"
     types = set(wcs.world_axis_physical_types)
     # A raster's gWCS also gives each exposure's time and step, which follow the step axis
     spatial = {"custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"} <= types and "em.wl" not in types
@@ -273,7 +276,8 @@ class IRISPlotter(MatplotlibPlotter):
 
         A 2D map, such as a cut of a scanning raster at one wavelength, a moment map or
         a Hinode/SOT-SP scan, is drawn with its true proportions unless ``aspect`` is
-        given. Maps of a sit-and-stare keep square pixels. A raster map has its raster steps,
+        given. Maps of a sit-and-stare keep square pixels, and an image along the raster axis
+        fills the axes. A raster map has its raster steps,
         or the exposures of a sit-and-stare, along x unless ``plot_axes`` is given.
 
         By default the colors run linearly from the minimum to the maximum of the image,

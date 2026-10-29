@@ -483,6 +483,13 @@ def test_raster_map_is_drawn_with_its_true_proportions(request, file_fixture, pl
     plt.close("all")
 
 
+@pytest.mark.parametrize("item", [np.s_[:, 2, :, 10], np.s_[:, :, 50, 10], np.s_[:, 2, 50, :]])
+def test_image_along_the_raster_axis_fills_the_axes(combined_si_iv, item):
+    # The rasters are times, often only a few, which square pixels would draw as a sliver
+    assert combined_si_iv[item].plot().get_aspect() == "auto"
+    plt.close("all")
+
+
 @pytest.mark.parametrize("raster", ["r00066", "r00067"])
 @pytest.mark.filterwarnings("ignore:Found 7 step:UserWarning")
 def test_raster_map_with_a_data_gap_plots(raster):
