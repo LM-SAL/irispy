@@ -48,7 +48,7 @@ def _sanitize_raster_wcs_tables(pc, crval, *, pc_only=False):
     return pc, crval
 
 
-def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observer, *, sit_and_stare):
+def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_ref, observer, *, sit_and_stare):
     """
     Build the raster gWCS from per-step AUX sky and timing tables.
 
@@ -82,7 +82,8 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, dt_all, t_ref, observe
     crpix = np.zeros((*pc_all.shape[:-2], 2))
     if not sit_and_stare:
         crpix[..., 0] = np.indices(pc_all.shape[:-2])[0]
-    crpix[..., 1] = window_header["CRPIX2"] - 1
+    # The slit reference pixel of each raster comes from its own file: a file with no data has CRPIX2 = 0
+    crpix[..., 1] = np.asarray(crpix2_all) - 1
     # Sit-and-stare AUX PC is an unscaled rotation, so the (virtual) step scale is the slit scale.
     cdelt3 = window_header["CDELT2"] if sit_and_stare else window_header["CDELT3"]
     celestial = _one_pass(

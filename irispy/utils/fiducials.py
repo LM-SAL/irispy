@@ -53,11 +53,14 @@ def _candidates(cube, min_depth):
     Dark rows along the slit: their positions, depths and significance.
     """
     check_scaled(cube)
-    data = np.ma.masked_array(cube.data, mask=_boolean_mask(cube) | ~np.isfinite(cube.data))
-    # Level 2 arrays are (..., slit, wavelength)
-    axes = tuple(axis for axis in range(data.ndim) if axis != cube.wavelength_axis - 1)
-    sums = data.sum(axis=axes, dtype=float).filled(0)
-    counts = data.count(axis=axes)
+    sums = counts = 0
+    # A raster at a time, so the masked copies are of one raster, not the whole window
+    for raster in cube if cube.data.ndim == 4 else [cube]:
+        data = np.ma.masked_array(raster.data, mask=_boolean_mask(raster) | ~np.isfinite(raster.data))
+        # Level 2 arrays are (..., slit, wavelength)
+        axes = tuple(axis for axis in range(data.ndim) if axis != raster.wavelength_axis - 1)
+        sums = sums + data.sum(axis=axes, dtype=float).filled(0)
+        counts = counts + data.count(axis=axes)
     with np.errstate(invalid="ignore", divide="ignore"):
         profile = sums / counts
     valid = np.isfinite(profile)

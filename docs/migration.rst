@@ -27,9 +27,13 @@ sit-and-stare, gives a cube with one raster:
 
     first_raster = mg_ii[0]  # as before
     all_rasters = list(mg_ii)
+    n_rasters = mg_ii.shape[0]  # len(mg_ii) raises a TypeError, as for any cube
 
+``mg_ii.data`` is one array of every raster, where it was the list of the cubes of
+the files.
 The cube has the header metadata of its first file, with the ``DATE_END`` of its
-last. The per-exposure metadata, such as ``cube.meta["exposure time"]``, and
+last and, if its first file has no data, the pointing and roll (``XCEN``, ``YCEN``
+and ``SAT_ROT``) of its first file with data. The per-exposure metadata, such as ``cube.meta["exposure time"]``, and
 ``cube.time`` have shape (raster, step).
 ``cube.meta["saturated"]``, if there are a few saturated samples, holds only their positions:
 ``np.asarray(cube.meta["saturated"])`` gives the `True`/`False` array, and it cannot be changed in place.

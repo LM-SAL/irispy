@@ -73,7 +73,9 @@ def remove_cosmic_rays(
     method_kwargs : `dict`, optional
         Keyword arguments passed to the selected backend, under its own names: for
         example ``sigma`` and ``max_iters`` for ``rsliding``, ``sigclip`` and ``niter``
-        for ``astroscrappy``.
+        for ``astroscrappy``. An integer ``kernel`` for ``rsliding`` is a window of that
+        size along every axis, so on a cube of several rasters it also spans neighboring
+        rasters; a tuple, such as ``(1, 5, 5, 5)``, keeps each raster to itself.
 
     Returns
     -------

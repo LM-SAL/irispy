@@ -5,7 +5,7 @@ import pytest
 import astropy.units as u
 
 from irispy.data.test import get_test_filepath
-from irispy.io import read_files
+from irispy.io import read_files, read_spectrograph_lvl2
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils.fiducials import find_fiducials
 
@@ -87,6 +87,15 @@ def test_level2_marks():
         positions, depths = find_fiducials(raster[window])
         np.testing.assert_allclose(positions, [81.0, 620.0], atol=0.1)
         assert np.all(depths > 0.85)
+
+
+@pytest.mark.parametrize("masked", [0, 1])
+def test_level2_marks_of_rasters_read_together(masked):
+    # The profile adds up every raster, so a raster that is all masked leaves the marks of the other
+    filename = get_test_filepath(MG_FEATURES_FILE)
+    cube = read_spectrograph_lvl2([filename] * 2, spectral_windows="Mg II k 2796")["Mg II k 2796"]
+    cube.mask[masked] = True
+    np.testing.assert_allclose(find_fiducials(cube)[0], [81.0, 620.0], atol=0.1)
 
 
 def test_level2_fuv_without_marks():

@@ -298,9 +298,19 @@ def test_read_spectrograph_reads_files_with_no_data_or_no_nuv_exposure(caplog):
         # r00067 has one FUV exposure, at step 2, so the other steps have no pointing
         has_pointing = np.isfinite(cube.wcs.pixel_to_world_values(0, 0, steps, 1)[1:3])
         np.testing.assert_array_equal(has_pointing, [steps == 2] * 2)
+        # r00067 is where its own file puts it, though r00066, with no data, has CRPIX2 = 0
+        rows = np.arange(0, cube.shape[2], 20)
+        sky = cube.wcs.pixel_to_world(np.zeros(rows.size), rows, np.full(rows.size, 2), np.ones(rows.size))[1]
+        expected = after.fits_wcs.pixel_to_world(np.zeros(rows.size), rows, np.full(rows.size, 2))[1]
+        assert_quantity_allclose(sky.Tx, expected.Tx, atol=0.01 * u.arcsec)
+        assert_quantity_allclose(sky.Ty, expected.Ty, atol=0.01 * u.arcsec)
+        # The exposures of r00066 have no pointing, but the header pointing and roll are those of r00067,
+        # the first file with data
         assert np.all(np.isnan(empty.meta["exposure FOV center"].Tx))
-        assert np.isnan(cube.meta.fov_center.Tx)
-        assert np.isnan(cube.meta.satellite_rotation)
+        header = fits.getheader(no_nuv)
+        assert cube.meta.fov_center.Tx.to_value(u.arcsec) == header["XCEN"]
+        assert cube.meta.fov_center.Ty.to_value(u.arcsec) == header["YCEN"]
+        assert cube.meta.satellite_rotation.to_value(u.deg) == header["SAT_ROT"]
         assert np.all(after.mask) != has_data
 
 
