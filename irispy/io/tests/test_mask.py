@@ -4,7 +4,7 @@ import pytest
 
 from astropy.io import fits
 
-from irispy.io._mask import _MappedArray
+from irispy.io._mask import _MappedMask
 from irispy.io.sji import read_sji_lvl2
 from irispy.io.spectrograph import read_spectrograph_lvl2
 
@@ -15,13 +15,13 @@ def test_memmap_mask_reads_only_the_requested_frame(reader, request, monkeypatch
         {"sji": "bursts_sji_1400_file", "raster": "sns_sg_file", "sot": "sot_fg_file"}[reader]
     )
     reads = []
-    getitem = _MappedArray.__getitem__
+    getitem = _MappedMask.__getitem__
 
     def record_read(self, item):
         reads.append(item)
         return getitem(self, item)
 
-    monkeypatch.setattr(_MappedArray, "__getitem__", record_read)
+    monkeypatch.setattr(_MappedMask, "__getitem__", record_read)
     cube = (
         read_sji_lvl2(filename, memmap=True)
         if reader != "raster"
