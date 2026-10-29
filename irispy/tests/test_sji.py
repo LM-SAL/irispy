@@ -196,6 +196,15 @@ def test_sji_frame_figure(sns_sjicube_1400):
     sns_sjicube_1400[0].plot()
 
 
+@pytest.mark.parametrize("item", [np.s_[:, :, 10], np.s_[:, 10, :]])
+def test_sji_image_along_time_labels_its_time(sns_sjicube_1400, item):
+    # Unlike a raster plot, which shows the time only when asked for
+    time = sns_sjicube_1400[item].plot().coords["time"]
+    assert time.get_ticklabel_visible()
+    assert time.get_ticklabel_position()
+    plt.close("all")
+
+
 def test_sji_plot_falls_back_to_viridis_without_an_iris_colormap(sns_sjicube_1330):
     image = sns_sjicube_1330[0]
     image.meta["TWAVE1"] = 1234  # There is no irissji1234 colormap.

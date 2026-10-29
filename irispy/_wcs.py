@@ -57,6 +57,7 @@ def _map_transform(transform, *arrays, cdelt, lon_pole, inverse=False):
     pc = _value(transform.pc_table, u.pix)
     crpix = _value(transform.crpix_table, u.pix)[rows]
     lon0, lat0 = np.moveaxis(np.deg2rad(_value(transform.crval_table, u.deg)), -1, 0)
+    # Modeling passes the parameters with a leading length-1 axis, which dkist's own loop drops with cdelt[0]
     cdelt = _value(cdelt, u.deg / u.pix).reshape(-1, 2)[0]
     pole = np.deg2rad(_value(lon_pole, u.deg).ravel()[0])
     if inverse:
@@ -94,15 +95,22 @@ def _one_pass(transform):
     return transform
 
 
+def _root_wcs(cube):
+    """
+    The WCS that the WCS of ``cube`` slices or rebins, or that WCS itself.
+    """
+    wcs = cube.wcs.low_level_wcs
+    while isinstance(wcs, (SlicedLowLevelWCS, ResampledLowLevelWCS)):
+        wcs = wcs._wcs
+    return wcs
+
+
 def _is_sit_and_stare(cube):
     """
     Whether ``cube`` is of a sit-and-stare, whose gWCS holds the slit at one position
     (the ``FixedSlit`` model of a window with ``CDELT3 = 0``).
     """
-    wcs = cube.wcs.low_level_wcs
-    while isinstance(wcs, (SlicedLowLevelWCS, ResampledLowLevelWCS)):
-        wcs = wcs._wcs
-    transform = getattr(wcs, "forward_transform", None)
+    transform = getattr(_root_wcs(cube), "forward_transform", None)
     return transform is not None and any(model.name == "FixedSlit" for model in transform)
 
 

@@ -16,19 +16,17 @@ from irispy._interpolation import _time_lookup
 from irispy._wcs import _one_pass
 
 
-def _sanitize_raster_wcs_tables(pc, crval, *, pc_only=False):
+def _sanitize_raster_wcs_tables(pc, crval):
     """
     Replace, in place, the PC and CRVAL rows of the exposures with no pointing in the
-    auxiliary table, which are all zero, from the neighboring exposures.
+    auxiliary table, from the neighboring exposures. Such an exposure has a PC matrix of
+    zeros, which no real rotation has.
 
     Rows between good rows are interpolated linearly, and rows beyond the first or last
     good row extrapolated from the two nearest. With fewer than two good rows the others
     are NaN, as in the FITS ``-TAB`` WCS.
     """
     bad_rows = np.isclose(pc.to_value(u.pix), 0).all(axis=(1, 2))
-    if not pc_only:
-        # A pointing of (0, 0) is disk center, so a row is unfilled only when its PC matrix is zero too
-        bad_rows &= np.isclose(crval.to_value(u.arcsec), 0).all(axis=1)
     if not bad_rows.any():
         return pc, crval
     good = np.flatnonzero(~bad_rows)
