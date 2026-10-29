@@ -26,7 +26,7 @@ def _combine_raster_metas(metas, combined_shape):
             meta.add(key, with_data[key], with_data.key_comments.get(key), overwrite=True)
             meta.fits_header[key] = with_data.fits_header[key]
     for key, axes in list(metas[0].axes.items()):
-        values = np.stack([source[key] for source in metas])
+        values = metas[0][key][np.newaxis] if len(metas) == 1 else np.stack([source[key] for source in metas])
         meta.add(key, values, axes=(0, *(axis + 1 for axis in axes)), overwrite=True)
     return meta
 
