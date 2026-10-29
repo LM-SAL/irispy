@@ -266,10 +266,15 @@ def read_spectrograph_lvl2(
             # An HDU list made in memory has no filename, so name what was given
             given = hdulist.filename() or f"The data given ({type(filename).__name__})"
             _check_level2(given, hdulist[0].header, "raster")
-            # Files made before SolarSoft's sxaddpar saved non-finite values as strings (June 2018) write a NaN
-            # as an unquoted NAN, such as STEPT_DV, which astropy cannot parse: it becomes the string "NAN",
-            # as IDL's sxpar reads it
-            hdulist[0].verify("silentfix")
+            # The meta of each window copies one dict of the primary header: walking its cards is slow
+            try:
+                primary = dict(hdulist[0].header.items())
+            except fits.VerifyError:
+                # Files made before SolarSoft's sxaddpar saved non-finite values as strings (June 2018) write a NaN
+                # as an unquoted NAN, such as STEPT_DV, which astropy cannot parse: it becomes the string "NAN",
+                # as IDL's sxpar reads it. Fixing every header would take 0.4-1 ms a file.
+                hdulist[0].verify("silentfix")
+                primary = dict(hdulist[0].header.items())
             if file_index == 0:
                 # After a discussion with the IRIS team, it was decided that instead of the
                 # OBSID, we will use STEPS_AV less than -0.01 to identify V34 observations.
@@ -350,8 +355,6 @@ def read_spectrograph_lvl2(
             t_obs_fuv = aux_times + exposure_times_fuv / 2
             t_obs_nuv = None
             file_wcs = None
-            # The meta of each window copies one dict of the primary header: walking its cards is slow
-            primary = dict(hdulist[0].header.items())
             for i, window_name in enumerate(spectral_windows_req):
                 ext = window_fits_indices[i]
                 window_header = hdulist[ext].header
