@@ -91,14 +91,18 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         return f"{object.__repr__(self)}\n{self!s}"
 
     def __str__(self) -> str:
-        times = self.time
+        try:
+            times = self.time
+            obs_date = f"{times.min().isot} -- {times.max().isot}"
+        except ValueError:  # a cube built on a WCS with no time, such as a FITS WCS
+            obs_date = None
         return textwrap.dedent(
             f"""
             SpectrogramCube
             ---------------
             Obs ID:             {self.meta.get("OBSID")}
             Obs Description:    {self.meta.get("OBS_DESC")}
-            Obs Date:           {times.min().isot} -- {times.max().isot}
+            Obs Date:           {obs_date}
             Data shape:         {self.shape}
             Axis Types:         {_wcs_array_axis_physical_types(self)}
             Roll:               {self.meta.get("SAT_ROT")}

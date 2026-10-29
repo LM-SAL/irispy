@@ -11,10 +11,12 @@ import astropy.units as u
 from astropy.coordinates import SpectralCoord
 from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.wcs import WCS
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.io.utils import read_files
+from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import figure_test
 from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 from irispy.visualization import _registered_colormap
@@ -379,6 +381,35 @@ def test_length_one_step_axis(sns_sg_file):
     cube = read_spectrograph_lvl2(sns_sg_file)["C II 1336"][0][0:1]
     assert cube.wavelength_axis == 2
     assert "('em.wl',)" in str(cube)
+
+
+def _fits_wcs(axes):
+    header = fits.Header({"NAXIS": len(axes)})
+    for i, (ctype, cunit, cdelt, crval) in enumerate(axes, start=1):
+        header.update({f"CTYPE{i}": ctype, f"CUNIT{i}": cunit, f"CDELT{i}": cdelt, f"CRVAL{i}": crval, f"CRPIX{i}": 1})
+    return WCS(header)
+
+
+def test_spectrogram_cube_from_data_and_wcs():
+    # For example, a map of fitted line parameters with the WCS of the cube they came from.
+    cube = SpectrogramCube(np.ones((4, 5)) * u.km / u.s, _fits_wcs(SPATIAL_AXES))
+    assert cube.unit == u.km / u.s
+    assert cube.uncertainty is None
+    assert "Obs Date:           None" in str(cube)
+
+
+@pytest.mark.parametrize(
+    ("axes", "attribute", "message"),
+    [
+        (SPATIAL_AXES, "wavelength_axis", "wavelength axis"),
+        (SPATIAL_AXES, "spectral_dispersion", "no WAVE ctype"),
+        (NO_LATITUDE_AXES, "solid_angle", "no HPLT ctype"),
+    ],
+)
+def test_pixel_scales_need_their_axes(axes, attribute, message):
+    cube = SpectrogramCube(np.ones((1,) * (len(axes) - 2) + (2, 5)), _fits_wcs(axes))
+    with pytest.raises(ValueError, match=message):
+        getattr(cube, attribute)
 
 
 def test_pixel_scales_real_data(sns_sg_file):
