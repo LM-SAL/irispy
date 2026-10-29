@@ -14,14 +14,14 @@ from irispy.spectrograph import SpectrogramCube
 
 
 def _combine_raster_metas(metas, combined_shape):
-    # The meta of one file gains the raster axis in place; several files take the first file's
+    # One file's meta gets the raster axis in place; for several files, a copy of the first file's meta does
     meta = metas[0] if len(metas) == 1 else deepcopy(metas[0])
     meta._data_shape = np.asarray(combined_shape, dtype=int)
     if len(metas) > 1 and (date_end := metas[-1].get("DATE_END")) is not None:
         meta["DATE_END"] = meta.fits_header["DATE_END"] = date_end
     with_data = next((source for source in metas if source.fits_header["DATE_OBS"]), metas[0])
     if with_data is not metas[0]:
-        # A file with no data has no pointing or roll: those of the first file with data
+        # A file with no data has no pointing or roll, so take them from the first file with data
         for key in ("XCEN", "YCEN", "SAT_ROT"):
             meta.add(key, with_data[key], with_data.key_comments.get(key), overwrite=True)
             meta.fits_header[key] = with_data.fits_header[key]
@@ -33,13 +33,13 @@ def _combine_raster_metas(metas, combined_shape):
 
 class _SaturatedSamples:
     """
-    `True` at the saturated samples of one window and `False` elsewhere, as an array
-    that holds only their positions.
+    A `True`/`False` array of the saturated samples of one window that stores only their
+    positions.
 
-    A window has few saturated samples, so their positions take a few bytes where an
-    array as large as the data takes one byte a sample. Slicing it with integers and
-    slices, as `~ndcube.NDMeta` does with the cube, keeps the positions inside the
-    slice, and `numpy.asarray` builds the array.
+    Saturated samples are rare, so a few bytes for each takes far less memory than one
+    byte for every sample of the data. Slicing with integers and slices, as
+    `~ndcube.NDMeta` does when the cube is sliced, keeps only the positions inside the
+    slice. `numpy.asarray` builds the full array.
     """
 
     def __init__(self, positions, shape):
@@ -65,14 +65,14 @@ class _SaturatedSamples:
     def __getitem__(self, item):
         item = item if isinstance(item, tuple) else (item,)
         if len(item) > self.ndim or not all(isinstance(index, Integral | slice) for index in item):
-            # Any other index, as numpy takes it
+            # Any other index: build the array and let numpy index it
             return np.asarray(self)[item]
         item += (slice(None),) * (self.ndim - len(item))
         shape, positions = [], []
         inside = np.ones(self.positions.shape[1], dtype=bool)
         for index, size, axis_positions in zip(item, self.shape, self.positions, strict=True):
             selected = np.arange(size)[index]
-            # Where each index of the axis lands in the slice, -1 outside it
+            # The place of each index of this axis in the slice, or -1 if it is outside
             lookup = np.full(size, -1)
             lookup[selected] = np.arange(np.size(selected)).reshape(np.shape(selected))
             inside &= lookup[axis_positions] >= 0
@@ -95,12 +95,12 @@ def _read_window(source, index):
 
 class _WindowFiles:
     """
-    One window of several raster files, stacked along a new first axis, that reads each
-    file on indexing.
+    One window of several raster files, stacked along a new first axis, that reads a
+    file only when it is indexed.
 
-    Each source is the ``(filename, ext, flip)`` of a file, which stays closed until it
-    is read, or the window's array of an HDU list given to the reader. Dask makes one
-    graph layer of this array for all the files.
+    Each source is either the ``(filename, ext, flip)`` of a file, which stays closed
+    until it is read, or the window's array from an HDU list given to the reader. Dask
+    wraps this in one graph layer for all the files.
     """
 
     def __init__(self, sources, shape, dtype):
@@ -118,13 +118,13 @@ class _WindowFiles:
 
 def _add_raster(rasters, index, count, **arrays):
     """
-    Add the arrays of raster ``index`` of ``count``, one window of one file, to
-    ``rasters``, the arrays of the window by name with a leading raster axis.
+    Add the arrays of one window of one file, raster ``index`` of ``count``, to
+    ``rasters``: the window's arrays by name, with a leading raster axis.
 
-    The arrays of one file gain the axis as a view, so a memmap stays one. Those of
-    several files are copied into one array each, made at the first file, as each file
-    is read: stacking them once all are read would hold every file's arrays and the
-    stack at once.
+    For a single file, the arrays get the axis as a view, so a memmap stays a memmap.
+    For several files, each array is made at the first file and each file is copied in
+    as it is read. Stacking them after all files are read would hold every file's arrays
+    and the stack at the same time.
     """
     for name, array in arrays.items():
         if array is None:
@@ -139,9 +139,9 @@ def _add_raster(rasters, index, count, **arrays):
 
 def _add_saturated(rasters, index, count, saturated):
     """
-    Add to ``rasters`` the array indices of the ``saturated`` samples of raster
-    ``index`` of ``count``, after the raster, in the smallest integers that hold the
-    indices of the window.
+    Add the array indices of the ``saturated`` samples of raster ``index`` of ``count``
+    to ``rasters``, with the raster index first, in the smallest integer type that holds
+    every index of the window.
     """
     positions = np.insert(np.argwhere(saturated), 0, index, axis=1)
     rasters.setdefault("saturated", []).append(positions.astype(np.min_scalar_type(max(count, *saturated.shape))))
@@ -149,13 +149,14 @@ def _add_saturated(rasters, index, count, saturated):
 
 def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, rasters, *, memmap=False):
     """
-    One cube of the rasters of one window, each read from its own file (``cubes``: its
-    unit, meta and time, and with ``memmap`` and several files, its data as a source of
-    ``_WindowFiles``, shape and dtype), with a leading raster axis.
+    Combine the rasters of one window, one per file, into one cube with a leading raster
+    axis.
 
-    ``rasters`` holds the data, mask and any uncertainty of the window from
-    ``_add_raster``, except with ``memmap`` and several files, whose data and mask are
-    made here, and any ``"saturated"`` samples from ``_add_saturated``.
+    ``cubes`` has each file's unit, meta and time; with ``memmap`` and several files,
+    also its data source for ``_WindowFiles``, shape and dtype. ``rasters`` has the
+    window's data, mask and any uncertainty from ``_add_raster`` (with ``memmap`` and
+    several files, the data and mask are made here instead), and any saturated samples
+    from ``_add_saturated``.
     """
     if memmap and len(cubes) > 1:
         shape, dtype = cubes[0].shape, cubes[0].dtype
@@ -178,8 +179,9 @@ def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, raster
     if "saturated" in rasters:
         saturated = _SaturatedSamples(np.concatenate(rasters["saturated"]).T, data.shape)
         if saturated.positions.nbytes >= data.size:
-            # So many saturated samples, such as 1 in 8 with 2-byte indices, that an array of them, a byte each, is
-            # smaller. The read held their positions until here, so it needed more memory than such an array.
+            # With this many saturated samples (more than 1 in 8 for 2-byte indices), an array of one byte per
+            # sample is smaller than their positions. The read held the positions until here, so it used more
+            # memory than such an array would have.
             saturated = np.asarray(saturated)
         meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", tuple(range(data.ndim)))
     return SpectrogramCube(

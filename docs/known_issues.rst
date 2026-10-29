@@ -14,7 +14,7 @@ The IRIS FITS files contain the per-exposure WCS metadata (reference coordinate 
 For example, OBS 4204700138 SJI file, ``CRVAL`` in the primary header is (1.93840, 1.96290), but the reference coordinate
 is actually (-3.56638378, 1.69258388), which is retrieved from the appropriate index in the ``XCENIX``/``YCENIX`` arrays in the extension.
 
-The slit-jaw and spectrograph readers build the WCS of each cube from the values of every exposure, so use the cube's WCS rather than the primary header for the pointing.
+The slit-jaw and spectrograph readers build each cube's WCS from the pointing of every exposure, so take the pointing from the cube's WCS, not from the primary header.
 
 gWCS observation time
 =====================
@@ -23,7 +23,7 @@ The world coordinates from `irispy.sji.SJICube.wcs` (a gWCS) are in a `~sunpy.co
 The coordinates themselves use the pointing of their own exposure, and the time returned with them is the time of their own exposure; only the frame's ``obstime``, and so the observer it implies, is fixed.
 This matters when transforming to frames that depend on the time, such as heliographic coordinates.
 A gWCS output frame cannot yet change its ``obstime`` from one pixel to the next (`#43 <https://github.com/LM-SAL/irispy/issues/43>`__).
-The frame of a raster cube's gWCS is likewise at the ``DATE_OBS`` of its file, or of the first file for several raster files read together.
+The frame of a raster cube's gWCS is likewise at the ``DATE_OBS`` of its file, or of its first file when several raster files are read together.
 
 If you need a coordinate frame at the time of a given exposure, use the FITS WCS of that exposure, ``sji_cube.fits_wcs[i]`` (see `irispy.sji.SJICube.fits_wcs`), or its map, ``sji_cube.to_maps(i)`` (see `irispy.sji.SJICube.to_maps`); both use the time of that exposure.
 

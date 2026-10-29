@@ -57,15 +57,10 @@ mg_ii_k = raster["Mg II k 2796"][0]
 # components for the line wings or for the Mg II triplet next to it.
 
 iris_frame = mg_ii_k.celestial_frame
-top_left = SkyCoord(-350 * u.arcsec, 310 * u.arcsec, frame=iris_frame)
-bottom_right = SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)
-crop_wavelength = SpectralCoord(279.63, unit=u.nm)
-bottom_step, bottom_slit_pixel, _ = mg_ii_k.fits_wcs.world_to_array_index(crop_wavelength, bottom_right)
-top_step, top_slit_pixel, _ = mg_ii_k.fits_wcs.world_to_array_index(crop_wavelength, top_left)
-mg_ii_k = mg_ii_k.crop(
-    mg_ii_k.wcs.array_index_to_world(top_step, top_slit_pixel, 0),
-    mg_ii_k.wcs.array_index_to_world(bottom_step, bottom_slit_pixel, mg_ii_k.data.shape[-1] - 1),
-)
+top_left = [None, SkyCoord(-350 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
+bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
+# The FITS WCS finds pixels from a sky position alone; the gWCS also needs the time and raster step
+mg_ii_k = mg_ii_k.crop(top_left, bottom_right, wcs=mg_ii_k.fits_wcs)
 
 lower_corner = [SpectralCoord(279.40, unit=u.nm), None, None, None]
 upper_corner = [SpectralCoord(279.80, unit=u.nm), None, None, None]
@@ -119,10 +114,8 @@ plt.legend()
 # ``meta.rest_wavelength`` holds the Mg II k rest wavelength from the line catalog.
 
 mg_ii_core = mg_ii_k.meta.rest_wavelength
-line_core = mg_ii_k.crop(
-    [SpectralCoord(mg_ii_core), None, None, None],
-    [SpectralCoord(mg_ii_core), None, None, None],
-)
+core = [SpectralCoord(mg_ii_core), None, None, None]
+line_core = mg_ii_k.crop(core, core)
 
 # We turn the fit into maps, with the Doppler velocities against the Mg II k rest wavelength.
 maps = maps_from_fit(mg_ii_model_fit, mg_ii_k, fitter=fitter)
@@ -170,8 +163,8 @@ for key, data, title, label, symmetric in [
 
 for ax in ax_dict.values():
     # Longitude and latitude are already on the raster step and slit edges; just shrink their labels.
-    for index in (0, 1):
-        ax.coords[index].set_ticklabel(exclude_overlapping=True, fontsize=8)
+    for coord in ax.coords:
+        coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
 fig.tight_layout()
 
 plt.show()

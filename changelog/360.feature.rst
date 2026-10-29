@@ -1,1 +1,1 @@
-Added ``SpectrogramCube.celestial_frame``, the ``Helioprojective`` frame of the observation, on any slice.
+Added ``SpectrogramCube.celestial_frame``, the ``Helioprojective`` frame of the observation. It works on any slice of the cube.

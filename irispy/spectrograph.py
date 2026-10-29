@@ -28,8 +28,8 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
-    A raster window is exposed as one cube, whether it comes from a single file,
-    a combined multi-file raster, or a sit-and-stare observation.
+    One cube holds a whole spectral window: one raster file, several raster files read
+    together, or a sit-and-stare.
 
     Parameters
     ----------
@@ -63,8 +63,8 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
 
     Examples
     --------
-    The array axes are raster, raster step or time, slit position and wavelength; the
-    window of one raster file has one raster:
+    The array axes are raster, raster step (time for a sit-and-stare), slit position and
+    wavelength. A single raster file gives one raster:
 
     >>> from irispy.data.test import get_test_filepath
     >>> from irispy.io import read_files
@@ -114,12 +114,12 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
     @property
     def fits_wcs(self):
         """
-        The FITS WCS of the cube, following its slicing.
+        The FITS WCS of the cube, sliced as the cube is.
 
-        For the cube of a raster window, a list with the FITS ``-TAB`` WCS of each
-        raster, with the pointing of each exposure, as `irispy.sji.SJICube.fits_wcs`
-        gives one per frame; for one raster, ``cube[k]``, its WCS. A mosaic's own WCS.
-        `None` when the cube has none, as after rebinning.
+        For a raster window, a list with the FITS ``-TAB`` WCS of each raster, which
+        holds the pointing of each exposure, as `irispy.sji.SJICube.fits_wcs` has one
+        per frame. For one raster, ``cube[k]``, its FITS WCS. For a mosaic, its own WCS.
+        `None` when the cube has none, such as after rebinning.
         """
         root, low = self.meta.get("fits_wcs"), self.wcs.low_level_wcs
         item = [slice(None)] * low.pixel_n_dim

@@ -98,8 +98,8 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_
     celestial_inverse = _one_pass(celestial.inverse)
     sky = celestial
     if sit_and_stare:
-        # The slit does not move between exposures, so the step only picks the exposure (dkist's
-        # row lookup) and must not offset the pointing at the virtual step scale, however dkist
+        # The slit does not move between exposures, so the step only selects the exposure (dkist's
+        # row lookup). It must not shift the pointing by the virtual step scale, whichever way dkist
         # rounds a fractional step.
         sky = (m.Multiply(0, name="FixedSlit") & m.Identity(celestial.n_inputs - 1)) | sky
     temporal = _time_lookup(dt_all, name="Time")

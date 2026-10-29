@@ -51,8 +51,8 @@ Here we keep the wavelengths halfway to the Ni II and O IV lines on either side 
     ... )
     >>> cube = cube[:, 410:470]  # doctest: +REMOTE_DATA
 
-A crop takes one entry per world coordinate of the cube: wavelength, sky position, time and raster step, and raster scan for the cube of a whole window, which has a raster axis.
-``None`` leaves one uncropped.
+A crop takes one entry per world coordinate of the cube: the wavelength, sky position, time and raster step, plus the raster scan for the cube of a whole window.
+``None`` leaves that coordinate uncropped.
 The sky position, time and raster step (and scan) must be given together.
 
 `~irispy.utils.fitting.line_model` puts a Gaussian at the rest wavelength of Si IV, with a standard deviation of 0.05 Å, on a constant background.

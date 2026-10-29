@@ -1,1 +1,2 @@
-``irispy.io.read_files`` now accepts a list that mixes ``str`` and ``pathlib.Path`` and reads a file given more than once only once, and ``irispy.io.read_spectrograph_lvl2`` orders the raster files by ``DATE_OBS``, so an unsorted glob gives the rasters in time order.
+``irispy.io.read_files`` now accepts a list that mixes ``str`` and ``pathlib.Path``, and reads a file given more than once only once.
+``irispy.io.read_spectrograph_lvl2`` now orders the raster files by ``DATE_OBS``, so an unsorted glob still gives the rasters in time order.
