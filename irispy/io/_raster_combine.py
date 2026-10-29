@@ -8,7 +8,7 @@ import astropy.units as u
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 
-from irispy._spectrograph_wcs import _create_raster_gwcs
+from irispy._spectrograph_wcs import _create_raster_gwcs, _create_raster_non_spectral
 from irispy.io._mask import _memmap_fill_mask
 from irispy.spectrograph import SpectrogramCube
 
@@ -147,17 +147,19 @@ def _add_saturated(rasters, index, count, saturated):
     rasters.setdefault("saturated", []).append(positions.astype(np.min_scalar_type(max(count, *saturated.shape))))
 
 
-def _combine_raster_cubes(reads, rasters, *, lazy):
+def _combine_raster_cubes(reads, rasters, non_spectral, *, lazy):
     """
     Combine the rasters of one window, one read per file, into one cube with a leading
     raster axis.
 
     Each read has its file's window ``header``, ``pc`` and ``crval`` tables, ``unit``,
-    ``meta`` and ``time``; for a ``lazy`` read, also the ``data`` source for
-    ``_WindowFiles`` and the ``shape`` and ``dtype`` of one file. ``rasters`` has the
-    window's data, mask and any uncertainty from ``_add_raster`` (for a ``lazy`` read,
-    the data and mask are made here instead), and any saturated samples from
-    ``_add_saturated``.
+    ``meta``, ``time`` and ``observer``; for a ``lazy`` read, also the ``data`` source
+    for ``_WindowFiles`` and the ``shape`` and ``dtype`` of one file. ``rasters`` has
+    the window's data, mask and any uncertainty from ``_add_raster`` (for a ``lazy``
+    read, the data and mask are made here instead), and any saturated samples from
+    ``_add_saturated``. ``non_spectral`` maps each detector band to the result of
+    ``_create_raster_non_spectral`` for the windows of that band read with these, and
+    gains it for the band of this window if missing.
     """
     first = reads[0]
     if lazy:
@@ -175,7 +177,21 @@ def _combine_raster_cubes(reads, rasters, *, lazy):
     else:
         data, mask = rasters["data"], rasters["mask"]
     uncertainty = rasters.get("uncertainty")
-    times = np.stack([read.time for read in reads])
+    band = first.meta.detector_band
+    if band not in non_spectral:
+        # The windows of a file share its pointing tables, slit reference pixel and plate scales, as its one FITS-TAB
+        # WCS does, and those of a band their times, so their gWCSes differ only in the spectral axis
+        times = np.stack([read.time for read in reads])
+        non_spectral[band] = _create_raster_non_spectral(
+            np.stack([read.pc for read in reads]),
+            np.stack([read.crval for read in reads]),
+            [read.header["CRPIX2"] for read in reads],
+            (times - times[0, 0]).to_value(u.s) * u.s,
+            times[0, 0],
+            first.observer,
+            cdelt2=first.header["CDELT2"],
+            cdelt3=first.header["CDELT3"],
+        )
     meta = _combine_raster_metas([read.meta for read in reads], data.shape)
     meta["fits_wcs"] = [read.meta["fits_wcs"] for read in reads]
     if "saturated" in rasters:
@@ -188,16 +204,7 @@ def _combine_raster_cubes(reads, rasters, *, lazy):
         meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", tuple(range(data.ndim)))
     return SpectrogramCube(
         data,
-        wcs=_create_raster_gwcs(
-            first.header,
-            np.stack([read.pc for read in reads]),
-            np.stack([read.crval for read in reads]),
-            [read.header["CRPIX2"] for read in reads],
-            (times - times[0, 0]).to_value(u.s) * u.s,
-            times[0, 0],
-            first.meta.observer,
-            sit_and_stare=first.header["CDELT3"] == 0,
-        ),
+        wcs=_create_raster_gwcs(first.header, *non_spectral[band]),
         uncertainty=None if uncertainty is None else StdDevUncertainty(uncertainty, copy=False),
         unit=first.unit,
         meta=meta,

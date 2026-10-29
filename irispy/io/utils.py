@@ -6,8 +6,6 @@ import hashlib
 import tarfile
 from pathlib import Path
 
-from filelock import FileLock
-
 from astropy.config.paths import get_cache_dir
 from astropy.io import fits
 from astropy.table import Table
@@ -76,6 +74,10 @@ def _extract_tarfile(filenames, extract_dir=None):
         ``astropy.config.paths.get_cache_dir("irispy")``, so the archive's own folder
         stays untouched and can be read-only.
     """
+    # Imported only here: filelock adds an audit hook on import, which then runs at every id() and so slows every
+    # deepcopy, such as gwcs's
+    from filelock import FileLock  # NOQA: PLC0415
+
     root = Path(get_cache_dir("irispy") if extract_dir is None else extract_dir)
     expanded_files = []
     for fname in filenames:

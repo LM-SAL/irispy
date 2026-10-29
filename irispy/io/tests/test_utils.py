@@ -1,11 +1,13 @@
 import io
 import os
 import re
+import sys
 import gzip
 import shutil
 import hashlib
 import tarfile
 import threading
+import subprocess
 from pathlib import Path
 from collections import Counter
 
@@ -469,6 +471,12 @@ def test_extract_tarfile_defaults_to_the_irispy_cache(tmp_path):
     finally:
         archive_dir.chmod(0o755)
     assert list(archive_dir.iterdir()) == [tar_path]
+
+
+def test_reading_leaves_filelock_unimported():
+    # filelock adds an audit hook on import, which slows every deepcopy of a read after it
+    code = "import sys, irispy.io; assert 'filelock' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)  # noqa: S603 - runs this interpreter on fixed code
 
 
 def test_extract_tarfile_serializes_concurrent_callers(tmp_path, monkeypatch):

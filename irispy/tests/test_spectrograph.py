@@ -69,6 +69,8 @@ def test_time_is_the_exposure_midpoint_of_any_slice(sns_sg_file, combined_si_iv)
         assert piece.time == time
         assert f"{time.isot} -- {time.isot}" in str(piece)
     assert combined_si_iv[1][3].time == combined_si_iv[1, 3, 5].time == combined_si_iv.time[1, 3]
+    # A whole cube gives the times its gWCS gives
+    assert (combined_si_iv.time == combined_si_iv.axis_world_coords("time")[0]).all()
 
 
 @pytest.mark.parametrize(

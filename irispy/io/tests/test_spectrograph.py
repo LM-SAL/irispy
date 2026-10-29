@@ -236,6 +236,23 @@ def test_read_spectrograph_lvl2_reads_a_repeated_window_once(sns_sg_file):
     assert raster["C II 1336"].shape[0] == 1  # one raster, not the window stacked twice
 
 
+def test_windows_read_together_have_the_coordinates_they_have_read_alone(raster_sg_files):
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    fuv = [window for window in raster.values() if window.meta.detector_band == "FUV"]
+    nuv = [window for window in raster.values() if window.meta.detector_band == "NUV"]
+    # The windows of a band share all of their gWCS but the spectral axis; the FUV and NUV differ in their times
+    assert fuv[0].wcs.forward_transform.right is fuv[-1].wcs.forward_transform.right
+    assert nuv[0].wcs.forward_transform.right is nuv[-1].wcs.forward_transform.right
+    assert fuv[0].wcs.forward_transform.right is not nuv[0].wcs.forward_transform.right
+    for name, window in raster.items():
+        alone = read_spectrograph_lvl2(raster_sg_files, spectral_windows=name)[name]
+        pixels = np.meshgrid(*(np.arange(n)[:: max(1, n // 4)] for n in window.data.shape[::-1]), indexing="ij")
+        np.testing.assert_array_equal(
+            window.wcs.pixel_to_world_values(*pixels), alone.wcs.pixel_to_world_values(*pixels)
+        )
+        assert (window.time == alone.time).all()
+
+
 def test_nuv_times_reject_invalid_source_filename(raster_sg_file):
     with fits.open(raster_sg_file) as hdulist:
         source_data = hdulist[-1].data.copy()
