@@ -8,7 +8,6 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.nddata import StdDevUncertainty
 from astropy.time import Time, TimeDelta
 from astropy.wcs import WCS
 
@@ -20,7 +19,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 from irispy._spectrograph_wcs import _sanitize_raster_wcs_tables
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _memmap_fill_mask
-from irispy.io._raster_combine import _combine_raster_cubes
+from irispy.io._raster_combine import _add_raster, _combine_raster_cubes
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection
 from irispy.utils import calculate_uncertainty
@@ -303,6 +302,7 @@ def read_spectrograph_lvl2(
                     ]
                 spectral_windows_req = spectral_windows_req.tolist()  # the keys are str, not numpy.str_
                 data_dict = {window_name: [] for window_name in spectral_windows_req}
+                rasters = {window_name: {} for window_name in spectral_windows_req}
             aux = hdulist[-2]
             file_times = _auxiliary_times(hdulist)
             aux_times = file_times[steps]
@@ -405,30 +405,27 @@ def read_spectrograph_lvl2(
                     mask = np.isin(data, BAD_PIXEL_VALUES_SCALED) | saturated
                     if saturated.any():
                         meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", (0, 1, 2))
-                out_uncertainty = (
-                    StdDevUncertainty(calculate_uncertainty(data, readout_noise, dn_unit))
-                    if compute_uncertainty
-                    else None
-                )
                 meta.add("fits_wcs", fits_wcs)
                 # Only the combined cube is made: a cube for each file would be left for the cyclic garbage
                 # collector, which then takes a second or more over the cubes of a long observation
-                read = SimpleNamespace(
+                read = SimpleNamespace(unit=dn_unit, meta=meta, time=times, shape=data.shape, dtype=data.dtype)
+                if memmap and len(filenames) > 1:
                     # The cube of several files reads them on demand: a memmap would hold its file open
-                    data=(filename, ext, flip)
-                    if memmap and len(filenames) > 1 and not isinstance(filename, fits.HDUList)
-                    else data,
-                    mask=mask,
-                    uncertainty=out_uncertainty,
-                    unit=dn_unit,
-                    meta=meta,
-                    time=times,
-                    shape=data.shape,
-                    dtype=data.dtype,
-                )
+                    read.data = data if isinstance(filename, fits.HDUList) else (filename, ext, flip)
+                else:
+                    _add_raster(
+                        rasters[window_name],
+                        file_index,
+                        len(filenames),
+                        data=data,
+                        mask=mask,
+                        uncertainty=calculate_uncertainty(data, readout_noise, dn_unit)
+                        if compute_uncertainty
+                        else None,
+                    )
                 data_dict[window_name].append((read, window_header, *wcs_tables))
     window_data_pairs = [
-        (window_name, _combine_raster_cubes(*zip(*reads, strict=True), memmap=memmap))
+        (window_name, _combine_raster_cubes(*zip(*reads, strict=True), rasters[window_name], memmap=memmap))
         for window_name, reads in data_dict.items()
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1, 2))
