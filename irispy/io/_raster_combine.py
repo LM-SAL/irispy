@@ -5,6 +5,7 @@ import numpy as np
 
 import astropy.units as u
 from astropy.io import fits
+from astropy.nddata import StdDevUncertainty
 
 from irispy._spectrograph_wcs import _create_raster_gwcs
 from irispy.io._mask import _memmap_fill_mask
@@ -65,17 +66,36 @@ class _WindowFiles:
         return _read_window(self.sources[raster], tuple(rest))
 
 
-def _stack(arrays):
-    # The arrays of one file gain the raster axis as a view, where np.stack would copy them
-    return arrays[0][np.newaxis] if len(arrays) == 1 else np.stack(arrays)
+def _add_raster(rasters, index, count, **arrays):
+    """
+    Add the arrays of raster ``index`` of ``count``, one window of one file, to
+    ``rasters``, the arrays of the window by name with a leading raster axis.
+
+    The arrays of one file gain the axis as a view, so a memmap stays one. Those of
+    several files are copied into one array each, made at the first file, as each file
+    is read: stacking them once all are read would hold every file's arrays and the
+    stack at once.
+    """
+    for name, array in arrays.items():
+        if array is None:
+            continue
+        if count == 1:
+            rasters[name] = array[np.newaxis]
+            continue
+        if name not in rasters:
+            rasters[name] = np.empty((count, *array.shape), array.dtype)
+        rasters[name][index] = array
 
 
-def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, *, memmap=False):
+def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, rasters, *, memmap=False):
     """
     One cube of the rasters of one window, each read from its own file (``cubes``: its
-    data, mask, uncertainty, unit, meta, time, shape and dtype; with ``memmap`` and
-    several files, the data are a source of ``_WindowFiles`` and the mask is not used),
-    with a leading raster axis.
+    unit, meta and time, and with ``memmap`` and several files, its data as a source of
+    ``_WindowFiles``, shape and dtype), with a leading raster axis.
+
+    ``rasters`` holds the data, mask and any uncertainty of the window from
+    ``_add_raster``, except with ``memmap`` and several files, whose data and mask are
+    made here.
     """
     if memmap and len(cubes) > 1:
         shape, dtype = cubes[0].shape, cubes[0].dtype
@@ -90,11 +110,8 @@ def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, *, mem
         )
         mask = _memmap_fill_mask(data, window_headers[0])
     else:
-        # The memmap of one file stays one, as when it was read alone
-        data, mask = _stack([cube.data for cube in cubes]), _stack([cube.mask for cube in cubes])
-    uncertainty = cubes[0].uncertainty
-    if uncertainty is not None:
-        uncertainty = type(uncertainty)(_stack([cube.uncertainty.array for cube in cubes]))
+        data, mask = rasters["data"], rasters["mask"]
+    uncertainty = rasters.get("uncertainty")
     times = np.stack([cube.time for cube in cubes])
     meta = _combine_raster_metas([cube.meta for cube in cubes], data.shape)
     meta["fits_wcs"] = [cube.meta["fits_wcs"] for cube in cubes]
@@ -109,7 +126,7 @@ def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, *, mem
             cubes[0].meta.observer,
             sit_and_stare=window_headers[0]["CDELT3"] == 0,
         ),
-        uncertainty=uncertainty,
+        uncertainty=None if uncertainty is None else StdDevUncertainty(uncertainty, copy=False),
         unit=cubes[0].unit,
         meta=meta,
         mask=mask,
