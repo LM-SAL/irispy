@@ -236,6 +236,13 @@ def test_read_spectrograph_lvl2_reads_a_repeated_window_once(sns_sg_file):
     assert raster["C II 1336"].shape[0] == 1  # one raster, not the window stacked twice
 
 
+@pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files"])
+def test_per_exposure_meta_is_in_native_byte_order(request, files):
+    cube = read_spectrograph_lvl2(request.getfixturevalue(files), spectral_windows="Si IV 1403")["Si IV 1403"]
+    for key in ("exposure time", "observer radial velocity", "orbital phase"):
+        assert cube.meta[key].dtype.isnative, key
+
+
 def test_windows_read_together_have_the_coordinates_they_have_read_alone(raster_sg_files):
     raster = read_spectrograph_lvl2(raster_sg_files)
     fuv = [window for window in raster.values() if window.meta.detector_band == "FUV"]

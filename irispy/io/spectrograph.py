@@ -331,7 +331,8 @@ def read_spectrograph_lvl2(
             if file_index == 0:
                 # For several files, the pointing is in the frame of the first file, as is the gWCS
                 first_observer = observer
-            aux_data = aux.data[steps]
+            # In native byte order, as the per-exposure meta made from it is: FITS stores it big-endian
+            aux_data = aux.data[steps].astype(aux.data.dtype.newbyteorder("="))
             fov_center = SkyCoord(
                 *_exposure_pointing(aux_data, aux.header),
                 unit=u.arcsec,
