@@ -16,30 +16,30 @@ from irispy._wcs import _is_sit_and_stare
 __all__ = []
 
 
-LAT_LABELS = [
+LAT_LABELS = {
     "custom:pos.helioprojective.lat",
     "helioprojective latitude",
     "hplt-tan",
     "hplt",
     "lat",
     "latitude",
-]
-LON_LABELS = [
+}
+LON_LABELS = {
     "custom:pos.helioprojective.lon",
     "helioprojective longitude",
     "hpln-tan",
     "hpln",
     "lon",
     "longitude",
-]
+}
 TIME_LABELS = {"seconds from start (s)", "time (utc)", "time"}
-SLIDER_SCAN_STEP_LABELS = ["custom:step", "raster_step"]
-SLIDER_SCAN_LABELS = ["custom:scan", "raster_scan"]
-WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
+SLIDER_SCAN_STEP_LABELS = {"custom:step", "raster_step"}
+SLIDER_SCAN_LABELS = {"custom:scan", "raster_scan"}
+WAVELENGTH_LABELS = {"wavelength", "wave", "em.wl"}
 LON_AXIS_LABEL = "Helioprojective Longitude [arcsec]"
 LAT_AXIS_LABEL = "Helioprojective Latitude [arcsec]"
 # Coordinates a plot only shows when they are asked for with ``axes_coordinates``.
-HIDDEN_BY_DEFAULT = {*TIME_LABELS, *SLIDER_SCAN_STEP_LABELS, *SLIDER_SCAN_LABELS}
+HIDDEN_BY_DEFAULT = TIME_LABELS | SLIDER_SCAN_STEP_LABELS | SLIDER_SCAN_LABELS
 # The pixel axis each celestial coordinate follows, which decides the edge it is labeled on.
 PRIMARY_PIXEL_AXES = {"spatial along slit": LAT_LABELS, "raster step": LON_LABELS}
 
@@ -57,7 +57,7 @@ def _shorten_slider_label(label):
         return "Wavelength"
     if lowered_label_parts.intersection(TIME_LABELS):
         return "Time"
-    if lowered_label_parts and lowered_label_parts.issubset(set(LON_LABELS + LAT_LABELS)):
+    if lowered_label_parts and lowered_label_parts <= LON_LABELS | LAT_LABELS:
         return "Spatial pixel"
     return label
 
@@ -66,34 +66,40 @@ def set_axis_properties(ax, axes_coordinates=None, slices=None):
     """
     Set IRIS axis labels and choose the coordinates shown on the plot edges.
 
-    The time, raster step and raster scan coordinates are hidden unless they are in
-    ``axes_coordinates``. With ``axes_coordinates``, only the requested coordinates are
-    shown. Latitude is labeled on the edge of the slit axis and longitude on the edge of
-    the raster step axis. When only one of those axes is plotted, the other coordinate
-    goes on its opposite edge, so a raster image is laid out like its FITS WCS.
-    ``slices`` are the WCSAxes slices (``"x"``, ``"y"`` or an index per pixel axis, in
-    WCS order); an animator provides its own.
+    The raster step and raster scan coordinates, and the time of a raster, are hidden
+    unless they are in ``axes_coordinates``. With ``axes_coordinates``, only the
+    requested coordinates are shown. Latitude is labeled on the edge of the slit axis
+    and longitude on the edge of the raster step axis. When only one of those axes is
+    plotted, the other coordinate goes on its opposite edge, so a raster image is laid
+    out like its FITS WCS. ``slices`` are the WCSAxes slices (``"x"``, ``"y"`` or an
+    index per pixel axis, in WCS order); an animator provides its own.
     """
+    # IRISPlotter.plot sets this on the axes or animator it returns
     pixel_axis_names = getattr(ax, "_iris_pixel_axis_names", None)
-    if hasattr(ax, "axes") and not hasattr(ax, "coords"):
-        slices = getattr(ax, "slices_wcsaxes", slices)
+    if isinstance(ax, ArrayAnimatorWCS):
+        slices = ax.slices_wcsaxes
         ax = ax.axes
+    physical_types = [(physical_type or "").lower() for physical_type in ax.wcs.world_axis_physical_types]
+    # The time of a raster exposure follows its raster step, so a raster shows it only when asked for, while an
+    # image along the time of a slit-jaw cube always does
+    is_raster = not (SLIDER_SCAN_STEP_LABELS | SLIDER_SCAN_LABELS).isdisjoint(physical_types)
+    hidden = HIDDEN_BY_DEFAULT if is_raster else HIDDEN_BY_DEFAULT - TIME_LABELS
     requested = {coord.lower() for coord in axes_coordinates or () if isinstance(coord, str)}
     shown = []
-    for axis, physical_type in _iter_coords_with_physical_types(ax):
-        default_label = axis.default_label.lower()
-        names = {physical_type, default_label}
-        if physical_type in WAVELENGTH_LABELS or default_label in WAVELENGTH_LABELS:
+    for axis, physical_type in zip(ax.coords, physical_types, strict=True):
+        names = {physical_type, axis.default_label.lower()}
+        if names & WAVELENGTH_LABELS:
             axis.set_format_unit(u.nm)
             axis.set_major_formatter("x.xx")
             # A narrow window drawn with equal aspect has no room to label every tick
             axis.set_ticklabel(exclude_overlapping=True)
             axis.set_axislabel("Wavelength [$\\mathrm{nm}$]")
-        elif physical_type in LAT_LABELS or default_label in LAT_LABELS:
+        elif names & LAT_LABELS:
             _set_axis_properties(axis, LAT_AXIS_LABEL, "red")
-        elif physical_type in LON_LABELS or default_label in LON_LABELS:
+        elif names & LON_LABELS:
             _set_axis_properties(axis, LON_AXIS_LABEL, "black")
-        if names & requested if requested else names.isdisjoint(HIDDEN_BY_DEFAULT):
+        visible = bool(names & requested) if requested else names.isdisjoint(hidden)
+        if visible:
             shown.append((axis, names))
         else:
             _hide_coord(axis)
@@ -116,13 +122,6 @@ def _set_axis_properties(axis, label, color):
     """
     axis.set_ticklabel(color, fontsize=8)
     axis.set_axislabel(label, color=color, fontsize=8)
-
-
-def _iter_coords_with_physical_types(ax):
-    physical_types = tuple(getattr(ax.wcs, "world_axis_physical_types", ()) or ())
-    for index, coord in enumerate(ax.coords):
-        physical_type = physical_types[index].lower() if index < len(physical_types) and physical_types[index] else ""
-        yield coord, physical_type
 
 
 def _hide_coord(coord):
@@ -154,7 +153,7 @@ def _place_celestial_coords(ax, shown, slices, pixel_axis_names=None):
     celestial = []
     for coord, names in shown:
         for pixel_axis, labels in PRIMARY_PIXEL_AXES.items():
-            if names & set(labels):
+            if names & labels:
                 celestial.append(coord)
                 if pixel_axis in plotted:
                     edges[coord] = plotted[pixel_axis]

@@ -147,35 +147,37 @@ def _add_saturated(rasters, index, count, saturated):
     rasters.setdefault("saturated", []).append(positions.astype(np.min_scalar_type(max(count, *saturated.shape))))
 
 
-def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, rasters, *, memmap=False):
+def _combine_raster_cubes(reads, rasters, *, lazy):
     """
-    Combine the rasters of one window, one per file, into one cube with a leading raster
-    axis.
+    Combine the rasters of one window, one read per file, into one cube with a leading
+    raster axis.
 
-    ``cubes`` has each file's unit, meta and time; with ``memmap`` and several files,
-    also its data source for ``_WindowFiles``, shape and dtype. ``rasters`` has the
-    window's data, mask and any uncertainty from ``_add_raster`` (with ``memmap`` and
-    several files, the data and mask are made here instead), and any saturated samples
-    from ``_add_saturated``.
+    Each read has its file's window ``header``, ``pc`` and ``crval`` tables, ``unit``,
+    ``meta`` and ``time``; for a ``lazy`` read, also the ``data`` source for
+    ``_WindowFiles`` and the ``shape`` and ``dtype`` of one file. ``rasters`` has the
+    window's data, mask and any uncertainty from ``_add_raster`` (for a ``lazy`` read,
+    the data and mask are made here instead), and any saturated samples from
+    ``_add_saturated``.
     """
-    if memmap and len(cubes) > 1:
-        shape, dtype = cubes[0].shape, cubes[0].dtype
+    first = reads[0]
+    if lazy:
+        shape, dtype = first.shape, first.dtype
         # Chunks of up to 64 MiB of steps, one file each
         steps = max(1, min(shape[0], 64 * 2**20 // (int(np.prod(shape[1:])) * dtype.itemsize)))
         data = da.from_array(
-            _WindowFiles([cube.data for cube in cubes], shape, dtype),
+            _WindowFiles([read.data for read in reads], shape, dtype),
             chunks=(1, steps, *shape[1:]),
             name=False,
             fancy=False,
             meta=np.empty((0,) * (len(shape) + 1), dtype=dtype),
         )
-        mask = _memmap_fill_mask(data, window_headers[0])
+        mask = _memmap_fill_mask(data, first.header)
     else:
         data, mask = rasters["data"], rasters["mask"]
     uncertainty = rasters.get("uncertainty")
-    times = np.stack([cube.time for cube in cubes])
-    meta = _combine_raster_metas([cube.meta for cube in cubes], data.shape)
-    meta["fits_wcs"] = [cube.meta["fits_wcs"] for cube in cubes]
+    times = np.stack([read.time for read in reads])
+    meta = _combine_raster_metas([read.meta for read in reads], data.shape)
+    meta["fits_wcs"] = [read.meta["fits_wcs"] for read in reads]
     if "saturated" in rasters:
         saturated = _SaturatedSamples(np.concatenate(rasters["saturated"]).T, data.shape)
         if saturated.positions.nbytes >= data.size:
@@ -187,17 +189,17 @@ def _combine_raster_cubes(cubes, window_headers, pc_tables, crval_tables, raster
     return SpectrogramCube(
         data,
         wcs=_create_raster_gwcs(
-            window_headers[0],
-            np.stack(pc_tables),
-            np.stack(crval_tables),
-            [header["CRPIX2"] for header in window_headers],
+            first.header,
+            np.stack([read.pc for read in reads]),
+            np.stack([read.crval for read in reads]),
+            [read.header["CRPIX2"] for read in reads],
             (times - times[0, 0]).to_value(u.s) * u.s,
             times[0, 0],
-            cubes[0].meta.observer,
-            sit_and_stare=window_headers[0]["CDELT3"] == 0,
+            first.meta.observer,
+            sit_and_stare=first.header["CDELT3"] == 0,
         ),
         uncertainty=None if uncertainty is None else StdDevUncertainty(uncertainty, copy=False),
-        unit=cubes[0].unit,
+        unit=first.unit,
         meta=meta,
         mask=mask,
     )

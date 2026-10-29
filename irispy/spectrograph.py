@@ -13,11 +13,15 @@ from astropy.wcs.wcsapi import SlicedLowLevelWCS
 from ndcube import NDCollection
 from ndcube.visualization import PlotterDescriptor
 from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
-from ndcube.wcs.wrappers import ResampledLowLevelWCS
 from sunraster import SpectrogramCube as SpecCube
 from sunraster.spectrogram import _calculate_exposure_time_correction, _uncalculate_exposure_time_correction
 
-from irispy._wcs import _celestial_frame_from_cube, _ResolveNegativeIndicesMixin, _wcs_array_axis_physical_types
+from irispy._wcs import (
+    _celestial_frame_from_cube,
+    _ResolveNegativeIndicesMixin,
+    _root_wcs,
+    _wcs_array_axis_physical_types,
+)
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.visualization import IRISPlotter, _make_map
 
@@ -173,9 +177,7 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         unsliced WCS: ``self.wcs`` for a cube built on a FITS WCS, otherwise the
         per-file ``fits_wcs`` in ``meta``.
         """
-        root = self.wcs.low_level_wcs
-        while isinstance(root, (SlicedLowLevelWCS, ResampledLowLevelWCS)):
-            root = root._wcs
+        root = _root_wcs(self)
         fits_wcs = root if hasattr(root, "wcs") else self.meta.get("fits_wcs")
         fits_wcs = fits_wcs[0] if isinstance(fits_wcs, list) else fits_wcs
         if fits_wcs is None:

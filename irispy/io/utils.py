@@ -372,9 +372,9 @@ def read_files(
                     # A file that is not FITS: raises the level 2 error, chained to this one
                     _check_level2(file, None)
                 product = _check_level2(file, header)
-                _, describe = _get_simple_metadata(header)
                 log.debug(f"Processing file: {file} as {product}")
                 if product == "SJI":
+                    _, describe = _get_simple_metadata(header)
                     # SOT-SP archives may contain multiple observations of the same quantity.
                     key = describe if describe not in returns else f"{describe} ({file.stem})"
                     suffix = 2

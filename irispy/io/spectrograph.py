@@ -250,6 +250,8 @@ def read_spectrograph_lvl2(
         observers = get_earth(date_obs[order])
     # The files are combined into one cube per window, with a raster axis, whose gWCS is built once from all of them
     compute_uncertainty = uncertainty and not memmap
+    # Several files read with memmap stay on disk and are read a file at a time
+    lazy = memmap and len(filenames) > 1
     for file_index, filename in enumerate(filenames):
         if isinstance(filename, fits.HDUList):
             context = nullcontext(filename)
@@ -303,7 +305,7 @@ def read_spectrograph_lvl2(
                         int(np.nonzero(windows_in_obs == window)[0][0]) + 1 for window in spectral_windows_req
                     ]
                 spectral_windows_req = spectral_windows_req.tolist()  # the keys are str, not numpy.str_
-                data_dict = {window_name: [] for window_name in spectral_windows_req}
+                reads = {window_name: [] for window_name in spectral_windows_req}
                 rasters = {window_name: {} for window_name in spectral_windows_req}
             aux = hdulist[-2]
             file_times = _auxiliary_times(hdulist)
@@ -343,9 +345,10 @@ def read_spectrograph_lvl2(
                 pc[:, :, 1] *= -1
             # Every exposure, sit-and-stare included, is pointed at its own FOV center.
             crval = np.column_stack((aux_data[:, aux.header["XCENIX"]], aux_data[:, aux.header["YCENIX"]])) * u.arcsec
+            pc, crval = _sanitize_raster_wcs_tables(pc, crval)
             # Exposure midpoints (T_OBS); NUV ones come from the source filenames.
             t_obs_nuv = None
-            file_wcs = wcs_tables = None
+            file_wcs = None
             # The meta of each window copies one dict of the primary header: walking its cards is slow
             primary = dict(hdulist[0].header.items())
             for i, window_name in enumerate(spectral_windows_req):
@@ -371,13 +374,12 @@ def read_spectrograph_lvl2(
                         # Its own warning covers the missing NUV exposures
                         t_obs_nuv = aux_times
                     elif t_obs_nuv is None:
-                        # The source filename table is in file order, so undo (and redo) any flip. The archive
-                        # writes the NUV source filenames of a file without NUV exposures as A0 columns,
-                        # which astropy cannot read.
+                        # The source filename table is in file order. The archive writes the NUV source
+                        # filenames of a file without NUV exposures as A0 columns, which astropy cannot read.
                         t_obs_nuv = _nuv_t_obs_from_source_filenames(
                             hdulist[-1].data if np.any(exposure_times_nuv > 0 * u.s) else None,
-                            exposure_times_nuv[steps],
-                            aux_times[steps],
+                            aux.data[:, aux.header["EXPTIMEN"]] * u.s,
+                            file_times,
                             filename=given,
                         )[steps]
                     times = t_obs_nuv
@@ -386,18 +388,16 @@ def read_spectrograph_lvl2(
                 meta.add("observer radial velocity", obs_vrix, None, 0)
                 meta.add("orbital phase", ophaseix, None, 0)
                 # The windows of a raster file differ only in NAXIS1, CRVAL1, CDELT1 and CRPIX1
-                # (3374 files of 20 observations, 2013-2026, checked), so their pointing is the file's
-                if wcs_tables is None:
-                    wcs_tables = _sanitize_raster_wcs_tables(pc, crval, pc_only=window_header["CDELT3"] == 0)
-                # Building the FITS-TAB WCS is most of the read
+                # (3374 files of 20 observations, 2013-2026, checked), so one FITS-TAB WCS serves them all.
+                # Building it is most of the read.
                 if file_wcs is None:
                     file_wcs = _create_tabular_wcs(window_header, aux, date_obs=observer.obstime.utc.isot, flip=flip)
                     _set_wcs_aux_obs_coord(file_wcs, observer)
                 fits_wcs = _with_spectral_axis(file_wcs, window_header)
                 if memmap:  # the data stay the FITS integers, which these scale to DN
                     meta["BSCALE"], meta["BZERO"] = window_header.get("BSCALE", 1), window_header.get("BZERO", 0)
-                    # For several files, _combine_raster_cubes makes the mask
-                    mask = None if len(filenames) > 1 else _memmap_fill_mask(data, window_header)
+                    # A lazy read gets the mask of all its files in _combine_raster_cubes
+                    mask = None if lazy else _memmap_fill_mask(data, window_header)
                     if np.issubdtype(data.dtype, np.integer):  # the FITS integers, not DN
                         dn_unit = DN_UNIT[f"{meta.detector_band}_UNSCALED"]
                 else:
@@ -410,9 +410,18 @@ def read_spectrograph_lvl2(
                 meta.add("fits_wcs", fits_wcs)
                 # Only the combined cube is built. A cube for each file would be left to the cyclic garbage
                 # collector, which then takes a second or more for a long observation
-                read = SimpleNamespace(unit=dn_unit, meta=meta, time=times, shape=data.shape, dtype=data.dtype)
-                if memmap and len(filenames) > 1:
-                    # For several files, the cube reads each file on demand; a memmap would keep every file open
+                read = SimpleNamespace(
+                    header=window_header,
+                    pc=pc,
+                    crval=crval,
+                    unit=dn_unit,
+                    meta=meta,
+                    time=times,
+                    shape=data.shape,
+                    dtype=data.dtype,
+                )
+                if lazy:
+                    # The cube reads each file on demand; a memmap would keep every file open
                     read.data = data if isinstance(filename, fits.HDUList) else (filename, ext, flip)
                 else:
                     _add_raster(
@@ -425,9 +434,9 @@ def read_spectrograph_lvl2(
                         if compute_uncertainty
                         else None,
                     )
-                data_dict[window_name].append((read, window_header, *wcs_tables))
+                reads[window_name].append(read)
     window_data_pairs = [
-        (window_name, _combine_raster_cubes(*zip(*reads, strict=True), rasters[window_name], memmap=memmap))
-        for window_name, reads in data_dict.items()
+        (window_name, _combine_raster_cubes(window_reads, rasters[window_name], lazy=lazy))
+        for window_name, window_reads in reads.items()
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1, 2))
