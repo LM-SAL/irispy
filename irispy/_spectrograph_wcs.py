@@ -46,14 +46,35 @@ def _sanitize_raster_wcs_tables(pc, crval):
     return pc, crval
 
 
-def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_ref, observer, *, sit_and_stare):
+def _create_raster_gwcs(window_header, non_spectral, pixel_frame, frames):
     """
-    Build the raster gWCS from per-step AUX sky and timing tables.
+    Build the raster gWCS of one window from ``_create_raster_non_spectral``.
 
-    The spectral axis stays a 1D linear transform. The scan axis expands into
-    helioprojective sky coordinates, elapsed time from ``t_ref``, and an
-    explicit scan-step coordinate so the inverse stays stable for crops and
-    other round-trips where sky or time alone are not unique.
+    The spectral axis stays a 1D linear transform.
+    """
+    # Level 2 windows give their wavelengths in Å (CUNIT1)
+    spectral_unit = u.nm
+    cdelt1, crval1, crpix1 = window_header["CDELT1"] * 0.1, window_header["CRVAL1"] * 0.1, window_header["CRPIX1"]
+    spectral = m.Linear1D(
+        slope=cdelt1 * spectral_unit / u.pix,
+        intercept=(crval1 - cdelt1 * (crpix1 - 1)) * spectral_unit,
+        name="Wavelength",
+    )
+    spectral_frame = cf.SpectralFrame(
+        axes_order=(0,), unit=spectral_unit, name="wavelength", axes_names=("wavelength",)
+    )
+    # Steps, not a model, which gwcs would deep-copy: non_spectral is shared by windows and nothing changes it
+    return gwcs.WCS([(pixel_frame, spectral & non_spectral), (cf.CompositeFrame([spectral_frame, *frames]), None)])
+
+
+def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, observer, *, cdelt2, cdelt3):
+    """
+    Build the part of the raster gWCS after the spectral axis from per-step AUX sky
+    and timing tables: the transform, the pixel frame and the other output frames.
+
+    The scan axis expands into helioprojective sky coordinates, elapsed time from
+    ``t_ref``, and an explicit scan-step coordinate so the inverse stays stable for
+    crops and other round-trips where sky or time alone are not unique.
 
     Notes
     -----
@@ -64,15 +85,7 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_
     return the same pixel regardless of the time value passed in the world
     tuple.
     """
-    # Level 2 windows give their wavelengths in Å (CUNIT1)
-    spectral_unit = u.nm
-    cdelt1, crval1, crpix1 = window_header["CDELT1"] * 0.1, window_header["CRVAL1"] * 0.1, window_header["CRPIX1"]
-    spectral = m.Linear1D(
-        slope=cdelt1 * spectral_unit / u.pix,
-        intercept=(crval1 - cdelt1 * (crpix1 - 1)) * spectral_unit,
-        name="Wavelength",
-    )
-
+    sit_and_stare = cdelt3 == 0
     # Pixel inputs are (wavelength, slit, step, scan), so lookup tables use (step, scan).
     pc_all, crval_all, dt_all = (np.swapaxes(table, 0, 1) for table in (pc_all, crval_all, dt_all))
     # Each exposure's CRVAL is its own slit position, so its reference pixel is its own step;
@@ -83,10 +96,10 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_
     # The slit reference pixel of each raster comes from its own file: a file with no data has CRPIX2 = 0
     crpix[..., 1] = np.asarray(crpix2_all) - 1
     # Sit-and-stare AUX PC is an unscaled rotation, so the (virtual) step scale is the slit scale.
-    cdelt3 = window_header["CDELT2"] if sit_and_stare else window_header["CDELT3"]
+    cdelt3 = cdelt2 if sit_and_stare else cdelt3
     celestial = _one_pass(
         VaryingCelestialTransform2D(
-            cdelt=[cdelt3, window_header["CDELT2"]] * (u.arcsec / u.pix),
+            cdelt=[cdelt3, cdelt2] * (u.arcsec / u.pix),
             # Reversing both PC axes turns the FITS (lat, lon) order into the gWCS (lon, lat) one.
             pc_table=pc_all[..., ::-1, ::-1],
             crval_table=crval_all,
@@ -109,12 +122,7 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_
         | (celestial_inverse & m.Identity(2, name="step_scan"))
         | m.Mapping((1, 2, 3), n_inputs=4, name="SelectSlitStepScan")
     )
-    forward_transform = spectral & non_spectral
-
     base_time = parse_time(t_ref)
-    spectral_frame = cf.SpectralFrame(
-        axes_order=(0,), unit=spectral_unit, name="wavelength", axes_names=("wavelength",)
-    )
     celestial_frame = cf.CelestialFrame(
         axes_order=(1, 2),
         unit=(u.arcsec, u.arcsec),
@@ -139,7 +147,6 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_
         unit=(u.pix,),
         name="scan",
     )
-    output_frame = cf.CompositeFrame([spectral_frame, celestial_frame, temporal_frame, step_frame, scan_frame])
     pixel_axis_names = ["dispersion axis", "spatial along slit", "raster step", "raster scan"]
     pixel_frame = cf.CoordinateFrame(
         naxes=len(pixel_axis_names),
@@ -148,8 +155,4 @@ def _create_raster_gwcs(window_header, pc_all, crval_all, crpix2_all, dt_all, t_
         axes_type=["PIXEL"] * len(pixel_axis_names),
         unit=(u.pix,) * len(pixel_axis_names),
     )
-    return gwcs.WCS(
-        forward_transform,
-        input_frame=pixel_frame,
-        output_frame=output_frame,
-    )
+    return non_spectral, pixel_frame, (celestial_frame, temporal_frame, step_frame, scan_frame)

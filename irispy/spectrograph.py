@@ -161,6 +161,11 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         The time of each exposure, an `~astropy.time.Time`; a single time for one
         exposure.
         """
+        wcs = self.wcs.low_level_wcs
+        if isinstance(wcs, gwcs.WCS):
+            # An unsliced raster cube: its time lookup at each (scan, step) gives the times without the rest of the gWCS
+            scan, step = np.indices(self.data.shape[:2]) * u.pix
+            return wcs.output_frame.frames[2].reference_frame + wcs.forward_transform["Time"](step, scan)
         if "time" not in self.wcs.world_axis_physical_types:
             # Indexing one exposure drops the time from the WCS into the global coordinates
             dropped = [coordinate for coordinate in self.global_coords.values() if isinstance(coordinate, Time)]

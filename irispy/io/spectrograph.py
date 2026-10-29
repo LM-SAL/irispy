@@ -347,6 +347,7 @@ def read_spectrograph_lvl2(
             crval = np.column_stack((aux_data[:, aux.header["XCENIX"]], aux_data[:, aux.header["YCENIX"]])) * u.arcsec
             pc, crval = _sanitize_raster_wcs_tables(pc, crval)
             # Exposure midpoints (T_OBS); NUV ones come from the source filenames.
+            t_obs_fuv = aux_times + exposure_times_fuv / 2
             t_obs_nuv = None
             file_wcs = None
             # The meta of each window copies one dict of the primary header: walking its cards is slow
@@ -365,7 +366,7 @@ def read_spectrograph_lvl2(
                     exposure_times = exposure_times_fuv
                     dn_unit = DN_UNIT["FUV"]
                     readout_noise = READOUT_NOISE["FUV"]
-                    times = aux_times + exposure_times_fuv / 2
+                    times = t_obs_fuv
                 else:
                     exposure_times = exposure_times_nuv
                     dn_unit = DN_UNIT["NUV"]
@@ -417,6 +418,7 @@ def read_spectrograph_lvl2(
                     unit=dn_unit,
                     meta=meta,
                     time=times,
+                    observer=observer,
                     shape=data.shape,
                     dtype=data.dtype,
                 )
@@ -435,8 +437,9 @@ def read_spectrograph_lvl2(
                         else None,
                     )
                 reads[window_name].append(read)
+    non_spectral = {}
     window_data_pairs = [
-        (window_name, _combine_raster_cubes(window_reads, rasters[window_name], lazy=lazy))
+        (window_name, _combine_raster_cubes(window_reads, rasters[window_name], non_spectral, lazy=lazy))
         for window_name, window_reads in reads.items()
     ]
     return RasterCollection(window_data_pairs, aligned_axes=(0, 1, 2))
