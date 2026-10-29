@@ -194,6 +194,17 @@ def test_read_sji_lvl2_uncertainty_uses_the_photons_per_dn_of_the_passband(reque
     assert cube.uncertainty.array[brightest] == pytest.approx(expected, rel=1e-6)
 
 
+def test_read_sji_lvl2_other_passband_stays_in_dn(tmp_path, sns_sji_1400_file):
+    # SJI_5000W and SJI_1600W have no published photons per DN
+    filename = tmp_path / "sji_5000w.fits"
+    with fits.open(sns_sji_1400_file, memmap=False) as hdulist:
+        hdulist[0].header["TDESC1"] = "SJI_5000W"
+        hdulist.writeto(filename)
+    assert read_sji_lvl2(filename).unit == u.DN
+    with pytest.raises(ValueError, match="SJI_5000W"):
+        read_sji_lvl2(filename, uncertainty=True)
+
+
 @pytest.mark.parametrize("input_kind", ["file-like", "hdulist"])
 @pytest.mark.parametrize("memmap", [False, True])
 def test_read_sji_lvl2_accepts_decompressed_data(input_kind, memmap):
