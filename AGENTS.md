@@ -1,74 +1,70 @@
-# Repository Guidelines
+# Agent notes
 
-## Layout
+Conventions you cannot read off the code. Install, test and docs commands live in `README.rst`, `tox.ini` and `pytest.ini`; the last section holds the rules for this repository.
 
-- `irispy/` is the import package; the distribution name is `irispy-lmsal`.
-- Main public data APIs live in `irispy/sji.py` and `irispy/spectrograph.py`.
-- Level 2 FITS readers live in `irispy/io/`; analysis and calibration helpers live in `irispy/utils/`.
-- Packaged calibration and test data live in `irispy/data/`.
-- Tests stay beside their code in `irispy/tests/`, `irispy/io/tests/`, and `irispy/utils/tests/`.
-- Documentation is in `docs/`, runnable examples are in `examples/`, and Towncrier fragments are in `changelog/`.
-- Do not hand-edit generated files such as `irispy/_version.py`, `docs/api/`, or `docs/generated/`.
+## Lean changes
 
-## Development Commands
+- Make the smallest change that fully solves the task: every caller, test and doc it touches, and nothing nobody asked for (options, abstractions, code "for later").
+- Reuse before writing: search this package first, then its installed dependencies. A fix that belongs in a library upstream is proposed there, and the pull request says so.
+- Deleting code beats adding it; code you move keeps its validation and error handling.
+- Comments give the why in one line.
 
-The project supports Python 3.13-3.14; Python 3.14 matches the primary CI job.
+## Before a commit
 
-```bash
-micromamba create -n irispy python=3.14
-micromamba activate irispy
-python -m pip install -e ".[dev]"
-```
+- `prek run --files <changed files>` (or `pre-commit` with the same arguments) and the tests of every subpackage you touched pass.
+- A bug fix comes with a test that fails before the fix and passes after it.
+- A new public function or option comes with at least one test.
 
-Run the full offline suite, including documentation doctests:
+## Tests
 
-```bash
-pytest
-```
+- Tests live beside their code in `<subpackage>/tests/test_*.py` and test behavior users see.
+- Every warning is an error. Fix the cause of a new warning; when the warning is expected, filter it at the narrowest scope, with a comment saying why: on the test (`@pytest.mark.filterwarnings("ignore:<message>:<Category>")`), on its file (`pytestmark = pytest.mark.filterwarnings(...)`), or in `pytest.ini` when many files hit it.
+- Examples in docstrings and `.rst` files run as doctests.
 
-Run network and figure tests explicitly:
+## Docs
 
-```bash
-pytest --remote-data=any
-pytest --pyargs irispy -m "mpl_image_compare" --mpl --remote-data=any
-```
+- Docstrings and docs are as short as the reader needs: a summary line, the parameters, and the behavior the code does not show. They say what the code does and what the user needs; how it works something out, where a rule came from, why a dependency exists and what is planned go in code comments or the pull request.
+- The docs build is nitpicky and fails on warnings. Single backticks make a cross-reference that must resolve (`int`, `astropy.units.Quantity`, a public object of this package); parameter names, literals and file names take double backticks.
 
-The figure hash library is made on Linux by CircleCI; on macOS the figure tests fail against it, which is not a bug.
+## Commits and pull requests
 
-CI-style checks are `tox -e py314`, `tox -e codestyle`, and `tox -e build_docs`. To remove generated documentation,
-run `make clean` from `docs/`.
+- Branch from `main`, and keep the branch current by rebasing on `main`, then `git push --force-with-lease`.
+- Each commit is one focused piece of work.
+- Commit and pull request titles are one sentence in the imperative that says what changed and, when it is not obvious, why: `Pass only the fitted samples to np.spacing in the float32 rounding test, as it warns about NaN on Windows`.
+- A change users can see gets a towncrier fragment, with a type from `changelog/README.rst`: one or two full sentences for users. Its number is the pull request's, so it is added once the pull request is open.
 
-## Style and Tests
+## Before a pull request
 
-- Target Python 3.13 syntax. Ruff formats with 120-column lines, double quotes, spaces, and NumPy docstrings.
-- Let the `isort` pre-commit hook order imports; Ruff's import-sorting rules are disabled.
-- Run `pre-commit run --all-files` before opening a PR.
-- Warnings are errors. The default suite excludes `mpl_image_compare` tests and enables RST doctests.
-- Mark data downloads with `@pytest.mark.remote_data` and other connectivity-dependent tests with
-  `@pytest.mark.online`.
-- Add the smallest focused regression test near changed code. Use the existing `figure_test` helper for visual output.
+- Review your own diff: every caller of a changed function still works, the tests asked for above exist, and the diff holds no debug output, personal paths or unrelated changes.
+- Open the pull request when the branch is ready to merge: the checks before a commit and the whole test run pass locally.
+- The description has four headed parts:
+  - **What changed**
+  - **Why**, linking the issue or pull request when one exists
+  - **How it was verified**: the commands run and their results
+  - **Needs a person**: each item from the list below that the change touches, or "none"
+- Then watch CI, and reproduce a failed job locally with the same `tox -e <job>`.
 
-## Scope and Judgment
+## A person decides
 
-- Handle only real Level 2 data. No guards, fixtures or code paths for files that do not occur in the archive.
+An agent proposes these and lists them under **Needs a person**; a person makes the call:
+
+- default values, scientific constants, thresholds and line lists, each with a citation or a data file
+- physics or algorithm choices
+- public API: names, signatures and return values of public functions
+- names and formats of files written to disk, which people's analysis code reads
+- dependency versions in `pyproject.toml`
+- anything that deletes or overwrites data
+- releases: tags, publishing and release metadata
+
+## irispy
+
+- `irispy` is the import package; the distribution is `irispy-lmsal`. `irispy/_version.py`, `docs/api/` and `docs/generated/` are generated.
+- The remote is GitHub (`gh`), and pull requests are squash-merged. Fragments are `changelog/<PR>.<type>.rst`, with a counter for several of one type (`123.feature.1.rst`); a pull request without one gets the `No Changelog Entry Needed` label.
+- Handle only real Level 2 data: guards, fixtures and code paths cover files that occur in the archive.
 - Slicing and indexing behave like plain `ndcube`.
-- Test behavior users see. No tests of import mechanics or other internals, and no xfail tests for workflows
-  irispy does not support.
-- Pickling a cube is not a supported workflow. Pass arrays across process boundaries; ASDF is the planned save
-  format.
-- Documentation, gallery text and docstrings say what irispy does and what the user needs. How irispy works
-  something out, where a rule came from, why a dependency exists and what is planned belong in code comments or
-  the pull request.
-- No function that only wraps astropy, ndcube or sunpy; write a recipe in the docs instead. Quick-look and GUI
-  tools belong in glue-solar.
-- A cleaning or analysis step is a function in `irispy/utils/` that returns a new cube, not a cube method, alias
-  or state flag. Add a method only when it needs the class.
-- Scientific constants, thresholds and line lists need a citation or a data file.
-- Releases are made by people. Agents do not tag, publish or edit release metadata.
-
-## Commits and Pull Requests
-
-- Describe user-visible impact in the PR and link the relevant issue or PR when one exists.
-- For user-visible changes, add a ReST Towncrier fragment named `changelog/<PR_NUMBER>.<TYPE>.rst`.
-- Valid fragment types are `breaking`, `deprecation`, `removal`, `feature`, `bugfix`, `doc`, and `trivial`.
-- Add a counter for multiple fragments of the same type, for example `123.feature.1.rst`.
+- A cleaning or analysis step is a function in `irispy/utils/` that returns a new cube. A cube method is only for what needs the class.
+- What only calls astropy, ndcube or sunpy is a recipe in the docs. Quick-look and GUI tools belong in glue-solar.
+- Public API changes break outright: remove or rename, with a `breaking` fragment that says how to migrate, and no aliases or deprecation warnings.
+- Tests cover the workflows irispy supports; an unsupported one gets no xfail test. Pickling a cube is unsupported: pass arrays across process boundaries. ASDF is the planned save format.
+- Mark data downloads `@pytest.mark.remote_data` and other network tests `@pytest.mark.online`. Visual output is tested with the `figure_test` helper.
+- Examples use irispy's cube classes. A change to an example, or to code an example calls, runs the gallery before and after and compares every figure. The figure hash library is made on Linux by CircleCI, so figure tests fail on macOS; that is not a bug.
