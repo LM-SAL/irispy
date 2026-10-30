@@ -14,7 +14,7 @@ import numpy as np
 
 import astropy.units as u
 
-from irispy._wcs import _is_sit_and_stare
+from irispy._spectrograph_wcs import _is_sit_and_stare
 from irispy.spectrograph import _wavelength_indices
 from irispy.utils._spectral import _to_unit, check_scaled, check_velocity_range, default_rest_wavelength
 from irispy.utils.utils import _boolean_mask, _import_optional

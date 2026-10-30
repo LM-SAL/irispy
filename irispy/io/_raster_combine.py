@@ -1,5 +1,4 @@
 from copy import deepcopy
-from numbers import Integral
 
 import dask.array as da
 import numpy as np
@@ -29,59 +28,6 @@ def _combine_raster_metas(metas, combined_shape):
         values = metas[0][key][np.newaxis] if len(metas) == 1 else np.stack([source[key] for source in metas])
         meta.add(key, values, axes=(0, *(axis + 1 for axis in axes)), overwrite=True)
     return meta
-
-
-class _SaturatedSamples:
-    """
-    A `True`/`False` array of the saturated samples of one window that stores only their
-    positions.
-
-    Saturated samples are rare, so a few bytes for each takes far less memory than one
-    byte for every sample of the data. Slicing with integers and slices, as
-    `~ndcube.NDMeta` does when the cube is sliced, keeps only the positions inside the
-    slice. `numpy.asarray` builds the full array.
-    """
-
-    def __init__(self, positions, shape):
-        self.positions = positions  # the array indices of the samples, one row per axis
-        self.shape = tuple(shape)
-        self.ndim = len(self.shape)
-        self.dtype = np.dtype(bool)
-
-    def __len__(self):
-        return self.shape[0]
-
-    def __repr__(self):
-        return f"<{self.positions.shape[1]} saturated samples in an array of shape {self.shape}>"
-
-    def __array__(self, dtype=None, copy=None):
-        if copy is False:
-            msg = "The saturated samples are built from their positions, which needs a copy"
-            raise ValueError(msg)
-        samples = np.zeros(self.shape, dtype=bool)
-        samples[tuple(self.positions)] = True
-        return samples if dtype is None else samples.astype(dtype, copy=False)
-
-    def __getitem__(self, item):
-        item = item if isinstance(item, tuple) else (item,)
-        if len(item) > self.ndim or not all(isinstance(index, Integral | slice) for index in item):
-            # Any other index: build the array and let numpy index it
-            return np.asarray(self)[item]
-        item += (slice(None),) * (self.ndim - len(item))
-        shape, positions = [], []
-        inside = np.ones(self.positions.shape[1], dtype=bool)
-        for index, size, axis_positions in zip(item, self.shape, self.positions, strict=True):
-            selected = np.arange(size)[index]
-            # The place of each index of this axis in the slice, or -1 if it is outside
-            lookup = np.full(size, -1)
-            lookup[selected] = np.arange(np.size(selected)).reshape(np.shape(selected))
-            inside &= lookup[axis_positions] >= 0
-            if np.ndim(selected):  # an integer drops its axis
-                shape.append(selected.size)
-                positions.append(lookup[axis_positions])
-        if not shape:
-            return np.bool_(inside.any())
-        return _SaturatedSamples(np.stack([axis[inside] for axis in positions]).astype(self.positions.dtype), shape)
 
 
 def _read_window(source, index):
@@ -122,9 +68,10 @@ def _add_raster(rasters, index, count, **arrays):
     ``rasters``: the window's arrays by name, with a leading raster axis.
 
     For a single file, the arrays get the axis as a view, so a memmap stays a memmap.
-    For several files, each array is made at the first file and each file is copied in
-    as it is read. Stacking them after all files are read would hold every file's arrays
-    and the stack at the same time.
+    For several files, each array is made at the first file that has it and each file
+    is copied in as it is read: stacking them after all files are read would hold every
+    file's arrays and the stack at the same time. A `None` array is skipped, so the
+    rasters of a file without saturated samples stay `False` in the stack of them.
     """
     for name, array in arrays.items():
         if array is None:
@@ -133,33 +80,44 @@ def _add_raster(rasters, index, count, **arrays):
             rasters[name] = array[np.newaxis]
             continue
         if name not in rasters:
-            rasters[name] = np.empty((count, *array.shape), array.dtype)
+            rasters[name] = np.zeros((count, *array.shape), array.dtype)
         rasters[name][index] = array
 
 
-def _add_saturated(rasters, index, count, saturated):
+def _sky_time_models(files):
     """
-    Add the array indices of the ``saturated`` samples of raster ``index`` of ``count``
-    to ``rasters``, with the raster index first, in the smallest integer type that holds
-    every index of the window.
+    The part of the raster gWCS after the spectral axis, for each detector band read,
+    from the records of the files.
+
+    The windows of a file share its pointing tables, slit reference pixel and plate
+    scales, as its one FITS-TAB WCS does, and those of a band their times, so their
+    gWCSes differ only in the spectral axis.
     """
-    positions = np.insert(np.argwhere(saturated), 0, index, axis=1)
-    rasters.setdefault("saturated", []).append(positions.astype(np.min_scalar_type(max(count, *saturated.shape))))
+    first = files[0]
+    models = {}
+    for band in first.times:
+        times = np.stack([file.times[band] for file in files])
+        models[band] = _create_raster_non_spectral(
+            np.stack([file.pc for file in files]),
+            np.stack([file.crval for file in files]),
+            [file.crpix2 for file in files],
+            (times - times[0, 0]).to(u.s),
+            times[0, 0],
+            first.observer,
+            cdelt2=first.cdelt2,
+            cdelt3=first.cdelt3,
+        )
+    return models
 
 
 def _combine_raster_cubes(reads, rasters, non_spectral, *, lazy):
     """
-    Combine the rasters of one window, one read per file, into one cube with a leading
+    Combine one window of every file, one read per file, into one cube with a leading
     raster axis.
 
-    Each read has its file's window ``header``, ``pc`` and ``crval`` tables, ``unit``,
-    ``meta``, ``time`` and ``observer``; for a ``lazy`` read, also the ``data`` source
-    for ``_WindowFiles`` and the ``shape`` and ``dtype`` of one file. ``rasters`` has
-    the window's data, mask and any uncertainty from ``_add_raster`` (for a ``lazy``
-    read, the data and mask are made here instead), and any saturated samples from
-    ``_add_saturated``. ``non_spectral`` maps each detector band to the result of
-    ``_create_raster_non_spectral`` for the windows of that band read with these, and
-    gains it for the band of this window if missing.
+    ``rasters`` has the window's arrays from ``_add_raster``, unless the read is
+    ``lazy``, when the data and mask are made here as Dask arrays that open each file
+    when it is read. ``non_spectral`` is the band's model from ``_sky_time_models``.
     """
     first = reads[0]
     if lazy:
@@ -167,7 +125,7 @@ def _combine_raster_cubes(reads, rasters, non_spectral, *, lazy):
         # Chunks of up to 64 MiB of steps, one file each
         steps = max(1, min(shape[0], 64 * 2**20 // (int(np.prod(shape[1:])) * dtype.itemsize)))
         data = da.from_array(
-            _WindowFiles([read.data for read in reads], shape, dtype),
+            _WindowFiles([read.source for read in reads], shape, dtype),
             chunks=(1, steps, *shape[1:]),
             name=False,
             fancy=False,
@@ -177,34 +135,15 @@ def _combine_raster_cubes(reads, rasters, non_spectral, *, lazy):
     else:
         data, mask = rasters["data"], rasters["mask"]
     uncertainty = rasters.get("uncertainty")
-    band = first.meta.detector_band
-    if band not in non_spectral:
-        # The windows of a file share its pointing tables, slit reference pixel and plate scales, as its one FITS-TAB
-        # WCS does, and those of a band their times, so their gWCSes differ only in the spectral axis
-        times = np.stack([read.time for read in reads])
-        non_spectral[band] = _create_raster_non_spectral(
-            np.stack([read.pc for read in reads]),
-            np.stack([read.crval for read in reads]),
-            [read.header["CRPIX2"] for read in reads],
-            (times - times[0, 0]).to_value(u.s) * u.s,
-            times[0, 0],
-            first.observer,
-            cdelt2=first.header["CDELT2"],
-            cdelt3=first.header["CDELT3"],
-        )
     meta = _combine_raster_metas([read.meta for read in reads], data.shape)
-    meta["fits_wcs"] = [read.meta["fits_wcs"] for read in reads]
+    meta["fits_wcs"] = [read.fits_wcs for read in reads]
     if "saturated" in rasters:
-        saturated = _SaturatedSamples(np.concatenate(rasters["saturated"]).T, data.shape)
-        if saturated.positions.nbytes >= data.size:
-            # With this many saturated samples (more than 1 in 8 for 2-byte indices), an array of one byte per
-            # sample is smaller than their positions. The read held the positions until here, so it used more
-            # memory than such an array would have.
-            saturated = np.asarray(saturated)
-        meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", tuple(range(data.ndim)))
+        meta.add(
+            "saturated", rasters["saturated"], "Samples at the level 2 ceiling, also masked", tuple(range(data.ndim))
+        )
     return SpectrogramCube(
         data,
-        wcs=_create_raster_gwcs(first.header, *non_spectral[band]),
+        wcs=_create_raster_gwcs(first.header, *non_spectral),
         uncertainty=None if uncertainty is None else StdDevUncertainty(uncertainty, copy=False),
         unit=first.unit,
         meta=meta,

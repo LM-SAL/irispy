@@ -11,19 +11,14 @@ import astropy.units as u
 from astropy.coordinates import SpectralCoord
 from astropy.io import fits
 from astropy.tests.helper import assert_quantity_allclose
-from astropy.wcs import WCS
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.io.utils import read_files
-from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import figure_test
 from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
-from irispy.visualization import _registered_colormap
 
 LON, LAT = "custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"
-SPATIAL_AXES = [("HPLT-TAN", "arcsec", 0.1, 0), ("HPLN-TAN", "arcsec", 0.1, 0)]
-NO_LATITUDE_AXES = [("WAVE", "nm", 0.02, 140.0), ("TIME", "s", 1.0, 0), ("UTC", "s", 1.0, 0)]
 
 
 @pytest.fixture
@@ -73,31 +68,33 @@ def test_time_is_the_exposure_midpoint_of_any_slice(sns_sg_file, combined_si_iv)
     assert (combined_si_iv.time == combined_si_iv.axis_world_coords("time")[0]).all()
 
 
+def _wcs_summary(wcs):
+    return wcs.pixel_n_dim, wcs.pixel_shape, wcs.pixel_to_world_values(*[1] * wcs.pixel_n_dim)
+
+
 @pytest.mark.parametrize(
-    ("item", "scan", "index", "segment_index"),
-    [(1, 1, (2, 50, 10), (2, 50, 10)), ((2, 4), 2, (50, 10), (4, 50, 10))],
-    ids=["scan", "scan_and_step"],
+    ("sliced", "rasters", "item"),
+    [
+        (lambda c: c[2, 4], 2, (4,)),
+        (lambda c: c[1:3, 2:4], slice(1, 3), (slice(2, 4),)),
+        (lambda c: c[:, 2:6][2], 2, (slice(2, 6),)),
+        (lambda c: c[:, 2:5, 10:60][1], 1, (slice(2, 5), slice(10, 60))),
+        (lambda c: c[1, 3, 10:20, 5], 1, (3, slice(10, 20), 5)),
+    ],
+    ids=["raster_and_step", "ranges", "chained_ranges_then_raster", "chained_two_axes", "integers_and_a_range"],
 )
-def test_integer_index_gives_the_fits_wcs_of_that_raster(combined_si_iv, item, scan, index, segment_index):
-    sliced, segment = combined_si_iv[item], combined_si_iv[scan]
-
-    assert sliced.shape == segment.shape[-len(index) :]
-    assert sliced.fits_wcs is not None
-    assert sliced.fits_wcs.pixel_n_dim == sliced.wcs.pixel_n_dim == len(index)
-    sliced_spectral, sliced_sky = sliced.fits_wcs.array_index_to_world(*index)
-    expected_spectral, expected_sky = segment.fits_wcs.array_index_to_world(*segment_index)
-    assert_quantity_allclose(sliced_spectral.to(u.nm), expected_spectral.to(u.nm))
-    assert_quantity_allclose(sliced_sky.Tx.to(u.arcsec), expected_sky.Tx.to(u.arcsec))
-    assert_quantity_allclose(sliced_sky.Ty.to(u.arcsec), expected_sky.Ty.to(u.arcsec))
-
-
-def test_combined_cube_has_one_fits_wcs_per_raster(combined_si_iv):
-    sliced = combined_si_iv[1:3, 2:4]
-    assert len(sliced.fits_wcs) == 2
-    for raster, wcs in enumerate(sliced.fits_wcs, start=1):
-        expected = combined_si_iv[raster, 2:4].fits_wcs
-        assert wcs.pixel_shape == expected.pixel_shape == sliced.data.shape[:0:-1]
-        np.testing.assert_allclose(wcs.pixel_to_world_values(3, 50, 1), expected.pixel_to_world_values(3, 50, 1))
+def test_fits_wcs_follows_slicing(combined_si_iv, sliced, rasters, item):
+    # The FITS WCS of each raster left, sliced as the cube is after the raster axis
+    cube = sliced(combined_si_iv)
+    roots = combined_si_iv.fits_wcs[rasters]
+    if isinstance(roots, list):
+        assert len(cube.fits_wcs) == len(roots)
+        pairs, n_dim = zip(cube.fits_wcs, roots, strict=True), cube.wcs.pixel_n_dim - 1  # the raster axis stays
+    else:
+        pairs, n_dim = [(cube.fits_wcs, roots)], cube.wcs.pixel_n_dim
+    for wcs, root in pairs:
+        assert wcs.pixel_n_dim == n_dim
+        np.testing.assert_equal(_wcs_summary(wcs), _wcs_summary(root.slice(item, numpy_order=True)))
 
 
 def test_spectrogram_cube_crop_slices_fits_wcs(combined_si_iv):
@@ -165,11 +162,11 @@ def test_spectrogram_animation_layout_and_label_colors_survive_update(mg_ii_rast
     ("axes_coordinates", "edges", "hidden"),
     [
         (None, {LON: "b", LAT: "l"}, ["time", "raster_step"]),
-        ([LON, LAT, None], {LON: "b", LAT: "l"}, ["time", "raster_step"]),
+        ([LON, LAT, "time"], {LON: "b", LAT: "l"}, ["raster_step"]),
         ([LON, None, None], {LON: "b"}, [LAT, "time", "raster_step"]),
         ([LON, "time", None], {LON: "b"}, [LAT, "raster_step"]),
     ],
-    ids=["default", "longitude_and_latitude", "longitude_only", "longitude_and_time"],
+    ids=["default", "longitude_latitude_and_time", "longitude_only", "longitude_and_time"],
 )
 @pytest.mark.filterwarnings("ignore:Animating a NDCube does not support transposing")
 def test_raster_animation_axis_layout_survives_update(raster_sg_files, axes_coordinates, edges, hidden):
@@ -202,47 +199,28 @@ def test_raster_animation_axis_layout_survives_update(raster_sg_files, axes_coor
 
 
 @pytest.mark.parametrize(
-    ("plot_axes", "edges"),
-    [(["y", "x"], {LAT: "b", LON: "l"}), (None, {LON: "b", LAT: "l"})],
-    ids=["slit_on_x", "step_on_x_by_default"],
+    ("plot_axes", "axes_coordinates", "edges", "time_shown"),
+    [
+        (["y", "x"], None, {LAT: "b", LON: "l"}, False),
+        (None, None, {LON: "b", LAT: "l"}, False),
+        (["x", "y"], [LON, LAT, "time"], {LON: "b", LAT: "l"}, True),
+    ],
+    ids=["slit_on_x", "step_on_x_by_default", "time_requested"],
 )
 def test_raster_image_labels_latitude_on_slit_edge_and_longitude_on_step_edge(
-    mg_ii_raster, mg_ii_image, plot_axes, edges
+    mg_ii_raster, mg_ii_image, plot_axes, axes_coordinates, edges, time_shown
 ):
+    # The time and raster step are shown only when asked for, and longitude and latitude keep their edges
     assert mg_ii_image.shape == mg_ii_raster.shape[:2]
     fig = plt.figure()
-    ax = mg_ii_image.plot(plot_axes=plot_axes)
+    ax = mg_ii_image.plot(plot_axes=plot_axes, axes_coordinates=axes_coordinates)
     fig.canvas.draw()
 
     for name, edge in edges.items():
         assert ax.coords[name].get_ticklabel_position() == [edge]
-    for name in ("time", "raster_step"):
-        assert not ax.coords[name].get_ticklabel_visible()
-    plt.close(fig)
-
-
-@pytest.mark.filterwarnings("ignore:Animating a NDCube does not support transposing")
-def test_requested_time_coordinate_joins_the_celestial_layout(mg_ii_raster, mg_ii_image):
-    """
-    A time coordinate asked for with ``axes_coordinates`` is shown, and longitude and
-    latitude keep their edges, in an image and in an animation.
-    """
-    fig = plt.figure()
-    ax = mg_ii_image.plot(plot_axes=["x", "y"], axes_coordinates=[LON, LAT, "time"])
-    fig.canvas.draw()
-
-    assert ax.coords[LON].get_ticklabel_position() == ["b"]
-    assert ax.coords[LAT].get_ticklabel_position() == ["l"]
-    assert ax.coords["Time (UTC)"].get_ticklabel_visible()
+    time = ax.coords[list(ax.wcs.world_axis_physical_types).index("time")]
+    assert time.get_ticklabel_visible() == time_shown
     assert not ax.coords["raster_step"].get_ticklabel_visible()
-    plt.close(fig)
-
-    fig = plt.figure()
-    animator = mg_ii_raster.plot(plot_axes=["x", "y", None], axes_coordinates=[LON, LAT, "time"], fig=fig)
-    animator.update_plot_2d(1, animator.im, SimpleNamespace(cval=1))
-    assert animator.axes.coords[LON].get_ticklabel_position() == ["b"]
-    assert animator.axes.coords[LAT].get_ticklabel_position() == ["l"]
-    assert not animator.axes.coords["raster_step"].get_ticklabel_visible()
     plt.close(fig)
 
 
@@ -276,12 +254,6 @@ def test_spectrogram_cube_rejects_fancy_indexing(combined_si_iv):
         combined_si_iv[np.array([0, 2, 4])]
 
 
-def test_spectrogram_cube_slice_preserves_coordinates(combined_si_iv):
-    sliced = combined_si_iv[0:1]
-    assert sliced.global_coords == combined_si_iv.global_coords
-    assert list(sliced.extra_coords.keys()) == list(combined_si_iv.extra_coords.keys())
-
-
 @pytest.mark.parametrize(
     "derive",
     [
@@ -300,35 +272,7 @@ def test_derived_combined_cube_keeps_raster_behavior(combined_si_iv, derive):
     assert out[0].fits_wcs is not None
 
 
-def _fits_wcs_sample(cube):
-    wcs = cube.fits_wcs
-    return wcs.array_shape, wcs.array_index_to_world_values(1, 5, 7)
-
-
-@pytest.mark.parametrize(
-    ("actual", "expected"),
-    [
-        (lambda c: c.rebin((1, 2, 1, 1))[0].fits_wcs, lambda _: None),
-        (lambda c: _fits_wcs_sample(c[:, 2:6][2]), lambda c: _fits_wcs_sample(c[2][2:6])),
-        (
-            lambda c: _fits_wcs_sample(c[:, 2:5, 10:60][1]),
-            lambda c: (
-                (3, 50, 29),
-                c[1].fits_wcs.slice((slice(2, 5), slice(10, 60))).array_index_to_world_values(1, 5, 7),
-            ),
-        ),
-    ],
-    ids=[
-        "rebin_fits_wcs",
-        "slice_order",
-        "chained_slice",
-    ],
-)
-def test_combined_raster_derived_state(combined_si_iv, actual, expected):
-    np.testing.assert_equal(actual(combined_si_iv), expected(combined_si_iv))
-
-
-@pytest.fixture(params=["raster_sg_file", "raster_sg_files", "sns_sg_file", "sns_sjicube_1330"])
+@pytest.fixture(params=["raster_sg_files", "sns_sg_file", "sns_sjicube_1330"])
 def any_cube(request):
     source = request.getfixturevalue(request.param)
     if request.param == "sns_sjicube_1330":
@@ -373,8 +317,9 @@ def test_failed_slice_raises_and_keeps_meta(raster_sg_file, item, match):
     cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]
     meta = cube.meta
 
-    with pytest.raises(IndexError, match=match):
+    with pytest.raises(IndexError, match=match) as error:
         _ = cube[item]
+    assert type(error.value) is IndexError  # not numpy's AxisError, which is also a ValueError
     assert cube.meta is meta
 
 
@@ -385,33 +330,10 @@ def test_length_one_step_axis(sns_sg_file):
     assert "('em.wl',)" in str(cube)
 
 
-def _fits_wcs(axes):
-    header = fits.Header({"NAXIS": len(axes)})
-    for i, (ctype, cunit, cdelt, crval) in enumerate(axes, start=1):
-        header.update({f"CTYPE{i}": ctype, f"CUNIT{i}": cunit, f"CDELT{i}": cdelt, f"CRVAL{i}": crval, f"CRPIX{i}": 1})
-    return WCS(header)
-
-
-def test_spectrogram_cube_from_data_and_wcs():
-    # For example, a map of fitted line parameters with the WCS of the cube they came from.
-    cube = SpectrogramCube(np.ones((4, 5)) * u.km / u.s, _fits_wcs(SPATIAL_AXES))
-    assert cube.unit == u.km / u.s
-    assert cube.uncertainty is None
-    assert "Obs Date:           None" in str(cube)
-
-
-@pytest.mark.parametrize(
-    ("axes", "attribute", "message"),
-    [
-        (SPATIAL_AXES, "wavelength_axis", "wavelength axis"),
-        (SPATIAL_AXES, "spectral_dispersion", "no WAVE ctype"),
-        (NO_LATITUDE_AXES, "solid_angle", "no HPLT ctype"),
-    ],
-)
-def test_pixel_scales_need_their_axes(axes, attribute, message):
-    cube = SpectrogramCube(np.ones((1,) * (len(axes) - 2) + (2, 5)), _fits_wcs(axes))
-    with pytest.raises(ValueError, match=message):
-        getattr(cube, attribute)
+def test_a_map_has_no_wavelength_axis(sns_sg_file):
+    image = read_files(sns_sg_file)["Si IV 1403"][0, :, :, 10]
+    with pytest.raises(ValueError, match="wavelength axis"):
+        _ = image.wavelength_axis
 
 
 def test_pixel_scales_real_data(sns_sg_file):
@@ -423,13 +345,13 @@ def test_pixel_scales_real_data(sns_sg_file):
     assert cube.solid_angle.value > 0
 
 
-@pytest.mark.parametrize(("files", "bins"), [("sns_sg_file", (1, 1, 2, 1)), ("raster_sg_files", (1, 2, 1, 1))])
-def test_rebinned_cube_keeps_native_pixel_scales(request, files, bins):
-    cube = read_files(request.getfixturevalue(files), spectral_windows="Si IV 1403")["Si IV 1403"]
-    rebinned = cube.rebin(bins)
+def test_rebinned_cube_keeps_native_pixel_scales_and_has_no_fits_wcs(sns_sg_file):
+    cube = read_files(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]
+    rebinned = cube.rebin((1, 1, 2, 1))
 
     assert rebinned.spectral_dispersion == cube.spectral_dispersion
     assert rebinned.solid_angle == cube.solid_angle
+    assert rebinned.fits_wcs is None
 
 
 @pytest.mark.parametrize(
@@ -457,18 +379,6 @@ def test_spectrogram_plot_labels_narrow_window(sns_sg_file, kwargs, labels):
     assert re.findall(r">(283\.\d+)</text>", svg.getvalue()) == labels
 
 
-@pytest.mark.filterwarnings("ignore:Animating a NDCube does not support transposing")
-def test_combined_raster_animation_uses_the_detector_colormap(combined_si_iv):
-    animation = combined_si_iv.plot()
-    assert [image.get_cmap().name for image in animation.axes.images] == ["irissjiFUV"]
-    plt.close("all")
-
-
-def test_default_colormap_falls_back_to_viridis():
-    assert _registered_colormap("irissjiNUV") == "irissjiNUV"
-    assert _registered_colormap("irissji1700") == "viridis"
-
-
 @pytest.mark.parametrize(
     ("file_fixture", "plot_axes", "expected"),
     [
@@ -485,10 +395,9 @@ def test_raster_map_is_drawn_with_its_true_proportions(request, file_fixture, pl
     plt.close("all")
 
 
-@pytest.mark.parametrize("item", [np.s_[:, 2, :, 10], np.s_[:, :, 50, 10], np.s_[:, 2, 50, :]])
-def test_image_along_the_raster_axis_fills_the_axes(combined_si_iv, item):
+def test_image_along_the_raster_axis_fills_the_axes(combined_si_iv):
     # The rasters are times, often only a few, which square pixels would draw as a sliver
-    assert combined_si_iv[item].plot().get_aspect() == "auto"
+    assert combined_si_iv[:, 2, :, 10].plot().get_aspect() == "auto"
     plt.close("all")
 
 

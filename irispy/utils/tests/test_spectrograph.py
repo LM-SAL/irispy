@@ -98,15 +98,8 @@ def test_radiometric_calibration_of_full_sliced_and_rebinned_cube(c_ii_cube):
     np.testing.assert_allclose(factor[usable], native_factor[usable], rtol=1e-6)
 
 
-def test_radiometric_calibration_keeps_combined_raster_grouping(raster_sg_files):
-    cube = read_files(raster_sg_files)["Si IV 1403"]
-    calibrated_cube = radiometric_calibration(cube)
-
-    assert calibrated_cube.shape == cube.shape
-
-
-def test_exposure_time_correction_on_combined_cube(raster_sg_files):
-    cube = read_files(raster_sg_files[:3], spectral_windows="Si IV 1403", uncertainty=True)["Si IV 1403"]
+def test_exposure_time_correction_and_calibration_of_a_combined_cube(raster_sg_files):
+    cube = read_files(raster_sg_files, spectral_windows="Si IV 1403", uncertainty=True)["Si IV 1403"]
 
     corrected = cube.apply_exposure_time_correction()
 
@@ -115,6 +108,10 @@ def test_exposure_time_correction_on_combined_cube(raster_sg_files):
     np.testing.assert_array_equal(corrected[1].data, expected.data)
     np.testing.assert_array_equal(corrected[1].uncertainty.array, expected.uncertainty.array)
     np.testing.assert_allclose(corrected.apply_exposure_time_correction(undo=True).data, cube.data)
+    # Each raster is calibrated with its own exposure times
+    calibrated = radiometric_calibration(cube)
+    assert calibrated.shape == cube.shape
+    np.testing.assert_array_equal(calibrated[1].data, radiometric_calibration(cube[1]).data)
 
 
 def test_calculate_dn_to_radiance_factor_vs_peter_young(c_ii_cube):

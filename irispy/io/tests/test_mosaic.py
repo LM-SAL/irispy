@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -99,11 +100,12 @@ def test_read_mosaic(mosaic_file):
     assert cube.mask[2, 1, 4]
     assert np.isnan(cube.data[cube.mask & ~saturated]).all()
 
-    # The FITS reference pixel (CRPIX, 1-based) is at the reference value (CRVAL).
-    wavelength, coord = cube.wcs.pixel_to_world(2, 2, 1)
+    # The FITS reference pixel (CRPIX, 1-based) is at the reference value (CRVAL), and each position has its time
+    wavelength, coord, time = cube.wcs.pixel_to_world(2, 2, 1)
     assert_quantity_allclose(coord.Tx, -0.389693 * u.arcsec)
     assert_quantity_allclose(coord.Ty, -0.236448 * u.arcsec)
     assert_quantity_allclose(wavelength, 2796.352 * u.AA)
+    assert time.isot == "2015-02-22T20:59:22.140"  # 700 s after DATE_OBS at solar Y 2, solar X 1
     assert_quantity_allclose(cube.wcs.pixel_to_world(2, 2, 2)[1].Tx, (-0.389693 + 1.99523) * u.arcsec)
     assert coord.obstime == Time("2015-02-22T20:47:42.140")
     assert_quantity_allclose(coord.observer.radius, get_earth("2015-02-22T20:47:42.140").radius)
@@ -117,6 +119,9 @@ def test_read_mosaic(mosaic_file):
     assert times.mask[0, 0]
     assert times.mask.sum() == 1
     assert times[2, 1].isot == "2015-02-22T20:56:02.140"
+    # The gWCS gives the same times, masked where no raster covered the mosaic
+    assert cube.time.mask[0, 0]
+    assert (cube.time[~times.mask] == times[~times.mask]).all()
 
 
 def test_read_mosaic_archive_cut():
@@ -128,10 +133,9 @@ def test_read_mosaic_archive_cut():
     assert cube.mask[2, 19, 14]
     assert "saturated" not in cube.meta
     assert cube.meta["time"][2, 19].isot == "2015-02-22T21:17:44.280"
-    # A mosaic has no time coordinate table, so its time is that of the meta
     assert cube.time[2, 19] == cube.meta["time"][2, 19]
     # Column 541 and row 5626 (0-based) of the whole file, whose header grid is within 0.01 arcsec of the WCS
-    wavelength, coord = cube.wcs.pixel_to_world(7, 0, 1)
+    wavelength, coord, _ = cube.wcs.pixel_to_world(7, 0, 1)
     assert_quantity_allclose(wavelength, 2796.352 * u.AA)
     assert_quantity_allclose(
         [coord.Tx, coord.Ty],
@@ -208,12 +212,22 @@ def test_mosaic_to_map(mosaic_file):
     assert_quantity_allclose([sub_coord.Tx, sub_coord.Ty], [core_coord.Tx, core_coord.Ty])
 
 
-def test_mosaic_fits_wcs_and_celestial_frame(mosaic_file):
+def test_mosaic_gwcs_matches_its_fits_wcs(mosaic_file):
     cube = read_mosaic(mosaic_file)
-    # A mosaic is built on a FITS WCS
-    assert cube.fits_wcs is cube.wcs
-    # Rebinning keeps the pixel scales of the mosaic, as of a raster
+    # The gWCS gives the wavelengths and sky positions of the FITS WCS the mosaic was read with, pixel corners included
+    fits_wcs = cube.fits_wcs
+    assert fits_wcs is cube.meta["fits_wcs"]
+    pixels = np.meshgrid(*(np.arange(-0.5, n + 0.5) for n in cube.data.shape[::-1]), indexing="ij")
+    wavelength, longitude, latitude, _ = cube.wcs.pixel_to_world_values(*pixels)
+    expected_wavelength, expected_latitude, expected_longitude = fits_wcs.pixel_to_world_values(*pixels)
+    np.testing.assert_allclose(wavelength, expected_wavelength * 1e9, rtol=1e-12)  # nm against m
+    # arcsec against degrees, from 0 to 360 against -180 to 180
+    np.testing.assert_allclose((longitude / 3600 - expected_longitude + 180) % 360 - 180, 0, atol=1e-12)
+    np.testing.assert_allclose(latitude / 3600, expected_latitude, atol=1e-12)
+    # Slicing keeps the FITS WCS in step; rebinning drops it but keeps the pixel scales
+    assert cube[1:, 1:].fits_wcs.pixel_shape == (5, 3, 2)
     rebinned = cube.rebin((3, 2, 1))
+    assert rebinned.fits_wcs is None
     assert rebinned.spectral_dispersion == cube.spectral_dispersion
     assert rebinned.solid_angle == cube.solid_angle
     assert cube.celestial_frame.obstime == Time("2015-02-22T20:47:42.140")
@@ -232,6 +246,15 @@ def test_mosaic_detector(tmp_path, keywords, detector, spectral_summing, cmap):
     assert cube.meta.spectral_summing_factor == spectral_summing
     assert cube.unit == DN_UNIT[detector]
     assert cube.to_map(cube.meta.rest_wavelength).plot_settings["cmap"] == cmap
+
+
+def test_mosaic_map_plot_hides_the_time(mosaic_file):
+    # The time of a mosaic position follows the sky, as a raster's does, so it is shown only when asked for
+    ax = read_mosaic(mosaic_file)[:, :, 2].plot()
+    assert not ax.coords["time"].get_ticklabel_visible()
+    assert ax.coords["custom:pos.helioprojective.lon"].get_ticklabel_visible()
+    assert ax.coords["custom:pos.helioprojective.lat"].get_ticklabel_visible()
+    plt.close(ax.figure)
 
 
 def test_mosaic_mg_features(mosaic_file):

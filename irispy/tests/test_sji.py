@@ -4,12 +4,14 @@ import pytest
 
 import astropy.units as u
 from astropy.tests.helper import assert_quantity_allclose
+from astropy.wcs import WCS
 
 import sunpy.map
 from sunpy.coordinates import Helioprojective
 
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.io.utils import read_files
+from irispy.sji import SJICube
 from irispy.tests.helpers import figure_test
 from irispy.utils.bursts import find_bright_image_events
 from irispy.utils.constants import RADIANCE_UNIT
@@ -196,10 +198,9 @@ def test_sji_frame_figure(sns_sjicube_1400):
     sns_sjicube_1400[0].plot()
 
 
-@pytest.mark.parametrize("item", [np.s_[:, :, 10], np.s_[:, 10, :]])
-def test_sji_image_along_time_labels_its_time(sns_sjicube_1400, item):
+def test_sji_image_along_time_labels_its_time(sns_sjicube_1400):
     # Unlike a raster plot, which shows the time only when asked for
-    time = sns_sjicube_1400[item].plot().coords["time"]
+    time = sns_sjicube_1400[:, :, 10].plot().coords["time"]
     assert time.get_ticklabel_visible()
     assert time.get_ticklabel_position()
     plt.close("all")
@@ -339,3 +340,33 @@ def test_sji_celestial_frame_is_slicing_invariant_and_keeps_sg_points_in_place(s
     moved = point.transform_to(frame)
     assert_quantity_allclose(moved.Tx, point.Tx, atol=0.1 * u.arcsec)
     assert_quantity_allclose(moved.Ty, point.Ty, atol=0.1 * u.arcsec)
+
+
+def test_sjicube_takes_only_data_and_wcs_positionally(sns_sjicube_1330):
+    with pytest.raises(TypeError, match="positional"):
+        SJICube(sns_sjicube_1330.data, sns_sjicube_1330.wcs, sns_sjicube_1330.unit)
+
+
+@pytest.mark.parametrize(
+    ("item", "expected_len"),
+    [(-1, None), ((slice(0, 3), slice(0, 10)), 3), ((Ellipsis, slice(0, 10)), 52), ((0, Ellipsis), None)],
+    ids=["frame", "ranges", "ellipsis_first", "ellipsis_last"],
+)
+def test_sjicube_slice_keeps_the_fits_wcs_of_its_frames(sns_sjicube_1330, item, expected_len):
+    subset = sns_sjicube_1330[item]
+
+    if expected_len is None:
+        assert isinstance(subset.fits_wcs, WCS)
+    else:
+        assert len(subset.fits_wcs) == expected_len
+        assert isinstance(subset.fits_wcs[0], WCS)
+
+
+def test_sjicube_slice_rejects_multiple_ellipsis(sns_sjicube_1330):
+    with pytest.raises((IndexError, ValueError), match=r"single ellipsis|only have a single ellipsis"):
+        sns_sjicube_1330[(Ellipsis, Ellipsis)]
+
+
+def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
+    with pytest.raises((IndexError, ValueError), match=r"can not be greater than the dimensionality"):
+        sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]

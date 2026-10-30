@@ -8,9 +8,7 @@ from astropy.time import Time
 from irispy.io import read_files
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils._spectral import check_scaled, in_windows, make_map_cube, standard_deviation
-from irispy.utils.bursts import find_si_iv_bursts
 from irispy.utils.constants import DN_UNIT
-from irispy.utils.mg_features import calculate_mg_features
 from irispy.utils.moments import calculate_moments
 from irispy.utils.red_blue import calculate_red_blue_asymmetry
 from irispy.utils.spectrograph import radiometric_calibration
@@ -87,11 +85,9 @@ def test_make_map_cube_preserves_independent_coordinates():
     [
         ("Si IV 1403", lambda cube: calculate_moments(cube, velocity_range=(-50, 50) * u.km / u.s)),
         ("Si IV 1403", lambda cube: calculate_red_blue_asymmetry(cube, velocity_range=(25, 75) * u.km / u.s)),
-        ("Mg II k 2796", lambda cube: calculate_mg_features(cube, lines=("k",))),
-        ("Si IV 1403", lambda cube: {"labels": find_si_iv_bursts(cube, threshold=80 * u.DN / u.s)[0]}),
         ("Si IV 1403", lambda cube: {"calibrated": radiometric_calibration(cube)}),
     ],
-    ids=["moments", "red_blue", "mg_features", "bursts", "calibration"],
+    ids=["moments", "red_blue", "calibration"],  # Mg II features and the burst finder have their own
 )
 def test_maps_of_a_window_keep_its_raster_axis(sns_sg_file, window, analysis):
     cube = read_files(sns_sg_file, spectral_windows=window)[window]
