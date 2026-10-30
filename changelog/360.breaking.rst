@@ -1,0 +1,6 @@
+``irispy.io.read_files`` and ``irispy.io.read_spectrograph_lvl2`` now give each spectral window as one 4D ``SpectrogramCube`` with axes (raster, step, slit, wavelength), with one raster per file.
+They used to give a ``SpectrogramCubeSequence`` with one cube per file. ``SpectrogramCubeSequence`` and ``IRISSequencePlotter`` are removed.
+``raster["Si IV 1403"][k]`` is still raster ``k``, now a 3D cube, and a single raster file, such as a sit-and-stare, gives a cube with one raster.
+``cube.time`` and the per-exposure metadata, such as ``cube.meta["exposure time"]``, have shape (raster, step).
+``cube.data`` is one array instead of a list of cubes, and ``len(cube)`` raises a ``TypeError``; use ``cube.shape[0]`` for the number of rasters.
+The cube has the header metadata of the first file, with the ``DATE_END`` of the last file. If the first file has no data, ``XCEN``, ``YCEN`` and ``SAT_ROT`` come from the first file with data.

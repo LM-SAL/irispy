@@ -20,9 +20,6 @@ import pooch
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 from irispy.utils.moments import calculate_moments
@@ -51,22 +48,21 @@ raster = read_files(raster_filename, spectral_windows="Si IV 1403")
 ###############################################################################
 # We will just focus on the Si IV 1403 line which we can select using a key.
 
-# There is only one complete scan, so we index that away.
 si_iv_1403 = raster["Si IV 1403"][0]
 
 # We first crop the field of view to keep the example light.
-iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
+iris_frame = si_iv_1403.celestial_frame
 top_left = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
 bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
+# The FITS WCS finds pixels from a sky position alone; the gWCS also needs the time and raster step
+si_iv_1403 = si_iv_1403.crop(top_left, bottom_right, wcs=si_iv_1403.fits_wcs)
 
 ###############################################################################
 # Let us just check the full field of view at the line core.
 
 si_iv_core = 140.277 * u.nm
-lower_corner = [SpectralCoord(si_iv_core), None]
-upper_corner = [SpectralCoord(si_iv_core), None]
+lower_corner = [SpectralCoord(si_iv_core), None, None, None]
+upper_corner = [SpectralCoord(si_iv_core), None, None, None]
 si_iv_spec_crop = si_iv_1403.crop(lower_corner, upper_corner)
 
 ###############################################################################
@@ -127,12 +123,9 @@ cbar.ax.tick_params(labelsize=8)
 ax_dict["width"].set_title("Line Width (2nd Moment)")
 
 for ax in ax_dict.values():
-    # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
-    for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
+    # Longitude and latitude are already on the raster step and slit edges; just shrink their labels.
+    for coord in ax.coords:
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
-        coord.set_ticks_position(side)
-        coord.set_ticklabel_position(side)
-        coord.set_axislabel_position(side)
 fig.tight_layout()
 
 plt.show()

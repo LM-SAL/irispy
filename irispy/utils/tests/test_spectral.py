@@ -5,9 +5,13 @@ import astropy.units as u
 from astropy.nddata import InverseVariance, StdDevUncertainty, UnknownUncertainty
 from astropy.time import Time
 
+from irispy.io import read_files
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils._spectral import check_scaled, in_windows, make_map_cube, standard_deviation
 from irispy.utils.constants import DN_UNIT
+from irispy.utils.moments import calculate_moments
+from irispy.utils.red_blue import calculate_red_blue_asymmetry
+from irispy.utils.spectrograph import radiometric_calibration
 
 
 def test_check_scaled():
@@ -74,3 +78,20 @@ def test_make_map_cube_preserves_independent_coordinates():
     for unchanged in (template, maps[1]):
         assert unchanged.extra_coords.keys() == ("time",)
         assert unchanged.global_coords["reference_time"] == times[0]
+
+
+@pytest.mark.parametrize(
+    ("window", "analysis"),
+    [
+        ("Si IV 1403", lambda cube: calculate_moments(cube, velocity_range=(-50, 50) * u.km / u.s)),
+        ("Si IV 1403", lambda cube: calculate_red_blue_asymmetry(cube, velocity_range=(25, 75) * u.km / u.s)),
+        ("Si IV 1403", lambda cube: {"calibrated": radiometric_calibration(cube)}),
+    ],
+    ids=["moments", "red_blue", "calibration"],  # Mg II features and the burst finder have their own
+)
+def test_maps_of_a_window_keep_its_raster_axis(sns_sg_file, window, analysis):
+    cube = read_files(sns_sg_file, spectral_windows=window)[window]
+    maps, raster_maps = analysis(cube), analysis(cube[0])
+    for key, value in raster_maps.items():
+        assert maps[key].data.shape == (1, *value.data.shape)
+        np.testing.assert_array_equal(maps[key].data[0], value.data)

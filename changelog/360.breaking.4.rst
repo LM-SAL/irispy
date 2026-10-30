@@ -1,0 +1,1 @@
+``SpectrogramCube`` now takes only ``data`` and ``wcs`` positionally, as ``SJICube`` does. Pass ``uncertainty``, ``unit`` and ``meta`` by keyword.

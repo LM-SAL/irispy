@@ -80,7 +80,7 @@ def test_output(raster):
 def both_lines(raster):
     # The two windows put back at their place in the file's Mg II window, with zeros between them.
     k, h = raster["Mg II k 2796"][0], raster["Mg II h 2803"][0]
-    offset = int(k.wcs.wcs.crpix[0] - h.wcs.wcs.crpix[0])
+    offset = int(k.fits_wcs.wcs.crpix[0] - h.fits_wcs.wcs.crpix[0])
     data = np.zeros((*k.data.shape[:2], offset + h.data.shape[-1]), dtype=k.data.dtype)
     mask = np.zeros(data.shape, dtype=bool)
     data[..., : k.data.shape[-1]], data[..., offset:] = k.data, h.data
@@ -100,7 +100,8 @@ def test_both_lines(raster, both_lines):
     ]
     for line, window in WINDOWS.items():
         for key, value in calculate_mg_features(raster[window][0], lines=(line,)).items():
-            np.testing.assert_array_equal(features[key].data, value.data)
+            # The k window's gWCS puts the h wavelengths 1e-13 nm from the h window's
+            np.testing.assert_allclose(features[key].data.astype(float), value.data, atol=1e-6)
 
 
 def test_saturated(both_lines):
@@ -143,6 +144,16 @@ def test_dask_data(raster):
     expected = calculate_mg_features(cube, lines=("k",))
     for key, value in calculate_mg_features(lazy, lines=("k",)).items():
         np.testing.assert_array_equal(value.data, expected[key].data)
+
+
+def test_rasters_read_together(raster):
+    # The same file twice reads as two rasters
+    rasters = read_spectrograph_lvl2([get_test_filepath(TEST_FILE)] * 2, spectral_windows="Mg II k 2796")
+    features = calculate_mg_features(rasters["Mg II k 2796"], lines=("k",))
+    expected = calculate_mg_features(raster["Mg II k 2796"], lines=("k",))
+    assert set(features.aligned_axes.values()) == {(0, 1, 2)}
+    for key, value in expected.items():
+        np.testing.assert_array_equal(features[key].data[1], value.data[0])
 
 
 def test_velocity_range(raster):
@@ -200,12 +211,12 @@ def test_rejects_unscaled_data():
 
 
 def test_rejects_other_input(raster):
-    with pytest.raises(TypeError, match="index it"):
-        calculate_mg_features(raster["Mg II k 2796"])
+    with pytest.raises(TypeError, match="select a window"):
+        calculate_mg_features(raster)
     with pytest.raises(ValueError, match="slice it with ranges"):
         calculate_mg_features(raster["Mg II k 2796"][0][:, 300])
     cube = raster["Mg II k 2796"][0]
-    wcs = cube.wcs.deepcopy()
+    wcs = cube.fits_wcs.deepcopy()
     wcs.wcs.cdelt[0] *= -1
     with pytest.raises(ValueError, match="wavelengths must increase"):
         calculate_mg_features(SpectrogramCube(cube.data[..., ::-1], wcs, unit=cube.unit), lines=("k",))

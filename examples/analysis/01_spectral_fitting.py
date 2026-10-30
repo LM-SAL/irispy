@@ -22,9 +22,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.modeling.fitting import TRFLSQFitter, parallel_fit_dask
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 from irispy.utils.fitting import line_model, maps_from_fit, non_thermal_velocity, starts_from_model
@@ -48,8 +45,7 @@ raster_filename = pooch.retrieve(
 ###############################################################################
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
-# We read only the Si IV 1403 window, with its uncertainties to weight the fit,
-# and select the one complete scan.
+# We read only the Si IV 1403 window, with its uncertainties to weight the fit.
 
 raster = read_files(raster_filename, spectral_windows="Si IV 1403", uncertainty=True)
 si_iv_1403 = raster["Si IV 1403"][0]
@@ -58,11 +54,11 @@ si_iv_1403 = raster["Si IV 1403"][0]
 # Before we get to fitting, we will shrink the data cube to make it easier to work with.
 # This is done primarily to speed up the fitting process on the online documentation build.
 
-iris_observer = wcs_to_celestial_frame(si_iv_1403.wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
+iris_frame = si_iv_1403.celestial_frame
 top_left = [None, SkyCoord(-360 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
 bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-si_iv_1403 = si_iv_1403.crop(top_left, bottom_right)
+# The FITS WCS finds pixels from a sky position alone; the gWCS also needs the time and raster step
+si_iv_1403 = si_iv_1403.crop(top_left, bottom_right, wcs=si_iv_1403.fits_wcs)
 # We also average 2x2 spatial pixels, after trimming both spatial axes to an even length,
 # keeping the uncertainties. This improves the signal-to-noise of the faint Si IV line
 # and means 4x fewer fits.
@@ -76,14 +72,15 @@ si_iv_1403 = si_iv_1403[:ny, :nx].rebin((2, 2, 1), propagate_uncertainties=True)
 si_iv_core = si_iv_1403.meta.rest_wavelength
 lines = get_lines([1401, 1405] * u.AA, main_only=True)
 blue, red = lines["wavelength"][lines["ion"] == "O IV"]
-lower_corner = [SpectralCoord((blue + si_iv_core) / 2), None]
-upper_corner = [SpectralCoord((si_iv_core + red) / 2), None]
+lower_corner = [SpectralCoord((blue + si_iv_core) / 2), None, None, None]
+upper_corner = [SpectralCoord((si_iv_core + red) / 2), None, None, None]
 si_iv_1403 = si_iv_1403.crop(lower_corner, upper_corner)
 
 ###############################################################################
 # Let us just get the full field of view at the line core.
 
-si_iv_spec_crop = si_iv_1403.crop([SpectralCoord(si_iv_core), None], [SpectralCoord(si_iv_core), None])
+core = [SpectralCoord(si_iv_core), None, None, None]
+si_iv_spec_crop = si_iv_1403.crop(core, core)
 
 ###############################################################################
 # We start a Gaussian at Si IV in every spectrum and fit them all, as
@@ -100,7 +97,7 @@ iris_model_fit = parallel_fit_dask(
     data_unit=si_iv_1403.unit,
     weights=np.where(good, 1 / si_iv_1403.uncertainty.array, 0),
     world=(wavelength,),
-    fitting_axes=2,
+    fitting_axes=si_iv_1403.wavelength_axis,
     fit_info=True,
     scheduler="single-threaded",
 )
@@ -159,12 +156,9 @@ for key, name, label, symmetric in [
 
 
 def label_axes(ax):
-    # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
-    for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
+    # Longitude and latitude are already on the raster step and slit edges; just shrink their labels.
+    for coord in ax.coords:
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
-        coord.set_ticks_position(side)
-        coord.set_ticklabel_position(side)
-        coord.set_axislabel_position(side)
 
 
 for ax in ax_dict.values():

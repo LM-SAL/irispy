@@ -44,12 +44,10 @@ raster = read_files(raster_filename, spectral_windows=["Mg II k 2796", "Si IV 13
 # can select using a key. Then we will just plot a spectral line selected at
 # random in space.
 
-# We take the first of the complete scans.
-# We also only take the first raster step (slit position) to reduce memory usage for
-# the online documentation build.
-mg_ii_k_2796 = raster["Mg II k 2796"][0][0]
-si_iv_1394 = raster["Si IV 1394"][0][0]
-
+# To keep the example light enough for the online documentation build, we take
+# the first raster step of the first raster only.
+mg_ii_k_2796 = raster["Mg II k 2796"][0, 0]
+si_iv_1394 = raster["Si IV 1394"][0, 0]
 del raster
 
 ###############################################################################

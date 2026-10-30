@@ -127,7 +127,7 @@ for step, (sji_index, aia_index) in enumerate(zip(sji_indices, aia_indices, stri
     sji_frame, aia_map, shift = alignments[sji_index, aia_index]
     shifts[step] = shift.to_value(u.arcsec)
 
-    _, slit = raster.wcs.pixel_to_world(0, slit_pixels, step)
+    slit = raster.wcs.pixel_to_world(0, slit_pixels, step)[1]
     slit = SkyCoord(slit.Tx + shift[0], slit.Ty + shift[1], frame=sji_frame)
     aia_x, aia_y = aia_map.wcs.world_to_pixel(slit)
     aia_image[:, step] = map_coordinates(aia_map.data, [aia_y, aia_x], order=1, cval=np.nan)

@@ -1,0 +1,3 @@
+When a raster file has exposures with no pointing in its auxiliary table, such as steps without an exposure, the cube's WCS now interpolates their pointing from the other exposures and warns. It used to use 0.
+If fewer than two exposures in the file have pointing, the pointing is NaN.
+``meta["exposure FOV center"]`` and the FITS WCS of each raster still give NaN for an exposure missing on both detectors.

@@ -21,9 +21,6 @@ import pooch
 import astropy.units as u
 from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.modeling.fitting import TRFLSQFitter, parallel_fit_dask
-from astropy.wcs.utils import wcs_to_celestial_frame
-
-from sunpy.coordinates.frames import Helioprojective
 
 from irispy.io import read_files
 from irispy.spectrograph import SpectrogramCube
@@ -48,8 +45,7 @@ raster_filename = pooch.retrieve(
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
 #
-# We read only the Mg II k window, with its uncertainties to weight the fit,
-# and select the one complete scan.
+# We read only the Mg II k window, with its uncertainties to weight the fit.
 
 raster = read_files(raster_filename, spectral_windows="Mg II k 2796", uncertainty=True)
 mg_ii_k = raster["Mg II k 2796"][0]
@@ -60,14 +56,14 @@ mg_ii_k = raster["Mg II k 2796"][0]
 # which is the part of the spectrum we are going to fit: the model has no
 # components for the line wings or for the Mg II triplet next to it.
 
-iris_observer = wcs_to_celestial_frame(mg_ii_k.wcs.celestial).observer
-iris_frame = Helioprojective(observer=iris_observer)
+iris_frame = mg_ii_k.celestial_frame
 top_left = [None, SkyCoord(-350 * u.arcsec, 310 * u.arcsec, frame=iris_frame)]
 bottom_right = [None, SkyCoord(-290 * u.arcsec, 260 * u.arcsec, frame=iris_frame)]
-mg_ii_k = mg_ii_k.crop(top_left, bottom_right)
+# The FITS WCS finds pixels from a sky position alone; the gWCS also needs the time and raster step
+mg_ii_k = mg_ii_k.crop(top_left, bottom_right, wcs=mg_ii_k.fits_wcs)
 
-lower_corner = [SpectralCoord(279.40, unit=u.nm), None]
-upper_corner = [SpectralCoord(279.80, unit=u.nm), None]
+lower_corner = [SpectralCoord(279.40, unit=u.nm), None, None, None]
+upper_corner = [SpectralCoord(279.80, unit=u.nm), None, None, None]
 mg_ii_k = mg_ii_k.crop(lower_corner, upper_corner)
 # We also average 2x2 spatial pixels, after trimming both spatial axes to an even length,
 # keeping the uncertainties, which means 4x fewer spectra to fit.
@@ -91,7 +87,7 @@ mg_ii_model_fit = parallel_fit_dask(
     data_unit=mg_ii_k.unit,
     weights=np.where(good, 1 / mg_ii_k.uncertainty.array, 0),
     world=(wavelength,),
-    fitting_axes=2,
+    fitting_axes=mg_ii_k.wavelength_axis,
     fit_info=True,
     scheduler="single-threaded",
 )
@@ -118,7 +114,8 @@ plt.legend()
 # ``meta.rest_wavelength`` holds the Mg II k rest wavelength from the line catalog.
 
 mg_ii_core = mg_ii_k.meta.rest_wavelength
-line_core = mg_ii_k.crop([SpectralCoord(mg_ii_core), None], [SpectralCoord(mg_ii_core), None])
+core = [SpectralCoord(mg_ii_core), None, None, None]
+line_core = mg_ii_k.crop(core, core)
 
 # We turn the fit into maps, with the Doppler velocities against the Mg II k rest wavelength.
 maps = maps_from_fit(mg_ii_model_fit, mg_ii_k, fitter=fitter)
@@ -165,12 +162,9 @@ for key, data, title, label, symmetric in [
     ax_dict[key].set_title(title)
 
 for ax in ax_dict.values():
-    # The first world axis is latitude, along the slit (y), and the second is longitude, along the raster (x).
-    for coord, side in ((ax.coords[0], "l"), (ax.coords[1], "b")):
+    # Longitude and latitude are already on the raster step and slit edges; just shrink their labels.
+    for coord in ax.coords:
         coord.set_ticklabel(exclude_overlapping=True, fontsize=8)
-        coord.set_ticks_position(side)
-        coord.set_ticklabel_position(side)
-        coord.set_axislabel_position(side)
 fig.tight_layout()
 
 plt.show()

@@ -1,1 +1,1 @@
-Following SPEC 0, the minimum supported Python version is now 3.13, and the minimum required version of ``dask`` is now 2024.10.0. ``pandas`` is no longer a dependency, and ``filelock`` is a new one.
+Following SPEC 0, the minimum supported Python version is now 3.13, and the minimum required version of ``dask`` is now 2024.10.0. The minimum required version of ``astropy`` is now 8.0.2. ``pandas`` is no longer a dependency, and ``filelock`` is a new one.

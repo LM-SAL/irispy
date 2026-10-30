@@ -1,248 +1,254 @@
+from contextlib import contextmanager
+
+import dask.array as da
 import numpy as np
 import pytest
 
+import asdf
 import astropy.units as u
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, SpectralCoord
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.time import Time
+from astropy.wcs.utils import wcs_to_celestial_frame
 
+from dkist.wcs.models import BaseVaryingCelestialTransform
 from sunpy.coordinates import Helioprojective
 
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, SATURATION_LIMIT
 
+SG_METADATA = {
+    "sns_sg_file": {
+        "keys": ["C II 1336", "Fe XII 1349", "O I 1356", "Si IV 1394", "Si IV 1403", "2832", "2814", "Mg II k 2796"],
+        "shape": (187, 40, 29),
+        "campaign_start_start_end": ("2021-09-05T00:18:33.640", "2021-09-05T00:18:33.810", "2021-09-05T05:07:27.400"),
+        "distance_to_sun": 1.00827638 * u.AU,
+        "exposure_control_triggers_in_observation": 0,
+        "header_length": 380,
+        "meta_length": 368,
+        "unique_and_total_raster_positions": (1, 1),
+        "observing_mode": ("Medium sit-and-stare 0.3x60 1s  C II   Si IV   Mg II h/k   Mg II w s", 3620258102),
+        "raster_fov_width": (0.16635 * u.arcsec, 66.54 * u.arcsec),
+        "satellite_rotation": 8.09432e-05 * u.deg,
+        "spectral_range": (1398.60550787, 1406.03398787) * u.angstrom,
+    },
+    "raster_sg_files": {
+        "keys": ["C II 1336", "1343", "Fe XII 1349", "O I 1356", "Si IV 1403", "2832", "2826", "2814", "Mg II k 2796"],
+        "shape": (8, 109, 29),
+        "campaign_start_start_end": ("2014-03-29T14:09:38.830", "2014-03-29T14:09:39.000", "2014-03-29T14:13:14.280"),
+        "distance_to_sun": 0.99849015 * u.AU,
+        "exposure_control_triggers_in_observation": 526,
+        "header_length": 412,
+        "meta_length": 401,
+        "unique_and_total_raster_positions": (8, 180),
+        "observing_mode": ("Very large coarse 8-step raster 14x175 8s  Si IV   Mg II h/k   Mg II", 3860258481),
+        "raster_fov_width": (13.9680814743 * u.arcsec, 181.987 * u.arcsec),
+        "satellite_rotation": -0.000540529 * u.deg,
+        "spectral_range": (1398.63094787, 1405.95766787) * u.angstrom,
+    },
+}
+V34_WINDOWS = ["C II 1336", "Mg II k 2796"]
+# Raster indices are (step, slit, wavelength); sit-and-stare has 187 exposures of 40 slit pixels.
+RASTER_INDICES = ((0, 50, 3), (3, 50, 10), (4, 50, 10), (7, 80, 20), (0, 80, 20))
+SIT_AND_STARE_INDICES = ((0, 0, 10), (3, 20, 10), (4, 25, 10), (10, 30, 5), (93, 39, 5), (186, 0, 5))
+
+
+def test_read_spectrograph_orders_files_by_date_obs(raster_sg_files):
+    ordered = read_spectrograph_lvl2(raster_sg_files, spectral_windows="C II 1336")["C II 1336"]
+    unordered = read_spectrograph_lvl2(raster_sg_files[::-1], spectral_windows="C II 1336")["C II 1336"]
+    np.testing.assert_array_equal(unordered.data, ordered.data)
+    assert (unordered.time == ordered.time).all()
+    dates = [raster.fits_wcs.wcs.dateobs for raster in unordered]
+    assert dates == sorted(dates)
+    assert dates == [raster.fits_wcs.wcs.dateobs for raster in ordered]
+
+
+@contextmanager
+def _edited_copy(source, filename):
+    """
+    Open ``source`` for editing and write the edited HDUs to ``filename``.
+    """
+    with fits.open(source, memmap=False) as hdulist:
+        yield hdulist
+        hdulist.writeto(filename)
+
+
+def _window_ext(hdulist, window):
+    return [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)].index(window) + 1
+
+
+def _window_header_and_aux(filename, window):
+    with fits.open(filename) as hdulist:
+        return hdulist[_window_ext(hdulist, window)].header.copy(), hdulist[-2].data.copy(), hdulist[-2].header.copy()
+
+
+@pytest.mark.parametrize("files", ["sns_sg_file", "raster_sg_files"])
+def test_read_spectrograph_lvl2_metadata(request, files):
+    expected = SG_METADATA[files]
+    filenames = request.getfixturevalue(files)
+    n_rasters = len(filenames) if isinstance(filenames, list) else 1
+    raster_collection = read_spectrograph_lvl2(filenames)
+    assert list(raster_collection.keys()) == expected["keys"]
+    assert {type(key) for key in raster_collection} == {str}
+    assert str(raster_collection)
+    # We do not expect any metadata to be present on the collection
+    assert raster_collection.meta is None
+
+    si_iv = raster_collection["Si IV 1403"]
+    assert str(si_iv)
+    assert si_iv.time.ravel()[0].isot in str(si_iv[0])
+    meta = si_iv.meta
+    assert si_iv.data.shape == (n_rasters, *expected["shape"])
+    assert np.all(si_iv.data.shape == meta.data_shape)
+    # Meta is both a dict with the fits header keys but also provides
+    # helper functions for specific values
+    assert meta["TELESCOP"] == "IRIS" == meta.observatory
+    assert meta["INSTRUME"] == "SPEC" == meta.instrument
+    assert meta.detector == "FUV2"
+    assert meta.spectral_band == "FUV"
+    assert meta.automatic_exposure_control_enabled is True
+    dates = (meta.observing_campaign_start.isot, meta.date_start.isot, meta.date_end.isot)
+    assert dates == expected["campaign_start_start_end"]
+    assert meta.date_reference.isot == meta.date_start.isot
+    assert_quantity_allclose(meta.distance_to_sun, expected["distance_to_sun"])
+    assert meta.exposure_control_triggers_in_observation == expected["exposure_control_triggers_in_observation"]
+    assert meta.exposure_control_triggers_in_raster == 0
+    assert len(meta.fits_header) == expected["header_length"]
+    assert len(meta.keys()) == expected["meta_length"]  # History is missing
+    assert meta.fov_center == SkyCoord(
+        Tx=meta.get("XCEN"),
+        Ty=meta.get("YCEN"),
+        unit=u.arcsec,
+        frame=Helioprojective,
+        observer="earth",
+        obstime=meta.date_reference,
+    )
+    assert meta.key_comments == {}
+    positions = (meta.number_of_unique_raster_positions, meta.number_of_raster_positions)
+    assert positions == expected["unique_and_total_raster_positions"]
+    assert meta.observation_includes_saa is True
+    assert meta.observatory_at_high_latitude is False
+    assert (meta.observing_mode_description, meta.observing_mode_id) == expected["observing_mode"]
+    assert meta.processing_level == 2
+    assert (meta.raster_fov_width_x, meta.raster_fov_width_y) == expected["raster_fov_width"]
+    assert meta.satellite_rotation == expected["satellite_rotation"]
+    assert meta.spatial_summing_factor == 1
+    assert_quantity_allclose(meta.spectral_range, expected["spectral_range"])
+    assert meta.spectral_summing_factor == 2
+    assert meta.tracking_mode_enabled is False
+    assert si_iv.wcs.pixel_n_dim == si_iv.data.ndim
+    physical_types = ("em.wl", "custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat", "time")
+    assert si_iv.wcs.world_axis_physical_types == (*physical_types, "custom:STEP", "custom:SCAN")
+    assert si_iv.time.format == "isot"
+    assert si_iv.time.shape == si_iv.shape[:-2]
+    # In native byte order, not the big-endian order of the FITS table
+    assert all(meta[key].dtype.isnative for key in ("exposure time", "observer radial velocity", "orbital phase"))
+    assert len(si_iv.fits_wcs) == n_rasters
+    assert si_iv[0].fits_wcs.pixel_shape == si_iv.fits_wcs[0].pixel_shape == si_iv.shape[:0:-1]
+
+
+def test_combined_raster_metadata_and_time_match_its_rasters(raster_sg_files):
+    scan = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Si IV 1403")["Si IV 1403"]
+
+    time = scan.time
+    assert time[0, 0].isot == scan[0].time[0].isot
+    assert time[-1, -1].isot == scan[-1].time[-1].isot
+    assert (time.isot[1] == scan[1].time.isot).all()
+    # A file read alone gives its times from its time table, and the combined cube from its gWCS
+    last = read_spectrograph_lvl2(raster_sg_files[-1], spectral_windows="Si IV 1403")["Si IV 1403"]
+    assert_quantity_allclose((time[-1] - last.time).to(u.s), 0 * u.s, atol=1 * u.ns)
+    assert scan.meta["DATE_END"] == last.meta["DATE_END"]
+
 
 @pytest.mark.parametrize("container", [list, np.array])
-def test_spectral_windows_order_read_spectrograph_lvl2(sns_sg_file, container):
-    # Requesting windows in an order different from the file order must not swap the data.
-    all_windows = read_spectrograph_lvl2(sns_sg_file)
-    subset = read_spectrograph_lvl2(sns_sg_file, spectral_windows=container(["Mg II k 2796", "Si IV 1394"]))
-    assert set(subset) == {"Mg II k 2796", "Si IV 1394"}
-    for key in subset:
-        np.testing.assert_array_equal(subset[key][0].data, all_windows[key][0].data)
+def test_read_spectrograph_lvl2_keeps_requested_window_order_and_data_and_reports_missing(sns_sg_file, container):
+    filename = sns_sg_file
+    requested_windows = ["Mg II k 2796", "C II 1336"]
+
+    all_windows = read_spectrograph_lvl2(filename)
+    raster_collection = read_spectrograph_lvl2(filename, spectral_windows=container(requested_windows))
+
+    assert list(raster_collection.keys()) == requested_windows
+    for window in requested_windows:
+        assert raster_collection[window].meta.spectral_window == window
+        np.testing.assert_array_equal(raster_collection[window].data, all_windows[window].data)
+    with pytest.raises(ValueError, match=r"Spectral windows \['NOPE1', 'NOPE2'\] not in .*, which has \['C II 1336', "):
+        read_spectrograph_lvl2(filename, spectral_windows=[*requested_windows, "NOPE1", "NOPE2"])
 
 
 def test_each_window_has_the_spectral_axis_of_its_header(sns_sg_file):
-    # The windows of a file share one built WCS, each with its own spectral axis; the windows of the
+    # The windows of a file share one built FITS WCS, each with its own spectral axis; the windows of the
     # wavelength drift file have CRPIX1 -116, -61 and -243
     drift = get_test_filepath(
         "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
     )
     for filename in (sns_sg_file, drift):
         with fits.open(filename) as hdulist:
-            for index, (cube,) in enumerate(read_spectrograph_lvl2(filename).values(), start=1):
+            for index, cube in enumerate(read_spectrograph_lvl2(filename).values(), start=1):
                 header = hdulist[index].header
-                assert cube.wcs.pixel_shape == cube.data.shape[::-1]
+                assert cube[0].fits_wcs.pixel_shape == cube[0].data.shape[::-1]
                 expected = header["CRVAL1"] + header["CDELT1"] * (np.arange(header["NAXIS1"]) + 1 - header["CRPIX1"])
                 (wavelength,) = cube.axis_world_coords_values("em.wl")
                 np.testing.assert_allclose(wavelength.to_value(u.AA), expected, rtol=1e-12)
+                fits_wavelength = cube[0].fits_wcs.pixel_to_world_values(np.arange(header["NAXIS1"]), 0, 0)[0] * u.m
+                np.testing.assert_allclose(fits_wavelength.to_value(u.AA), expected, rtol=1e-12)
 
 
 def test_each_window_meta_is_of_the_primary_header(sns_sg_file):
     with fits.open(sns_sg_file) as hdulist:
         header = hdulist[0].header
-        for window, (cube,) in read_spectrograph_lvl2(hdulist).items():
+        for window, cube in read_spectrograph_lvl2(hdulist).items():
             assert cube.meta.fits_header is header
             assert cube.meta.original_meta == header  # a read-only view of it, made anew at each access
             assert {key: cube.meta[key] for key in header} == dict(header.items())
             assert cube.meta.spectral_window == window
 
 
-def test_read_spectrograph_orders_files_by_date_obs(raster_sg_files):
-    ordered = read_spectrograph_lvl2(raster_sg_files, spectral_windows="C II 1336")["C II 1336"]
-    unordered = read_spectrograph_lvl2(raster_sg_files[::-1], spectral_windows="C II 1336")["C II 1336"]
-    assert [cube.meta["DATE_OBS"] for cube in unordered] == sorted(cube.meta["DATE_OBS"] for cube in ordered)
-    for cube, reference in zip(unordered, ordered, strict=True):
-        np.testing.assert_array_equal(cube.data, reference.data)
-        assert cube._fits_wcs.dateobs == reference._fits_wcs.dateobs
-
-
-def test_sns_read_spectrograph_lvl2(sns_sg_file):
-    raster_collection = read_spectrograph_lvl2(sns_sg_file)
-    assert list(raster_collection.keys()) == [
-        "C II 1336",
-        "Fe XII 1349",
-        "O I 1356",
-        "Si IV 1394",
-        "Si IV 1403",
-        "2832",
-        "2814",
-        "Mg II k 2796",
-    ]
-    assert {type(key) for key in raster_collection} == {str}
-    # Simple repr check
-    assert str(raster_collection)
-    # We do not expect any metadata to be present on the collection
-    assert raster_collection.meta is None
-
-    si_iv = raster_collection["Si IV 1403"]
-    # Simple repr check
-    assert str(si_iv)
-    # Test data only has a sequence of 1 long
-    assert len(si_iv) == 1
-    # The primary fits header is attached to the sequence
-    assert si_iv.meta is not None
-    # Meta is attached one level down to the individual cube for now.
-    assert si_iv[0].meta is not None
-    meta = si_iv[0].meta
-    assert si_iv[0].data.shape == (187, 40, 29)  # (lambda, y, x)
-    assert np.all(si_iv[0].data.shape == meta.data_shape)
-    # Meta is both a dict with the fits header keys but also provides
-    # helper functions for specific values
-    assert meta["TELESCOP"] == "IRIS" == meta.observatory
-    assert meta["INSTRUME"] == "SPEC" == meta.instrument
-    assert meta.detector == "FUV2"
-    assert meta.spectral_band == "FUV"
-    assert meta.automatic_exposure_control_enabled is True
-    assert meta.date_end.isot == "2021-09-05T05:07:27.400"
-    assert meta.date_reference.isot == "2021-09-05T00:18:33.810"
-    assert meta.date_start.isot == "2021-09-05T00:18:33.810"
-    assert_quantity_allclose(meta.distance_to_sun, 1.00827638 * u.AU)
-    assert meta.exposure_control_triggers_in_observation == 0
-    assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 380 == (len(meta.keys()) + 13)  # History is missing
-    assert meta.fov_center == SkyCoord(
-        Tx=meta.get("XCEN"),
-        Ty=meta.get("YCEN"),
-        unit=u.arcsec,
-        frame=Helioprojective,
-        observer="earth",
-        obstime=meta.date_reference,
-    )
-    assert meta.key_comments == {}
-    assert meta.number_of_unique_raster_positions == 1
-    assert meta.number_of_raster_positions == 1
-    assert meta.observation_includes_saa is True
-    assert meta.observatory_at_high_latitude is False
-    assert meta.observing_campaign_start.isot == "2021-09-05T00:18:33.640"
-    assert meta.observing_mode_description == "Medium sit-and-stare 0.3x60 1s  C II   Si IV   Mg II h/k   Mg II w s"
-    assert meta.observing_mode_id == 3620258102
-    assert meta.processing_level == 2
-    assert meta.raster_fov_width_x == 0.16635 * u.arcsec
-    assert meta.raster_fov_width_y == 66.54 * u.arcsec
-    assert meta.satellite_rotation == 8.09432e-05 * u.deg
-    assert meta.spatial_summing_factor == 1
-    assert_quantity_allclose(meta.spectral_range, (1398.60550787, 1406.03398787) * u.angstrom)
-    assert meta.spectral_summing_factor == 2
-    assert meta.tracking_mode_enabled is False
-
-
-def test_raster_all_files_read_spectrograph_lvl2(raster_sg_files):
-    raster_collection = read_spectrograph_lvl2(raster_sg_files)
-    assert list(raster_collection.keys()) == [
-        "C II 1336",
-        "1343",
-        "Fe XII 1349",
-        "O I 1356",
-        "Si IV 1403",
-        "2832",
-        "2826",
-        "2814",
-        "Mg II k 2796",
-    ]
-    # Simple repr check
-    assert str(raster_collection)
-    # We do not expect any metadata to be present on the collection
-    assert raster_collection.meta is None
-
-    si_iv = raster_collection["Si IV 1403"]
-    # Simple repr check
-    assert str(si_iv)
-    # One raster per file.
-    assert len(si_iv) == len(raster_sg_files)
-    # The primary fits header is attached to the sequence
-    assert si_iv.meta is not None
-    # Meta is attached one level down to the individual cube for now.
-    assert si_iv[0].meta is not None
-    meta = si_iv[0].meta
-    assert si_iv[0].data.shape == (8, 109, 29)  # (lambda, y, x)
-    assert np.all(si_iv[0].data.shape == meta.data_shape)
-    # Meta is both a dict with the fits header keys but also provides
-    # helper functions for specific values
-    assert meta["TELESCOP"] == "IRIS" == meta.observatory
-    assert meta["INSTRUME"] == "SPEC" == meta.instrument
-    assert meta.detector == "FUV2"
-    assert meta.spectral_band == "FUV"
-    assert meta.automatic_exposure_control_enabled is True
-    assert meta.date_end.isot == "2014-03-29T14:10:44.500"
-    assert meta.date_reference.isot == "2014-03-29T14:09:39.000"
-    assert meta.date_start.isot == "2014-03-29T14:09:39.000"
-    assert_quantity_allclose(meta.distance_to_sun, 0.99849015 * u.AU)
-    assert meta.exposure_control_triggers_in_observation == 526
-    assert meta.exposure_control_triggers_in_raster == 0
-    assert len(meta.fits_header) == 412 == (len(meta.keys()) + 12)  # History is missing
-    assert meta.fov_center == SkyCoord(
-        Tx=meta.get("XCEN"),
-        Ty=meta.get("YCEN"),
-        unit=u.arcsec,
-        frame=Helioprojective,
-        observer="earth",
-        obstime=meta.date_reference,
-    )
-    assert meta.key_comments == {}
-    assert meta.number_of_unique_raster_positions == 8
-    assert meta.number_of_raster_positions == 180
-    assert meta.observation_includes_saa is True
-    assert meta.observatory_at_high_latitude is False
-    assert meta.observing_campaign_start.isot == "2014-03-29T14:09:38.830"
-    assert meta.observing_mode_description == "Very large coarse 8-step raster 14x175 8s  Si IV   Mg II h/k   Mg II"
-    assert meta.observing_mode_id == 3860258481
-    assert meta.processing_level == 2
-    assert meta.raster_fov_width_x == 13.9680814743 * u.arcsec
-    assert meta.raster_fov_width_y == 181.987 * u.arcsec
-    assert meta.satellite_rotation == -0.000540529 * u.deg
-    assert meta.spatial_summing_factor == 1
-    assert_quantity_allclose(meta.spectral_range, (1398.63094787, 1405.95766787) * u.angstrom)
-    assert meta.spectral_summing_factor == 2
-    assert meta.tracking_mode_enabled is False
-
-
-@pytest.mark.parametrize("file_fixture", ["sns_sg_file", "raster_sg_file", "raster_sg_files"])
-def test_smoke_read_spectrograph_lvl2(request, file_fixture):
-    assert read_spectrograph_lvl2(request.getfixturevalue(file_fixture))
-
-
-def test_read_spectrograph_lvl2_uses_auxiliary_pointing(raster_sg_file):
+@pytest.mark.parametrize("files", ["raster_sg_file", "sns_sg_file"], ids=["raster", "sit_and_stare"])
+def test_read_spectrograph_lvl2_uses_auxiliary_pointing(request, files):
+    filename = request.getfixturevalue(files)
     windows = ["C II 1336", "Mg II k 2796"]
-    raster = read_spectrograph_lvl2(raster_sg_file, spectral_windows=windows)
+    raster = read_spectrograph_lvl2(filename, spectral_windows=windows)
 
-    with fits.open(raster_sg_file) as hdulist:
-        window_indices = {hdulist[0].header[f"TDESC{i}"]: i for i in range(1, hdulist[0].header["NWIN"] + 1)}
-        auxiliary_hdu = hdulist[-2]
-        expected_longitude = auxiliary_hdu.data[:, auxiliary_hdu.header["XCENIX"]] / 3600
-        expected_latitude = auxiliary_hdu.data[:, auxiliary_hdu.header["YCENIX"]] / 3600
-        for window in windows:
-            header = hdulist[window_indices[window]].header
-            step_pixels = np.arange(header["NAXIS3"])
-            _, latitude, longitude = raster[window][0].wcs.pixel_to_world_values(
-                np.full_like(step_pixels, header["CRPIX1"] - 1, dtype=float),
-                np.full_like(step_pixels, header["CRPIX2"] - 1, dtype=float),
-                step_pixels,
-            )
-            assert list(raster[window][0]._fits_wcs.ctype)[1:] == ["HPLT-TAB", "HPLN-TAB"]
-            assert raster[window][0]._fits_wcs.aux.dsun_obs > 1e11
-            np.testing.assert_allclose(latitude, expected_latitude)
-            np.testing.assert_allclose(longitude, expected_longitude)
+    for window in windows:
+        header, aux, aux_header = _window_header_and_aux(filename, window)
+        expected_longitude = aux[:, aux_header["XCENIX"]] / 3600
+        expected_latitude = aux[:, aux_header["YCENIX"]] / 3600
+        steps = np.arange(header["NAXIS3"])
+        pixels = (np.full(steps.shape, header["CRPIX1"] - 1.0), np.full(steps.shape, header["CRPIX2"] - 1.0), steps)
+        cube = raster[window][0]
+        assert list(cube.fits_wcs.wcs.ctype)[1:] == ["HPLT-TAB", "HPLN-TAB"]
+        assert cube.fits_wcs.wcs.aux.dsun_obs > 1e11
+        sky = cube.fits_wcs.pixel_to_world(*pixels)[1]
+        np.testing.assert_allclose(sky.Tx.to_value(u.deg), expected_longitude)
+        np.testing.assert_allclose(sky.Ty.to_value(u.deg), expected_latitude)
 
-    fuv_time = raster[windows[0]][0].axis_world_coords("time", wcs=raster[windows[0]][0].extra_coords)[0]
-    nuv_time = raster[windows[1]][0].axis_world_coords("time", wcs=raster[windows[1]][0].extra_coords)[0]
-    assert fuv_time[0].isot == "2014-03-29T14:09:43.000"
-    assert nuv_time[0].isot == "2014-03-29T14:09:42.940"
-    assert raster[windows[0]][0].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
-
-
-def test_read_spectrograph_lvl2_reports_missing_spectral_window(sns_sg_file):
-    with pytest.raises(ValueError, match=r"Spectral windows \['NOPE'\] not in .*, which has \['C II 1336', "):
-        read_spectrograph_lvl2(sns_sg_file, spectral_windows=["C II 1336", "NOPE"])
+    if files == "raster_sg_file":
+        assert raster[windows[0]][0].time[0].isot == "2014-03-29T14:09:43.000"
+        assert raster[windows[1]][0].time[0].isot == "2014-03-29T14:09:42.940"
+        assert raster[windows[0]][0].meta["auxiliary times"][0].isot == "2014-03-29T14:09:39.000"
 
 
 def test_read_spectrograph_lvl2_reads_a_repeated_window_once(sns_sg_file):
     raster = read_spectrograph_lvl2(sns_sg_file, spectral_windows=["C II 1336", "Si IV 1394", "C II 1336"])
     assert list(raster) == ["C II 1336", "Si IV 1394"]
-    assert len(raster["C II 1336"]) == 1
+    assert raster["C II 1336"].shape[0] == 1  # one raster, not the window stacked twice
+
+
+def test_windows_read_together_have_the_coordinates_they_have_read_alone(raster_sg_files):
+    # The windows of a file share the sky and time part of their gWCS, the FUV and NUV with their own times
+    raster = read_spectrograph_lvl2(raster_sg_files)
+    for name in ("Si IV 1403", "Mg II k 2796"):
+        window = raster[name]
+        alone = read_spectrograph_lvl2(raster_sg_files, spectral_windows=name)[name]
+        pixels = np.meshgrid(*(np.arange(n)[:: max(1, n // 4)] for n in window.data.shape[::-1]), indexing="ij")
+        np.testing.assert_array_equal(
+            window.wcs.pixel_to_world_values(*pixels), alone.wcs.pixel_to_world_values(*pixels)
+        )
+        assert (window.time == alone.time).all()
 
 
 def test_nuv_times_reject_invalid_source_filename(raster_sg_file):
@@ -258,10 +264,9 @@ def test_nuv_times_reject_invalid_source_filename(raster_sg_file):
 
 def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_path):
     filename = tmp_path / "missing_source_row.fits"
-    with fits.open(raster_sg_file, memmap=False) as hdulist:
+    with _edited_copy(raster_sg_file, filename) as hdulist:
         hdulist[-1].header["TFIELDS"] = 9
         hdulist[-1].data = hdulist[-1].data[:-1]
-        hdulist.writeto(filename)
 
     with pytest.raises(ValueError, match=r"Expected 8 NUV source filename rows.*found 7"):
         read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")
@@ -269,25 +274,19 @@ def test_read_spectrograph_requires_one_source_row_per_step(raster_sg_file, tmp_
 
 def test_read_spectrograph_retains_missing_nuv_exposure(raster_sg_file, tmp_path, caplog):
     filename = tmp_path / "missing_nuv_exposure.fits"
-    with fits.open(raster_sg_file, memmap=False) as hdulist:
+    with _edited_copy(raster_sg_file, filename) as hdulist:
         hdulist[-2].data[0, hdulist[-2].header["EXPTIMEN"]] = 0
-        window_index = next(
-            i for i in range(1, hdulist[0].header["NWIN"] + 1) if hdulist[0].header[f"TDESC{i}"] == "Mg II k 2796"
-        )
-        hdulist[window_index].data[0] = BAD_PIXEL_VALUE_SCALED
-        hdulist.writeto(filename)
+        hdulist[_window_ext(hdulist, "Mg II k 2796")].data[0] = BAD_PIXEL_VALUE_SCALED
 
     with caplog.at_level("WARNING", logger="sunpy"):
-        raster = read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")
+        cube = read_spectrograph_lvl2(filename, spectral_windows="Mg II k 2796")["Mg II k 2796"][0]
 
-    cube = raster["Mg II k 2796"][0]
-    times = cube.axis_world_coords("time", wcs=cube.extra_coords)[0]
     assert str(filename) in caplog.text
     assert "EXPTIMEN is 0 s at row(s) [0]" in caplog.text
     assert cube.meta["exposure time"][0] == 0 * u.s
     assert np.all(cube.mask[0])
     assert not np.all(cube.mask[1])
-    assert abs((times[0] - cube.meta["auxiliary times"][0]).to_value(u.s)) < 1e-6
+    assert abs((cube.time[0] - cube.meta["auxiliary times"][0]).to_value(u.s)) < 1e-6
 
 
 def test_read_spectrograph_reads_files_with_no_data_or_no_nuv_exposure(caplog):
@@ -304,15 +303,29 @@ def test_read_spectrograph_reads_files_with_no_data_or_no_nuv_exposure(caplog):
     auxiliary = fits.getdata(no_data, -2)[:, fits.getheader(no_data, -2)["TIME"]]
     times = Time(fits.getheader(no_data)["STARTOBS"]) + auxiliary * u.s
     for window, has_data in [("C II 1336", True), ("2832", False)]:
-        empty, after = raster[window]
+        cube = raster[window]
+        empty, after = cube[0], cube[1]
         assert np.all(empty.mask)
-        empty_times = empty.axis_world_coords("time", wcs=empty.extra_coords)[0]
-        assert_quantity_allclose((empty_times - times).to(u.s), 0 * u.s, atol=1 * u.us)
-        assert empty.meta["DATE_OBS"] == times[0].isot < after.meta["DATE_OBS"]
-        assert np.all(np.isnan(empty.wcs.pixel_to_world_values(0, 0, np.arange(empty.shape[0]))[1:]))
+        assert_quantity_allclose((empty.time - times).to(u.s), 0 * u.s, atol=1 * u.us)
+        assert cube.meta["DATE_OBS"] == times[0].isot < after.time[0].isot
+        steps = np.arange(empty.shape[0])
+        assert np.all(np.isnan(cube.wcs.pixel_to_world_values(0, 0, steps, 0)[1:3]))
+        # r00067 has one FUV exposure, at step 2, so the other steps have no pointing
+        has_pointing = np.isfinite(cube.wcs.pixel_to_world_values(0, 0, steps, 1)[1:3])
+        np.testing.assert_array_equal(has_pointing, [steps == 2] * 2)
+        # r00067 is where its own file puts it, though r00066, with no data, has CRPIX2 = 0
+        rows = np.arange(0, cube.shape[2], 20)
+        sky = cube.wcs.pixel_to_world(np.zeros(rows.size), rows, np.full(rows.size, 2), np.ones(rows.size))[1]
+        expected = after.fits_wcs.pixel_to_world(np.zeros(rows.size), rows, np.full(rows.size, 2))[1]
+        assert_quantity_allclose(sky.Tx, expected.Tx, atol=0.01 * u.arcsec)
+        assert_quantity_allclose(sky.Ty, expected.Ty, atol=0.01 * u.arcsec)
+        # The exposures of r00066 have no pointing, but the header pointing and roll are those of r00067,
+        # the first file with data
         assert np.all(np.isnan(empty.meta["exposure FOV center"].Tx))
-        assert np.isnan(empty.meta.fov_center.Tx)
-        assert np.isnan(empty.meta.satellite_rotation)
+        header = fits.getheader(no_nuv)
+        assert cube.meta.fov_center.Tx.to_value(u.arcsec) == header["XCEN"]
+        assert cube.meta.fov_center.Ty.to_value(u.arcsec) == header["YCEN"]
+        assert cube.meta.satellite_rotation.to_value(u.deg) == header["SAT_ROT"]
         assert np.all(after.mask) != has_data
 
 
@@ -322,79 +335,213 @@ def test_read_spectrograph_reads_an_unquoted_nan():
     assert read_spectrograph_lvl2(filename)["C II 1336"][0].meta.step_time_stddev == "NAN"
 
 
-def test_read_spectrograph_flips_v34_mask_uncertainty_and_meta(raster_sg_file, tmp_path):
-    # STEPS_AV < -0.01 marks a V34 raster, which is read flipped along the step axis
-    filename = tmp_path / "v34.fits"
-    windows = ["C II 1336", "Mg II k 2796"]
-    with fits.open(raster_sg_file, memmap=False) as hdulist:
-        hdulist[0].header["STEPS_AV"] = -hdulist[0].header["STEPS_AV"]
-        names = [hdulist[0].header[f"TDESC{i}"] for i in range(1, hdulist[0].header["NWIN"] + 1)]
-        for window in windows:
-            hdulist[names.index(window) + 1].data[0] = BAD_PIXEL_VALUE_SCALED
-        hdulist.writeto(filename)
-
-    flipped = read_spectrograph_lvl2(filename, spectral_windows=windows, uncertainty=True)
-    original = read_spectrograph_lvl2(filename, spectral_windows=windows, uncertainty=True, revert_v34=True)
-    for window in windows:
+def test_read_spectrograph_flips_v34_data_meta_and_world_coordinates(v34_sg_file):
+    """
+    Everything per exposure is reversed when a V34 raster is read flipped (default), so
+    the same physical exposure keeps its world coordinates whether or not
+    ``revert_v34=True``.
+    """
+    flipped = read_spectrograph_lvl2(v34_sg_file, spectral_windows=V34_WINDOWS, uncertainty=True)
+    original = read_spectrograph_lvl2(v34_sg_file, spectral_windows=V34_WINDOWS, uncertainty=True, revert_v34=True)
+    _, aux, aux_header = _window_header_and_aux(v34_sg_file, V34_WINDOWS[0])
+    with fits.open(v34_sg_file) as hdulist:
+        assert hdulist[0].header["STEPS_AV"] < -0.01
+        file_data = {window: hdulist[_window_ext(hdulist, window)].data for window in V34_WINDOWS}
+    # OBS 3460104433 steps the slit by -2": solar x falls along the file's steps and rises along the cube's
+    assert np.all(np.diff(aux[:, aux_header["XCENIX"]]) < 0)
+    for window in V34_WINDOWS:
         cube, reference = flipped[window][0], original[window][0]
+        np.testing.assert_array_equal(reference.data, file_data[window])  # revert_v34 keeps the file's order
         np.testing.assert_array_equal(cube.data, reference.data[::-1])
-        np.testing.assert_array_equal(cube.mask, cube.data == BAD_PIXEL_VALUE_SCALED)
-        assert np.all(cube.mask[-1])
-        assert not np.all(cube.mask[0])
+        assert np.all(np.diff(cube.time.jd) < 0)
+        np.testing.assert_array_equal(cube.mask, reference.mask[::-1])
         np.testing.assert_array_equal(cube.uncertainty.array, reference.uncertainty.array[::-1])
-        times = cube.axis_world_coords("time", wcs=cube.extra_coords)[0]
-        reference_times = reference.axis_world_coords("time", wcs=reference.extra_coords)[0]
-        np.testing.assert_array_equal(times.jd, reference_times[::-1].jd)
+        assert_quantity_allclose((cube.time - reference.time[::-1]).to(u.s), 0 * u.s, atol=1 * u.ns)
         np.testing.assert_array_equal(cube.meta["auxiliary times"].jd, reference.meta["auxiliary times"][::-1].jd)
         for key in ("exposure time", "observer radial velocity", "orbital phase"):
             np.testing.assert_array_equal(cube.meta[key], reference.meta[key][::-1])
         center, reference_center = cube.meta["exposure FOV center"], reference.meta["exposure FOV center"][::-1]
         np.testing.assert_array_equal(center.Tx, reference_center.Tx)
         np.testing.assert_array_equal(center.Ty, reference_center.Ty)
+        assert_quantity_allclose(center.Tx.to(u.arcsec), aux[::-1, aux_header["XCENIX"]] * u.arcsec)
+        assert_quantity_allclose(center.Ty.to(u.arcsec), aux[::-1, aux_header["YCENIX"]] * u.arcsec)
+
+        for step, slit, wavelength in ((0, 50, 3), (3, 50, 10), (7, 80, 20)):
+            spectral, sky, time, _ = cube.wcs.array_index_to_world(step, slit, wavelength)
+            mirrored_spectral, mirrored_sky, mirrored_time, _ = reference.wcs.array_index_to_world(
+                cube.shape[0] - 1 - step, slit, wavelength
+            )
+            assert_quantity_allclose(spectral.to(u.nm), mirrored_spectral.to(u.nm))
+            assert_quantity_allclose(sky.Tx.to(u.arcsec), mirrored_sky.Tx.to(u.arcsec), atol=0.01 * u.arcsec)
+            assert_quantity_allclose(sky.Ty.to(u.arcsec), mirrored_sky.Ty.to(u.arcsec), atol=0.01 * u.arcsec)
+            assert time.isclose(mirrored_time)
+        # Away from an exposure's center, the sky also depends on the sign of the step column of PC.
+        _, sky, _, _ = cube.wcs.pixel_to_world(10, 50, 3.3)
+        _, mirrored_sky, _, _ = reference.wcs.pixel_to_world(10, 50, cube.shape[0] - 1 - 3.3)
+        assert_quantity_allclose(sky.Tx.to(u.arcsec), mirrored_sky.Tx.to(u.arcsec), atol=0.01 * u.arcsec)
+        assert_quantity_allclose(sky.Ty.to(u.arcsec), mirrored_sky.Ty.to(u.arcsec), atol=0.01 * u.arcsec)
 
 
-def test_read_spectrograph_flips_a_real_v34_raster(v34_sg_file):
-    # OBS 3460104433 steps the slit by -2": solar x falls along the file's steps and rises along the cube's
-    windows = ["C II 1336", "Mg II k 2796"]
-    with fits.open(v34_sg_file) as hdulist:
-        assert hdulist[0].header["STEPS_AV"] < -0.01
-        auxiliary = hdulist[-2]
-        x_center = auxiliary.data[:, auxiliary.header["XCENIX"]]
-        file_data = [hdulist[index].data for index in (1, 2)]
-        reference_rows = [hdulist[index].header["CRPIX2"] - 1 for index in (1, 2)]
-    assert np.all(np.diff(x_center) < 0)
-
-    flipped = read_spectrograph_lvl2(v34_sg_file, spectral_windows=windows)
-    reverted = read_spectrograph_lvl2(v34_sg_file, spectral_windows=windows, revert_v34=True)
-    steps = np.arange(len(x_center))
-    for window, data, row in zip(windows, file_data, reference_rows, strict=True):
-        cube = flipped[window][0]
-        np.testing.assert_array_equal(cube.data, data[::-1])
-        np.testing.assert_array_equal(reverted[window][0].data, data)
-        times = cube.axis_world_coords("time", wcs=cube.extra_coords)[0]
-        assert np.all(np.diff(times.jd) < 0)
-        assert_quantity_allclose(cube.meta["exposure FOV center"].Tx, x_center[::-1] * u.arcsec)
-        _, _, longitude = cube.wcs.pixel_to_world_values(np.zeros(len(steps)), np.full(len(steps), row), steps)
-        np.testing.assert_allclose(longitude, x_center[::-1] / 3600)
+def test_memmap_v34_rasters_read_together_are_flipped(v34_sg_file):
+    cube = read_spectrograph_lvl2([v34_sg_file] * 2, spectral_windows="Mg II k 2796", memmap=True)["Mg II k 2796"]
+    with fits.open(v34_sg_file, do_not_scale_image_data=True) as hdulist:
+        expected = hdulist[_window_ext(hdulist, "Mg II k 2796")].data[::-1]
+    for scan in range(2):
+        np.testing.assert_array_equal(np.asarray(cube.data[scan]), expected)
 
 
-def test_raster_wcs_steps_have_no_index_vector(raster_sg_file):
-    # wcslib searches a -TAB index vector linearly, so a 1..N step index made each lookup O(step)
-    cube = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336")["C II 1336"][0]
-    assert "PS3_2" not in cube._fits_wcs.to_header()
-
+def test_fits_wcs_interpolates_between_steps_and_inverts(raster_sg_file):
+    fits_wcs = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336")["C II 1336"][0].fits_wcs
     steps = np.array([0, 0.5, 1, 6.25, 7])
-    world = cube.wcs.pixel_to_world_values(np.zeros(5), np.full(5, 50.0), steps)
+    world = fits_wcs.pixel_to_world_values(np.zeros(5), np.full(5, 50.0), steps)
     np.testing.assert_allclose(world[2][1], (world[2][0] + world[2][2]) / 2)
-    np.testing.assert_allclose(cube.wcs.world_to_pixel_values(*world)[2], steps, atol=1e-6)
+    np.testing.assert_allclose(fits_wcs.world_to_pixel_values(*world)[2], steps, atol=1e-6)
 
 
-def test_read_spectrograph_memmap_has_no_uncertainty(raster_sg_file):
-    # memmap data are unscaled integers, so no uncertainty is computed from them
-    memmap = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", memmap=True, uncertainty=True)
-    assert memmap["C II 1336"][0].uncertainty is None
-    scaled = read_spectrograph_lvl2(raster_sg_file, spectral_windows="C II 1336", uncertainty=True)
-    assert scaled["C II 1336"][0].uncertainty is not None
+@pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files"], ids=["one_file", "several_files"])
+def test_memmap_mode_never_computes_uncertainty(request, files):
+    # memmap data are unscaled integers, so no uncertainty is computed from them, and the fill mask is lazy
+    files = request.getfixturevalue(files)
+    memmap = read_spectrograph_lvl2(files, spectral_windows="Si IV 1403", memmap=True, uncertainty=True)["Si IV 1403"]
+    assert memmap.uncertainty is None
+    assert isinstance(memmap.mask, da.Array)
+    scaled = read_spectrograph_lvl2(files, spectral_windows="Si IV 1403", uncertainty=True)["Si IV 1403"]
+    assert scaled.uncertainty is not None
+
+
+@pytest.mark.parametrize("fixture", ["raster_sg_file", "sns_sjicube_1400"])
+def test_varying_celestial_transforms_match_dkist(request, fixture):
+    # irispy evaluates dkist's varying celestial transforms in one pass over the points, which must give the
+    # coordinates of dkist's own evaluation, NaN outside the pointing tables included
+    cube = request.getfixturevalue(fixture)
+    if fixture == "raster_sg_file":
+        cube = read_spectrograph_lvl2(cube, spectral_windows="Si IV 1403")["Si IV 1403"]
+    patched = next(model for model in cube.wcs.forward_transform if isinstance(model, BaseVaryingCelestialTransform))
+    native = type(patched)(
+        cdelt=patched.cdelt, pc_table=patched.pc_table, crval_table=patched.crval_table, crpix_table=patched.crpix_table
+    )
+    rng = np.random.default_rng(0)
+    # Detector pixels inside and outside the image, and table rows inside and outside the tables
+    x, y = rng.uniform(-2, 60, (2, 1000))
+    rows = [rng.uniform(-1, size + 1, 1000) for size in patched.table_shape]
+    actual = patched(x, y, *rows)
+    expected = native(x, y, *rows)
+    for value, reference in zip(actual, expected, strict=True):
+        np.testing.assert_allclose(value, reference, rtol=0, atol=1e-12)
+    assert np.isnan(actual[0]).any()
+    assert np.isfinite(actual[0]).any()
+
+
+@pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files", "sns_sg_file"])
+def test_world_coordinates_have_finite_corners_invert_crop_and_survive_asdf(request, tmp_path, files):
+    cube = read_spectrograph_lvl2(request.getfixturevalue(files), spectral_windows="Si IV 1403")["Si IV 1403"]
+    assert np.isfinite(cube.axis_world_coords("time", pixel_corners=True)[0].jd).all()
+    assert np.isfinite(cube.axis_world_coords("custom:pos.helioprojective.lon", pixel_corners=True)[0].Tx).all()
+
+    last = cube.shape[0] - 1  # the last raster, whose coordinates must invert as the first's do
+    start, stop = (cube.wcs.array_index_to_world(last, step, 20, 10) for step in (3, 4))
+    assert cube.wcs.world_to_array_index(*start) == (last, 3, 20, 10)
+    assert cube.wcs.world_to_array_index(*stop) == (last, 4, 20, 10)
+    assert cube.crop(start, stop).data.shape == (2,)
+
+    pixel = [np.array([3.0, 10.5]), np.array([5.0, 20.25]), np.array([1.0, 2.0]), np.array([0.0, cube.shape[0] - 1])]
+    asdf.AsdfFile({"wcs": cube.wcs}).write_to(tmp_path / "wcs.asdf")
+    with asdf.open(tmp_path / "wcs.asdf") as asdf_file:
+        wcs = asdf_file["wcs"]
+        world = wcs.pixel_to_world_values(*pixel)
+        np.testing.assert_array_equal(world, cube.wcs.pixel_to_world_values(*pixel))
+        np.testing.assert_allclose(wcs.world_to_pixel_values(*world), pixel)
+
+
+def test_crop_with_every_world_coordinate(raster_sg_files):
+    scan = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Si IV 1403")["Si IV 1403"]
+    spectral_coord = SpectralCoord(scan.spectral_axis[len(scan.spectral_axis) // 2])
+    last = scan.data.shape[-1] - 1
+
+    assert scan.crop([spectral_coord, None, None, None, None], [spectral_coord, None, None, None, None]).data.ndim == 3
+    assert scan.crop(*(scan.wcs.array_index_to_world(0, 3, 50, i) for i in (0, last))).data.ndim == 1
+    values = (scan.wcs.array_index_to_world_values(0, 3, 50, i) for i in (0, last))
+    assert scan.crop_by_values(*values, units=(u.nm, u.arcsec, u.arcsec, u.s, u.pix, u.pix)).data.ndim == 1
+
+
+@pytest.mark.parametrize("case", ["raster", "combined", "v34_flip", "v34_revert", "sit_and_stare"])
+def test_slit_center_is_at_the_exposure_pointing_and_agrees_with_fits_wcs(request, case):
+    """
+    Each exposure's slit center must be at its auxiliary FOV center (XCENIX, YCENIX),
+    and the WCS must agree with the FITS -TAB ``fits_wcs`` and invert back to its array
+    indices.
+    """
+    fixture = {"raster": "raster_sg_file", "combined": "raster_sg_files", "sit_and_stare": "sns_sg_file"}
+    filename = request.getfixturevalue(fixture.get(case, "v34_sg_file"))
+    window = "Mg II k 2796"
+    cube = read_spectrograph_lvl2(filename, spectral_windows=window, revert_v34=case == "v34_revert")[window][0]
+    if case == "combined":
+        filename = filename[0]
+    header, aux, aux_header = _window_header_and_aux(filename, window)
+    if case == "v34_flip":
+        aux = aux[::-1]
+    n_steps, n_slit = cube.shape[:2]
+    slit_center = header["CRPIX2"] - 1
+
+    steps = np.arange(n_steps)
+    _, sky, _, _ = cube.wcs.pixel_to_world(np.zeros(n_steps), np.full(n_steps, slit_center), steps)
+    # Measured residual is ~1e-10" for every case; 0.01" is far below the smallest real error (~0.17").
+    assert_quantity_allclose(sky.Tx, aux[:, aux_header["XCENIX"]] * u.arcsec, atol=0.01 * u.arcsec)
+    assert_quantity_allclose(sky.Ty, aux[:, aux_header["YCENIX"]] * u.arcsec, atol=0.01 * u.arcsec)
+
+    if case == "sit_and_stare":
+        # Along the slit, each exposure's pixels are CDELT2 apart in its own roll direction.
+        steps, rows = np.meshgrid([0, n_steps // 2, n_steps - 1], [0, n_slit - 1])
+        _, edge, _, _ = cube.wcs.pixel_to_world(np.zeros(steps.shape), rows, steps)
+        along_slit = header["CDELT2"] * (rows - slit_center) * u.arcsec
+        assert_quantity_allclose(
+            edge.Tx - sky.Tx[steps], along_slit * aux[steps, aux_header["PC3_2IX"]], atol=0.001 * u.arcsec
+        )
+        assert_quantity_allclose(
+            edge.Ty - sky.Ty[steps], along_slit * aux[steps, aux_header["PC2_2IX"]], atol=0.001 * u.arcsec
+        )
+
+    for array_index in SIT_AND_STARE_INDICES if case == "sit_and_stare" else RASTER_INDICES:
+        spectral, sky, _, _ = cube.wcs.array_index_to_world(*array_index)
+        basic_spectral, basic_sky = cube.fits_wcs.array_index_to_world(*array_index)
+        assert_quantity_allclose(spectral.to(u.nm), basic_spectral.to(u.nm))
+        assert_quantity_allclose(sky.Tx.to(u.arcsec), basic_sky.Tx.to(u.arcsec), atol=0.001 * u.arcsec)
+        assert_quantity_allclose(sky.Ty.to(u.arcsec), basic_sky.Ty.to(u.arcsec), atol=0.001 * u.arcsec)
+        assert cube.wcs.world_to_array_index(*cube.wcs.array_index_to_world(*array_index)) == array_index
+
+
+def test_sit_and_stare_pointing_does_not_ramp_between_exposures(sns_sg_file):
+    """
+    A sit-and-stare slit does not move between exposures, so a fractional step takes the
+    pointing of the nearest exposure instead of ramping at the virtual step scale, which
+    made plotted longitude ticks repeat.
+    """
+    wcs = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"][0].wcs.low_level_wcs
+    steps = np.array([4.0, 4.25, 4.49, 4.51, 5.0])
+    _, longitude, latitude, _, _ = wcs.pixel_to_world_values(np.zeros(5), np.zeros(5), steps)
+    np.testing.assert_array_equal(longitude, longitude[[0, 0, 0, 4, 4]])
+    np.testing.assert_array_equal(latitude, latitude[[0, 0, 0, 4, 4]])
+    assert longitude[4] != longitude[0]
+
+
+def test_celestial_frame_is_slicing_invariant(raster_sg_files):
+    cube = read_spectrograph_lvl2(raster_sg_files)["Si IV 1403"]
+
+    frame = cube.celestial_frame
+    assert isinstance(frame, Helioprojective)
+    # Every slice of a combined cube has the frame of its first file
+    assert cube[0].celestial_frame == frame
+    assert cube[0, 2].celestial_frame == frame
+    assert cube[:, 1:3].celestial_frame == frame
+    assert cube[0, 2, 50].celestial_frame == frame
+
+    wcs_frame = wcs_to_celestial_frame(cube[0].fits_wcs.celestial)
+    # The FITS WCS frame must carry an obstime, otherwise coordinates built in
+    # celestial_frame cannot be transformed into it (they become NaN).
+    assert wcs_frame.obstime is not None
+    roundtripped = SkyCoord(0 * u.arcsec, 0 * u.arcsec, frame=frame).transform_to(wcs_frame)
+    assert np.isfinite(roundtripped.Tx.value)
+    assert np.isfinite(roundtripped.Ty.value)
 
 
 @pytest.mark.parametrize("memmap", [False, True])
@@ -409,7 +556,7 @@ def test_read_spectrograph_masks_both_fill_values(tmp_path, sns_sg_file, memmap)
         raw = hdulist[1].data.copy()
         hdulist.writeto(filename)
 
-    cube = read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=memmap)["C II 1336"].data[0]
+    cube = read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=memmap)["C II 1336"][0]
 
     np.testing.assert_array_equal(cube.mask, expected_mask)
     if memmap:
@@ -423,12 +570,30 @@ def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
     assert cube.uncertainty.array.shape == cube.data.shape
 
 
+def test_an_exposure_without_pointing_takes_it_from_its_neighbors():
+    # Step 0 of this raster has no exposure, and so no pointing (see data_gap/overview.txt)
+    filename = get_test_filepath("data_gap/iris_l2_20150917_073915_3630104144_raster_t000_r00102_test.fits")
+    with pytest.warns(UserWarning, match=r"Found 1 step\(s\) with no pointing"):
+        cube = read_spectrograph_lvl2(filename)["Si IV 1403"][0]
+    steps = np.arange(cube.shape[0])
+    slit_center = np.full(steps.size, fits.getheader(filename, 1)["CRPIX2"] - 1)
+    sky = cube.wcs.pixel_to_world(np.zeros(steps.size), slit_center, steps)[1]
+    fov_center = cube.meta["exposure FOV center"]
+
+    assert np.isnan(fov_center.Tx[0])
+    assert_quantity_allclose(sky.Tx[1:], fov_center.Tx[1:], atol=1e-6 * u.arcsec)
+    assert_quantity_allclose(sky.Ty[1:], fov_center.Ty[1:], atol=1e-6 * u.arcsec)
+    # Before the first exposure with pointing, on the line through the first two
+    assert_quantity_allclose(sky.Tx[0], 2 * sky.Tx[1] - sky.Tx[2])
+    assert_quantity_allclose(sky.Ty[0], 2 * sky.Ty[1] - sky.Ty[2])
+
+
 def test_memmap_records_the_window_scaling():
     # memmap=True keeps the FITS integers, so the window's BSCALE and BZERO go in the metadata
     filename = get_test_filepath(
         "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
     )
-    cube = read_spectrograph_lvl2(filename, memmap=True, spectral_windows="Mg II k 2796")["Mg II k 2796"].data[0]
+    cube = read_spectrograph_lvl2(filename, memmap=True, spectral_windows="Mg II k 2796")["Mg II k 2796"]
     assert np.issubdtype(cube.data.dtype, np.integer)
     with fits.open(filename) as hdulist:
         header = hdulist[3].header
@@ -472,4 +637,23 @@ def test_read_spectrograph_masks_clipped_samples(tmp_path, sns_sg_file):
     assert cube.mask.flat[7]
     assert np.isfinite(cube.uncertainty.array.flat[7])
     # Windows without clipped samples have no saturated meta
-    assert not any("saturated" in sequence[0].meta for name, sequence in raster.items() if name != window)
+    assert not any("saturated" in other.meta for name, other in raster.items() if name != window)
+
+
+def test_combined_rasters_mark_clipped_samples(tmp_path, raster_sg_files):
+    # Only the second file has a clipped sample
+    clipped = tmp_path / "clipped.fits"
+    with _edited_copy(raster_sg_files[1], clipped) as hdulist:
+        ext = _window_ext(hdulist, "Si IV 1403")
+        data = hdulist[ext].data.astype("float32")
+        data[2, 50, 10] = SATURATION_LIMIT.value
+        hdulist[ext].data = data
+
+    cube = read_spectrograph_lvl2([raster_sg_files[0], clipped], spectral_windows="Si IV 1403")["Si IV 1403"]
+
+    expected = np.zeros(cube.shape, dtype=bool)
+    expected[1, 2, 50, 10] = True
+    np.testing.assert_array_equal(cube.meta["saturated"], expected)
+    assert cube.mask[1, 2, 50, 10]
+    np.testing.assert_array_equal(cube[1].meta["saturated"], expected[1])
+    np.testing.assert_array_equal(cube[1, 1:5, 40:60].meta["saturated"], expected[1, 1:5, 40:60])
