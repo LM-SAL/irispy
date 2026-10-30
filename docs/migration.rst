@@ -37,10 +37,6 @@ last file. If the first file has no data, the pointing and roll (``XCEN``,
 The per-exposure metadata, such as ``cube.meta["exposure time"]``, and
 ``cube.time`` have shape (raster, step).
 
-When there are only a few saturated samples, ``cube.meta["saturated"]`` stores
-just their positions. ``np.asarray(cube.meta["saturated"])`` gives the
-`True`/`False` array. It cannot be changed in place.
-
 When `~irispy.io.read_files` reads several products, such as a downloaded
 observation folder, the `~irispy.spectrograph.RasterCollection` of the rasters is
 keyed ``"raster"``, not by its first spectral window:

@@ -11,7 +11,7 @@ import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
 from ndcube.visualization.plotting_utils import prep_plot_kwargs
 
-from irispy._wcs import _is_sit_and_stare
+from irispy._spectrograph_wcs import MOSAIC_X_AXIS, MOSAIC_Y_AXIS, SCAN_AXIS, SLIT_AXIS, STEP_AXIS, _is_sit_and_stare
 
 __all__ = []
 
@@ -41,7 +41,10 @@ LAT_AXIS_LABEL = "Helioprojective Latitude [arcsec]"
 # Coordinates a plot only shows when they are asked for with ``axes_coordinates``.
 HIDDEN_BY_DEFAULT = TIME_LABELS | SLIDER_SCAN_STEP_LABELS | SLIDER_SCAN_LABELS
 # The pixel axis each celestial coordinate follows, which decides the edge it is labeled on.
-PRIMARY_PIXEL_AXES = {"spatial along slit": LAT_LABELS, "raster step": LON_LABELS}
+PRIMARY_PIXEL_AXES = {SLIT_AXIS: LAT_LABELS, STEP_AXIS: LON_LABELS}
+# Pixel axes whose time follows the sky, a raster's steps and scans and a mosaic's positions: a plot shows that
+# time only when asked for, while an image along the time of a slit-jaw cube always shows it.
+SKY_TIME_AXES = {STEP_AXIS, SCAN_AXIS, MOSAIC_X_AXIS, MOSAIC_Y_AXIS}
 
 
 def _shorten_slider_label(label):
@@ -62,7 +65,7 @@ def _shorten_slider_label(label):
     return label
 
 
-def set_axis_properties(ax, axes_coordinates=None, slices=None):
+def set_axis_properties(ax, axes_coordinates=None, slices=None, pixel_axis_names=None):
     """
     Set IRIS axis labels and choose the coordinates shown on the plot edges.
 
@@ -72,18 +75,14 @@ def set_axis_properties(ax, axes_coordinates=None, slices=None):
     and longitude on the edge of the raster step axis. When only one of those axes is
     plotted, the other coordinate goes on its opposite edge, so a raster image is laid
     out like its FITS WCS. ``slices`` are the WCSAxes slices (``"x"``, ``"y"`` or an
-    index per pixel axis, in WCS order); an animator provides its own.
+    index per pixel axis, in WCS order), ``("x", "y")`` by default, and
+    ``pixel_axis_names`` the names of the pixel axes in that order, those of the WCS of
+    ``ax`` by default.
     """
-    # IRISPlotter.plot sets this on the axes or animator it returns
-    pixel_axis_names = getattr(ax, "_iris_pixel_axis_names", None)
-    if isinstance(ax, ArrayAnimatorWCS):
-        slices = ax.slices_wcsaxes
-        ax = ax.axes
     physical_types = [(physical_type or "").lower() for physical_type in ax.wcs.world_axis_physical_types]
-    # The time of a raster exposure follows its raster step, so a raster shows it only when asked for, while an
-    # image along the time of a slit-jaw cube always does
-    is_raster = not (SLIDER_SCAN_STEP_LABELS | SLIDER_SCAN_LABELS).isdisjoint(physical_types)
-    hidden = HIDDEN_BY_DEFAULT if is_raster else HIDDEN_BY_DEFAULT - TIME_LABELS
+    if pixel_axis_names is None:
+        pixel_axis_names = getattr(ax.wcs, "pixel_axis_names", ())
+    hidden = HIDDEN_BY_DEFAULT if not SKY_TIME_AXES.isdisjoint(pixel_axis_names) else HIDDEN_BY_DEFAULT - TIME_LABELS
     requested = {coord.lower() for coord in axes_coordinates or () if isinstance(coord, str)}
     shown = []
     for axis, physical_type in zip(ax.coords, physical_types, strict=True):
@@ -104,7 +103,7 @@ def set_axis_properties(ax, axes_coordinates=None, slices=None):
         else:
             _hide_coord(axis)
     if "l" in ax.coords.frame.spine_names:
-        _place_celestial_coords(ax, shown, slices, pixel_axis_names)
+        _place_celestial_coords(shown, slices, pixel_axis_names)
 
 
 def _set_axis_properties(axis, label, color):
@@ -141,10 +140,8 @@ def _hide_coord(coord):
         set_position("")
 
 
-def _place_celestial_coords(ax, shown, slices, pixel_axis_names=None):
-    if pixel_axis_names is None:
-        pixel_axis_names = getattr(ax.wcs, "pixel_axis_names", None)
-    pixel_axis_names = list(pixel_axis_names or ())
+def _place_celestial_coords(shown, slices, pixel_axis_names):
+    pixel_axis_names = list(pixel_axis_names)
     slices = list(("x", "y") if slices is None else slices)
     if len(slices) != len(pixel_axis_names):
         return
@@ -183,7 +180,7 @@ def _map_aspect(cube, wcs, plot_axes):
     ``plot_axes`` is in pixel order, as `ndcube` passes it to ``_plot_2D_cube``.
     """
     # The rasters are times, often only a few, so square pixels would draw a sliver
-    if "raster scan" in cube.wcs.low_level_wcs.pixel_axis_names:
+    if SCAN_AXIS in cube.wcs.low_level_wcs.pixel_axis_names:
         return "auto"
     types = set(wcs.world_axis_physical_types)
     # A raster's gWCS also gives each exposure's time and step, which follow the step axis
@@ -207,15 +204,26 @@ def _map_aspect(cube, wcs, plot_axes):
     return (scale[plot_axes.index("y")] / scale[plot_axes.index("x")]).to_value(u.one)
 
 
-class Plot2DMixin:
-    def update_plot_2d(self, val, im, slider):
-        super().update_plot_2d(val, im, slider)
-        set_axis_properties(self, getattr(self, "_iris_axes_coordinates", None))
+class IRISArrayAnimatorWCS(ArrayAnimatorWCS):
+    """
+    The ndcube animator with IRIS slider labels, and the IRIS axis layout kept through
+    slider updates.
+    """
 
+    def __init__(self, *args, axes_coordinates=None, pixel_axis_names=None, **kwargs):
+        self._axes_coordinates = axes_coordinates
+        self._pixel_axis_names = pixel_axis_names
+        super().__init__(*args, **kwargs)
 
-class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
     def _compute_slider_labels_from_wcs(self, slices):
         return [_shorten_slider_label(label) for label in super()._compute_slider_labels_from_wcs(slices)]
+
+    def set_axis_properties(self):
+        set_axis_properties(self.axes, self._axes_coordinates, self.slices_wcsaxes, self._pixel_axis_names)
+
+    def update_plot_2d(self, val, im, slider):
+        super().update_plot_2d(val, im, slider)
+        self.set_axis_properties()
 
 
 def _registered_colormap(name):
@@ -259,9 +267,21 @@ def _sji_cmap_name(meta):
 
 
 class IRISPlotter(MatplotlibPlotter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The axes_coordinates of the current plot call as given: ndcube fills them in with every world axis
+        # before _animate_cube sees them, and the layout must tell a request from the default
+        self._axes_coordinates = None
+
     def _default_cmap_name(self):
         # sunpy registers the IRIS spectrograph color tables as irissjiFUV and irissjiNUV
         return _registered_colormap(f"irissji{getattr(self._ndcube.meta, 'detector_band', '')}")
+
+    @property
+    def _pixel_axis_names(self):
+        # With axes_coordinates, ndcube plots through its combined WCS, whose pixel axis names are unusable
+        # (ndcube's CompoundLowLevelWCS raises), so the layout uses the cube's own
+        return tuple(self._ndcube.wcs.low_level_wcs.pixel_axis_names)
 
     def plot(self, axes=None, plot_axes=None, axes_coordinates=None, **kwargs):
         """
@@ -288,23 +308,20 @@ class IRISPlotter(MatplotlibPlotter):
         ``clip_interval=(1, 99.5) * u.percent`` sets them to those percentiles of the
         image, or of each frame.
         """
-        if plot_axes is None and list(self._ndcube.wcs.low_level_wcs.pixel_axis_names) == [
-            "spatial along slit",
-            "raster step",
-        ]:
+        if plot_axes is None and self._pixel_axis_names == (SLIT_AXIS, STEP_AXIS):
             # Solar X along x, as in a map; plot_axes is in array order, (step, slit)
             plot_axes = ["x", "y"]
         if len(self._ndcube.shape) == 1:
             kwargs.pop("cmap", None)
         else:
             kwargs["cmap"] = kwargs.get("cmap") or self._default_cmap_name()
+        self._axes_coordinates = axes_coordinates
         ax = super().plot(axes=axes, plot_axes=plot_axes, axes_coordinates=axes_coordinates, **kwargs)
-        ax._iris_axes_coordinates = axes_coordinates
-        # With axes_coordinates, ndcube plots through its combined WCS, whose pixel axis
-        # names are unusable (ndcube's CompoundLowLevelWCS raises), so keep the cube's own.
-        ax._iris_pixel_axis_names = tuple(self._ndcube.wcs.low_level_wcs.pixel_axis_names)
-        slices = prep_plot_kwargs(len(self._ndcube.shape), self._ndcube.wcs, plot_axes, None, None)[0]
-        set_axis_properties(ax, axes_coordinates, slices=slices)
+        if isinstance(ax, IRISArrayAnimatorWCS):
+            ax.set_axis_properties()
+        else:
+            slices = prep_plot_kwargs(len(self._ndcube.shape), self._ndcube.wcs, plot_axes, None, None)[0]
+            set_axis_properties(ax, axes_coordinates, slices, self._pixel_axis_names)
         return ax
 
     def _plot_2D_cube(  # NOQA: N802
@@ -333,7 +350,15 @@ class IRISPlotter(MatplotlibPlotter):
         **kwargs,
     ):
         data, wcs, plot_axes, coord_params = self._prep_animate_args(wcs, plot_axes, axes_units, data_unit)
-        ax = IRISArrayAnimatorWCS(data, wcs, plot_axes, coord_params=coord_params, **kwargs)
+        ax = IRISArrayAnimatorWCS(
+            data,
+            wcs,
+            plot_axes,
+            coord_params=coord_params,
+            axes_coordinates=self._axes_coordinates,
+            pixel_axis_names=self._pixel_axis_names,
+            **kwargs,
+        )
         self._apply_axes_coordinates(ax.axes, axes_coordinates)
         for hidden in self._not_visible_coords(ax.axes, axes_coordinates):
             param = ax.coord_params.get(hidden, {})

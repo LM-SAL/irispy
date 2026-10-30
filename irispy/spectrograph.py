@@ -1,25 +1,27 @@
 import textwrap
 from copy import deepcopy
-from numbers import Integral
+from functools import cached_property
 
 import numpy as np
 
 import astropy.units as u
 import gwcs
+import gwcs.coordinate_frames as cf
 from astropy.time import Time
-from astropy.wcs import WCS
-from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube import NDCollection
 from ndcube.visualization import PlotterDescriptor
-from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 from sunraster import SpectrogramCube as SpecCube
 from sunraster.spectrogram import _calculate_exposure_time_correction, _uncalculate_exposure_time_correction
 
+from irispy._spectrograph_wcs import TIME_MODEL
 from irispy._wcs import (
     _celestial_frame_from_cube,
+    _fits_wcs_from_cube,
     _ResolveNegativeIndicesMixin,
+    _root_and_item,
     _root_wcs,
+    _sliced,
     _wcs_array_axis_physical_types,
 )
 from irispy.utils.constants import SLIT_WIDTH
@@ -95,18 +97,14 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         return f"{object.__repr__(self)}\n{self!s}"
 
     def __str__(self) -> str:
-        try:
-            times = self.time
-            obs_date = f"{times.min().isot} -- {times.max().isot}"
-        except ValueError:  # a cube built on a WCS with no time, such as a FITS WCS
-            obs_date = None
+        times = self.time
         return textwrap.dedent(
             f"""
             SpectrogramCube
             ---------------
             Obs ID:             {self.meta.get("OBSID")}
             Obs Description:    {self.meta.get("OBS_DESC")}
-            Obs Date:           {obs_date}
+            Obs Date:           {times.min().isot} -- {times.max().isot}
             Data shape:         {self.shape}
             Axis Types:         {_wcs_array_axis_physical_types(self)}
             Roll:               {self.meta.get("SAT_ROT")}
@@ -115,29 +113,16 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
 
     celestial_frame = property(_celestial_frame_from_cube)
 
-    @property
-    def fits_wcs(self):
+    def _fits_wcs_roots(self, item):
         """
-        The FITS WCS of the cube, sliced as the cube is.
+        The FITS WCS of the rasters, or frames, that ``item`` selects along the first
+        axis of the unsliced cube: a list for a range, one WCS for an integer, `None`
+        when the cube has none.
+        """
+        roots = self.meta.get("fits_wcs")
+        return None if roots is None else roots[item]
 
-        For a raster window, a list with the FITS ``-TAB`` WCS of each raster, which
-        holds the pointing of each exposure, as `irispy.sji.SJICube.fits_wcs` has one
-        per frame. For one raster, ``cube[k]``, its FITS WCS. For a mosaic, its own WCS.
-        `None` when the cube has none, such as after rebinning.
-        """
-        root, low = self.meta.get("fits_wcs"), self.wcs.low_level_wcs
-        item = [slice(None)] * low.pixel_n_dim
-        if isinstance(low, SlicedLowLevelWCS):
-            low, item = low._wcs, list(low._slices_array)
-        if isinstance(low, WCS):
-            root = low
-        elif root is None or not isinstance(low, gwcs.WCS):
-            return None
-        if isinstance(root, list):
-            if not isinstance(item[0], Integral):
-                return [_sliced(wcs, item[1:]) for wcs in root[item[0]]]
-            root, item = root[item[0]], item[1:]
-        return _sliced(root, item)
+    fits_wcs = cached_property(_fits_wcs_from_cube)
 
     def apply_exposure_time_correction(self, undo=False, force=False):  # NOQA: FBT002 (sunraster signature)
         exposure_time = self.exposure_time.to_value(u.s)
@@ -165,7 +150,13 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         if isinstance(wcs, gwcs.WCS):
             # An unsliced raster cube: its time lookup at each (scan, step) gives the times without the rest of the gWCS
             scan, step = np.indices(self.data.shape[:2]) * u.pix
-            return wcs.output_frame.frames[2].reference_frame + wcs.forward_transform["Time"](step, scan)
+            temporal = next(frame for frame in wcs.output_frame.frames if isinstance(frame, cf.TemporalFrame))
+            offsets = wcs.forward_transform[TIME_MODEL](step, scan).to_value(u.s)
+            uncovered = np.isnan(offsets)  # the positions of a mosaic no raster covered
+            times = temporal.reference_frame + np.where(uncovered, 0, offsets) * u.s
+            if uncovered.any():
+                times[uncovered] = np.ma.masked
+            return times
         if "time" not in self.wcs.world_axis_physical_types:
             # Indexing one exposure drops the time from the WCS into the global coordinates
             dropped = [coordinate for coordinate in self.global_coords.values() if isinstance(coordinate, Time)]
@@ -196,12 +187,8 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         Spectral dispersion per pixel along the wavelength axis.
         """
         wcs = self._fits_wcsprm
-        mask = np.array([ctype == "WAVE" for ctype in wcs.ctype])
-        if not mask.any():
-            msg = "Cannot determine spectral axis (no WAVE ctype in WCS) for spectral_dispersion"
-            raise ValueError(msg)
-        idx = np.argmax(mask)
-        return wcs.cdelt[idx] * u.Unit(wcs.cunit[idx])
+        index = list(wcs.ctype).index("WAVE")
+        return wcs.cdelt[index] * u.Unit(wcs.cunit[index])
 
     @property
     def solid_angle(self):
@@ -209,12 +196,8 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         Solid angle per spatial pixel (slit width x spatial pixel scale).
         """
         wcs = self._fits_wcsprm
-        mask = np.array(["HPLT" in ctype for ctype in wcs.ctype])
-        if not mask.any():
-            msg = "Cannot determine latitude axis (no HPLT ctype in WCS) for solid_angle computation"
-            raise ValueError(msg)
-        lat_idx = np.argmax(mask)
-        return wcs.cdelt[lat_idx] * u.Unit(wcs.cunit[lat_idx]) * SLIT_WIDTH
+        index = next(axis for axis, ctype in enumerate(wcs.ctype) if "HPLT" in ctype)
+        return wcs.cdelt[index] * u.Unit(wcs.cunit[index]) * SLIT_WIDTH
 
     @property
     def wavelength_axis(self):
@@ -230,10 +213,6 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         except StopIteration:
             msg = "Could not identify a spectral wavelength axis on the cube"
             raise ValueError(msg) from None
-
-
-def _sliced(wcs, item):
-    return wcs if all(index == slice(None) for index in item) else wcs.slice(tuple(item), numpy_order=True)
 
 
 def _wavelength_indices(wavelengths, wavelength_range, *, allow_empty=False):
@@ -260,7 +239,9 @@ class MosaicCube(SpectrogramCube):
     """
     An IRIS full-disk mosaic of one spectral window, read by `irispy.io.read_mosaic`.
 
-    The array axes are solar X, solar Y and wavelength, as in a Level 2 raster.
+    The array axes are solar X, solar Y and wavelength, as in a Level 2 raster. The gWCS
+    gives the wavelength, the sky position and the time of each position, and `fits_wcs`
+    the FITS WCS the mosaic was read with.
     `to_map`, `~irispy.utils.moments.calculate_moments`, `~irispy.utils.moments.average_window`,
     `~irispy.utils.red_blue.calculate_red_blue_asymmetry`, `~irispy.utils.rgb.calculate_rgb`,
     `~irispy.utils.rgb.plot_rgb`, `~irispy.utils.mg_features.calculate_mg_features` and
@@ -278,9 +259,22 @@ class MosaicCube(SpectrogramCube):
             Rest wavelength: {self.meta.get("LAMREF")} Angstrom
             Obs Date:        {self.meta.get("DATE_OBS")} -- {self.meta.get("DATE_END")}
             Data shape:      {self.shape}
-            Axis Types:      {self.array_axis_physical_types}
+            Axis Types:      {_wcs_array_axis_physical_types(self)}
             """,
         )
+
+    def _fits_wcs_roots(self, _item):
+        # The one FITS WCS of a mosaic describes all of its axes
+        return self.meta.get("fits_wcs")
+
+    @cached_property
+    def fits_wcs(self):
+        """
+        The FITS WCS the mosaic was read with, sliced as the cube is; `None` after
+        rebinning.
+        """
+        root, item = _root_and_item(self)
+        return _sliced(self.meta["fits_wcs"], item) if isinstance(root, gwcs.WCS) else None
 
     @u.quantity_input
     def to_map(self, wavelength: u.AA):
@@ -324,7 +318,7 @@ class MosaicCube(SpectrogramCube):
             wavelength = u.Quantity([nearest, nearest])
         mean_wavelength = wavelengths[_wavelength_indices(wavelengths, wavelength)].mean()
         window = average_window(self, wavelength)
-        header = unwrap_wcs_to_fitswcs(self.wcs)[0].celestial.swapaxes(0, 1).to_header()
+        header = self.fits_wcs.celestial.swapaxes(0, 1).to_header()
         header.update(
             {
                 "TELESCOP": "IRIS",

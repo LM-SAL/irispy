@@ -1,2 +1,0 @@
-For a raster cube read with ``memmap=False``, ``meta["saturated"]`` now stores only the positions of the saturated samples when there are few, instead of a ``numpy`` array as large as the data.
-It slices with the cube but cannot be changed in place. ``np.asarray(cube.meta["saturated"])`` gives the `True`/`False` array.

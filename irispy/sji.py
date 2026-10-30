@@ -4,13 +4,18 @@ from functools import cached_property
 
 import gwcs
 from astropy.wcs import WCS
-from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube.visualization import PlotterDescriptor
 from sunpy.util import MetaDict
 from sunraster import SpectrogramCube
 
-from irispy._wcs import _celestial_frame_from_cube, _ResolveNegativeIndicesMixin, _wcs_array_axis_physical_types
+from irispy._wcs import (
+    _celestial_frame_from_cube,
+    _fits_wcs_from_cube,
+    _ResolveNegativeIndicesMixin,
+    _root_and_item,
+    _wcs_array_axis_physical_types,
+)
 from irispy.utils._spectral import check_scaled
 from irispy.visualization import SJIPlotter, _make_map, _sji_cmap_name
 
@@ -152,23 +157,7 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         return index
 
     celestial_frame = property(_celestial_frame_from_cube)
-
-    @cached_property
-    def _file_frames(self):
-        """
-        The file's FITS header of each frame of this cube (one header for a single
-        frame, a list for a time axis) and the cube's spatial item in numpy order;
-        `None` when the cube has no frame headers.
-        """
-        headers = self.meta.get("frame_wcs_headers") if self.meta is not None else None
-        low = self.wcs.low_level_wcs
-        item = [slice(None)] * low.pixel_n_dim
-        if isinstance(low, SlicedLowLevelWCS):
-            low, item = low._wcs, list(low._slices_array)
-        # Any other low-level WCS (e.g. a rebinned one) no longer matches the frame headers.
-        if headers is None or not isinstance(low, gwcs.WCS):
-            return None
-        return headers[item[0]], tuple(item[1:])
+    fits_wcs = cached_property(_fits_wcs_from_cube)
 
     @cached_property
     def _frame_headers(self):
@@ -177,29 +166,23 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         for a single frame, a list for a time axis, `None` when the cube has no frame
         headers or an integer spatial index left a 1-D image, which no header describes.
         """
-        if self._file_frames is None or not all(isinstance(axis, slice) for axis in self._file_frames[1]):
+        headers = self.meta.get("frame_wcs_headers")
+        root, item = _root_and_item(self)
+        # A rebinned cube no longer matches the frame headers
+        if headers is None or not isinstance(root, gwcs.WCS) or not all(isinstance(axis, slice) for axis in item[1:]):
             return None
-        frames, spatial = self._file_frames
+        frames, spatial = headers[item[0]], tuple(item[1:])
         if isinstance(frames, MetaDict):
             return _slice_header(frames, spatial)
         return [_slice_header(h, spatial) for h in frames]
 
-    @cached_property
-    def fits_wcs(self):
-        """
-        The FITS WCS of each frame, with the pointing and time of that frame.
-
-        A list with one `astropy.wcs.WCS` per frame, following the cube's slicing, or
-        one WCS after an integer index along time; after an integer spatial index, each
-        is a sliced WCS (`~astropy.wcs.wcsapi.SlicedLowLevelWCS`) of the remaining axis.
-        `None` when the cube has no frame headers, as after rebinning.
-        """
-        if self._file_frames is None:
+    def _fits_wcs_roots(self, item):
+        # The file's header of each frame as a WCS, built for the frames asked for only
+        headers = self.meta.get("frame_wcs_headers")
+        if headers is None:
             return None
-        frames, spatial = self._file_frames
-        if isinstance(frames, MetaDict):
-            return WCS(frames).slice(spatial, numpy_order=True)
-        return [WCS(h).slice(spatial, numpy_order=True) for h in frames]
+        frames = headers[item]
+        return WCS(frames) if isinstance(frames, MetaDict) else [WCS(h) for h in frames]
 
     def to_maps(self, index: int | list[int] | None = None):
         """

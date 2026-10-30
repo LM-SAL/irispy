@@ -1,0 +1,1 @@
+``irispy.io.read_mosaic`` now builds a gWCS, as the raster and slit-jaw readers do, with the wavelength, the helioprojective longitude and latitude, and the time of each mosaic position, masked in ``cube.time`` where no raster covered it. The FITS WCS the mosaic was read with is ``cube.fits_wcs``.

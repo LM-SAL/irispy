@@ -2,6 +2,7 @@
 Fill masks and the scaling check for raw, memory-mapped Level 2 data.
 """
 
+import dask.array as da
 import numpy as np
 
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED
@@ -23,8 +24,6 @@ def _fill_mask_values(data, raw_m200, raw_m199):
 
 
 def _memmap_fill_mask(data, header, *, nan_only=False):
-    import dask.array as da  # NOQA: PLC0415
-
     if nan_only:
         mask, args = np.isnan, ()
     else:

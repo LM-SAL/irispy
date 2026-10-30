@@ -1,18 +1,72 @@
 import numpy as np
 
+import astropy.modeling.models as m
 import astropy.units as u
+import gwcs
+import gwcs.coordinate_frames as cf
 from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
 
+from dkist.wcs.models import generate_celestial_transform
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
+from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
+from irispy._spectrograph_wcs import MOSAIC_X_AXIS, MOSAIC_Y_AXIS, TIME_MODEL, WAVELENGTH_AXIS, _spectral_axis
+from irispy._wcs import _time_lookup
 from irispy.meta import MosaicMeta
 from irispy.spectrograph import MosaicCube, _wavelength_indices
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, SATURATION_LIMIT
 
 __all__ = ["read_mosaic"]
+
+
+def _create_gwcs(fits_wcs, celestial, time_offsets, date_obs, observer):
+    """
+    The gWCS of a mosaic: its wavelength, helioprojective longitude and latitude, and
+    the time of each position.
+
+    ``fits_wcs`` is the FITS WCS of the cube, with pixel axes (wavelength, solar Y,
+    solar X), ``celestial`` the celestial FITS WCS of the file, with pixel axes (solar
+    X, solar Y), and ``time_offsets`` the seconds from ``date_obs`` of each (solar Y,
+    solar X) position, NaN where no raster covered it.
+    """
+    unit = u.Unit(fits_wcs.wcs.cunit[0])
+    spectral, spectral_frame = _spectral_axis(
+        fits_wcs.wcs.cdelt[0] * unit, fits_wcs.wcs.crval[0] * unit, fits_wcs.wcs.crpix[0]
+    )
+    # FITS CRPIX is 1-based and the transform takes 0-based pixels; wcslib holds the sky keywords in degrees
+    sky = generate_celestial_transform(
+        crpix=(celestial.wcs.crpix - 1) * u.pix,
+        cdelt=(celestial.wcs.cdelt * u.deg).to(u.arcsec) / u.pix,
+        pc=celestial.wcs.get_pc() * u.pix,
+        crval=(celestial.wcs.crval * u.deg).to(u.arcsec),
+    )
+    temporal = _time_lookup(np.asarray(time_offsets, dtype=float) * u.s, name=TIME_MODEL)
+    # Pixel inputs are (wavelength, solar Y, solar X): the sky takes (X, Y) and the time lookup (Y, X)
+    forward = m.Mapping((0, 2, 1, 1, 2), name="WavelengthXYYX") | (spectral & sky & temporal)
+    # The inverse ignores the time, which does not place a pixel on its own
+    forward.inverse = (
+        m.Mapping((0, 1, 2), n_inputs=4, name="DropTime") | (spectral.inverse & sky.inverse) | m.Mapping((0, 2, 1))
+    )
+    celestial_frame = cf.CelestialFrame(
+        axes_order=(1, 2),
+        unit=(u.arcsec, u.arcsec),
+        reference_frame=Helioprojective(observer=observer, obstime=date_obs),
+        axis_physical_types=["custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"],
+        axes_names=("helioprojective longitude", "helioprojective latitude"),
+    )
+    temporal_frame = cf.TemporalFrame(date_obs, unit=(u.s,), axes_order=(3,), axes_names=("Time (UTC)",))
+    pixel_frame = cf.CoordinateFrame(
+        naxes=3,
+        axes_order=(0, 1, 2),
+        axes_names=(WAVELENGTH_AXIS, MOSAIC_Y_AXIS, MOSAIC_X_AXIS),
+        axes_type=["PIXEL"] * 3,
+        unit=(u.pix,) * 3,
+    )
+    output_frame = cf.CompositeFrame([spectral_frame, celestial_frame, temporal_frame])
+    return gwcs.WCS([(pixel_frame, forward), (output_frame, None)])
 
 
 @u.quantity_input
@@ -42,9 +96,11 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
 
     Notes
     -----
-    The WCS is helioprojective, with the observer at Earth at ``DATE_OBS``, the start of
-    the mosaic. The mosaic is not derotated and takes about 18 hours to acquire, so
-    ``meta["time"]`` holds the time of each position, masked where no raster covered it.
+    The gWCS gives the wavelength, the helioprojective longitude and latitude, with the
+    observer at Earth at ``DATE_OBS``, the start of the mosaic, and the time of each
+    position: the mosaic is not derotated and takes about 18 hours to acquire.
+    ``meta["time"]`` holds the same times, masked where no raster covered it, and
+    ``fits_wcs`` the FITS WCS the mosaic was read with.
 
     Gzipped files cannot be memory-mapped, so every read decompresses the file.
     Decompressing it once, for example with ``gunzip``, makes later reads much faster.
@@ -86,6 +142,7 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
             }
         )
         wcs = WCS(wcs_header)
+        celestial = wcs.celestial  # (solar X, solar Y), before the axes are reversed
         indices = range(header["NAXIS3"])
         if wavelength_range is not None:
             wavelengths = wcs.spectral.pixel_to_world(indices)
@@ -93,7 +150,8 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
             wcs = wcs[indices[0] : indices[-1] + 1]
         # The file is (wavelength, solar Y, solar X); rasters are the reverse.
         wcs = wcs.sub([3, 2, 1])
-        _set_wcs_aux_obs_coord(wcs, get_body_heliographic_stonyhurst("Earth", date_obs))
+        observer = get_body_heliographic_stonyhurst("Earth", date_obs)
+        _set_wcs_aux_obs_coord(wcs, observer)
         # The stored integers in one read: astropy seeks back after a read, which restarts a gzip decompression.
         stored = hdulist[0].section[indices[0] : indices[-1] + 1]
         time_offset = hdulist[2].data.T
@@ -116,4 +174,6 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
     meta.add("time", times, "Time of each mosaic position, masked where no raster covered it", (0, 1))
     if saturated.any():
         meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", (0, 1, 2))
-    return MosaicCube(data, wcs, unit=DN_UNIT[meta.detector], meta=meta, mask=mask)
+    meta["fits_wcs"] = wcs
+    gwcs_ = _create_gwcs(wcs, celestial, time_offset.T, date_obs, observer)
+    return MosaicCube(data, gwcs_, unit=DN_UNIT[meta.detector], meta=meta, mask=mask)

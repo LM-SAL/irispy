@@ -12,8 +12,18 @@ from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform2D
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.time import parse_time
 
-from irispy._interpolation import _time_lookup
-from irispy._wcs import _one_pass
+from irispy._wcs import _one_pass, _root_wcs, _time_lookup
+
+# The names other modules look for in a raster gWCS
+WAVELENGTH_AXIS, SLIT_AXIS, STEP_AXIS, SCAN_AXIS = PIXEL_AXIS_NAMES = (
+    "dispersion axis",
+    "spatial along slit",
+    "raster step",
+    "raster scan",
+)
+FIXED_SLIT_MODEL = "FixedSlit"  # holds the slit of a sit-and-stare in place
+TIME_MODEL = "Time"  # the lookup of the exposure times
+MOSAIC_Y_AXIS, MOSAIC_X_AXIS = "solar Y", "solar X"  # the pixel axes of a mosaic gWCS after its dispersion axis
 
 
 def _sanitize_raster_wcs_tables(pc, crval):
@@ -38,12 +48,24 @@ def _sanitize_raster_wcs_tables(pc, crval):
     warnings.warn(
         f"Found {bad_rows.sum()} step(s) with no pointing in the auxiliary table. Interpolating from neighboring steps.",
         UserWarning,
-        stacklevel=3,
+        stacklevel=4,  # the caller of read_spectrograph_lvl2, which calls _read_raster_file
     )
     for table in (pc, crval):
         values = np.asarray(table)  # a view, so this writes to the table itself
         values[bad_rows] = make_interp_spline(good, values[good], k=1)(np.flatnonzero(bad_rows))
     return pc, crval
+
+
+def _spectral_axis(cdelt, crval, crpix):
+    """
+    The linear spectral model and frame of a FITS WCS axis with the step ``cdelt`` and
+    the wavelength ``crval`` at the 1-based reference pixel ``crpix``, in nm.
+    """
+    spectral = m.Linear1D(
+        slope=cdelt.to(u.nm) / u.pix, intercept=(crval - cdelt * (crpix - 1)).to(u.nm), name="Wavelength"
+    )
+    frame = cf.SpectralFrame(axes_order=(0,), unit=u.nm, name="wavelength", axes_names=("wavelength",))
+    return spectral, frame
 
 
 def _create_raster_gwcs(window_header, non_spectral, pixel_frame, frames):
@@ -53,15 +75,8 @@ def _create_raster_gwcs(window_header, non_spectral, pixel_frame, frames):
     The spectral axis stays a 1D linear transform.
     """
     # Level 2 windows give their wavelengths in Å (CUNIT1)
-    spectral_unit = u.nm
-    cdelt1, crval1, crpix1 = window_header["CDELT1"] * 0.1, window_header["CRVAL1"] * 0.1, window_header["CRPIX1"]
-    spectral = m.Linear1D(
-        slope=cdelt1 * spectral_unit / u.pix,
-        intercept=(crval1 - cdelt1 * (crpix1 - 1)) * spectral_unit,
-        name="Wavelength",
-    )
-    spectral_frame = cf.SpectralFrame(
-        axes_order=(0,), unit=spectral_unit, name="wavelength", axes_names=("wavelength",)
+    spectral, spectral_frame = _spectral_axis(
+        window_header["CDELT1"] * u.AA, window_header["CRVAL1"] * u.AA, window_header["CRPIX1"]
     )
     # Steps, not a model, which gwcs would deep-copy: non_spectral is shared by windows and nothing changes it
     return gwcs.WCS([(pixel_frame, spectral & non_spectral), (cf.CompositeFrame([spectral_frame, *frames]), None)])
@@ -112,8 +127,8 @@ def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, ob
         # The slit does not move between exposures, so the step only selects the exposure (dkist's
         # row lookup). It must not shift the pointing by the virtual step scale, whichever way dkist
         # rounds a fractional step.
-        sky = (m.Multiply(0, name="FixedSlit") & m.Identity(celestial.n_inputs - 1)) | sky
-    temporal = _time_lookup(dt_all, name="Time")
+        sky = (m.Multiply(0, name=FIXED_SLIT_MODEL) & m.Identity(celestial.n_inputs - 1)) | sky
+    temporal = _time_lookup(dt_all, name=TIME_MODEL)
     celestial_forward = m.Mapping((1, 0, 1, 2), n_inputs=3, name="StepSlitScanMapping") | sky
     sky_time = CoupledCompoundModel("&", left=celestial_forward, right=temporal, shared_inputs=2)
     non_spectral = CoupledCompoundModel("&", left=sky_time, right=m.Identity(2, name="step_scan"), shared_inputs=2)
@@ -147,12 +162,20 @@ def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, ob
         unit=(u.pix,),
         name="scan",
     )
-    pixel_axis_names = ["dispersion axis", "spatial along slit", "raster step", "raster scan"]
     pixel_frame = cf.CoordinateFrame(
-        naxes=len(pixel_axis_names),
-        axes_order=tuple(range(len(pixel_axis_names))),
-        axes_names=pixel_axis_names,
-        axes_type=["PIXEL"] * len(pixel_axis_names),
-        unit=(u.pix,) * len(pixel_axis_names),
+        naxes=len(PIXEL_AXIS_NAMES),
+        axes_order=tuple(range(len(PIXEL_AXIS_NAMES))),
+        axes_names=PIXEL_AXIS_NAMES,
+        axes_type=["PIXEL"] * len(PIXEL_AXIS_NAMES),
+        unit=(u.pix,) * len(PIXEL_AXIS_NAMES),
     )
     return non_spectral, pixel_frame, (celestial_frame, temporal_frame, step_frame, scan_frame)
+
+
+def _is_sit_and_stare(cube):
+    """
+    Whether ``cube`` is of a sit-and-stare, whose gWCS holds the slit at one position
+    (the fixed-slit model of a window with ``CDELT3 = 0``).
+    """
+    transform = getattr(_root_wcs(cube), "forward_transform", None)
+    return transform is not None and any(model.name == FIXED_SLIT_MODEL for model in transform)
