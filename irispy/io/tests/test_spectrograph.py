@@ -16,6 +16,7 @@ from astropy.wcs.utils import wcs_to_celestial_frame
 from dkist.wcs.models import BaseVaryingCelestialTransform
 from sunpy.coordinates import Helioprojective
 
+from irispy._wcs import _one_pass
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, SATURATION_LIMIT
@@ -430,6 +431,13 @@ def test_varying_celestial_transforms_match_dkist(request, fixture):
         np.testing.assert_allclose(value, reference, rtol=0, atol=1e-12)
     assert np.isnan(actual[0]).any()
     assert np.isfinite(actual[0]).any()
+    # And back, through the same one-pass code; dkist's own inverse raises on the rows outside the tables
+    inside = np.isfinite(expected[0])
+    back = _one_pass(patched.inverse)(*expected, *rows)
+    reference = native.inverse(*(value[inside] for value in expected), *(row[inside] for row in rows))
+    for value, expected_value in zip(back, reference, strict=True):
+        np.testing.assert_allclose(value[inside], expected_value, rtol=0, atol=1e-6)
+    assert np.isnan(back[0][~inside]).all()
 
 
 @pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files", "sns_sg_file"])

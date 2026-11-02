@@ -270,10 +270,8 @@ def test_read_files_opens_each_spectrograph_file_at_most_twice(monkeypatch, rast
 
     assert len(read_files(filenames)) == 2
     # The header that sorts the files into observations is read without opening a FITS file; the
-    # reader opens each file once, and once more in an observation of several files to order them.
-    expected = {Path(filename).name: 2 for filename in raster_sg_files}
-    expected[Path(sns_sg_file).name] = 1
-    assert Counter(opens) == expected
+    # reader opens each file once to date it and once to read it.
+    assert Counter(opens) == {Path(filename).name: 2 for filename in filenames}
 
 
 def test_read_files_grouped_spectrograph_honors_allow_errors(

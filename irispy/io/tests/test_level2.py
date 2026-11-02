@@ -92,6 +92,11 @@ def test_read_spectrograph_lvl2_refuses_an_empty_list():
         read_spectrograph_lvl2([])
 
 
+def test_read_spectrograph_lvl2_names_a_wrong_file_among_several(sns_sg_file, level3_file):
+    with pytest.raises(ValueError, match=re.escape(f"{level3_file} is not an IRIS level 2 raster file")):
+        read_spectrograph_lvl2([sns_sg_file, level3_file])
+
+
 def test_read_files_names_bytes_in_its_type_error(sns_sg_file):
     with pytest.raises(TypeError, match="not 'bytes'"):
         read_files(Path(sns_sg_file).read_bytes())
