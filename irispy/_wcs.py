@@ -74,25 +74,31 @@ def _map_transform(transform, *arrays, cdelt, lon_pole, inverse=False):
         [(row >= 0) & (row < size) for row, size in zip(rows, transform.table_shape, strict=True)]
     )
     rows = tuple(np.where(valid, row, 0) for row in rows)
-    # The matrices are built once per table row and then picked for each point
-    pc = _value(transform.pc_table, u.pix)
-    crpix = _value(transform.crpix_table, u.pix)[rows]
-    lon0, lat0 = np.moveaxis(np.deg2rad(_value(transform.crval_table, u.deg)), -1, 0)
+    # The matrices are built once per table row the points use, then picked for each point: a crop or a tick
+    # layout asks for a few points of a table with a row per exposure
+    flat = np.ravel_multi_index(rows, transform.table_shape)
+    used = np.zeros(int(np.prod(transform.table_shape)), dtype=bool)
+    used[flat] = True
+    used = np.flatnonzero(used)
+    pick = np.searchsorted(used, flat)
+    pc = _value(transform.pc_table, u.pix).reshape(-1, 2, 2)[used]
+    crpix = _value(transform.crpix_table, u.pix).reshape(-1, 2)[flat]
+    lon0, lat0 = np.moveaxis(np.deg2rad(_value(transform.crval_table, u.deg).reshape(-1, 2)[used]), -1, 0)
     # Modeling passes the parameters with a leading length-1 axis, which dkist's own loop drops with cdelt[0]
     cdelt = _value(cdelt, u.deg / u.pix).reshape(-1, 2)[0]
     pole = np.deg2rad(_value(lon_pole, u.deg).ravel()[0])
     if inverse:
         # RotateCelestial2Native | projection.inverse | cdelt | pc | crpix, as dkist's model for one row
-        phi, theta = _rotate(_euler(np.pi / 2 + lon0, np.pi / 2 - lat0, -(pole - np.pi / 2))[rows], x, y)
+        phi, theta = _rotate(_euler(np.pi / 2 + lon0, np.pi / 2 - lat0, -(pole - np.pi / 2))[pick], x, y)
         phi = np.where(phi < 0, phi + 360, phi)
         intermediate = np.stack(transform.projection.inverse(phi, theta), axis=-1) / cdelt
-        offset = (np.linalg.inv(pc)[rows] @ intermediate[..., None])[..., 0]
+        offset = (np.linalg.inv(pc)[pick] @ intermediate[..., None])[..., 0]
         out_x, out_y = offset[..., 0] + crpix[..., 0], offset[..., 1] + crpix[..., 1]
     else:
         offset = np.stack([x - crpix[..., 0], y - crpix[..., 1]], axis=-1)[..., None]
-        intermediate = (pc[rows] @ offset)[..., 0] * cdelt
+        intermediate = (pc[pick] @ offset)[..., 0] * cdelt
         phi, theta = transform.projection(intermediate[..., 0], intermediate[..., 1])
-        rotation = _euler(pole - np.pi / 2, -(np.pi / 2 - lat0), -(np.pi / 2 + lon0))[rows]
+        rotation = _euler(pole - np.pi / 2, -(np.pi / 2 - lat0), -(np.pi / 2 + lon0))[pick]
         out_x, out_y = _rotate(rotation, phi, theta)
         out_x = np.where(out_x < 0, out_x + 360, out_x)
     out_x, out_y = np.where(valid, out_x, np.nan), np.where(valid, out_y, np.nan)

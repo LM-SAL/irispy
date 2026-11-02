@@ -172,6 +172,9 @@ def _date_obs(filename):
         # A directory or a file that is not FITS: raises the level 2 error, chained to this one
         _check_level2(filename, None, "raster")
         raise
+    # Named as the reader names it: a file that is not a level 2 raster raises here, before its date is read
+    given = filename.filename() if isinstance(filename, fits.HDUList) else filename
+    _check_level2(given or filename, header, "raster")
     if header["DATE_OBS"]:
         return header["DATE_OBS"]
     with _open_raster(filename, memmap=False) as hdulist:
@@ -426,13 +429,12 @@ def read_spectrograph_lvl2(
     if not filenames:
         msg = "filenames is empty: give at least one raster file"
         raise ValueError(msg)
-    if len(filenames) > 1:
-        # The rasters follow time whatever the order given, such as that of an unsorted glob.
-        date_obs = Time([_date_obs(filename) for filename in filenames])
-        order = date_obs.argsort()
-        filenames = [filenames[i] for i in order]
-        # Each file's WCS uses the observer at its own DATE_OBS, as SGMeta.observer does; one ephemeris call gets all
-        observers = get_earth(date_obs[order])
+    # The rasters follow time whatever the order given, such as that of an unsorted glob.
+    date_obs = Time([_date_obs(filename) for filename in filenames])
+    order = date_obs.argsort()
+    filenames = [filenames[i] for i in order]
+    # Each file's WCS uses the observer at its own DATE_OBS, as SGMeta.observer does; one ephemeris call gets all
+    observers = get_earth(date_obs[order])
     # Several files read with memmap stay on disk and are read a file at a time
     lazy = memmap and len(filenames) > 1
     files = []
@@ -440,14 +442,10 @@ def read_spectrograph_lvl2(
         with _open_raster(filename, memmap=memmap) as hdulist:
             # An HDU list made in memory has no filename, so name what was given
             given = hdulist.filename() or f"The data given ({type(filename).__name__})"
-            _check_level2(given, hdulist[0].header, "raster")
             if index == 0:
                 selection = _select_windows(hdulist, given, spectral_windows, revert_v34=revert_v34)
                 rasters = {name: {} for name in selection.names}
-            if len(filenames) == 1:
-                observer = get_earth(Time(hdulist[0].header["DATE_OBS"] or _auxiliary_times(hdulist)[0]))
-            else:
-                observer = observers[index]
+            observer = observers[index]
             # Only the combined cubes are built. A cube for each file would be left to the cyclic garbage
             # collector, which then takes a second or more for a long observation
             file = _read_raster_file(

@@ -56,10 +56,9 @@ class _WindowFiles:
         self.ndim = len(self.shape)
 
     def __getitem__(self, item):
+        # Dask asks for chunks, so every index is a slice
         raster, *rest = item
-        if isinstance(raster, slice):
-            return np.stack([_read_window(source, tuple(rest)) for source in self.sources[raster]])
-        return _read_window(self.sources[raster], tuple(rest))
+        return np.stack([_read_window(source, tuple(rest)) for source in self.sources[raster]])
 
 
 def _add_raster(rasters, index, count, **arrays):
