@@ -33,12 +33,13 @@ from irispy import __version__
 
 _version = Version(__version__)
 version = release = str(_version)
-# Avoid "post" appearing in version string in rendered docs
-if _version.is_postrelease:
-    version = release = _version.base_version
-# Avoid long githashes in rendered Sphinx docs
-elif _version.is_devrelease:
+# Avoid long githashes in rendered Sphinx docs. Checked first: after a post tag
+# such as v0.9.1post1, setuptools_scm labels main 0.9.1.post2.devN, which is both.
+if _version.is_devrelease:
     version = release = f"{_version.base_version}.dev{_version.dev}"
+# Avoid "post" appearing in version string in rendered docs
+elif _version.is_postrelease:
+    version = release = _version.base_version
 is_development = _version.is_devrelease
 is_release = not (_version.is_prerelease or _version.is_devrelease)
 
