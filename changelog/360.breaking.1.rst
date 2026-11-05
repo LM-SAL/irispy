@@ -1,0 +1,4 @@
+The WCS of a spectrograph cube is now a gWCS. Its world coordinates are wavelength, helioprojective longitude and latitude, time, raster step and raster scan.
+Wavelengths are now in nm instead of m, and longitude and latitude are in arcsec instead of deg, with longitude first.
+``crop`` therefore takes one entry per world coordinate, such as ``[SpectralCoord(279.63, unit=u.nm), None, None, None]`` for one raster, ``cube[k]``, and the sky position, time and raster step must be given together.
+The FITS ``-TAB`` WCS that the gWCS replaces is now ``cube.fits_wcs``, a list with one WCS per raster.

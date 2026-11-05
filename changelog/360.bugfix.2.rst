@@ -1,0 +1,1 @@
+``irispy.io.read_spectrograph_lvl2`` now raises the level 2 error for a file that is not a level 2 raster among several, instead of a ``KeyError`` on ``DATE_OBS``.

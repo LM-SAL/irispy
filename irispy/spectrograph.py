@@ -1,33 +1,47 @@
 import textwrap
+from copy import deepcopy
+from functools import cached_property
 
 import numpy as np
 
 import astropy.units as u
+import gwcs
+import gwcs.coordinate_frames as cf
+from astropy.time import Time
 
 from ndcube import NDCollection
 from ndcube.visualization import PlotterDescriptor
-from ndcube.wcs.tools import unwrap_wcs_to_fitswcs
 from sunraster import SpectrogramCube as SpecCube
-from sunraster import SpectrogramSequence as SpecSeq
+from sunraster.spectrogram import _calculate_exposure_time_correction, _uncalculate_exposure_time_correction
 
-from irispy._wcs import _ResolveNegativeIndicesMixin, _wcs_array_axis_physical_types
+from irispy._spectrograph_wcs import TIME_MODEL
+from irispy._wcs import (
+    _celestial_frame_from_cube,
+    _fits_wcs_from_cube,
+    _ResolveNegativeIndicesMixin,
+    _root_and_item,
+    _root_wcs,
+    _sliced,
+    _wcs_array_axis_physical_types,
+)
 from irispy.utils.constants import SLIT_WIDTH
-from irispy.visualization import IRISPlotter, IRISSequencePlotter, _make_map
+from irispy.visualization import IRISPlotter, _make_map
 
-__all__ = ["MosaicCube", "RasterCollection", "SpectrogramCube", "SpectrogramCubeSequence"]
+__all__ = ["MosaicCube", "RasterCollection", "SpectrogramCube"]
 
 
 class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
     """
     Class representing spectrogram data described by a single WCS.
 
-    Idea is that this class holds one complete raster scan or a sit and stare.
+    One cube holds a whole spectral window: one raster file, several raster files read
+    together, or a sit-and-stare.
 
     Parameters
     ----------
-    data: `numpy.ndarray`
+    data : `numpy.ndarray`
         The array holding the actual data in this object.
-    wcs: `astropy.wcs.WCS`
+    wcs : `astropy.wcs.WCS` or ``gwcs.WCS``
         The WCS object containing the axes' information
     uncertainty : any type, optional
         Uncertainty in the dataset. Should have an attribute uncertainty_type
@@ -55,54 +69,76 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
 
     Examples
     --------
-    The array axes are raster step or time, slit position and wavelength; the exposure
-    times are an extra coordinate:
+    The array axes are raster, raster step (time for a sit-and-stare), slit position and
+    wavelength. A single raster file gives one raster:
 
     >>> from irispy.data.test import get_test_filepath
     >>> from irispy.io import read_files
     >>> filename = get_test_filepath(
     ...     "sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits"
     ... )
-    >>> cube = read_files(filename, spectral_windows="Si IV 1403")["Si IV 1403"][0]
+    >>> cube = read_files(filename, spectral_windows="Si IV 1403")["Si IV 1403"]
     >>> cube.shape, cube.unit, cube.wavelength_axis
-    ((187, 40, 29), Unit("DN_IRIS_FUV"), 2)
+    ((1, 187, 40, 29), Unit("DN_IRIS_FUV"), 3)
     >>> cube.meta.spectral_window, cube.meta.rest_wavelength
     ('Si IV 1403', <Quantity 140.277 nm>)
     >>> cube.spectral_dispersion.to("pm")
     <Quantity 25.44 pm>
-    >>> cube[:, 10:20, 5:10].shape
+    >>> cube[0, :, 10:20, 5:10].shape
     (187, 10, 5)
     """
 
     plotter = PlotterDescriptor(default_type=IRISPlotter)
 
-    def __init__(self, data, wcs, uncertainty=None, unit=None, meta=None, *, mask=None, copy=False, **kwargs) -> None:
+    def __init__(self, data, wcs, *, uncertainty=None, unit=None, meta=None, mask=None, copy=False, **kwargs) -> None:
         super().__init__(data, wcs, unit=unit, uncertainty=uncertainty, mask=mask, meta=meta, copy=copy, **kwargs)
 
     def __repr__(self) -> str:
         return f"{object.__repr__(self)}\n{self!s}"
 
     def __str__(self) -> str:
-        instance_start = None
-        instance_end = None
-        if self.global_coords and "time" in self.global_coords:
-            instance_start = self.global_coords["time"].min().isot
-            instance_end = self.global_coords["time"].max().isot
-        elif self.extra_coords and self.axis_world_coords("time", wcs=self.extra_coords):
-            instance_start = self.axis_world_coords("time", wcs=self.extra_coords)[0].min().isot
-            instance_end = self.axis_world_coords("time", wcs=self.extra_coords)[0].max().isot
+        times = self.time
         return textwrap.dedent(
             f"""
             SpectrogramCube
             ---------------
             Obs ID:             {self.meta.get("OBSID")}
             Obs Description:    {self.meta.get("OBS_DESC")}
-            Obs Date:           {instance_start} -- {instance_end}
+            Obs Date:           {times.min().isot} -- {times.max().isot}
             Data shape:         {self.shape}
             Axis Types:         {_wcs_array_axis_physical_types(self)}
             Roll:               {self.meta.get("SAT_ROT")}
             """,
         )
+
+    celestial_frame = property(_celestial_frame_from_cube)
+
+    def _fits_wcs_roots(self, item):
+        """
+        The FITS WCS of the rasters, or frames, that ``item`` selects along the first
+        axis of the unsliced cube: a list for a range, one WCS for an integer, `None`
+        when the cube has none.
+        """
+        roots = self.meta.get("fits_wcs")
+        return None if roots is None else roots[item]
+
+    fits_wcs = cached_property(_fits_wcs_from_cube)
+
+    def apply_exposure_time_correction(self, undo=False, force=False):  # NOQA: FBT002 (sunraster signature)
+        exposure_time = self.exposure_time.to_value(u.s)
+        if np.ndim(exposure_time) < 2:
+            return super().apply_exposure_time_correction(undo=undo, force=force)
+        # sunraster expects one exposure axis; a combined cube has two (scan and step).
+        # TODO: drop this and sunraster's private helpers once its apply_exposure_time_correction takes several
+        # exposure axes, or is replaced by plain arithmetic as sunpy/sunraster#284 proposes.
+        axes = self._get_axis_coord_index(self._exposure_time_name, self._exposure_time_loc)
+        item = tuple(slice(None) if axis in axes else np.newaxis for axis in range(self.data.ndim))
+        correct = _uncalculate_exposure_time_correction if undo else _calculate_exposure_time_correction
+        new_cube = deepcopy(self)
+        new_cube._data, new_cube._uncertainty, new_cube._unit = correct(
+            self.data, self.uncertainty, self.unit, exposure_time[item], force=force
+        )
+        return new_cube
 
     @property
     def time(self):
@@ -110,51 +146,58 @@ class SpectrogramCube(_ResolveNegativeIndicesMixin, SpecCube):
         The time of each exposure, an `~astropy.time.Time`; a single time for one
         exposure.
         """
-        # sunraster evaluates ndcube's gWCS of the extra coordinates for the times, about 1 ms a cube, and the
-        # table of the "time" coordinate holds them; ndcube 2.4 has no public route to the table
-        for _, coordinate in self.extra_coords._lookup_tables:
-            if coordinate.names == ["time"]:
-                return coordinate.table.copy()  # a copy, as a change to it must not move the coordinate
-        # Indexing one exposure moves the coordinate to the dropped tables, where sunraster does not look
-        for coordinate in self.extra_coords._dropped_tables:
-            if coordinate.names == ["time"]:
-                return coordinate.table.copy()
+        wcs = self.wcs.low_level_wcs
+        if isinstance(wcs, gwcs.WCS):
+            # An unsliced raster cube: its time lookup at each (scan, step) gives the times without the rest of the gWCS
+            scan, step = np.indices(self.data.shape[:2]) * u.pix
+            temporal = next(frame for frame in wcs.output_frame.frames if isinstance(frame, cf.TemporalFrame))
+            offsets = wcs.forward_transform[TIME_MODEL](step, scan).to_value(u.s)
+            uncovered = np.isnan(offsets)  # the positions of a mosaic no raster covered
+            times = temporal.reference_frame + np.where(uncovered, 0, offsets) * u.s
+            if uncovered.any():
+                times[uncovered] = np.ma.masked
+            return times
+        if "time" not in self.wcs.world_axis_physical_types:
+            # Indexing one exposure drops the time from the WCS into the global coordinates
+            dropped = [coordinate for coordinate in self.global_coords.values() if isinstance(coordinate, Time)]
+            if dropped:
+                return dropped[0]
         return super().time
 
     @property
-    def _fits_wcs(self):
+    def _fits_wcsprm(self):
         """
-        Underlying FITS WCS object, unwrapped if necessary.
+        Raw FITS WCS keywords (``Wcsprm``) of the native pixels of this cube.
+
+        Slicing and rebinning keep the native pixel scales, so these come from the
+        unsliced WCS: ``self.wcs`` for a cube built on a FITS WCS, otherwise the
+        per-file ``fits_wcs`` in ``meta``.
         """
-        if hasattr(self.wcs, "wcs"):
-            return self.wcs.wcs
-        return unwrap_wcs_to_fitswcs(self.wcs)[0].wcs
+        root = _root_wcs(self)
+        fits_wcs = root if hasattr(root, "wcs") else self.meta.get("fits_wcs")
+        fits_wcs = fits_wcs[0] if isinstance(fits_wcs, list) else fits_wcs
+        if fits_wcs is None:
+            msg = "This cube has no FITS WCS to take its pixel scales from."
+            raise ValueError(msg)
+        return fits_wcs.wcs
 
     @property
     def spectral_dispersion(self):
         """
         Spectral dispersion per pixel along the wavelength axis.
         """
-        wcs = self._fits_wcs
-        mask = np.array([ctype == "WAVE" for ctype in wcs.ctype])
-        if not mask.any():
-            msg = "Cannot determine spectral axis (no WAVE ctype in WCS) for spectral_dispersion"
-            raise ValueError(msg)
-        idx = np.argmax(mask)
-        return wcs.cdelt[idx] * u.Unit(wcs.cunit[idx])
+        wcs = self._fits_wcsprm
+        index = list(wcs.ctype).index("WAVE")
+        return wcs.cdelt[index] * u.Unit(wcs.cunit[index])
 
     @property
     def solid_angle(self):
         """
         Solid angle per spatial pixel (slit width x spatial pixel scale).
         """
-        wcs = self._fits_wcs
-        mask = np.array(["HPLT" in ctype for ctype in wcs.ctype])
-        if not mask.any():
-            msg = "Cannot determine latitude axis (no HPLT ctype in WCS) for solid_angle computation"
-            raise ValueError(msg)
-        lat_idx = np.argmax(mask)
-        return wcs.cdelt[lat_idx] * u.Unit(wcs.cunit[lat_idx]) * SLIT_WIDTH
+        wcs = self._fits_wcsprm
+        index = next(axis for axis, ctype in enumerate(wcs.ctype) if "HPLT" in ctype)
+        return wcs.cdelt[index] * u.Unit(wcs.cunit[index]) * SLIT_WIDTH
 
     @property
     def wavelength_axis(self):
@@ -196,7 +239,9 @@ class MosaicCube(SpectrogramCube):
     """
     An IRIS full-disk mosaic of one spectral window, read by `irispy.io.read_mosaic`.
 
-    The array axes are solar X, solar Y and wavelength, as in a Level 2 raster.
+    The array axes are solar X, solar Y and wavelength, as in a Level 2 raster. The gWCS
+    gives the wavelength, the sky position and the time of each position, and `fits_wcs`
+    the FITS WCS the mosaic was read with.
     `to_map`, `~irispy.utils.moments.calculate_moments`, `~irispy.utils.moments.average_window`,
     `~irispy.utils.red_blue.calculate_red_blue_asymmetry`, `~irispy.utils.rgb.calculate_rgb`,
     `~irispy.utils.rgb.plot_rgb`, `~irispy.utils.mg_features.calculate_mg_features` and
@@ -214,9 +259,22 @@ class MosaicCube(SpectrogramCube):
             Rest wavelength: {self.meta.get("LAMREF")} Angstrom
             Obs Date:        {self.meta.get("DATE_OBS")} -- {self.meta.get("DATE_END")}
             Data shape:      {self.shape}
-            Axis Types:      {self.array_axis_physical_types}
+            Axis Types:      {_wcs_array_axis_physical_types(self)}
             """,
         )
+
+    def _fits_wcs_roots(self, _item):
+        # The one FITS WCS of a mosaic describes all of its axes
+        return self.meta.get("fits_wcs")
+
+    @cached_property
+    def fits_wcs(self):
+        """
+        The FITS WCS the mosaic was read with, sliced as the cube is; `None` after
+        rebinning.
+        """
+        root, item = _root_and_item(self)
+        return _sliced(self.meta["fits_wcs"], item) if isinstance(root, gwcs.WCS) else None
 
     @u.quantity_input
     def to_map(self, wavelength: u.AA):
@@ -260,7 +318,7 @@ class MosaicCube(SpectrogramCube):
             wavelength = u.Quantity([nearest, nearest])
         mean_wavelength = wavelengths[_wavelength_indices(wavelengths, wavelength)].mean()
         window = average_window(self, wavelength)
-        header = unwrap_wcs_to_fitswcs(self.wcs)[0].celestial.swapaxes(0, 1).to_header()
+        header = self.fits_wcs.celestial.swapaxes(0, 1).to_header()
         header.update(
             {
                 "TELESCOP": "IRIS",
@@ -279,38 +337,13 @@ class MosaicCube(SpectrogramCube):
         return sunpy_map
 
 
-class SpectrogramCubeSequence(SpecSeq):
-    """
-    Class representing spectrogram data described by a collection of separate WCSes.
-
-    So each individual `SpectrogramCube` within represents a single complete raster scan.
-    The sequence contains multiple such cubes till the end of the observation.
-
-    Parameters
-    ----------
-    data_list: `list`
-        List of `SpectrogramCube` objects from the same spectral window and OBS ID.
-    meta: `dict` or header object, optional
-        Metadata associated with the sequence.
-    common_axis: `int`, optional
-        The axis of the NDCubes corresponding to time.
-    """
-
-    plotter = PlotterDescriptor(default_type=IRISSequencePlotter)
-
-    def __init__(self, data_list, meta=None, common_axis=0, **kwargs) -> None:
-        # Check that all spectrograms are from same spectral window and OBS ID.
-        # NDCubeSequence slices into an empty sequence first.
-        if data_list and len(np.unique([cube.meta["OBSID"] for cube in data_list])) != 1:
-            msg = "Constituent SpectrogramCube objects must have same value of 'OBSID' in its meta."
-            raise ValueError(msg)
-        super().__init__(data_list, meta=meta, common_axis=common_axis, **kwargs)
-
-
 class RasterCollection(NDCollection):
     """
-    Subclass of NDCollection for holding a collection of `.SpectrogramCube` or
-    `.SpectrogramCubeSequence` with keys being the spectral windows.
+    A `~ndcube.NDCollection` of `SpectrogramCube` objects with aligned raster axes.
+
+    `irispy.io.read_files` and `irispy.io.read_spectrograph_lvl2` key it by spectral
+    window, and the analysis functions that return several maps, such as
+    `irispy.utils.mg_features.calculate_mg_features`, by map name.
     """
 
     def __str__(self) -> str:
@@ -318,7 +351,7 @@ class RasterCollection(NDCollection):
             f"""
             Raster Collection
             -----------------
-            Spectral Windows (cube keys): {tuple(self.keys())}
+            Keys: {tuple(self.keys())}
             Number of Cubes: {len(self)}
             Aligned dimensions: {self.aligned_dimensions}
             Aligned physical types: {self.aligned_axis_physical_types}
@@ -328,5 +361,6 @@ class RasterCollection(NDCollection):
     @property
     def aligned_axis_physical_types(self):
         # NDCollection builds each tuple from a set, whose order changes from run to run.
+        # TODO: remove once irispy requires an ndcube with sunpy/ndcube#983.
         types = super().aligned_axis_physical_types
         return None if types is None else [tuple(sorted(axis_types)) for axis_types in types]

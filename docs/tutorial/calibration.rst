@@ -158,7 +158,7 @@ The FUV passbands overlap, so a single-line intensity from a FUV image is approx
 Radiation Temperature
 =====================
 
-`irispy.utils.spectrograph.radiation_temperature` converts a radiometrically calibrated cube or sequence to radiation temperature by inverting the Planck function.
+`irispy.utils.spectrograph.radiation_temperature` converts a radiometrically calibrated cube to radiation temperature by inverting the Planck function.
 Its docstring gives the formula and the caveats.
 A cube still in DN raises an error, so calibrate it first:
 

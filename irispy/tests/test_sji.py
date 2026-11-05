@@ -3,10 +3,15 @@ import numpy as np
 import pytest
 
 import astropy.units as u
+from astropy.tests.helper import assert_quantity_allclose
+from astropy.wcs import WCS
 
 import sunpy.map
+from sunpy.coordinates import Helioprojective
 
+from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.io.utils import read_files
+from irispy.sji import SJICube
 from irispy.tests.helpers import figure_test
 from irispy.utils.bursts import find_bright_image_events
 from irispy.utils.constants import RADIANCE_UNIT
@@ -193,11 +198,20 @@ def test_sji_frame_figure(sns_sjicube_1400):
     sns_sjicube_1400[0].plot()
 
 
-def test_negative_slices(sns_sjicube_1330):
-    assert sns_sjicube_1330[-3:].shape == (3, 40, 37)
-    assert len(sns_sjicube_1330[-3:].fits_wcs) == 3
-    assert sns_sjicube_1330[:-2].shape == (50, 40, 37)
-    assert len(sns_sjicube_1330[:-2].fits_wcs) == 50
+def test_sji_image_along_time_labels_its_time(sns_sjicube_1400):
+    # Unlike a raster plot, which shows the time only when asked for
+    time = sns_sjicube_1400[:, :, 10].plot().coords["time"]
+    assert time.get_ticklabel_visible()
+    assert time.get_ticklabel_position()
+    plt.close("all")
+
+
+def test_sji_plot_falls_back_to_viridis_without_an_iris_colormap(sns_sjicube_1330):
+    image = sns_sjicube_1330[0]
+    image.meta["TWAVE1"] = 1234  # There is no irissji1234 colormap.
+    ax = image.plot()
+    assert ax.images[0].get_cmap().name == "viridis"
+    plt.close(ax.figure)
 
 
 def test_apply_exposure_time_correction(sns_sjicube_1330):
@@ -310,3 +324,49 @@ def test_to_maps_negative_index(sns_sjicube_1330):
 
 def test_to_maps_accepts_numpy_integers(sns_sjicube_1330):
     assert sns_sjicube_1330.to_maps(np.int64(2)).meta["DATE-OBS"] == sns_sjicube_1330.to_maps(2).meta["DATE-OBS"]
+
+
+def test_sji_celestial_frame_is_slicing_invariant_and_keeps_sg_points_in_place(sns_sg_file, sns_sjicube_1400):
+    """
+    SG and SJI see the Sun from the same place, so an SG point must not move in the SJI
+    frame.
+    """
+    frame = sns_sjicube_1400.celestial_frame
+    assert isinstance(frame, Helioprojective)
+    assert sns_sjicube_1400[0].celestial_frame == frame
+
+    cube = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"][0]
+    _, point, _, _ = cube.wcs.pixel_to_world(5, 20, 93)
+    moved = point.transform_to(frame)
+    assert_quantity_allclose(moved.Tx, point.Tx, atol=0.1 * u.arcsec)
+    assert_quantity_allclose(moved.Ty, point.Ty, atol=0.1 * u.arcsec)
+
+
+def test_sjicube_takes_only_data_and_wcs_positionally(sns_sjicube_1330):
+    with pytest.raises(TypeError, match="positional"):
+        SJICube(sns_sjicube_1330.data, sns_sjicube_1330.wcs, sns_sjicube_1330.unit)
+
+
+@pytest.mark.parametrize(
+    ("item", "expected_len"),
+    [(-1, None), ((slice(0, 3), slice(0, 10)), 3), ((Ellipsis, slice(0, 10)), 52), ((0, Ellipsis), None)],
+    ids=["frame", "ranges", "ellipsis_first", "ellipsis_last"],
+)
+def test_sjicube_slice_keeps_the_fits_wcs_of_its_frames(sns_sjicube_1330, item, expected_len):
+    subset = sns_sjicube_1330[item]
+
+    if expected_len is None:
+        assert isinstance(subset.fits_wcs, WCS)
+    else:
+        assert len(subset.fits_wcs) == expected_len
+        assert isinstance(subset.fits_wcs[0], WCS)
+
+
+def test_sjicube_slice_rejects_multiple_ellipsis(sns_sjicube_1330):
+    with pytest.raises((IndexError, ValueError), match=r"single ellipsis|only have a single ellipsis"):
+        sns_sjicube_1330[(Ellipsis, Ellipsis)]
+
+
+def test_sjicube_slice_rejects_too_many_indices(sns_sjicube_1330):
+    with pytest.raises((IndexError, ValueError), match=r"can not be greater than the dimensionality"):
+        sns_sjicube_1330[(slice(0, 3), slice(0, 10), slice(0, 10), slice(None))]

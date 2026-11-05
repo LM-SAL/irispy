@@ -46,8 +46,14 @@ Here we keep the wavelengths halfway to the Ni II and O IV lines on either side 
     Fe II, Ni II, Si IV, O IV
     >>> ni_ii, si_iv, o_iv = lines["wavelength"][1:]
     >>> window = [(ni_ii + si_iv) / 2, (si_iv + o_iv) / 2]
-    >>> cube = cube.crop([SpectralCoord(window[0]), None], [SpectralCoord(window[1]), None])  # doctest: +REMOTE_DATA
+    >>> cube = cube.crop(  # doctest: +REMOTE_DATA
+    ...     [SpectralCoord(window[0]), None, None, None], [SpectralCoord(window[1]), None, None, None]
+    ... )
     >>> cube = cube[:, 410:470]  # doctest: +REMOTE_DATA
+
+A crop takes one entry per world coordinate of the cube: the wavelength, sky position, time and raster step, plus the raster scan for the cube of a whole window.
+``None`` leaves that coordinate uncropped.
+The sky position, time and raster step (and scan) must be given together.
 
 `~irispy.utils.fitting.line_model` puts a Gaussian at the rest wavelength of Si IV, with a standard deviation of 0.05 Å, on a constant background.
 `~irispy.utils.fitting.starts_from_model` starts it in every spectrum at that spectrum's peak above its background, searched within two widths of the rest wavelength, here 0.1 Å or about 20 km/s:
@@ -73,7 +79,7 @@ Now we fit every spectrum:
     ...     data_unit=cube.unit,
     ...     weights=np.where(good, 1 / cube.uncertainty.array, 0),
     ...     world=(wavelength,),
-    ...     fitting_axes=2,
+    ...     fitting_axes=cube.wavelength_axis,
     ...     fit_info=True,
     ...     scheduler="single-threaded",
     ... )  # doctest: +REMOTE_DATA
@@ -151,7 +157,9 @@ The mean leaves out masked and missing samples, and its uncertainty at each wave
 .. code-block:: python
 
     >>> from irispy.utils.cosmic_rays import remove_cosmic_rays
-    >>> region = raster["Si IV 1394"][0].crop([SpectralCoord(window[0]), None], [SpectralCoord(window[1]), None])  # doctest: +REMOTE_DATA
+    >>> region = raster["Si IV 1394"][0].crop(  # doctest: +REMOTE_DATA
+    ...     [SpectralCoord(window[0]), None, None, None], [SpectralCoord(window[1]), None, None, None]
+    ... )
     >>> region = remove_cosmic_rays(region)  # doctest: +REMOTE_DATA
     >>> usable = np.isfinite(region.data) & ~region.mask  # doctest: +REMOTE_DATA
     >>> spectra = np.ma.masked_array(region.data, ~usable)  # doctest: +REMOTE_DATA
@@ -195,7 +203,7 @@ Both components then start at the peak of each spectrum, shared in the ratio of 
     ...     data_unit=clean_cube.unit,
     ...     weights=np.where(clean_good, 1 / clean_cube.uncertainty.array, 0),
     ...     world=(wavelength,),
-    ...     fitting_axes=2,
+    ...     fitting_axes=clean_cube.wavelength_axis,
     ...     scheduler="single-threaded",
     ... )  # doctest: +REMOTE_DATA
     >>> cube_fit[core].amplitude.shape  # doctest: +REMOTE_DATA

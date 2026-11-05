@@ -232,9 +232,9 @@ def make_spatial_template(cube, wavelength_axis):
     return SpectrogramCube(
         sliced_template.data,
         template_wcs,
-        sliced_template.uncertainty,
-        sliced_template.unit,
-        sliced_template.meta,
+        uncertainty=sliced_template.uncertainty,
+        unit=sliced_template.unit,
+        meta=sliced_template.meta,
         mask=template_mask,
         extra_coords=drop_extra_coords_dependent_on_axis(cube.extra_coords, wavelength_axis, reindex=True),
     )

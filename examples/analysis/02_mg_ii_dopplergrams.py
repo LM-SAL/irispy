@@ -73,9 +73,8 @@ mg_ii.mask = mg_ii.mask.compute()
 # Mn I line at 280.19 nm, in between the Mg II k and h lines, before and
 # after the correction. We crop in wavelength space.
 
-lower_corner = [SpectralCoord(280.19, unit=u.nm), None]
-upper_corner = [SpectralCoord(280.19, unit=u.nm), None]
-mg_crop = mg_ii.crop(lower_corner, upper_corner)
+mn_i_core = [SpectralCoord(280.19, unit=u.nm), None, None, None]
+mg_crop = mg_ii.crop(mn_i_core, mn_i_core)
 # Save the on-disk part of the slit (roughly its first 600 pixels) before modifying
 # the data, with the masked samples as NaN. We will compare this below.
 before = np.where(mg_crop.mask[:, :600], np.nan, mg_crop.data[:, :600])
@@ -137,7 +136,7 @@ for i, shift in drift[drift["raster"] == 0].iterrows("step", mg_ii.meta.detector
 # shown on a separate scale centered on zero.
 
 # Since we changed the underlying data, we need to re-crop
-mg_crop = mg_ii.crop(lower_corner, upper_corner)
+mg_crop = mg_ii.crop(mn_i_core, mn_i_core)
 after = np.where(mg_crop.mask[:, :600], np.nan, mg_crop.data[:, :600])
 difference = after - before
 limit = np.nanpercentile(np.abs(difference), 99)

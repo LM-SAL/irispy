@@ -809,7 +809,7 @@ def _fit_mg_ii(model):
     """
     raster = read_spectrograph_lvl2(get_test_filepath(V34_FILE), uncertainty=True)
     cube = raster["Mg II k 2796"][0][:, :48]
-    cube = cube.crop([SpectralCoord(2795.4 * u.AA), None], [SpectralCoord(2804.5 * u.AA), None])
+    cube = cube.crop([SpectralCoord(2795.4 * u.AA), None, None, None], [SpectralCoord(2804.5 * u.AA), None, None, None])
     good = np.isfinite(cube.data) & ~cube.mask
     wavelength = cube.axis_world_coords("em.wl")[0].to(u.AA)
     sigma = np.where(good, cube.uncertainty.array, np.inf)

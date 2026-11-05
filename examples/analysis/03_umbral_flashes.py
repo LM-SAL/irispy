@@ -56,18 +56,17 @@ mg_ii = raster["Mg II k 2796"][0]
 c_ii = raster["C II 1336"][0]
 
 # Instead of using a pixel index, we can crop the data in wavelength space.
-lower_corner = [SpectralCoord(279.63, unit=u.nm), None]
-upper_corner = [SpectralCoord(279.63, unit=u.nm), None]
-mg_crop = mg_ii.crop(lower_corner, upper_corner)
+k_core = [SpectralCoord(279.63, unit=u.nm), None, None, None]
+mg_crop = mg_ii.crop(k_core, k_core)
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection=mg_crop.wcs)
-# The image is much taller than it is wide, so we let it fill the axes.
+# The image is much wider than it is tall, so we let it fill the axes.
 mg_crop.plot(axes=ax, aspect="auto")
 
 ###############################################################################
 # This is a sit-and-stare observation, so the slit stays in almost the same place and
-# the vertical axis is really time: the small change in longitude along it is the slit
+# the horizontal axis is really time: the small change in longitude along it is the slit
 # following the solar rotation.
 #
 # The middle section between 60"-75" is on the umbra of a sunspot, even though it is

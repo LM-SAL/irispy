@@ -10,8 +10,10 @@ import numpy as np
 from scipy import ndimage
 
 import astropy.units as u
+import gwcs
 from astropy.io import fits
 
+from irispy._wcs import _root_and_item
 from irispy.data import ROOTDIR
 from ._spectral import check_scaled
 from .utils import _boolean_mask
@@ -60,10 +62,11 @@ def calculate_dust_mask(cube):
     if channel not in pixels:
         msg = f"No bad-pixel table for {channel!r}; the tables cover {sorted(pixels)}."
         raise ValueError(msg)
-    if cube._file_frames is None:
+    root, item = _root_and_item(cube)
+    if cube.meta.get("frame_wcs_headers") is None or not isinstance(root, gwcs.WCS):
         msg = "The bad pixels can be placed only in a cube read from a level 2 slit-jaw file and not rebinned."
         raise ValueError(msg)
-    spatial = cube._file_frames[1]
+    spatial = item[1:]  # the cube's slice after the time axis, in array order
     if not all(isinstance(axis, slice) for axis in spatial):
         msg = "The bad pixels can be placed only in an image, not in a 1-D cut of one."
         raise ValueError(msg)

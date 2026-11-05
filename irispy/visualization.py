@@ -3,67 +3,107 @@ import numpy as np
 from mpl_animators import ArrayAnimatorWCS
 
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 from astropy.visualization import AsymmetricPercentileInterval
 from astropy.wcs.wcsapi import HighLevelWCSWrapper
 
 import sunpy.visualization.colormaps as cm  # NOQA: F401
 from ndcube.visualization.mpl_plotter import MatplotlibPlotter
-from ndcube.visualization.mpl_sequence_plotter import MatplotlibSequencePlotter, SequenceAnimator
+from ndcube.visualization.plotting_utils import prep_plot_kwargs
+
+from irispy._spectrograph_wcs import MOSAIC_X_AXIS, MOSAIC_Y_AXIS, SCAN_AXIS, SLIT_AXIS, STEP_AXIS, _is_sit_and_stare
 
 __all__ = []
 
 
-LAT_LABELS = [
+LAT_LABELS = {
     "custom:pos.helioprojective.lat",
     "helioprojective latitude",
     "hplt-tan",
     "hplt",
     "lat",
     "latitude",
-]
-LON_LABELS = [
+}
+LON_LABELS = {
     "custom:pos.helioprojective.lon",
     "helioprojective longitude",
     "hpln-tan",
     "hpln",
     "lon",
     "longitude",
-]
-TIME_LABELS = ["time (utc)", "time"]
-WAVELENGTH_LABELS = ["wavelength", "wave", "em.wl"]
-SCAN_LABELS = set(LON_LABELS + LAT_LABELS)
+}
+TIME_LABELS = {"seconds from start (s)", "time (utc)", "time"}
+SLIDER_SCAN_STEP_LABELS = {"custom:step", "raster_step"}
+SLIDER_SCAN_LABELS = {"custom:scan", "raster_scan"}
+WAVELENGTH_LABELS = {"wavelength", "wave", "em.wl"}
 LON_AXIS_LABEL = "Helioprojective Longitude [arcsec]"
 LAT_AXIS_LABEL = "Helioprojective Latitude [arcsec]"
+# Coordinates a plot only shows when they are asked for with ``axes_coordinates``.
+HIDDEN_BY_DEFAULT = TIME_LABELS | SLIDER_SCAN_STEP_LABELS | SLIDER_SCAN_LABELS
+# The pixel axis each celestial coordinate follows, which decides the edge it is labeled on.
+PRIMARY_PIXEL_AXES = {SLIT_AXIS: LAT_LABELS, STEP_AXIS: LON_LABELS}
+# Pixel axes whose time follows the sky, a raster's steps and scans and a mosaic's positions: a plot shows that
+# time only when asked for, while an image along the time of a slit-jaw cube always shows it.
+SKY_TIME_AXES = {STEP_AXIS, SCAN_AXIS, MOSAIC_X_AXIS, MOSAIC_Y_AXIS}
 
 
 def _shorten_slider_label(label):
-    label_parts = {label_part.strip().lower() for label_part in str(label).split(" / ")}
-    if label_parts.intersection(WAVELENGTH_LABELS):
+    """
+    Return a concise label for common IRIS animation sliders.
+    """
+    lowered_label_parts = {label_part.strip().lower() for label_part in str(label).split(" / ")}
+    if lowered_label_parts.intersection(SLIDER_SCAN_STEP_LABELS):
+        return "Raster step"
+    if lowered_label_parts.intersection(SLIDER_SCAN_LABELS):
+        return "Scan number"
+    if lowered_label_parts.intersection(WAVELENGTH_LABELS):
         return "Wavelength"
-    if label_parts.intersection(TIME_LABELS):
+    if lowered_label_parts.intersection(TIME_LABELS):
         return "Time"
-    if label_parts and label_parts.issubset(SCAN_LABELS):
-        return "Scan"
+    if lowered_label_parts and lowered_label_parts <= LON_LABELS | LAT_LABELS:
+        return "Spatial pixel"
     return label
 
 
-def set_axis_properties(ax):
+def set_axis_properties(ax, axes_coordinates=None, slices=None, pixel_axis_names=None):
     """
-    Set the axis colors and labels for IRIS SJI and Raster data.
+    Set IRIS axis labels and choose the coordinates shown on the plot edges.
+
+    The raster step and raster scan coordinates, and the time of a raster, are hidden
+    unless they are in ``axes_coordinates``. With ``axes_coordinates``, only the
+    requested coordinates are shown. Latitude is labeled on the edge of the slit axis
+    and longitude on the edge of the raster step axis. When only one of those axes is
+    plotted, the other coordinate goes on its opposite edge, so a raster image is laid
+    out like its FITS WCS. ``slices`` are the WCSAxes slices (``"x"``, ``"y"`` or an
+    index per pixel axis, in WCS order), ``("x", "y")`` by default, and
+    ``pixel_axis_names`` the names of the pixel axes in that order, those of the WCS of
+    ``ax`` by default.
     """
-    if isinstance(ax, ArrayAnimatorWCS):
-        ax = ax.axes
-    for axis in ax.coords:
-        if axis.default_label.lower() in WAVELENGTH_LABELS:
+    physical_types = [(physical_type or "").lower() for physical_type in ax.wcs.world_axis_physical_types]
+    if pixel_axis_names is None:
+        pixel_axis_names = getattr(ax.wcs, "pixel_axis_names", ())
+    hidden = HIDDEN_BY_DEFAULT if not SKY_TIME_AXES.isdisjoint(pixel_axis_names) else HIDDEN_BY_DEFAULT - TIME_LABELS
+    requested = {coord.lower() for coord in axes_coordinates or () if isinstance(coord, str)}
+    shown = []
+    for axis, physical_type in zip(ax.coords, physical_types, strict=True):
+        names = {physical_type, axis.default_label.lower()}
+        if names & WAVELENGTH_LABELS:
             axis.set_format_unit(u.nm)
             axis.set_major_formatter("x.xx")
             # A narrow window drawn with equal aspect has no room to label every tick
             axis.set_ticklabel(exclude_overlapping=True)
             axis.set_axislabel("Wavelength [$\\mathrm{nm}$]")
-        elif axis.default_label.lower() in LAT_LABELS:
+        elif names & LAT_LABELS:
             _set_axis_properties(axis, LAT_AXIS_LABEL, "red")
-        elif axis.default_label.lower() in LON_LABELS:
+        elif names & LON_LABELS:
             _set_axis_properties(axis, LON_AXIS_LABEL, "black")
+        visible = bool(names & requested) if requested else names.isdisjoint(hidden)
+        if visible:
+            shown.append((axis, names))
+        else:
+            _hide_coord(axis)
+    if "l" in ax.coords.frame.spine_names:
+        _place_celestial_coords(shown, slices, pixel_axis_names)
 
 
 def _set_axis_properties(axis, label, color):
@@ -83,27 +123,80 @@ def _set_axis_properties(axis, label, color):
     axis.set_axislabel(label, color=color, fontsize=8)
 
 
+def _hide_coord(coord):
+    """
+    Hide a coordinate with fixed, empty positions.
+
+    A hidden coordinate left in the automatic placement of WCSAxes still competes for an
+    edge, and wins it on tick count, so a shown coordinate can end up on an edge where
+    it has no ticks.
+
+    TODO: drop the position reset once irispy requires an astropy release with
+    astropy/astropy#20499, which skips fully hidden coordinates in that placement.
+    """
+    coord.set_ticks_visible(False)
+    coord.set_ticklabel_visible(False)
+    for set_position in (coord.set_ticks_position, coord.set_ticklabel_position, coord.set_axislabel_position):
+        set_position("")
+
+
+def _place_celestial_coords(shown, slices, pixel_axis_names):
+    pixel_axis_names = list(pixel_axis_names)
+    slices = list(("x", "y") if slices is None else slices)
+    if len(slices) != len(pixel_axis_names):
+        return
+    plotted = {pixel_axis_names[slices.index(axis)]: edge for axis, edge in (("x", "b"), ("y", "l")) if axis in slices}
+    edges = {}
+    celestial = []
+    for coord, names in shown:
+        for pixel_axis, labels in PRIMARY_PIXEL_AXES.items():
+            if names & labels:
+                celestial.append(coord)
+                if pixel_axis in plotted:
+                    edges[coord] = plotted[pixel_axis]
+    # When both celestial coordinates follow one image axis, they take its two opposite edges, with ticks on their own
+    # edge only
+    opposite = len(edges) == 1 and len(celestial) == 2
+    if opposite:
+        ((placed, edge),) = edges.items()
+        edges[next(coord for coord in celestial if coord is not placed)] = {"b": "t", "l": "r"}[edge]
+    for coord, edge in edges.items():
+        _show_coord_on_edge(coord, edge, ticks=edge if opposite else None)
+
+
+def _show_coord_on_edge(coord, edge, ticks=None):
+    coord.set_ticks_visible(True)
+    coord.set_ticklabel_visible(True)
+    coord.set_ticks_position(ticks or ("bt" if edge in "bt" else "lr"))
+    coord.set_ticklabel_position(edge)
+    coord.set_axislabel_position(edge)
+
+
 def _map_aspect(cube, wcs, plot_axes):
     """
-    The ``aspect`` that draws a 2D map with its true proportions, `None` for other
-    images.
+    The ``aspect`` that draws a 2D map with its true proportions, ``"auto"`` for an
+    image along the raster axis and `None` for other images.
 
     ``plot_axes`` is in pixel order, as `ndcube` passes it to ``_plot_2D_cube``.
     """
-    spatial = set(wcs.world_axis_physical_types) == {"custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"}
-    # The step axis of a sit-and-stare is time, along which the slit only follows solar rotation; without
-    # metadata a cube cannot tell one from a raster.
-    if not spatial or not cube.meta or cube.meta.get("NRASTERP") == 1:
+    # The rasters are times, often only a few, so square pixels would draw a sliver
+    if SCAN_AXIS in cube.wcs.low_level_wcs.pixel_axis_names:
+        return "auto"
+    types = set(wcs.world_axis_physical_types)
+    # A raster's gWCS also gives each exposure's time and step, which follow the step axis
+    spatial = {"custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"} <= types and "em.wl" not in types
+    # The step axis of a sit-and-stare is time, along which the slit only follows solar rotation
+    if not spatial or _is_sit_and_stare(cube):
         return None
     nx, ny = cube.data.shape[::-1]
     wcs = HighLevelWCSWrapper(wcs)
     scale = []
     # The mean pixel spacing across the middle of the map, which pointing jitter barely changes. Steps
     # without an exposure have no pointing, so measure between the finite ends of each line.
-    for line in (
-        wcs.pixel_to_world(np.arange(nx), np.full(nx, ny // 2)),
-        wcs.pixel_to_world(np.full(ny, nx // 2), np.arange(ny)),
-    ):
+    for pixels in ((np.arange(nx), np.full(nx, ny // 2)), (np.full(ny, nx // 2), np.arange(ny))):
+        line = wcs.pixel_to_world(*pixels)
+        # A raster's gWCS also gives the time and step of each pixel
+        line = line if isinstance(line, SkyCoord) else next(coord for coord in line if isinstance(coord, SkyCoord))
         finite = np.flatnonzero(np.isfinite(line.Tx))
         if finite.size < 2:
             return None
@@ -111,21 +204,26 @@ def _map_aspect(cube, wcs, plot_axes):
     return (scale[plot_axes.index("y")] / scale[plot_axes.index("x")]).to_value(u.one)
 
 
-class Plot2DMixin:
-    def update_plot_2d(self, val, im, slider):
-        super().update_plot_2d(val, im, slider)
-        set_axis_properties(self.axes)
+class IRISArrayAnimatorWCS(ArrayAnimatorWCS):
+    """
+    The ndcube animator with IRIS slider labels, and the IRIS axis layout kept through
+    slider updates.
+    """
 
+    def __init__(self, *args, axes_coordinates=None, pixel_axis_names=None, **kwargs):
+        self._axes_coordinates = axes_coordinates
+        self._pixel_axis_names = pixel_axis_names
+        super().__init__(*args, **kwargs)
 
-class IRISArrayAnimatorWCS(Plot2DMixin, ArrayAnimatorWCS):
     def _compute_slider_labels_from_wcs(self, slices):
         return [_shorten_slider_label(label) for label in super()._compute_slider_labels_from_wcs(slices)]
 
+    def set_axis_properties(self):
+        set_axis_properties(self.axes, self._axes_coordinates, self.slices_wcsaxes, self._pixel_axis_names)
 
-class IRISSequenceAnimator(Plot2DMixin, SequenceAnimator):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("slider_labels", ["Raster step", "Scan number"])
-        super().__init__(*args, **kwargs)
+    def update_plot_2d(self, val, im, slider):
+        super().update_plot_2d(val, im, slider)
+        self.set_axis_properties()
 
 
 def _registered_colormap(name):
@@ -168,29 +266,40 @@ def _sji_cmap_name(meta):
     return _registered_colormap(f"{prefix}{int(twave)}")
 
 
-class _IRISPlotMixin:
-    """
-    Shared IRIS plot behavior for cube and sequence plotters.
-    """
+class IRISPlotter(MatplotlibPlotter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The axes_coordinates of the current plot call as given: ndcube fills them in with every world axis
+        # before _animate_cube sees them, and the layout must tell a request from the default
+        self._axes_coordinates = None
 
     def _default_cmap_name(self):
         # sunpy registers the IRIS spectrograph color tables as irissjiFUV and irissjiNUV
         return _registered_colormap(f"irissji{getattr(self._ndcube.meta, 'detector_band', '')}")
 
-    def plot(self, *args, **kwargs):
+    @property
+    def _pixel_axis_names(self):
+        # With axes_coordinates, ndcube plots through its combined WCS, whose pixel axis names are unusable
+        # (ndcube's CompoundLowLevelWCS raises), so the layout uses the cube's own
+        return tuple(self._ndcube.wcs.low_level_wcs.pixel_axis_names)
+
+    def plot(self, axes=None, plot_axes=None, axes_coordinates=None, **kwargs):
         """
         Plot the cube with IRIS defaults.
 
-        If ``cmap`` is falsey, the color table of the data is used: the IRIS passband
-        table for slit-jaw images, the sunpy ``sdoaia`` table of the channel for AIA
-        cubes, the sunpy ``hinodesotintensity`` table for Hinode/SOT cubes and the IRIS
-        FUV or NUV table for spectrograms. For one-dimensional cubes ``cmap`` is dropped
-        entirely, even when given. IRIS axis styling is applied to the result; all other
-        arguments are passed to the parent plotter's ``plot``.
+        For images and animations, if ``cmap`` is falsey, the color table of the data is
+        used: the IRIS passband table for slit-jaw images, the sunpy ``sdoaia`` table of
+        the channel for AIA cubes, the sunpy ``hinodesotintensity`` table for Hinode/SOT
+        cubes and the IRIS FUV or NUV table for spectrograms. For one-dimensional cubes
+        ``cmap`` is dropped entirely, even when given. IRIS axis styling is applied to the
+        result (see ``set_axis_properties``); all other arguments are passed to the parent
+        plotter's ``plot``.
 
         A 2D map, such as a cut of a scanning raster at one wavelength, a moment map or
         a Hinode/SOT-SP scan, is drawn with its true proportions unless ``aspect`` is
-        given. Maps of a sit-and-stare keep square pixels.
+        given. Maps of a sit-and-stare keep square pixels, and an image along the raster axis
+        fills the axes. A raster map has its raster steps,
+        or the exposures of a sit-and-stare, along x unless ``plot_axes`` is given.
 
         By default the colors run linearly from the minimum to the maximum of the image,
         or of the first frame of an animation, which the other frames keep, so a few
@@ -199,15 +308,22 @@ class _IRISPlotMixin:
         ``clip_interval=(1, 99.5) * u.percent`` sets them to those percentiles of the
         image, or of each frame.
         """
-        kwargs["cmap"] = kwargs.get("cmap") or self._default_cmap_name()
+        if plot_axes is None and self._pixel_axis_names == (SLIT_AXIS, STEP_AXIS):
+            # Solar X along x, as in a map; plot_axes is in array order, (step, slit)
+            plot_axes = ["x", "y"]
         if len(self._ndcube.shape) == 1:
-            kwargs.pop("cmap")
-        ax = super().plot(*args, **kwargs)
-        set_axis_properties(ax)
+            kwargs.pop("cmap", None)
+        else:
+            kwargs["cmap"] = kwargs.get("cmap") or self._default_cmap_name()
+        self._axes_coordinates = axes_coordinates
+        ax = super().plot(axes=axes, plot_axes=plot_axes, axes_coordinates=axes_coordinates, **kwargs)
+        if isinstance(ax, IRISArrayAnimatorWCS):
+            ax.set_axis_properties()
+        else:
+            slices = prep_plot_kwargs(len(self._ndcube.shape), self._ndcube.wcs, plot_axes, None, None)[0]
+            set_axis_properties(ax, axes_coordinates, slices, self._pixel_axis_names)
         return ax
 
-
-class IRISPlotter(_IRISPlotMixin, MatplotlibPlotter):
     def _plot_2D_cube(  # NOQA: N802
         self, wcs, axes=None, plot_axes=None, axes_coordinates=None, axes_units=None, data_unit=None, **kwargs
     ):
@@ -233,14 +349,17 @@ class IRISPlotter(_IRISPlotMixin, MatplotlibPlotter):
         data_unit=None,
         **kwargs,
     ):
-        # This is a copy of the super method, but with the replacement
-        # of the ArrayAnimatorWCS with IRISArrayAnimatorWCS.
         data, wcs, plot_axes, coord_params = self._prep_animate_args(wcs, plot_axes, axes_units, data_unit)
-        ax = IRISArrayAnimatorWCS(data, wcs, plot_axes, coord_params=coord_params, **kwargs)
-        # We need to modify the visible axes after the axes object has been created.
-        # This call affects only the initial draw
+        ax = IRISArrayAnimatorWCS(
+            data,
+            wcs,
+            plot_axes,
+            coord_params=coord_params,
+            axes_coordinates=self._axes_coordinates,
+            pixel_axis_names=self._pixel_axis_names,
+            **kwargs,
+        )
         self._apply_axes_coordinates(ax.axes, axes_coordinates)
-        # This changes the parameters for future iterations
         for hidden in self._not_visible_coords(ax.axes, axes_coordinates):
             param = ax.coord_params.get(hidden, {})
             param["ticks"] = False
@@ -251,29 +370,3 @@ class IRISPlotter(_IRISPlotMixin, MatplotlibPlotter):
 class SJIPlotter(IRISPlotter):
     def _default_cmap_name(self):
         return _sji_cmap_name(self._ndcube.meta)
-
-
-class IRISSequencePlotter(_IRISPlotMixin, MatplotlibSequencePlotter):
-    def animate(self, sequence_axis_coords=None, sequence_axis_unit=None, **kwargs):
-        """
-        Animate the `~ndcube.NDCubeSequence` with the sequence axis as a slider.
-
-        Keyword arguments are passed to
-        `ndcube.visualization.mpl_plotter.MatplotlibPlotter.plot` and therefore only
-        apply to cube axes, not the sequence axis.
-        See that method's docstring for definition of keyword arguments.
-
-        Parameters
-        ----------
-        sequence_axis_coords: `str` optional
-            The name of the coordinate in `~ndcube.NDCubeSequence.sequence_axis_coords`
-            to be used as the slider pixel values.
-            If None, array indices will be used.
-
-        sequence_axis_unit: `astropy.units.Unit` or `str`, optional
-            The unit in which the sequence_axis_coordinates should be displayed.
-            If None, the default unit will be used.
-        """
-        return IRISSequenceAnimator(
-            self._ndcube, sequence_axis_coords=sequence_axis_coords, sequence_axis_unit=sequence_axis_unit, **kwargs
-        )

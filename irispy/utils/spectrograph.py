@@ -9,7 +9,7 @@ from astropy import constants
 from astropy.nddata import StdDevUncertainty
 
 from irispy.sji import SJICube
-from irispy.spectrograph import SpectrogramCube, SpectrogramCubeSequence
+from irispy.spectrograph import SpectrogramCube
 from irispy.utils._spectral import _fit_background, check_scaled, make_map_cube, standard_deviation
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
@@ -25,19 +25,20 @@ __all__ = [
 
 @u.quantity_input
 def radiometric_calibration(
-    cube: SpectrogramCube | SpectrogramCubeSequence | SJICube,
+    cube: SpectrogramCube | SJICube,
     *,
     line: u.AA = None,
-) -> SpectrogramCube | SpectrogramCubeSequence | SJICube:
+) -> SpectrogramCube | SJICube:
     """
-    Converts a cube or cube sequence from DN to radiance.
+    Converts a cube from DN to radiance.
 
     The data are divided by their exposure times and converted with the effective areas at the
-    observation time (`~irispy.utils.response.get_latest_response`).
+    observation time (`~irispy.utils.response.get_latest_response`). For raster files read
+    together, that is the time of the first file.
 
     Parameters
     ----------
-    cube : `irispy.spectrograph.SpectrogramCube` | `irispy.spectrograph.SpectrogramCubeSequence` | `irispy.sji.SJICube`
+    cube : `irispy.spectrograph.SpectrogramCube` | `irispy.sji.SJICube`
         The input cube to be calibrated, in DN.
     line : `astropy.units.Quantity`, optional
         Slit-jaw cubes only: the wavelength of the one line all the counts come from, which gives the
@@ -47,7 +48,7 @@ def radiometric_calibration(
 
     Returns
     -------
-    `irispy.spectrograph.SpectrogramCube`, `irispy.spectrograph.SpectrogramCubeSequence` or `irispy.sji.SJICube`
+    `irispy.spectrograph.SpectrogramCube` or `irispy.sji.SJICube`
         New cube with the data type and mask of ``cube``, in :math:`erg s^{-1} sr^{-1} cm^{-2} Å^{-1}`,
         or :math:`erg s^{-1} sr^{-1} cm^{-2}` for a slit-jaw cube with ``line``.
         Spectra are NaN, but not masked, where the response has no effective area: outside
@@ -58,8 +59,8 @@ def radiometric_calibration(
     ------
     ValueError
         If ``line`` is given for a spectrograph cube, is not one wavelength or lies where the slit-jaw
-        passband has no effective area, if the cube is already corrected for exposure time or
-        calibrated, or if it is not from an IRIS slit-jaw passband, such as an AIA cube.
+        passband has no effective area, or if the cube is not from an IRIS slit-jaw passband, such as an
+        AIA cube.
 
     Notes
     -----
@@ -70,13 +71,7 @@ def radiometric_calibration(
     gives the intensity of a whole line, in :math:`erg s^{-1} sr^{-1} cm^{-2}`: to compare with it, sum the
     calibrated spectra over the line and multiply by ``abs(cube.spectral_dispersion)``.
     """
-    if isinstance(cube, SpectrogramCubeSequence):
-        return SpectrogramCubeSequence([radiometric_calibration(c, line=line) for c in cube])
     check_scaled(cube)
-    # As sunraster's apply_exposure_time_correction tells corrected data apart
-    if u.s in cube.unit.decompose().bases:
-        msg = f"The cube must be in DN, not {cube.unit}; do not correct or calibrate it first"
-        raise ValueError(msg)
     if line is not None and not line.isscalar:
         msg = f"line must be one wavelength, not {line}"
         raise ValueError(msg)
@@ -97,8 +92,10 @@ def radiometric_calibration(
 
 def _calibrate(cube, factor, unit):
     # Multiplies cube by factor (photons per second to unit) over each exposure time, in the cube's
-    # data type. The exposures lie along the first axis: raster step or time.
-    exposure_time = cube.exposure_time.to_value(u.s).reshape(-1, *[1] * (cube.data.ndim - 1))
+    # data type. The exposures lie along the first axes: the raster, for several files, then the
+    # raster step or time.
+    exposure_time = cube.exposure_time.to_value(u.s)
+    exposure_time = exposure_time.reshape(exposure_time.shape + (1,) * (cube.data.ndim - exposure_time.ndim))
     factor = ((cube.unit / u.s * factor).to_value(unit) / exposure_time).astype(cube.data.dtype)
     uncertainty = None if cube.uncertainty is None else StdDevUncertainty(cube.uncertainty.array * factor)
     # NDCube arithmetic would deep-copy the meta and, through the coordinates, the whole cube
@@ -133,10 +130,10 @@ def _calibrate_sji(cube, line):
 
 
 def radiation_temperature(
-    cube: SpectrogramCube | SpectrogramCubeSequence,
-) -> SpectrogramCube | SpectrogramCubeSequence:
+    cube: SpectrogramCube,
+) -> SpectrogramCube:
     r"""
-    Converts a radiometrically calibrated cube or cube sequence to radiation temperature.
+    Converts a radiometrically calibrated cube to radiation temperature.
 
     The radiation (or brightness) temperature is the temperature of the blackbody whose
     Planck function equals the observed specific intensity, :math:`I_\nu = B_\nu(T_\mathrm{rad})`
@@ -151,13 +148,13 @@ def radiation_temperature(
 
     Parameters
     ----------
-    cube : `irispy.spectrograph.SpectrogramCube` | `irispy.spectrograph.SpectrogramCubeSequence`
+    cube : `irispy.spectrograph.SpectrogramCube`
         Cube in radiance per unit wavelength or frequency, e.g. the output of
         `~irispy.utils.spectrograph.radiometric_calibration`.
 
     Returns
     -------
-    `irispy.spectrograph.SpectrogramCube` or `irispy.spectrograph.SpectrogramCubeSequence`
+    `irispy.spectrograph.SpectrogramCube`
         New cube in K, with a `~astropy.nddata.StdDevUncertainty` if ``cube`` has an uncertainty.
 
     Notes
@@ -173,8 +170,6 @@ def radiation_temperature(
       Noise just above zero still gives several thousand kelvin.
     * The uncertainty is propagated to first order, so it is unreliable where it is comparable to the radiance.
     """
-    if isinstance(cube, SpectrogramCubeSequence):
-        return SpectrogramCubeSequence([radiation_temperature(c) for c in cube])
     check_scaled(cube)
     wavelength = cube.axis_world_coords(cube.wavelength_axis)[0]
     try:

@@ -1,0 +1,1 @@
+When several raster files are read together, the FITS WCS of each raster in ``cube.fits_wcs`` now uses the observation date and observer of its own file, not those of the first file.
