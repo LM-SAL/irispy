@@ -466,6 +466,15 @@ def test_calculate_red_blue_asymmetry_real_cube_shape_and_coords(sns_sg_file):
             np.testing.assert_array_equal(sliced.data, result[name].data[item], err_msg=name)
 
 
+def test_calculate_red_blue_asymmetry_result_cubes_print(sns_sg_file):
+    cube = read_files(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]
+    result = calculate_red_blue_asymmetry(cube)
+    for name in ("red_blue_asymmetry", "quality"):
+        assert "Obs Date:           2021-09-05" in str(result[name])
+    # The profiles are on a velocity WCS, which has no time
+    assert "Obs Date:           None" in str(result["interpolated_profile"])
+
+
 def test_calculate_red_blue_asymmetry_rest_wavelength_required_without_meta():
     cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), np.arange(1, 6) * u.nm)
     del cube.meta["TWAVE1"]
