@@ -1,3 +1,29 @@
+"""
+Helpers for the WCSs of the cubes.
+
+The maths of each gWCS is in the docstring of the code that builds it: rasters in
+``irispy._spectrograph_wcs``, slit-jaw cubes in ``irispy.io.sji._create_gwcs`` and
+mosaics in ``irispy.io.mosaic._create_gwcs``. Their transforms are astropy models,
+put together with its operators:
+
+``a | b``
+    ``b`` of the outputs of ``a``.
+``a & b``
+    Side by side: ``a`` takes the first inputs and ``b`` the ones after them, and the
+    outputs are those of ``a``, then those of ``b``.
+``a + b``, ``a - b``, ``a * b``, ``a / b``
+    Both take the same inputs, and the arithmetic is on their outputs.
+``Mapping((0, 2, 2))``
+    Picks, repeats and reorders the inputs by their number: here the first input,
+    then the third one twice. It feeds one pixel coordinate to several models.
+``Identity(n)``
+    Passes ``n`` inputs through unchanged.
+
+A value that changes from exposure to exposure is a lookup table over the pixel
+indices (``_table_lookup``). A fractional index interpolates between exposures, or
+takes the nearest one in a table made with ``method="nearest"``.
+"""
+
 import numpy as np
 
 import astropy.modeling.models as m

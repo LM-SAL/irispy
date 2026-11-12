@@ -30,6 +30,23 @@ def _create_gwcs(fits_wcs, celestial, time_offsets, date_obs, observer):
     solar X), ``celestial`` the celestial FITS WCS of the file, with pixel axes (solar
     X, solar Y), and ``time_offsets`` the seconds from ``date_obs`` of each (solar Y,
     solar X) position, NaN where no raster covered it.
+
+    A mosaic has one pointing, so its sky positions are the celestial FITS WCS of the
+    file, a TAN projection (Calabretta & Greisen 2002, A&A 395, 1077), written as one
+    astropy model for each step::
+
+        offset = (x, y) - crpix               Shift
+        rotated = PC @ offset                 AffineTransformation2D
+        (X, Y) = CDELT * rotated              Multiply
+        angles about the pointing of (X, Y)   Pix2Sky_TAN
+        (lon, lat) of those angles            RotateNative2Celestial
+
+    ``(X, Y)`` is where the pixel is on the plane that touches the sky sphere at the
+    pointing ``CRVAL``, east and north of it. ``Pix2Sky_TAN`` gives the angle between
+    the pixel and the pointing and the direction around the pointing, and
+    ``RotateNative2Celestial`` turns those into longitude and latitude.
+    ``irispy.io.sji._create_gwcs`` derives the same projection for a pointing that
+    changes from frame to frame.
     """
     unit = u.Unit(fits_wcs.wcs.cunit[0])
     spectral, spectral_frame = _spectral_axis(
@@ -39,7 +56,7 @@ def _create_gwcs(fits_wcs, celestial, time_offsets, date_obs, observer):
     crpix = (celestial.wcs.crpix - 1) * u.pix
     cdelt = (celestial.wcs.cdelt * u.deg).to(u.arcsec) / u.pix
     crval = (celestial.wcs.crval * u.deg).to(u.arcsec)
-    # The steps of a FITS celestial WCS: reference pixel, PC matrix, plate scales, TAN projection, pointing
+    # The five steps of the docstring. 180 degrees is the default LONPOLE of a TAN projection: Y points north.
     sky = (
         m.Shift(-crpix[0]) & m.Shift(-crpix[1])
         | m.AffineTransformation2D(celestial.wcs.get_pc() * u.pix, translation=(0, 0) * u.pix)

@@ -89,10 +89,14 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
 
 def _rows(tables, offset=None):
     """
-    ``sum(input[k] * tables[k][frame]) + offset[frame]`` of the inputs ``(*input,
-    frame)``, from lookup tables with a row for each frame.
+    The model ``offset[frame] + a * tables[0][frame] + b * tables[1][frame] + ...`` of
+    the inputs ``(a, b, ..., frame)``, from lookup tables with a row for each frame.
+
+    It is how a value that is linear in its inputs, with coefficients that change from
+    frame to frame, is written with astropy models (``irispy._wcs`` has the operators).
     """
     count = len(tables)
+    # The frame is the last input, and ``frame | lookup`` the row of a table at that frame
     frame = m.Mapping((count,), n_inputs=count + 1)
     terms = [m.Mapping((k,), n_inputs=count + 1) * (frame | _table_lookup(table)) for k, table in enumerate(tables)]
     if offset is not None:
@@ -102,58 +106,99 @@ def _rows(tables, offset=None):
 
 def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     """
-    Creates the GWCS object for the SJI file.
+    The gWCS of a slit-jaw, AIA or SOT cube, from the pixels ``(x, y, frame)`` to the
+    helioprojective longitude and latitude and the time.
 
-    The sky position of a pixel is that of the FITS WCS of its frame, a TAN projection
-    about the pointing of the frame. The projection puts a pixel on the plane that
-    touches the sky sphere at the pointing, so the direction of a pixel, as a 3D
-    vector, is linear in the pixel::
+    Each frame has a FITS WCS of its own: a TAN projection about the pointing of the
+    frame (Calabretta & Greisen 2002, A&A 395, 1077). The gWCS gives the sky positions
+    of that WCS. The file records the pointing (``XCENIX``, ``YCENIX``) and the ``PC``
+    matrix of every frame, so each name below with ``[frame]`` is a lookup table with
+    a row for each frame.
+
+    **Pixel to sky**, in three steps:
+
+    1. Where the pixel is on the plane of the projection. A TAN projection draws the
+       image on the plane that touches the sky sphere, of radius 1, at the pointing.
+       The linear part of the FITS WCS puts a pixel at ``(X, Y)`` on that plane: its
+       distances east and north of the pointing (toward greater longitude and
+       latitude). ``CDELT`` gives them in arcsec, and in radians they are lengths on
+       the plane. FITS scales row i of ``PC`` by ``CDELT`` i::
+
+           (X, Y) = to_plane[frame] @ (pixel - crpix)
+
+           to_plane = | CDELT1 * PC1_1    CDELT1 * PC1_2 |
+                      | CDELT2 * PC2_1    CDELT2 * PC2_2 |
+
+    2. Where that point is in space, from the observer at the center of the sphere::
+
+           direction = toward[frame] + X * east[frame] + Y * north[frame]
+
+       ``toward`` is the unit vector from the observer to the pointing, at longitude
+       ``lon`` and latitude ``lat``, and ``east`` and ``north`` are the unit vectors
+       along the plane. The first axis of the three points to longitude and latitude
+       0, the second to longitude 90 degrees and the third to the north pole::
+
+           toward = (cos(lat) * cos(lon), cos(lat) * sin(lon), sin(lat))
+           east = (-sin(lon), cos(lon), 0)
+           north = (-sin(lat) * cos(lon), -sin(lat) * sin(lon), cos(lat))
+
+    3. The sky position is the direction to that point, whatever its distance::
+
+           longitude = arctan2(direction[1], direction[0])
+           latitude = arctan2(direction[2], hypot(direction[0], direction[1]))
+
+    Steps 1 and 2 together are linear in the pixel, so lookup tables can hold them::
 
         direction = origin[frame] + x * per_x[frame] + y * per_y[frame]
 
-    Each component of the three vectors is a lookup table with a row for each frame,
-    and longitude and latitude are the angles of the direction. Between frames, the
-    tables and the time are interpolated.
+    ``per_x`` and ``per_y`` are the change of the direction for one pixel along x and
+    y, and ``origin`` is the direction of pixel (0, 0). Each has three components, so
+    there are nine tables. Between frames, the tables and the time are interpolated.
+    astropy's own TAN and rotation models, which the mosaic gWCS uses, take one
+    pointing, not one for each frame.
 
-    Parameters
-    ----------
-    hdulist : `astropy.io.fits.HDUList`
-        The HDU list of the SJI file.
+    **Sky to pixel.** The time gives the frame, and the sky position a unit vector
+    ``d``, by step 3 backward. The plane of the frame is every point with
+    ``point @ toward = 1``, so the line from the observer along ``d`` meets it at
+    ``d / (d @ toward)``. Then steps 2 and 1 backward::
 
-    Returns
-    -------
-    `gwcs.WCS`
-        GWCS object for the SJI file.
+        X = (d @ east[frame]) / (d @ toward[frame])
+        Y = (d @ north[frame]) / (d @ toward[frame])
+        pixel = crpix + inverse(to_plane[frame]) @ (X, Y)
     """
     from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
 
+    # The tables of the file, by frame: (frame, 2, 2) and (frame, 2) in arcsec
     pc_table = hdulist[1].data[:, hdulist[1].header["PC1_1IX"] : hdulist[1].header["PC2_2IX"] + 1].reshape(-1, 2, 2)
     crval_table = hdulist[1].data[:, hdulist[1].header["XCENIX"] : hdulist[1].header["YCENIX"] + 1]
     # FITS CRPIX is 1-based and the transform takes 0-based pixels
     crpix = np.array([hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1])
     cdelt = np.array([hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]])
-    # Unit vectors at the pointing of each frame: toward it, and toward greater longitude and latitude
+    # Step 2: the unit vectors at the pointing of each frame, each (frame, 3)
     lon, lat = np.deg2rad(crval_table / 3600).T
     toward = np.stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)], axis=-1)
     east = np.stack([-np.sin(lon), np.cos(lon), np.zeros_like(lon)], axis=-1)
     north = np.stack([-np.sin(lat) * np.cos(lon), -np.sin(lat) * np.sin(lon), np.cos(lat)], axis=-1)
-    east_north = np.stack([east, north], axis=1)
-    # A pixel is at ``to_plane @ (pixel - crpix)`` radians along east and north on the plane of the projection, so
-    # its direction is ``toward + (to_plane @ (pixel - crpix)) @ east_north``
+    east_north = np.stack([east, north], axis=1)  # (frame, 2, 3)
+    # Step 1: (frame, 2, 2), from arcsec to radians
     to_plane = np.deg2rad(pc_table * cdelt[:, np.newaxis] / 3600)
+    # Steps 1 and 2 as one. per_pixel[frame, j] = to_plane[frame, 0, j] * east + to_plane[frame, 1, j] * north is
+    # per_x at j = 0 and per_y at j = 1, and (frame, 2, 3) in all.
     per_pixel = np.swapaxes(to_plane, 1, 2) @ east_north
     origin = toward - crpix @ per_pixel
+    # Component k of the direction, from its three tables
     direction = [_rows(list(per_pixel[..., k].T / u.pix), origin[:, k] * u.one) for k in range(3)]
     start_time = t_obs[0]
     cadence = (t_obs - start_time).to_value(u.s) * u.s
     temporal = _table_lookup(cadence)
-    # (x, y, frame) to (lon, lat, time)
+    # (x, y, frame) to (lon, lat, time): each component of the direction takes (x, y, frame) and the time takes
+    # the frame. CartesianToSpherical is step 3.
     forward_transform = (
         m.Mapping((0, 1, 2) * 3 + (2,))
         | (direction[0] & direction[1] & direction[2] | CartesianToSpherical(wrap_lon_at=180)) & temporal
     )
-    # World to pixel: the frame from the time, then the place on the plane of that frame where the direction of the
-    # sky position meets it, ``(direction @ east_north) / (direction @ toward)``, back through ``to_plane``
+    # Sky to pixel. ``to_pixel[frame, k]`` is ``inverse(to_plane)[k, 0] * east + inverse(to_plane)[k, 1] * north``,
+    # so ``pixel[k]`` is one division of two sums: ``crpix[k] + (d @ to_pixel[frame, k]) / (d @ toward[frame])``
     to_pixel = np.linalg.inv(to_plane) @ east_north
     pixel = [
         _rows(list(to_pixel[:, k].T * u.pix)) / _rows(list(toward.T * u.one)) | m.Shift(crpix[k] * u.pix)
@@ -161,6 +206,7 @@ def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     ]
     # The times of a one-frame cube do not invert
     with suppress(NotImplementedError):
+        # (lon, lat, time) to (d, frame), then each pixel coordinate takes (d, frame) and the frame passes through
         forward_transform.inverse = (
             SphericalToCartesian(wrap_lon_at=180) & temporal.inverse
             | m.Mapping((0, 1, 2, 3, 0, 1, 2, 3, 3))

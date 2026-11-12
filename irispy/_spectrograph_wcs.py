@@ -14,7 +14,10 @@ The pixel axes are (wavelength, slit, step, scan), the reverse of the array axes
     world    wavelength        lon, lat   time  raster_step, raster_scan
 
 ``Wavelength``
-    A line, from the ``CRVAL1``, ``CDELT1`` and ``CRPIX1`` of the window.
+    A line, from the ``CRVAL1``, ``CDELT1`` and ``CRPIX1`` of the window::
+
+        wavelength = CRVAL1 + CDELT1 * (pixel - (CRPIX1 - 1))
+
 ``Celestial``
     The slit of each exposure as a straight line on the sky, in lookup tables by
     (step, scan)::
@@ -22,11 +25,23 @@ The pixel axes are (wavelength, slit, step, scan), the reverse of the array axes
         lon = lon0[step, scan] + slit * dlon[step, scan]
         lat = lat0[step, scan] + slit * dlat[step, scan]
 
-    ``lon0`` and ``lat0`` are the position of slit pixel 0, and ``dlon`` and ``dlat``
-    its change for each slit pixel, from the pointing and the ``PC`` matrix of the
-    exposure. It is the line of the FITS ``-TAB`` WCS in ``cube.fits_wcs``, within 1e-3
-    arcsec of the FITS celestial WCS of the exposure. A fractional step interpolates
-    between the two nearest exposures.
+    ``dlon`` and ``dlat`` are the change of the sky position for one slit pixel, and
+    ``lon0`` and ``lat0`` the position of slit pixel 0. They are the FITS WCS of the
+    exposure along its slit. The file records the pointing (``XCENIX``, ``YCENIX``),
+    which is at the slit reference pixel ``CRPIX2``, and the ``PC`` matrix of every
+    exposure. FITS axis 2 is the slit and the latitude, and axis 3 the step and the
+    longitude, and FITS scales row i of ``PC`` by ``CDELT`` i::
+
+        dlon = CDELT3 * PC3_2        lon0 = XCENIX - dlon * (CRPIX2 - 1)
+        dlat = CDELT2 * PC2_2        lat0 = YCENIX - dlat * (CRPIX2 - 1)
+
+    With no roll, ``PC3_2 = 0`` and ``PC2_2 = 1``: the slit runs north, ``CDELT2``
+    arcsec for each pixel. A sit-and-stare has ``CDELT3 = 0`` and an unscaled ``PC``,
+    so its ``dlon`` is ``CDELT2 * PC3_2``.
+
+    It is the line of the FITS ``-TAB`` WCS in ``cube.fits_wcs``, within 1e-3 arcsec
+    of the FITS celestial WCS of the exposure, a TAN projection. A fractional step
+    interpolates between the two nearest exposures.
 ``Time``
     A lookup table of the seconds from the first exposure, by (step, scan).
 ``Identity``
@@ -34,9 +49,15 @@ The pixel axes are (wavelength, slit, step, scan), the reverse of the array axes
 
 The inverse, from world to pixels, returns the ``raster_step`` and ``raster_scan`` it is
 given as the step and scan pixels, and ignores the time, a 2D table that cannot be
-inverted. The sky position gives only the pixel along the slit, the nearest one on
-the line of that step and scan. So ``crop`` and ``world_to_pixel`` need the step and
-scan, and finding a step from a sky position takes ``cube.fits_wcs``.
+inverted. The sky position gives only the pixel along the slit: the nearest one on
+the line of that step and scan, where the position projects onto the line::
+
+    slit = ((lon - lon0) * dlon + (lat - lat0) * dlat) / (dlon**2 + dlat**2)
+
+So ``crop`` and ``world_to_pixel`` need the step and scan, and finding a step from a
+sky position takes ``cube.fits_wcs``.
+
+``irispy._wcs`` says how the operators of astropy models put these together.
 
 What the models do not show:
 
@@ -145,7 +166,12 @@ def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, ob
     The scan axis expands into helioprojective sky coordinates, elapsed time from
     ``t_ref``, and an explicit scan-step coordinate so the inverse stays stable for
     crops and other round-trips where sky or time alone are not unique. The module
-    docstring has the models.
+    docstring has the models and their formulas.
+
+    The tables have a row for each (scan, step): ``pc_all`` holds the ``PC`` matrices
+    ``[[PC2_2, PC2_3], [PC3_2, PC3_3]]``, ``crval_all`` the pointings ``(XCENIX,
+    YCENIX)`` and ``dt_all`` the times from ``t_ref``. ``crpix2_all`` holds the slit
+    reference pixel of each scan.
 
     Notes
     -----
@@ -176,7 +202,7 @@ def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, ob
         nearest = tuple(ndimage.distance_transform_edt(missing, return_distances=False, return_indices=True))
         lon0, lat0, dlon, dlat = (table[nearest] for table in (lon0, lat0, dlon, dlat))
 
-    # Pixel inputs are (slit, step, scan)
+    # Pixel inputs are (slit, step, scan): ``row | lookup`` is the value of a table at that step and scan
     slit, row = m.Mapping((0,), n_inputs=3), m.Mapping((1, 2), n_inputs=3)
     lon = (row | _table_lookup(lon0, name="lon0")) + slit * (row | _table_lookup(dlon, name="dlon"))
     lat = (row | _table_lookup(lat0, name="lat0")) + slit * (row | _table_lookup(dlat, name="dlat"))
@@ -191,7 +217,8 @@ def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, ob
     # (slit, step, scan) to (lon, lat, time, step, scan)
     non_spectral = m.Mapping((0, 1, 2, 1, 2, 1, 2)) | sky & temporal & m.Identity(2, name="step_scan")
 
-    # World to pixel: the slit pixel nearest the sky position, on the line of the step and scan given
+    # World to pixel: the slit pixel nearest the sky position, on the line of the step and scan given. The formula
+    # of the module docstring with a table for each term: slit = lon * to_slit_lon + lat * to_slit_lat - offset
     norm = dlon**2 + dlat**2
     to_slit_lon, to_slit_lat = dlon / norm, dlat / norm
     offset = to_slit_lon * lon0 + to_slit_lat * lat0
