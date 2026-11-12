@@ -32,7 +32,6 @@ dynamic = [ "version" ]
 dependencies = [
   "astropy>=8.0.2",
   "dask[array]>=2025.1.0",
-  "dkist>=1.17.0",
   "filelock>=3.16.1",
   "gwcs>=1.0.0",
   "mpl-animators>=1.2.3",

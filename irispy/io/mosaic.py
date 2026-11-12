@@ -8,7 +8,6 @@ from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
 
-from dkist.wcs.models import generate_celestial_transform
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
@@ -37,11 +36,16 @@ def _create_gwcs(fits_wcs, celestial, time_offsets, date_obs, observer):
         fits_wcs.wcs.cdelt[0] * unit, fits_wcs.wcs.crval[0] * unit, fits_wcs.wcs.crpix[0]
     )
     # FITS CRPIX is 1-based and the transform takes 0-based pixels; wcslib holds the sky keywords in degrees
-    sky = generate_celestial_transform(
-        crpix=(celestial.wcs.crpix - 1) * u.pix,
-        cdelt=(celestial.wcs.cdelt * u.deg).to(u.arcsec) / u.pix,
-        pc=celestial.wcs.get_pc() * u.pix,
-        crval=(celestial.wcs.crval * u.deg).to(u.arcsec),
+    crpix = (celestial.wcs.crpix - 1) * u.pix
+    cdelt = (celestial.wcs.cdelt * u.deg).to(u.arcsec) / u.pix
+    crval = (celestial.wcs.crval * u.deg).to(u.arcsec)
+    # The steps of a FITS celestial WCS: reference pixel, PC matrix, plate scales, TAN projection, pointing
+    sky = (
+        m.Shift(-crpix[0]) & m.Shift(-crpix[1])
+        | m.AffineTransformation2D(celestial.wcs.get_pc() * u.pix, translation=(0, 0) * u.pix)
+        | m.Multiply(cdelt[0]) & m.Multiply(cdelt[1])
+        | m.Pix2Sky_TAN()
+        | m.RotateNative2Celestial(crval[0], crval[1], 180 * u.deg)
     )
     # The time of the raster that covered each position. A linear lookup weighs in the next position, even at a
     # pixel center, and so is NaN before every uncovered position.
