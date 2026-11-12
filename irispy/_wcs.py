@@ -17,28 +17,29 @@ from ndcube.wcs.wrappers import ResampledLowLevelWCS
 from sunpy.coordinates.frames import Helioprojective
 
 
-def _time_lookup(times, name=None, method="linear"):
+def _table_lookup(values, name=None, method="linear"):
     """
-    Time lookup over pixel indices, out to the outer pixel edges.
+    Lookup of ``values``, such as the time of each exposure, over pixel indices, out to
+    the outer pixel edges.
 
     The table gains nodes at pixel -0.5 and n - 0.5 on each axis, so pixel corners
-    have finite times. Pixels further out get NaN, not a plausible but wrong time.
+    have finite values. Pixels further out get NaN, not a plausible but wrong value.
 
     ``method`` is "linear", which extrapolates to the edges, or "nearest", which gives
-    every point in a pixel the time of that pixel.
+    every point in a pixel the value of that pixel.
     """
     if method == "nearest":
-        table = np.pad(times, 1, mode="edge")
+        table = np.pad(values, 1, mode="edge")
     else:
         # Odd reflection extrapolates linearly to pixels -1 and n; averaging each with its
         # neighbor moves those nodes to the pixel edges.
-        table = np.pad(times, 1, mode="reflect", reflect_type="odd")
+        table = np.pad(values, 1, mode="reflect", reflect_type="odd")
         for axis in range(table.ndim):
             nodes = np.moveaxis(table, axis, 0)
             nodes[0] = (nodes[0] + nodes[1]) / 2
             nodes[-1] = (nodes[-1] + nodes[-2]) / 2
-    points = tuple(np.r_[-0.5, np.arange(n), n - 0.5] * u.pix for n in times.shape)
-    tabular = (m.Tabular1D, m.Tabular2D)[times.ndim - 1]
+    points = tuple(np.r_[-0.5, np.arange(n), n - 0.5] * u.pix for n in values.shape)
+    tabular = (m.Tabular1D, m.Tabular2D)[values.ndim - 1]
     return tabular(points, table, method=method, bounds_error=False, fill_value=np.nan, name=name)
 
 

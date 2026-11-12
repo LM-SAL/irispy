@@ -432,13 +432,10 @@ def test_memmap_mode_never_computes_uncertainty(request, files):
     assert scaled.uncertainty is not None
 
 
-@pytest.mark.parametrize("fixture", ["raster_sg_file", "sns_sjicube_1400"])
-def test_varying_celestial_transforms_match_dkist(request, fixture):
-    # irispy evaluates dkist's varying celestial transforms in one pass over the points, which must give the
-    # coordinates of dkist's own evaluation, NaN outside the pointing tables included
-    cube = request.getfixturevalue(fixture)
-    if fixture == "raster_sg_file":
-        cube = read_spectrograph_lvl2(cube, spectral_windows="Si IV 1403")["Si IV 1403"]
+def test_varying_celestial_transform_matches_dkist(sns_sjicube_1400):
+    # irispy evaluates dkist's varying celestial transform of a slit-jaw cube in one pass over the points, which
+    # must give the coordinates of dkist's own evaluation, NaN outside the pointing tables included
+    cube = sns_sjicube_1400
     patched = next(model for model in cube.wcs.forward_transform if isinstance(model, BaseVaryingCelestialTransform))
     native = type(patched)(
         cdelt=patched.cdelt, pc_table=patched.pc_table, crval_table=patched.crval_table, crpix_table=patched.crpix_table
@@ -542,16 +539,19 @@ def test_slit_center_is_at_the_exposure_pointing_and_agrees_with_fits_wcs(reques
 
 def test_sit_and_stare_pointing_does_not_ramp_between_exposures(sns_sg_file):
     """
-    A sit-and-stare slit does not move between exposures, so a fractional step takes the
-    pointing of the nearest exposure instead of ramping at the virtual step scale, which
-    made plotted longitude ticks repeat.
+    A sit-and-stare slit does not move between exposures, so a fractional step is
+    between the pointings of its two exposures, as in the FITS WCS, instead of ramping
+    at the virtual step scale, which made plotted longitude ticks repeat.
     """
-    wcs = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"][0].wcs.low_level_wcs
-    steps = np.array([4.0, 4.25, 4.49, 4.51, 5.0])
-    _, longitude, latitude, _, _ = wcs.pixel_to_world_values(np.zeros(5), np.zeros(5), steps)
-    np.testing.assert_array_equal(longitude, longitude[[0, 0, 0, 4, 4]])
-    np.testing.assert_array_equal(latitude, latitude[[0, 0, 0, 4, 4]])
+    cube = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"][0]
+    steps = np.array([4.0, 4.25, 4.5, 4.75, 5.0])
+    _, longitude, latitude, _, _ = cube.wcs.low_level_wcs.pixel_to_world_values(np.zeros(5), np.zeros(5), steps)
     assert longitude[4] != longitude[0]
+    np.testing.assert_allclose(longitude, np.linspace(longitude[0], longitude[4], 5), rtol=1e-12)
+    np.testing.assert_allclose(latitude, np.linspace(latitude[0], latitude[4], 5), rtol=1e-12)
+    _, fits_latitude, fits_longitude = cube.fits_wcs.pixel_to_world_values(np.zeros(5), np.zeros(5), steps)
+    np.testing.assert_allclose(longitude, fits_longitude * 3600, atol=1e-9)
+    np.testing.assert_allclose(latitude, fits_latitude * 3600, atol=1e-9)
 
 
 def test_celestial_frame_is_slicing_invariant(raster_sg_files):

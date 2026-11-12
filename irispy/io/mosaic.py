@@ -14,7 +14,7 @@ from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
 from irispy._spectrograph_wcs import MOSAIC_X_AXIS, MOSAIC_Y_AXIS, TIME_MODEL, WAVELENGTH_AXIS, _spectral_axis
-from irispy._wcs import _time_lookup
+from irispy._wcs import _table_lookup
 from irispy.meta import MosaicMeta
 from irispy.spectrograph import MosaicCube, _wavelength_indices
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, SATURATION_LIMIT
@@ -45,7 +45,7 @@ def _create_gwcs(fits_wcs, celestial, time_offsets, date_obs, observer):
     )
     # The time of the raster that covered each position. A linear lookup weighs in the next position, even at a
     # pixel center, and so is NaN before every uncovered position.
-    temporal = _time_lookup(np.asarray(time_offsets, dtype=float) * u.s, name=TIME_MODEL, method="nearest")
+    temporal = _table_lookup(np.asarray(time_offsets, dtype=float) * u.s, name=TIME_MODEL, method="nearest")
     # Pixel inputs are (wavelength, solar Y, solar X): the sky takes (X, Y) and the time lookup (Y, X)
     forward = m.Mapping((0, 2, 1, 1, 2), name="WavelengthXYYX") | (spectral & sky & temporal)
     # The inverse ignores the time, which does not place a pixel on its own

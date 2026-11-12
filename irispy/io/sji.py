@@ -13,7 +13,7 @@ from astropy.wcs.utils import celestial_frame_to_wcs
 from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 from sunpy.util import MetaDict
 
-from irispy._wcs import _one_pass, _time_lookup
+from irispy._wcs import _one_pass, _table_lookup
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _fill_mask_values, _is_scaled, _memmap_fill_mask
 from irispy.meta import SJIMeta
@@ -117,7 +117,7 @@ def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     )
     start_time = t_obs[0]
     cadence = (t_obs - start_time).to_value(u.s) * u.s
-    temporal = _time_lookup(cadence)
+    temporal = _table_lookup(cadence)
     forward_transform = CoupledCompoundModel("&", left=celestial, right=temporal)
     celestial_frame = cf.CelestialFrame(
         axes_order=(0, 1),
