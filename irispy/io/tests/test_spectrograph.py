@@ -164,6 +164,28 @@ def test_combined_raster_metadata_and_time_match_its_rasters(raster_sg_files):
     assert scan.meta["DATE_END"] == last.meta["DATE_END"]
 
 
+def test_read_of_several_files_does_not_warn_about_what_uninitialized_memory_holds(raster_sg_files, monkeypatch):
+    # astropy stacks sky coordinates into an uninitialized array and wraps every longitude of it on each
+    # assignment, which warned when that memory held an inf
+    empty_like = np.empty_like
+
+    def inf_like(prototype, *args, **kwargs):
+        out = empty_like(prototype, *args, **kwargs)
+        if out.dtype.kind == "f":
+            out.view(np.ndarray)[...] = np.inf
+        return out
+
+    monkeypatch.setattr(np, "empty_like", inf_like)
+    scan = read_spectrograph_lvl2(raster_sg_files, spectral_windows="Si IV 1403")["Si IV 1403"]
+    monkeypatch.undo()
+
+    centers = scan.meta["exposure FOV center"]
+    for index, file in enumerate(raster_sg_files):
+        alone = read_spectrograph_lvl2(file, spectral_windows="Si IV 1403")["Si IV 1403"].meta["exposure FOV center"]
+        assert np.all(centers[index].Tx == alone[0].Tx)
+        assert np.all(centers[index].Ty == alone[0].Ty)
+
+
 @pytest.mark.parametrize("container", [list, np.array])
 def test_read_spectrograph_lvl2_keeps_requested_window_order_and_data_and_reports_missing(sns_sg_file, container):
     filename = sns_sg_file
