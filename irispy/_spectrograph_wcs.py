@@ -1,3 +1,51 @@
+"""
+The gWCS of a raster cube.
+
+The pixel axes are (wavelength, slit, step, scan), the reverse of the array axes
+(raster, step, slit, wavelength). Forward, from pixels to world::
+
+    pixel    wavelength      slit      step, scan
+                 │            │         │  │  │
+                 │            └────┬────┘  │  │
+                 ▼                 ▼       ▼  ▼
+             Wavelength        Celestial  Time  Identity
+                 │                 │       │      │
+                 ▼                 ▼       ▼      ▼
+    world    wavelength        lon, lat   time  raster_step, raster_scan
+
+``Wavelength``
+    A line, from the ``CRVAL1``, ``CDELT1`` and ``CRPIX1`` of the window.
+``Celestial``
+    dkist's ``VaryingCelestialTransform2D``: a FITS celestial WCS for each exposure, in
+    tables with one row per (step, scan). A row has the ``PC`` matrix of its exposure,
+    its pointing as ``CRVAL`` and its own step as ``CRPIX``, so each exposure sits at
+    its own pointing. A fractional step uses the nearest row.
+``Time``
+    A lookup table of the seconds from the first exposure, by (step, scan).
+``Identity``
+    The step and scan as world coordinates, which the inverse needs.
+
+The inverse, from world to pixels, returns the ``raster_step`` and ``raster_scan`` it is
+given as the step and scan pixels, and ignores the time, a 2D table that cannot be
+inverted. The sky position gives only the pixel along the slit, in the table row of
+that step and scan. So ``crop`` and ``world_to_pixel`` need the step and scan, and
+finding a step from a sky position takes ``cube.fits_wcs``.
+
+What the models do not show:
+
+- A sit-and-stare (``CDELT3 = 0``) multiplies the step by 0 before ``Celestial``, in the
+  model named ``FIXED_SLIT_MODEL``, so the step only picks the table row.
+  ``_is_sit_and_stare`` looks for that model.
+- Other modules find parts of the gWCS by name: the plot layout by the pixel axis names,
+  and ``cube.time`` by ``TIME_MODEL``.
+- ``irispy._wcs._one_pass`` only makes ``Celestial`` faster. Without it dkist evaluates
+  one model per table row, with the same result.
+- The windows of a detector band share everything after ``Wavelength``
+  (``irispy.io._raster_combine._sky_time_models``): gwcs would copy it for each window.
+- ``cube.fits_wcs`` holds the FITS ``-TAB`` WCS of each raster, built from the same
+  auxiliary table. The pixel scales of the cube come from it.
+"""
+
 import warnings
 
 import numpy as np
