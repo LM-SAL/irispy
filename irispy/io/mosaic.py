@@ -43,7 +43,9 @@ def _create_gwcs(fits_wcs, celestial, time_offsets, date_obs, observer):
         pc=celestial.wcs.get_pc() * u.pix,
         crval=(celestial.wcs.crval * u.deg).to(u.arcsec),
     )
-    temporal = _time_lookup(np.asarray(time_offsets, dtype=float) * u.s, name=TIME_MODEL)
+    # The time of the raster that covered each position. A linear lookup weighs in the next position, even at a
+    # pixel center, and so is NaN before every uncovered position.
+    temporal = _time_lookup(np.asarray(time_offsets, dtype=float) * u.s, name=TIME_MODEL, method="nearest")
     # Pixel inputs are (wavelength, solar Y, solar X): the sky takes (X, Y) and the time lookup (Y, X)
     forward = m.Mapping((0, 2, 1, 1, 2), name="WavelengthXYYX") | (spectral & sky & temporal)
     # The inverse ignores the time, which does not place a pixel on its own

@@ -40,3 +40,18 @@ Made:   python cut_mosaic.py IRISMosaic_20150222_MgIIk.fits.gz IRISMosaic_201502
                 hdus.writeto(sys.argv[2])
 
         sha256 c04547fbda6321930e914f205bfbf46d92c1e8032494d318a949ad4d6343d0d6
+
+IRISMosaic_20150222_MgIIk_edge_test.fits
+----------------------------------------
+
+Kept:   solar X columns 414-416, solar Y rows 573-576 and wavelengths 49-51, 2796.317-2796.387 A,
+        in all 4 HDUs, as above: the corner where the cover of a raster ends, near the south
+        limb, about 174" east and 809" south of disk center. Columns 414 and 415 of rows
+        573-575 were observed at 13:52:20.410 and 13:52:23.370 on 2015-02-23. No raster
+        covered column 416 or row 576 (data 0, time NaN, Y_MASK -1), so covered positions come
+        before uncovered ones along both axes. No sample is a fill value or at the ceiling.
+Header: NAXISn and CRPIX1 = 88, CRPIX2 = 2433 and CRPIX3 = 2 follow the cut.
+Made:   with cut_mosaic.py above and
+        wavelengths, rows, columns = slice(49, 52), slice(573, 577), slice(414, 417)
+
+        sha256 898724ea5def01fd0b8452ba2dd797c27e22b8584953d4280136e730b3034ab8

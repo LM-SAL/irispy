@@ -144,6 +144,17 @@ def test_read_mosaic_archive_cut():
     )
 
 
+def test_mosaic_times_beside_uncovered_positions():
+    # A cut of the archive file where the cover of a raster ends, see data/test/mosaic/overview.txt
+    cube = read_mosaic(get_test_filepath("mosaic/IRISMosaic_20150222_MgIIk_edge_test.fits"))
+    times = cube.meta["time"]
+    np.testing.assert_array_equal(times.mask, [[False, False, False, True], [False, False, False, True], [True] * 4])
+    # The positions before an uncovered one keep their times in the gWCS
+    np.testing.assert_array_equal(cube.time.mask, times.mask)
+    assert (cube.time[~times.mask] == times[~times.mask]).all()
+    assert cube.time[1, 2].isot == "2015-02-23T13:52:23.370"
+
+
 def test_read_mosaic_wavelength_range(mosaic_file):
     full = read_mosaic(mosaic_file)
     cube = read_mosaic(mosaic_file, wavelength_range=[2796.35, 2796.40] * u.AA)
