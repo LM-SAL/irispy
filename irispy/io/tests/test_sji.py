@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import asdf
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -373,6 +374,22 @@ def test_sji_first_and_last_frames_round_trip(sns_sjicube_1400):
     assert np.isfinite(cube.axis_world_coords("time", pixel_corners=True)[0].jd).all()
     for index in ((0, 5, 3), (cube.shape[0] - 1, 39, 36)):
         assert cube.wcs.world_to_array_index(*cube.wcs.array_index_to_world(*index)) == index
+
+
+def test_sji_gwcs_interpolates_between_frames_and_survives_asdf(sns_sjicube_1400, tmp_path):
+    wcs = sns_sjicube_1400.wcs
+    frames = np.array([3.0, 3.5, 4.0])
+    world = np.array(wcs.pixel_to_world_values(5.0, 7.0, frames))
+    # Halfway between two frames is halfway between their sky positions and times
+    np.testing.assert_allclose(world[:, 1], (world[:, 0] + world[:, 2]) / 2, rtol=1e-9)
+    # The low-level longitude is the Tx of the sky position, not an angle from 0 to 360 degrees
+    np.testing.assert_allclose(world[0, 0], wcs.pixel_to_world(5.0, 7.0, 3.0)[0].Tx.to_value(u.arcsec), rtol=1e-10)
+    assert world[0, 0] < 0
+    asdf.AsdfFile({"wcs": wcs}).write_to(tmp_path / "wcs.asdf")
+    with asdf.open(tmp_path / "wcs.asdf") as asdf_file:
+        saved = asdf_file["wcs"]
+        np.testing.assert_array_equal(saved.pixel_to_world_values(5.0, 7.0, frames), world)
+        np.testing.assert_allclose(saved.world_to_pixel_values(*world[:, ::2]), [[5.0] * 2, [7.0] * 2, frames[::2]])
 
 
 def test_frame_wcs_headers_match_per_frame_make_fitswcs_header(sns_sji_1400_file):

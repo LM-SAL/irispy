@@ -14,12 +14,34 @@ The pixel axes are (wavelength, slit, step, scan), the reverse of the array axes
     world    wavelength        lon, lat   time  raster_step, raster_scan
 
 ``Wavelength``
-    A line, from the ``CRVAL1``, ``CDELT1`` and ``CRPIX1`` of the window.
+    A line, from the ``CRVAL1``, ``CDELT1`` and ``CRPIX1`` of the window::
+
+        wavelength = CRVAL1 + CDELT1 * (pixel - (CRPIX1 - 1))
+
 ``Celestial``
-    dkist's ``VaryingCelestialTransform2D``: a FITS celestial WCS for each exposure, in
-    tables with one row per (step, scan). A row has the ``PC`` matrix of its exposure,
-    its pointing as ``CRVAL`` and its own step as ``CRPIX``, so each exposure sits at
-    its own pointing. A fractional step uses the nearest row.
+    The slit of each exposure as a straight line on the sky, in lookup tables by
+    (step, scan)::
+
+        lon = lon0[step, scan] + slit * dlon[step, scan]
+        lat = lat0[step, scan] + slit * dlat[step, scan]
+
+    ``dlon`` and ``dlat`` are the change of the sky position for one slit pixel, and
+    ``lon0`` and ``lat0`` the position of slit pixel 0. They are the FITS WCS of the
+    exposure along its slit. The file records the pointing (``XCENIX``, ``YCENIX``),
+    which is at the slit reference pixel ``CRPIX2``, and the ``PC`` matrix of every
+    exposure. FITS axis 2 is the slit and the latitude, and axis 3 the step and the
+    longitude, and FITS scales row i of ``PC`` by ``CDELT`` i::
+
+        dlon = CDELT3 * PC3_2        lon0 = XCENIX - dlon * (CRPIX2 - 1)
+        dlat = CDELT2 * PC2_2        lat0 = YCENIX - dlat * (CRPIX2 - 1)
+
+    With no roll, ``PC3_2 = 0`` and ``PC2_2 = 1``: the slit runs north, ``CDELT2``
+    arcsec for each pixel. A sit-and-stare has ``CDELT3 = 0`` and an unscaled ``PC``,
+    so its ``dlon`` is ``CDELT2 * PC3_2``.
+
+    It is the line of the FITS ``-TAB`` WCS in ``cube.fits_wcs``, within 1e-3 arcsec
+    of the FITS celestial WCS of the exposure, a TAN projection. A fractional step
+    interpolates between the two nearest exposures.
 ``Time``
     A lookup table of the seconds from the first exposure, by (step, scan).
 ``Identity``
@@ -27,19 +49,25 @@ The pixel axes are (wavelength, slit, step, scan), the reverse of the array axes
 
 The inverse, from world to pixels, returns the ``raster_step`` and ``raster_scan`` it is
 given as the step and scan pixels, and ignores the time, a 2D table that cannot be
-inverted. The sky position gives only the pixel along the slit, in the table row of
-that step and scan. So ``crop`` and ``world_to_pixel`` need the step and scan, and
-finding a step from a sky position takes ``cube.fits_wcs``.
+inverted. The sky position gives only the pixel along the slit: the nearest one on
+the line of that step and scan, where the position projects onto the line::
+
+    slit = ((lon - lon0) * dlon + (lat - lat0) * dlat) / (dlon**2 + dlat**2)
+
+So ``crop`` and ``world_to_pixel`` need the step and scan, and finding a step from a
+sky position takes ``cube.fits_wcs``.
+
+``irispy._wcs`` says how the operators of astropy models put these together.
 
 What the models do not show:
 
-- A sit-and-stare (``CDELT3 = 0``) multiplies the step by 0 before ``Celestial``, in the
-  model named ``FIXED_SLIT_MODEL``, so the step only picks the table row.
-  ``_is_sit_and_stare`` looks for that model.
+- A sit-and-stare (``CDELT3 = 0``) has the same models. The first model of its
+  ``Celestial`` is named ``FIXED_SLIT_MODEL``, which ``_is_sit_and_stare`` looks for.
 - Other modules find parts of the gWCS by name: the plot layout by the pixel axis names,
   and ``cube.time`` by ``TIME_MODEL``.
-- ``irispy._wcs._one_pass`` only makes ``Celestial`` faster. Without it dkist evaluates
-  one model per table row, with the same result.
+- An exposure with no pointing is NaN. Its tables hold the values of the nearest
+  exposure with a pointing, and a table of its own makes it NaN: a NaN in a linear
+  lookup would also make the exposure before it NaN.
 - The windows of a detector band share everything after ``Wavelength``
   (``irispy.io._raster_combine._sky_time_models``): gwcs would copy it for each window.
 - ``cube.fits_wcs`` holds the FITS ``-TAB`` WCS of each raster, built from the same
@@ -49,6 +77,7 @@ What the models do not show:
 import warnings
 
 import numpy as np
+from scipy import ndimage
 from scipy.interpolate import make_interp_spline
 
 import astropy.modeling.models as m
@@ -56,11 +85,10 @@ import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
 
-from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform2D
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.time import parse_time
 
-from irispy._wcs import _one_pass, _root_wcs, _time_lookup
+from irispy._wcs import _root_wcs, _table_lookup
 
 # The names other modules look for in a raster gWCS
 WAVELENGTH_AXIS, SLIT_AXIS, STEP_AXIS, SCAN_AXIS = PIXEL_AXIS_NAMES = (
@@ -69,7 +97,7 @@ WAVELENGTH_AXIS, SLIT_AXIS, STEP_AXIS, SCAN_AXIS = PIXEL_AXIS_NAMES = (
     "raster step",
     "raster scan",
 )
-FIXED_SLIT_MODEL = "FixedSlit"  # holds the slit of a sit-and-stare in place
+FIXED_SLIT_MODEL = "FixedSlit"  # the first sky model of a sit-and-stare
 TIME_MODEL = "Time"  # the lookup of the exposure times
 MOSAIC_Y_AXIS, MOSAIC_X_AXIS = "solar Y", "solar X"  # the pixel axes of a mosaic gWCS after its dispersion axis
 
@@ -137,7 +165,13 @@ def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, ob
 
     The scan axis expands into helioprojective sky coordinates, elapsed time from
     ``t_ref``, and an explicit scan-step coordinate so the inverse stays stable for
-    crops and other round-trips where sky or time alone are not unique.
+    crops and other round-trips where sky or time alone are not unique. The module
+    docstring has the models and their formulas.
+
+    The tables have a row for each (scan, step): ``pc_all`` holds the ``PC`` matrices
+    ``[[PC2_2, PC2_3], [PC3_2, PC3_3]]``, ``crval_all`` the pointings ``(XCENIX,
+    YCENIX)`` and ``dt_all`` the times from ``t_ref``. ``crpix2_all`` holds the slit
+    reference pixel of each scan.
 
     Notes
     -----
@@ -149,41 +183,54 @@ def _create_raster_non_spectral(pc_all, crval_all, crpix2_all, dt_all, t_ref, ob
     tuple.
     """
     sit_and_stare = cdelt3 == 0
-    # Pixel inputs are (wavelength, slit, step, scan), so lookup tables use (step, scan).
-    pc_all, crval_all, dt_all = (np.swapaxes(table, 0, 1) for table in (pc_all, crval_all, dt_all))
-    # Each exposure's CRVAL is its own slit position, so its reference pixel is its own step;
-    # a sit-and-stare holds the step input at 0 instead (see below).
-    crpix = np.zeros((*pc_all.shape[:-2], 2))
-    if not sit_and_stare:
-        crpix[..., 0] = np.indices(pc_all.shape[:-2])[0]
-    # The slit reference pixel of each raster comes from its own file: a file with no data has CRPIX2 = 0
-    crpix[..., 1] = np.asarray(crpix2_all) - 1
-    # Sit-and-stare AUX PC is an unscaled rotation, so the (virtual) step scale is the slit scale.
-    cdelt3 = cdelt2 if sit_and_stare else cdelt3
-    celestial = _one_pass(
-        VaryingCelestialTransform2D(
-            cdelt=[cdelt3, cdelt2] * (u.arcsec / u.pix),
-            # Reversing both PC axes turns the FITS (lat, lon) order into the gWCS (lon, lat) one.
-            pc_table=pc_all[..., ::-1, ::-1],
-            crval_table=crval_all,
-            crpix_table=crpix * u.pix,
-        )
+    # Tables by (step, scan): the pixel inputs are (wavelength, slit, step, scan)
+    pc, crval, dt_all = (np.swapaxes(table, 0, 1) for table in (pc_all, crval_all, dt_all))
+    pc = pc.to_value(u.pix)
+    # The change of the sky position for each slit pixel: PC3_2 and PC2_2 times the plate scales. Sit-and-stare AUX
+    # PC is an unscaled rotation, so its step scale is the slit scale.
+    dlon = pc[..., 1, 0] * (cdelt2 if sit_and_stare else cdelt3) * u.arcsec / u.pix
+    dlat = pc[..., 0, 0] * cdelt2 * u.arcsec / u.pix
+    # The position of slit pixel 0, from the pointing at the slit reference pixel. That of each raster comes from
+    # its own file: a file with no data has CRPIX2 = 0.
+    reference = (np.asarray(crpix2_all) - 1) * u.pix
+    lon0 = crval[..., 0] - dlon * reference
+    lat0 = crval[..., 1] - dlat * reference
+    # A linear lookup also gives NaN at the exposure before one that is NaN. So an exposure with no pointing takes
+    # the tables of the nearest exposure with one, and gets its NaN from a nearest lookup of its own.
+    missing = np.isnan(lon0) | np.isnan(lat0)
+    if missing.any() and not missing.all():
+        nearest = tuple(ndimage.distance_transform_edt(missing, return_distances=False, return_indices=True))
+        lon0, lat0, dlon, dlat = (table[nearest] for table in (lon0, lat0, dlon, dlat))
+
+    # Pixel inputs are (slit, step, scan): ``row | lookup`` is the value of a table at that step and scan
+    slit, row = m.Mapping((0,), n_inputs=3), m.Mapping((1, 2), n_inputs=3)
+    lon = (row | _table_lookup(lon0, name="lon0")) + slit * (row | _table_lookup(dlon, name="dlon"))
+    lat = (row | _table_lookup(lat0, name="lat0")) + slit * (row | _table_lookup(dlat, name="dlat"))
+    if missing.any():
+        no_pointing = np.where(missing, np.nan, 0) * u.arcsec
+        lon = lon + (row | _table_lookup(no_pointing, method="nearest"))
+        lat = lat + (row | _table_lookup(no_pointing, method="nearest"))
+    # A sit-and-stare has no model of its own, so the name tells _is_sit_and_stare
+    name = FIXED_SLIT_MODEL if sit_and_stare else "SlitStepScan"
+    sky = m.Mapping((0, 1, 2, 0, 1, 2), name=name) | lon & lat
+    temporal = _table_lookup(dt_all, name=TIME_MODEL)
+    # (slit, step, scan) to (lon, lat, time, step, scan)
+    non_spectral = m.Mapping((0, 1, 2, 1, 2, 1, 2)) | sky & temporal & m.Identity(2, name="step_scan")
+
+    # World to pixel: the slit pixel nearest the sky position, on the line of the step and scan given. The formula
+    # of the module docstring with a table for each term: slit = lon * to_slit_lon + lat * to_slit_lat - offset
+    norm = dlon**2 + dlat**2
+    to_slit_lon, to_slit_lat = dlon / norm, dlat / norm
+    offset = to_slit_lon * lon0 + to_slit_lat * lat0
+    lon_in, lat_in, row = m.Mapping((0,), n_inputs=4), m.Mapping((1,), n_inputs=4), m.Mapping((2, 3), n_inputs=4)
+    to_slit = (
+        lon_in * (row | _table_lookup(to_slit_lon))
+        + lat_in * (row | _table_lookup(to_slit_lat))
+        - (row | _table_lookup(offset))
     )
-    celestial_inverse = _one_pass(celestial.inverse)
-    sky = celestial
-    if sit_and_stare:
-        # The slit does not move between exposures, so the step only selects the exposure (dkist's
-        # row lookup). It must not shift the pointing by the virtual step scale, whichever way dkist
-        # rounds a fractional step.
-        sky = (m.Multiply(0, name=FIXED_SLIT_MODEL) & m.Identity(celestial.n_inputs - 1)) | sky
-    temporal = _time_lookup(dt_all, name=TIME_MODEL)
-    celestial_forward = m.Mapping((1, 0, 1, 2), n_inputs=3, name="StepSlitScanMapping") | sky
-    sky_time = CoupledCompoundModel("&", left=celestial_forward, right=temporal, shared_inputs=2)
-    non_spectral = CoupledCompoundModel("&", left=sky_time, right=m.Identity(2, name="step_scan"), shared_inputs=2)
-    non_spectral.inverse = (
-        m.Mapping((0, 1, 3, 4, 3, 4), n_inputs=5, name="SelectSkyStepScan")
-        | (celestial_inverse & m.Identity(2, name="step_scan"))
-        | m.Mapping((1, 2, 3), n_inputs=4, name="SelectSlitStepScan")
+    # (lon, lat, time, step, scan) to (slit, step, scan)
+    non_spectral.inverse = m.Mapping((0, 1, 3, 4, 3, 4), n_inputs=5, name="SelectSkyStepScan") | to_slit & m.Identity(
+        2, name="step_scan"
     )
     base_time = parse_time(t_ref)
     celestial_frame = cf.CelestialFrame(

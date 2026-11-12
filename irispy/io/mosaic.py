@@ -8,13 +8,12 @@ from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
 
-from dkist.wcs.models import generate_celestial_transform
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.frames import Helioprojective
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
 from irispy._spectrograph_wcs import MOSAIC_X_AXIS, MOSAIC_Y_AXIS, TIME_MODEL, WAVELENGTH_AXIS, _spectral_axis
-from irispy._wcs import _time_lookup
+from irispy._wcs import _table_lookup
 from irispy.meta import MosaicMeta
 from irispy.spectrograph import MosaicCube, _wavelength_indices
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, SATURATION_LIMIT
@@ -31,21 +30,43 @@ def _create_gwcs(fits_wcs, celestial, time_offsets, date_obs, observer):
     solar X), ``celestial`` the celestial FITS WCS of the file, with pixel axes (solar
     X, solar Y), and ``time_offsets`` the seconds from ``date_obs`` of each (solar Y,
     solar X) position, NaN where no raster covered it.
+
+    A mosaic has one pointing, so its sky positions are the celestial FITS WCS of the
+    file, a TAN projection (Calabretta & Greisen 2002, A&A 395, 1077), written as one
+    astropy model for each step::
+
+        offset = (x, y) - crpix               Shift
+        rotated = PC @ offset                 AffineTransformation2D
+        (X, Y) = CDELT * rotated              Multiply
+        angles about the pointing of (X, Y)   Pix2Sky_TAN
+        (lon, lat) of those angles            RotateNative2Celestial
+
+    ``(X, Y)`` is where the pixel is on the plane that touches the sky sphere at the
+    pointing ``CRVAL``, east and north of it. ``Pix2Sky_TAN`` gives the angle between
+    the pixel and the pointing and the direction around the pointing, and
+    ``RotateNative2Celestial`` turns those into longitude and latitude.
+    ``irispy.io.sji._create_gwcs`` derives the same projection for a pointing that
+    changes from frame to frame.
     """
     unit = u.Unit(fits_wcs.wcs.cunit[0])
     spectral, spectral_frame = _spectral_axis(
         fits_wcs.wcs.cdelt[0] * unit, fits_wcs.wcs.crval[0] * unit, fits_wcs.wcs.crpix[0]
     )
     # FITS CRPIX is 1-based and the transform takes 0-based pixels; wcslib holds the sky keywords in degrees
-    sky = generate_celestial_transform(
-        crpix=(celestial.wcs.crpix - 1) * u.pix,
-        cdelt=(celestial.wcs.cdelt * u.deg).to(u.arcsec) / u.pix,
-        pc=celestial.wcs.get_pc() * u.pix,
-        crval=(celestial.wcs.crval * u.deg).to(u.arcsec),
+    crpix = (celestial.wcs.crpix - 1) * u.pix
+    cdelt = (celestial.wcs.cdelt * u.deg).to(u.arcsec) / u.pix
+    crval = (celestial.wcs.crval * u.deg).to(u.arcsec)
+    # The five steps of the docstring. 180 degrees is the default LONPOLE of a TAN projection: Y points north.
+    sky = (
+        m.Shift(-crpix[0]) & m.Shift(-crpix[1])
+        | m.AffineTransformation2D(celestial.wcs.get_pc() * u.pix, translation=(0, 0) * u.pix)
+        | m.Multiply(cdelt[0]) & m.Multiply(cdelt[1])
+        | m.Pix2Sky_TAN()
+        | m.RotateNative2Celestial(crval[0], crval[1], 180 * u.deg)
     )
     # The time of the raster that covered each position. A linear lookup weighs in the next position, even at a
     # pixel center, and so is NaN before every uncovered position.
-    temporal = _time_lookup(np.asarray(time_offsets, dtype=float) * u.s, name=TIME_MODEL, method="nearest")
+    temporal = _table_lookup(np.asarray(time_offsets, dtype=float) * u.s, name=TIME_MODEL, method="nearest")
     # Pixel inputs are (wavelength, solar Y, solar X): the sky takes (X, Y) and the time lookup (Y, X)
     forward = m.Mapping((0, 2, 1, 1, 2), name="WavelengthXYYX") | (spectral & sky & temporal)
     # The inverse ignores the time, which does not place a pixel on its own

@@ -56,15 +56,14 @@ The ``wcs`` vs ``fits_wcs`` split
 
 ``cube.wcs`` is now a gWCS built from the pointing of each exposure in the
 auxiliary table of the FITS file.
-It is the most accurate description of the coordinates, and ``crop``, ``plot``
-and ``axis_world_coords`` use it.
+``crop``, ``plot`` and ``axis_world_coords`` use it.
 
 ``cube.fits_wcs`` is an `astropy.wcs.WCS` that stores the same per-exposure
 pointing as a FITS ``-TAB`` lookup table. This is what ``cube.wcs`` used to be.
 Use it with code that needs a FITS WCS, such as reprojection, as you would use
 ``SJICube.fits_wcs`` for slit-jaw cubes.
 
-The two agree to well under a milliarcsecond on the sky.
+The two give the same sky positions.
 For the cube of a window, ``fits_wcs`` is a list with one FITS WCS per raster,
 as ``SJICube.fits_wcs`` has one per frame.
 ``cube.fits_wcs[k]`` and ``cube[k].fits_wcs`` are both the FITS WCS of raster ``k``.
@@ -87,11 +86,6 @@ Wavelengths are now in nm instead of m, and longitude and latitude are in arcsec
 instead of deg.
 The ``.value`` of a coordinate and the results of ``axis_world_coords_values``
 change with them.
-The low-level values, such as those of ``axis_world_coords_values``, give the
-longitude from 0 to 360 degrees, so a Tx of -329 arcsec appears there as
-1295671 arcsec.
-Read sky positions from the ``SkyCoord`` that ``pixel_to_world`` or
-``axis_world_coords`` returns, whose Tx is -329 arcsec.
 
 To find the pixel of a sky position, use the FITS WCS of one raster.
 It needs only a wavelength and the position:

@@ -1,0 +1,1 @@
+In the gWCS of a slit-jaw, AIA or Hinode/SOT cube, a sky position between two frames is now interpolated between them; it was that of the nearest frame.
