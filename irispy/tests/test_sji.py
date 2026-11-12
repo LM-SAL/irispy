@@ -308,9 +308,8 @@ def test_to_maps_wcs_matches_the_cube_wcs(request, file_fixture):
     for frame in (0, n_frames - 1):
         from_map = cube.to_maps(frame).wcs.pixel_to_world(x, y)
         from_cube = cube.wcs.pixel_to_world(x, y, frame)[0]
-        # The cube's gWCS is the map's WCS as a plane about the reference pixel, within 1e-3 arcsec of it over a field
-        np.testing.assert_allclose(from_map.Tx.to_value(u.arcsec), from_cube.Tx.to_value(u.arcsec), atol=1e-3)
-        np.testing.assert_allclose(from_map.Ty.to_value(u.arcsec), from_cube.Ty.to_value(u.arcsec), atol=1e-3)
+        np.testing.assert_allclose(from_map.Tx.to_value(u.arcsec), from_cube.Tx.to_value(u.arcsec), atol=1e-6)
+        np.testing.assert_allclose(from_map.Ty.to_value(u.arcsec), from_cube.Ty.to_value(u.arcsec), atol=1e-6)
 
 
 def test_to_maps_negative_index(sns_sjicube_1330):

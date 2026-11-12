@@ -1,3 +1,5 @@
+import operator
+from functools import reduce
 from contextlib import suppress, nullcontext
 
 import numpy as np
@@ -10,6 +12,7 @@ from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.time import Time
 from astropy.wcs.utils import celestial_frame_to_wcs
+from gwcs.geometry import CartesianToSpherical, SphericalToCartesian
 
 from sunpy.util import MetaDict
 
@@ -84,32 +87,33 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
         values[dropped_rows] = (values[valid_rows[left]] + values[valid_rows[right]]) / 2
 
 
-def _plane(offset, slopes, name=None):
+def _rows(tables, offset=None):
     """
-    ``offset[frame] + first * slopes[frame, 0] + second * slopes[frame, 1]`` of the
-    inputs ``(first, second, frame)``, from lookup tables with a row for each frame.
+    ``sum(input[k] * tables[k][frame]) + offset[frame]`` of the inputs ``(*input,
+    frame)``, from lookup tables with a row for each frame.
     """
-    first, second, frame = (m.Mapping((n,), n_inputs=3) for n in range(3))
-    names = (f"{name}0", f"d{name}_dx", f"d{name}_dy") if name else (None,) * 3
-    return (
-        (frame | _table_lookup(offset, name=names[0]))
-        + first * (frame | _table_lookup(slopes[:, 0], name=names[1]))
-        + second * (frame | _table_lookup(slopes[:, 1], name=names[2]))
-    )
+    count = len(tables)
+    frame = m.Mapping((count,), n_inputs=count + 1)
+    terms = [m.Mapping((k,), n_inputs=count + 1) * (frame | _table_lookup(table)) for k, table in enumerate(tables)]
+    if offset is not None:
+        terms.insert(0, frame | _table_lookup(offset))
+    return reduce(operator.add, terms)
 
 
 def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     """
     Creates the GWCS object for the SJI file.
 
-    The sky position of a pixel is the FITS WCS of its frame as a plane about the
-    reference pixel, from lookup tables with a row for each frame::
+    The sky position of a pixel is that of the FITS WCS of its frame, a TAN projection
+    about the pointing of the frame. The projection puts a pixel on the plane that
+    touches the sky sphere at the pointing, so the direction of a pixel, as a 3D
+    vector, is linear in the pixel::
 
-        lon = lon0[frame] + x * dlon_dx[frame] + y * dlon_dy[frame]
-        lat = lat0[frame] + x * dlat_dx[frame] + y * dlat_dy[frame]
+        direction = origin[frame] + x * per_x[frame] + y * per_y[frame]
 
-    This is within 1e-3 arcsec of the TAN projection of the frame over the field of a
-    cube. Between frames, the tables and the time are interpolated.
+    Each component of the three vectors is a lookup table with a row for each frame,
+    and longitude and latitude are the angles of the direction. Between frames, the
+    tables and the time are interpolated.
 
     Parameters
     ----------
@@ -128,28 +132,39 @@ def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     # FITS CRPIX is 1-based and the transform takes 0-based pixels
     crpix = np.array([hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1])
     cdelt = np.array([hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]])
-    # The FITS WCS of each frame as a plane about its reference pixel: the change of (longitude, latitude) for each
-    # pixel in x and in y. An angle across the sky is 1 / cos(latitude) as much in longitude.
-    to_sky = pc_table * cdelt[:, np.newaxis]
-    to_sky[:, 0] /= np.cos(np.deg2rad(crval_table[:, 1] / 3600))[:, np.newaxis]
-    # The sky position of pixel (0, 0) of each frame, from the pointing at the reference pixel
-    origin = crval_table - to_sky @ crpix
+    # Unit vectors at the pointing of each frame: toward it, and toward greater longitude and latitude
+    lon, lat = np.deg2rad(crval_table / 3600).T
+    toward = np.stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)], axis=-1)
+    east = np.stack([-np.sin(lon), np.cos(lon), np.zeros_like(lon)], axis=-1)
+    north = np.stack([-np.sin(lat) * np.cos(lon), -np.sin(lat) * np.sin(lon), np.cos(lat)], axis=-1)
+    east_north = np.stack([east, north], axis=1)
+    # A pixel is at ``to_plane @ (pixel - crpix)`` radians along east and north on the plane of the projection, so
+    # its direction is ``toward + (to_plane @ (pixel - crpix)) @ east_north``
+    to_plane = np.deg2rad(pc_table * cdelt[:, np.newaxis] / 3600)
+    per_pixel = np.swapaxes(to_plane, 1, 2) @ east_north
+    origin = toward - crpix @ per_pixel
+    direction = [_rows(list(per_pixel[..., k].T / u.pix), origin[:, k] * u.one) for k in range(3)]
     start_time = t_obs[0]
     cadence = (t_obs - start_time).to_value(u.s) * u.s
     temporal = _table_lookup(cadence)
-    lon = _plane(origin[:, 0] * u.arcsec, to_sky[:, 0] * u.arcsec / u.pix, "lon")
-    lat = _plane(origin[:, 1] * u.arcsec, to_sky[:, 1] * u.arcsec / u.pix, "lat")
     # (x, y, frame) to (lon, lat, time)
-    forward_transform = m.Mapping((0, 1, 2, 0, 1, 2, 2)) | lon & lat & temporal
-    # World to pixel: the frame from the time, then the plane of that frame the other way
-    to_pixel = np.linalg.inv(to_sky)
-    sky_origin = -(to_pixel @ origin[..., np.newaxis])[..., 0]
-    x = _plane(sky_origin[:, 0] * u.pix, to_pixel[:, 0] * u.pix / u.arcsec)
-    y = _plane(sky_origin[:, 1] * u.pix, to_pixel[:, 1] * u.pix / u.arcsec)
+    forward_transform = (
+        m.Mapping((0, 1, 2) * 3 + (2,))
+        | (direction[0] & direction[1] & direction[2] | CartesianToSpherical(wrap_lon_at=180)) & temporal
+    )
+    # World to pixel: the frame from the time, then the place on the plane of that frame where the direction of the
+    # sky position meets it, ``(direction @ east_north) / (direction @ toward)``, back through ``to_plane``
+    to_pixel = np.linalg.inv(to_plane) @ east_north
+    pixel = [
+        _rows(list(to_pixel[:, k].T * u.pix)) / _rows(list(toward.T * u.one)) | m.Shift(crpix[k] * u.pix)
+        for k in range(2)
+    ]
     # The times of a one-frame cube do not invert
     with suppress(NotImplementedError):
         forward_transform.inverse = (
-            m.Identity(2) & temporal.inverse | m.Mapping((0, 1, 2, 0, 1, 2, 2)) | x & y & m.Identity(1)
+            SphericalToCartesian(wrap_lon_at=180) & temporal.inverse
+            | m.Mapping((0, 1, 2, 3, 0, 1, 2, 3, 3))
+            | pixel[0] & pixel[1] & m.Identity(1)
         )
     celestial_frame = cf.CelestialFrame(
         axes_order=(0, 1),

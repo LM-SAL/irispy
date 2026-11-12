@@ -1,2 +1,1 @@
-The gWCS of a slit-jaw, AIA or Hinode/SOT cube now takes the sky position of a pixel from lookup tables with a row for each frame: the FITS WCS of the frame as a plane about its reference pixel, within 0.001 arcseconds of ``cube.fits_wcs``.
-A position between two frames is interpolated between them; it was that of the nearest frame.
+In the gWCS of a slit-jaw, AIA or Hinode/SOT cube, a sky position between two frames is now interpolated between them; it was that of the nearest frame.

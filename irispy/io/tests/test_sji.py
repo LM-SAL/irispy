@@ -303,9 +303,8 @@ def test_sji_gwcs_matches_the_fits_pointing(sns_sji_1400_file):
         ]
         expected = fits_wcs.pixel_to_world(x, y)
         sky = cube.wcs.pixel_to_world(x, y, np.full_like(x, frame))[0]
-        # The gWCS is this WCS as a plane about the reference pixel, within 1e-3 arcsec of it over a field
-        assert_quantity_allclose(sky.Tx, expected.Tx, atol=1e-3 * u.arcsec)
-        assert_quantity_allclose(sky.Ty, expected.Ty, atol=1e-3 * u.arcsec)
+        assert_quantity_allclose(sky.Tx, expected.Tx, atol=1e-6 * u.arcsec)
+        assert_quantity_allclose(sky.Ty, expected.Ty, atol=1e-6 * u.arcsec)
 
 
 def test_sji_extra_coordinate_units(sns_sji_1400_file):
@@ -382,7 +381,7 @@ def test_sji_gwcs_interpolates_between_frames_and_survives_asdf(sns_sjicube_1400
     frames = np.array([3.0, 3.5, 4.0])
     world = np.array(wcs.pixel_to_world_values(5.0, 7.0, frames))
     # Halfway between two frames is halfway between their sky positions and times
-    np.testing.assert_allclose(world[:, 1], (world[:, 0] + world[:, 2]) / 2, rtol=1e-12)
+    np.testing.assert_allclose(world[:, 1], (world[:, 0] + world[:, 2]) / 2, rtol=1e-9)
     # The low-level longitude is the Tx of the sky position, not an angle from 0 to 360 degrees
     np.testing.assert_allclose(world[0, 0], wcs.pixel_to_world(5.0, 7.0, 3.0)[0].Tx.to_value(u.arcsec), rtol=1e-10)
     assert world[0, 0] < 0
