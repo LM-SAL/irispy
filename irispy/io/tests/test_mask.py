@@ -25,8 +25,10 @@ def test_memmap_mask_reads_only_the_requested_frame(reader, request, monkeypatch
     cube = (
         read_sji_lvl2(filename, memmap=True)
         if reader != "raster"
-        else read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=True)["C II 1336"][0]
+        else read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=True)["C II 1336"]
     )
+    # The first frame, of the first raster
+    first = np.s_[0, :1] if reader == "raster" else np.s_[:1]
     assert isinstance(cube.mask, da.Array)
     assert cube.mask.dtype == bool
     assert cube.mask.shape == cube.data.shape
@@ -35,7 +37,12 @@ def test_memmap_mask_reads_only_the_requested_frame(reader, request, monkeypatch
     with fits.open(filename, do_not_scale_image_data=True) as hdulist:
         header = hdulist[1 if reader == "raster" else 0].header
     fill = (np.array([-200, -199]) - header.get("BZERO", 0)) / header.get("BSCALE", 1)
-    expected = np.isnan(cube.data[:1]) if reader == "sot" else np.isin(cube.data[:1], fill)
-    np.testing.assert_array_equal(cube.mask[:1].compute(), expected)
+    expected = np.isnan(cube.data[first]) if reader == "sot" else np.isin(cube.data[first], fill)
+    np.testing.assert_array_equal(cube.mask[first].compute(), expected)
     assert len(reads) == 1
-    assert reads[0][0] == slice(0, 1)
+    assert reads[0][-3] == slice(0, 1)
+
+    # Every frame at one position is one read, not one for each frame
+    reads.clear()
+    cube.mask[..., 0, 0].compute()
+    assert len(reads) == 1

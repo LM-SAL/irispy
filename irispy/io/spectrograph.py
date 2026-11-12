@@ -18,7 +18,7 @@ from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
 from irispy._spectrograph_wcs import _sanitize_raster_wcs_tables
 from irispy.io._level2 import _check_level2
-from irispy.io._mask import _check_scaled, _memmap_fill_mask
+from irispy.io._mask import _check_scaled
 from irispy.io._raster_combine import _add_raster, _combine_raster_cubes, _sky_time_models
 from irispy.meta import SGMeta
 from irispy.spectrograph import RasterCollection
@@ -326,7 +326,7 @@ def _read_raster_file(hdulist, given, selection, observer, frame_observer, *, fi
             # The cube reads each file on demand; a memmap would keep every file open
             window.source = data if isinstance(filename, fits.HDUList) else (filename, ext, flip)
         elif memmap:
-            window.arrays = {"data": data, "mask": _memmap_fill_mask(data, header)}
+            window.arrays = {"data": data}  # _combine_raster_cubes makes the mask
         else:
             _check_scaled(header)
             # Level 2 clips at the ceiling, where iris_prep's +Inf saturation flags were lost

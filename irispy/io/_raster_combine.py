@@ -115,8 +115,9 @@ def _combine_raster_cubes(reads, rasters, non_spectral, *, lazy):
     raster axis.
 
     ``rasters`` has the window's arrays from ``_add_raster``, unless the read is
-    ``lazy``, when the data and mask are made here as Dask arrays that open each file
-    when it is read. ``non_spectral`` is the band's model from ``_sky_time_models``.
+    ``lazy``, when the data are made here as a Dask array that opens each file when it
+    is read. The mask of memory-mapped data is made here too. ``non_spectral`` is the
+    band's model from ``_sky_time_models``.
     """
     first = reads[0]
     if lazy:
@@ -130,9 +131,11 @@ def _combine_raster_cubes(reads, rasters, non_spectral, *, lazy):
             fancy=False,
             meta=np.empty((0,) * (len(shape) + 1), dtype=dtype),
         )
-        mask = _memmap_fill_mask(data, first.header)
     else:
-        data, mask = rasters["data"], rasters["mask"]
+        data = rasters["data"]
+    # A memory-mapped read has no mask yet. Made from the data with their raster axis, a slice of it reads only that
+    # slice: Dask does not pass a slice through an axis added later, and reads whole chunks.
+    mask = rasters["mask"] if "mask" in rasters else _memmap_fill_mask(data, first.header)
     uncertainty = rasters.get("uncertainty")
     meta = _combine_raster_metas([read.meta for read in reads], data.shape)
     meta["fits_wcs"] = [read.fits_wcs for read in reads]

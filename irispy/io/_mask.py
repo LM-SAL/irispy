@@ -37,7 +37,12 @@ def _memmap_fill_mask(data, header, *, nan_only=False):
         return data.map_blocks(mask, *args, dtype=bool, meta=meta)
     # Dask copies NumPy arrays at graph construction. Hide the mapped array behind a slice-only
     # wrapper, which makes the mask in the same layer, and skip tokenizing its contents or probing a slice.
-    return da.from_array(_MappedMask(data, mask, *args), chunks=(1, *data.shape[1:]), name=False, meta=meta)
+    # Chunks of up to 16 MiB of exposures. A chunk for each exposure makes a task for each, 1.5 s for the 9495
+    # exposures of a sit-and-stare, and a slice after an integer index, as in cube[0][i], reads whole chunks.
+    frames = max(1, min(data.shape[-3], 16 * 2**20 // (int(np.prod(data.shape[-2:])) * data.dtype.itemsize)))
+    # The axes before the last three are those of the rasters
+    chunks = (*(1,) * (data.ndim - 3), frames, *data.shape[-2:])
+    return da.from_array(_MappedMask(data, mask, *args), chunks=chunks, name=False, meta=meta)
 
 
 def _is_scaled(header):
