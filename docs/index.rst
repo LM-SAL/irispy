@@ -30,9 +30,8 @@ These classes also provide methods for applying a number of calibration routines
 
     .. grid-item-card::
         :class-card: card
+        :header: Getting started
 
-        Getting started
-        ^^^^^^^^^^^^^^^
         .. toctree::
           :maxdepth: 1
 
@@ -43,9 +42,8 @@ These classes also provide methods for applying a number of calibration routines
 
     .. grid-item-card::
         :class-card: card
+        :header: Other info
 
-        Other info
-        ^^^^^^^^^^
         .. toctree::
           :maxdepth: 1
 
