@@ -13,10 +13,8 @@ from astropy.tests.helper import assert_quantity_allclose
 from astropy.time import Time
 from astropy.wcs.utils import wcs_to_celestial_frame
 
-from dkist.wcs.models import BaseVaryingCelestialTransform
 from sunpy.coordinates import Helioprojective
 
-from irispy._wcs import _one_pass
 from irispy.data.test import get_test_filepath
 from irispy.io.spectrograph import _nuv_t_obs_from_source_filenames, read_spectrograph_lvl2
 from irispy.utils.constants import BAD_PIXEL_VALUE_SCALED, DN_UNIT, SATURATION_LIMIT
@@ -430,33 +428,6 @@ def test_memmap_mode_never_computes_uncertainty(request, files):
     assert isinstance(memmap.mask, da.Array)
     scaled = read_spectrograph_lvl2(files, spectral_windows="Si IV 1403", uncertainty=True)["Si IV 1403"]
     assert scaled.uncertainty is not None
-
-
-def test_varying_celestial_transform_matches_dkist(sns_sjicube_1400):
-    # irispy evaluates dkist's varying celestial transform of a slit-jaw cube in one pass over the points, which
-    # must give the coordinates of dkist's own evaluation, NaN outside the pointing tables included
-    cube = sns_sjicube_1400
-    patched = next(model for model in cube.wcs.forward_transform if isinstance(model, BaseVaryingCelestialTransform))
-    native = type(patched)(
-        cdelt=patched.cdelt, pc_table=patched.pc_table, crval_table=patched.crval_table, crpix_table=patched.crpix_table
-    )
-    rng = np.random.default_rng(0)
-    # Detector pixels inside and outside the image, and table rows inside and outside the tables
-    x, y = rng.uniform(-2, 60, (2, 1000))
-    rows = [rng.uniform(-1, size + 1, 1000) for size in patched.table_shape]
-    actual = patched(x, y, *rows)
-    expected = native(x, y, *rows)
-    for value, reference in zip(actual, expected, strict=True):
-        np.testing.assert_allclose(value, reference, rtol=0, atol=1e-12)
-    assert np.isnan(actual[0]).any()
-    assert np.isfinite(actual[0]).any()
-    # And back, through the same one-pass code; dkist's own inverse raises on the rows outside the tables
-    inside = np.isfinite(expected[0])
-    back = _one_pass(patched.inverse)(*expected, *rows)
-    reference = native.inverse(*(value[inside] for value in expected), *(row[inside] for row in rows))
-    for value, expected_value in zip(back, reference, strict=True):
-        np.testing.assert_allclose(value[inside], expected_value, rtol=0, atol=1e-6)
-    assert np.isnan(back[0][~inside]).all()
 
 
 @pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files", "sns_sg_file"])

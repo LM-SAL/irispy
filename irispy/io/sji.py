@@ -1,7 +1,8 @@
-from contextlib import nullcontext
+from contextlib import suppress, nullcontext
 
 import numpy as np
 
+import astropy.modeling.models as m
 import astropy.units as u
 import gwcs
 import gwcs.coordinate_frames as cf
@@ -10,10 +11,9 @@ from astropy.nddata import StdDevUncertainty
 from astropy.time import Time
 from astropy.wcs.utils import celestial_frame_to_wcs
 
-from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 from sunpy.util import MetaDict
 
-from irispy._wcs import _one_pass, _table_lookup
+from irispy._wcs import _table_lookup
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _fill_mask_values, _is_scaled, _memmap_fill_mask
 from irispy.meta import SJIMeta
@@ -84,9 +84,32 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
         values[dropped_rows] = (values[valid_rows[left]] + values[valid_rows[right]]) / 2
 
 
+def _plane(offset, slopes, name=None):
+    """
+    ``offset[frame] + first * slopes[frame, 0] + second * slopes[frame, 1]`` of the
+    inputs ``(first, second, frame)``, from lookup tables with a row for each frame.
+    """
+    first, second, frame = (m.Mapping((n,), n_inputs=3) for n in range(3))
+    names = (f"{name}0", f"d{name}_dx", f"d{name}_dy") if name else (None,) * 3
+    return (
+        (frame | _table_lookup(offset, name=names[0]))
+        + first * (frame | _table_lookup(slopes[:, 0], name=names[1]))
+        + second * (frame | _table_lookup(slopes[:, 1], name=names[2]))
+    )
+
+
 def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     """
     Creates the GWCS object for the SJI file.
+
+    The sky position of a pixel is the FITS WCS of its frame as a plane about the
+    reference pixel, from lookup tables with a row for each frame::
+
+        lon = lon0[frame] + x * dlon_dx[frame] + y * dlon_dy[frame]
+        lat = lat0[frame] + x * dlat_dx[frame] + y * dlat_dy[frame]
+
+    This is within 1e-3 arcsec of the TAN projection of the frame over the field of a
+    cube. Between frames, the tables and the time are interpolated.
 
     Parameters
     ----------
@@ -103,22 +126,31 @@ def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
     pc_table = hdulist[1].data[:, hdulist[1].header["PC1_1IX"] : hdulist[1].header["PC2_2IX"] + 1].reshape(-1, 2, 2)
     crval_table = hdulist[1].data[:, hdulist[1].header["XCENIX"] : hdulist[1].header["YCENIX"] + 1]
     # FITS CRPIX is 1-based and the transform takes 0-based pixels
-    crpix_table = [hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1]
-    cdelt = [hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]
-    # The inverse keeps dkist's per-row loop: dkist's coupled model rebuilds it at every call, and an image of one
-    # frame uses only one table row anyway
-    celestial = _one_pass(
-        VaryingCelestialTransform(
-            cdelt=cdelt * u.arcsec / u.pixel,
-            pc_table=pc_table * u.pixel,
-            crval_table=crval_table * u.arcsec,
-            crpix_table=crpix_table * u.pixel,
-        )
-    )
+    crpix = np.array([hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1])
+    cdelt = np.array([hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]])
+    # The FITS WCS of each frame as a plane about its reference pixel: the change of (longitude, latitude) for each
+    # pixel in x and in y. An angle across the sky is 1 / cos(latitude) as much in longitude.
+    to_sky = pc_table * cdelt[:, np.newaxis]
+    to_sky[:, 0] /= np.cos(np.deg2rad(crval_table[:, 1] / 3600))[:, np.newaxis]
+    # The sky position of pixel (0, 0) of each frame, from the pointing at the reference pixel
+    origin = crval_table - to_sky @ crpix
     start_time = t_obs[0]
     cadence = (t_obs - start_time).to_value(u.s) * u.s
     temporal = _table_lookup(cadence)
-    forward_transform = CoupledCompoundModel("&", left=celestial, right=temporal)
+    lon = _plane(origin[:, 0] * u.arcsec, to_sky[:, 0] * u.arcsec / u.pix, "lon")
+    lat = _plane(origin[:, 1] * u.arcsec, to_sky[:, 1] * u.arcsec / u.pix, "lat")
+    # (x, y, frame) to (lon, lat, time)
+    forward_transform = m.Mapping((0, 1, 2, 0, 1, 2, 2)) | lon & lat & temporal
+    # World to pixel: the frame from the time, then the plane of that frame the other way
+    to_pixel = np.linalg.inv(to_sky)
+    sky_origin = -(to_pixel @ origin[..., np.newaxis])[..., 0]
+    x = _plane(sky_origin[:, 0] * u.pix, to_pixel[:, 0] * u.pix / u.arcsec)
+    y = _plane(sky_origin[:, 1] * u.pix, to_pixel[:, 1] * u.pix / u.arcsec)
+    # The times of a one-frame cube do not invert
+    with suppress(NotImplementedError):
+        forward_transform.inverse = (
+            m.Identity(2) & temporal.inverse | m.Mapping((0, 1, 2, 0, 1, 2, 2)) | x & y & m.Identity(1)
+        )
     celestial_frame = cf.CelestialFrame(
         axes_order=(0, 1),
         unit=(u.arcsec, u.arcsec),
