@@ -80,7 +80,8 @@ World coordinates
 ``cube.wcs.pixel_to_world`` now returns a ``SpectralCoord``, a ``SkyCoord``, a
 ``Time``, the raster step and the raster scan.
 One raster, ``cube[k]``, has no raster scan.
-``world_to_pixel`` needs all of them.
+``world_to_pixel`` needs all of them, and returns the raster step and scan it is
+given: the sky position gives only the pixel along the slit.
 
 Wavelengths are now in nm instead of m, and longitude and latitude are in arcsec
 instead of deg.
@@ -183,6 +184,16 @@ The entries are the wavelength, sky position, time and raster step, plus the
 raster scan for the cube of a whole window.
 ``None`` leaves that coordinate uncropped.
 The sky position, time and raster step (and scan) must be given together.
+
+The raster steps and rasters that such a crop keeps are those of its raster step
+and raster scan entries: the sky position chooses only the pixels along the slit.
+To crop to a box on the sky, use the FITS WCS of one raster, which finds the raster
+steps from the positions:
+
+.. code-block:: python
+
+    raster = cube[0]
+    raster.crop([None, bottom_left], [None, top_right], wcs=raster.fits_wcs)
 
 Building a cube
 ===============
