@@ -341,7 +341,7 @@ def test_sji_celestial_frame_is_slicing_invariant_and_keeps_sg_points_in_place(s
     assert sns_sjicube_1400[0].celestial_frame == frame
 
     cube = read_spectrograph_lvl2(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"][0]
-    _, point = cube.wcs.pixel_to_world(5, 20, 93)
+    _, point, _ = cube.wcs.pixel_to_world(5, 20, 93)
     moved = point.transform_to(frame)
     assert_quantity_allclose(moved.Tx, point.Tx, atol=0.1 * u.arcsec)
     assert_quantity_allclose(moved.Ty, point.Ty, atol=0.1 * u.arcsec)

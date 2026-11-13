@@ -5,13 +5,13 @@ import pytest
 import astropy.units as u
 
 from irispy.data.test import get_test_filepath
-from irispy.io import read_files
-from irispy.spectrograph import SpectrogramCubeSequence
+from irispy.io import read_files, read_spectrograph_lvl2
 from irispy.tests.helpers import make_test_spectrogram_cube
 from irispy.utils.fiducials import find_fiducials
 
 # 89.7 rows apart, the Level 2 separation at the 1 arcsec pixels of make_test_spectrogram_cube
 MARKS = np.array([40.3, 130.0])
+WAVELENGTHS = np.linspace(279.5, 279.7, 8) * u.nm
 MG_FEATURES_FILE = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits"
 
 
@@ -20,9 +20,7 @@ def make_window(marks=MARKS, *, darkest=0.9, rows=200, seed=0):
     y = np.arange(rows)
     profile = 1 - sum((darkest * np.exp(-((y - mark) ** 2) / (2 * 1.3**2)) for mark in marks), np.zeros(rows))
     data = 100 * profile[np.newaxis, :, np.newaxis] * (1 + 0.01 * rng.standard_normal((4, rows, 8)))
-    cube = make_test_spectrogram_cube(data, np.linspace(279.5, 279.7, 8) * u.nm)
-    cube.meta["OBSID"] = "3893010094"  # SpectrogramCubeSequence wants one OBSID
-    return cube
+    return make_test_spectrogram_cube(data, WAVELENGTHS)
 
 
 def test_find_fiducials_sub_pixel():
@@ -31,11 +29,12 @@ def test_find_fiducials_sub_pixel():
     np.testing.assert_allclose(depths, 0.9, atol=0.03)
 
 
-def test_find_fiducials_averages_a_sequence():
+def test_find_fiducials_averages_the_exposures():
     # Half the exposures show the marks, so the mean profile dips by 0.45: below the default min_depth
-    sequence = SpectrogramCubeSequence([make_window(seed=1), make_window(marks=[], seed=2)], common_axis=0)
-    assert find_fiducials(sequence)[0].size == 0
-    np.testing.assert_allclose(find_fiducials(sequence, min_depth=0.4)[0], MARKS, atol=0.05)
+    data = np.concatenate([make_window(seed=1).data, make_window(marks=[], seed=2).data])
+    cube = make_test_spectrogram_cube(data, WAVELENGTHS)
+    assert find_fiducials(cube)[0].size == 0
+    np.testing.assert_allclose(find_fiducials(cube, min_depth=0.4)[0], MARKS, atol=0.05)
 
 
 @pytest.mark.parametrize("hide", ["mask", "nan"])
@@ -88,6 +87,15 @@ def test_level2_marks():
         positions, depths = find_fiducials(raster[window])
         np.testing.assert_allclose(positions, [81.0, 620.0], atol=0.1)
         assert np.all(depths > 0.85)
+
+
+@pytest.mark.parametrize("masked", [0, 1])
+def test_level2_marks_of_rasters_read_together(masked):
+    # The profile adds up every raster, so a raster that is all masked leaves the marks of the other
+    filename = get_test_filepath(MG_FEATURES_FILE)
+    cube = read_spectrograph_lvl2([filename] * 2, spectral_windows="Mg II k 2796")["Mg II k 2796"]
+    cube.mask[masked] = True
+    np.testing.assert_allclose(find_fiducials(cube)[0], [81.0, 620.0], atol=0.1)
 
 
 def test_level2_fuv_without_marks():

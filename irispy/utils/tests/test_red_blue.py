@@ -458,12 +458,21 @@ def test_calculate_red_blue_asymmetry_real_cube_shape_and_coords(sns_sg_file):
     result["interpolated_profile"].meta["exposure time"][0] = 0 * u.s
     assert cube.meta["exposure time"][0] > 0 * u.s
     assert result["red_blue_asymmetry"].shape == cube.shape[:-1]
-    assert "time" in tuple(result["red_blue_asymmetry"].extra_coords.keys())
+    np.testing.assert_array_equal(result["red_blue_asymmetry"].time.isot, cube.time.isot)
     error = result["red_blue_asymmetry"].uncertainty.array
     np.testing.assert_array_equal(np.isfinite(error), result["quality"].data == RBAQualityFlag.OK)
     for item in (np.s_[0:3], np.s_[:, 10:20]):
         for name, sliced in result[item].items():
             np.testing.assert_array_equal(sliced.data, result[name].data[item], err_msg=name)
+
+
+def test_calculate_red_blue_asymmetry_result_cubes_print(sns_sg_file):
+    cube = read_files(sns_sg_file, spectral_windows="Si IV 1403")["Si IV 1403"]
+    result = calculate_red_blue_asymmetry(cube)
+    for name in ("red_blue_asymmetry", "quality"):
+        assert "Obs Date:           2021-09-05" in str(result[name])
+    # The profiles are on a velocity WCS, which has no time
+    assert "Obs Date:           None" in str(result["interpolated_profile"])
 
 
 def test_calculate_red_blue_asymmetry_rest_wavelength_required_without_meta():
@@ -474,7 +483,7 @@ def test_calculate_red_blue_asymmetry_rest_wavelength_required_without_meta():
 
 
 def _crop(cube, limits):
-    return cube.crop(*([SpectralCoord(wavelength * u.AA), None] for wavelength in limits))
+    return cube.crop(*([SpectralCoord(wavelength * u.AA), None, None] for wavelength in limits))
 
 
 def test_calculate_red_blue_asymmetry_default_rest_wavelength(raster_sg_file):
