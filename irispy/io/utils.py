@@ -257,8 +257,10 @@ def read_files(
     memmap : `bool`, optional
         If `True` (not the default), the data, mask and uncertainty are lazy Dask arrays
         with the values of ``memmap=False``: only the slices that are used are read from
-        the files, which keeps memory usage low when working with many files. The analysis
-        functions read the cube they are given into memory, so slice or crop it first.
+        the files, which keeps memory usage low when working with many files. The moments,
+        window average, red-blue asymmetry, Mg II features and spectral burst functions work
+        through such a cube a chunk of exposures at a time. The other analysis functions
+        read the cube they are given into memory, so slice or crop it first.
     allow_errors : `bool`, optional
         Will continue loading the files if one fails to load.
         Defaults to `False`.

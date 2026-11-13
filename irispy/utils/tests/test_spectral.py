@@ -1,4 +1,5 @@
 import dask
+import dask.array as da
 import numpy as np
 import pytest
 
@@ -7,9 +8,9 @@ from astropy.nddata import InverseVariance, StdDevUncertainty, UnknownUncertaint
 from astropy.time import Time
 
 from irispy.data.test import get_test_filepath
-from irispy.io import read_files
+from irispy.io import _mask, read_files
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils._spectral import in_memory, in_windows, make_map_cube, standard_deviation
+from irispy.utils._spectral import in_chunks, in_memory, in_windows, make_map_cube, standard_deviation
 from irispy.utils.bursts import find_bright_image_events, find_si_iv_bursts
 from irispy.utils.cosmic_rays import remove_cosmic_rays
 from irispy.utils.dust import calculate_dust_mask, remove_dust
@@ -53,6 +54,14 @@ def test_in_memory(sns_sg_file):
         (SJI, lambda cube: find_bright_image_events(cube)[0].data),
         (SI_IV, lambda raster: find_si_iv_bursts(raster["Si IV 1403"])[0].data),
         (SI_IV, lambda raster: calculate_moments(raster["Si IV 1403"], velocity_range=None)["centroid"].data),
+        (
+            SI_IV,
+            lambda raster: (
+                calculate_moments(raster["Si IV 1403"], velocity_range=(-50, 50) * u.km / u.s)[
+                    "width"
+                ].uncertainty.array
+            ),
+        ),
         (SI_IV, lambda raster: calculate_red_blue_asymmetry(raster["Si IV 1403"])["red_blue_asymmetry"].data),
         (SI_IV, lambda raster: pytest.importorskip("colorsynth") and calculate_rgb(raster["Si IV 1403"][0])[0]),
         (SI_IV, lambda raster: average_window(raster["Si IV 1403"], [1402.7, 1402.9] * u.AA).data),
@@ -71,6 +80,7 @@ def test_in_memory(sns_sg_file):
         "find_bright_image_events",
         "find_si_iv_bursts",
         "calculate_moments",
+        "calculate_moments_uncertainty",
         "calculate_red_blue_asymmetry",
         "calculate_rgb",
         "average_window",
@@ -82,10 +92,39 @@ def test_in_memory(sns_sg_file):
         "apply_exposure_time_correction",
     ],
 )
-def test_memmap_read_gives_the_result_of_a_read_into_memory(filename, analysis):
-    # Each function reads the lazy arrays of a memmap=True cube into memory first, unless it leaves them lazy
-    lazy, eager = (analysis(read_files(get_test_filepath(filename), memmap=memmap)) for memmap in (True, False))
-    np.testing.assert_array_equal(lazy, eager)
+def test_memmap_read_gives_the_result_of_a_read_into_memory(filename, analysis, monkeypatch):
+    # Each function reads the lazy arrays of a memmap=True cube into memory, all at once or a chunk at a time,
+    # unless it leaves them lazy. Small chunks, so that these files have several.
+    monkeypatch.setattr(_mask, "_CHUNK_BYTES", 2**16)
+    lazy, eager = (read_files(get_test_filepath(filename), memmap=memmap, uncertainty=True) for memmap in (True, False))
+    assert next(iter(lazy.values()) if hasattr(lazy, "values") else iter([lazy])).data.npartitions > 1
+    np.testing.assert_array_equal(analysis(lazy), analysis(eager))
+
+
+def test_in_chunks():
+    data = np.arange(2 * 5 * 3 * 4, dtype=float).reshape(2, 5, 3, 4)
+    calls = []
+
+    def function(data, scale, nothing, *, axis, power):
+        calls.append(data.shape)
+        total = (data * scale).sum(axis=axis) ** power
+        # A map, an array with an axis of its own, and nothing
+        return {"total": total, "pair": np.stack([total, -total], axis=-1), "nothing": nothing}
+
+    expected = function(data, 2 * data, None, axis=3, power=2)
+    calls.clear()
+    lazy = da.from_array(data, chunks=(1, 2, 3, 4))
+    # A NumPy array beside the Dask one is cut into the same chunks
+    result = in_chunks(function, lazy, 2 * data, None, axis=3, power=2)
+    assert sorted(calls) == sorted([(1, 2, 3, 4)] * 4 + [(1, 1, 3, 4)] * 2)
+    assert result["nothing"] is None
+    for name in ("total", "pair"):
+        assert isinstance(result[name], np.ndarray)
+        np.testing.assert_array_equal(result[name], expected[name])
+    # Without a Dask array, the function is called once
+    calls.clear()
+    assert in_chunks(function, data, 2 * data, None, axis=3, power=2)["total"].shape == (2, 5, 3)
+    assert calls == [data.shape]
 
 
 @pytest.mark.parametrize("windows", [[[1, 2], [10, 11]], [[10, 11], [1, 2]]])
