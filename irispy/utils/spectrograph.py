@@ -10,7 +10,7 @@ from astropy.nddata import StdDevUncertainty
 
 from irispy.sji import SJICube
 from irispy.spectrograph import SpectrogramCube
-from irispy.utils._spectral import _fit_background, check_scaled, make_map_cube, standard_deviation
+from irispy.utils._spectral import _fit_background, in_memory, make_map_cube, standard_deviation
 from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 from irispy.utils.utils import _saturated_samples
@@ -71,7 +71,7 @@ def radiometric_calibration(
     gives the intensity of a whole line, in :math:`erg s^{-1} sr^{-1} cm^{-2}`: to compare with it, sum the
     calibrated spectra over the line and multiply by ``abs(cube.spectral_dispersion)``.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     if line is not None and not line.isscalar:
         msg = f"line must be one wavelength, not {line}"
         raise ValueError(msg)
@@ -170,7 +170,7 @@ def radiation_temperature(
       Noise just above zero still gives several thousand kelvin.
     * The uncertainty is propagated to first order, so it is unreliable where it is comparable to the radiance.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     wavelength = cube.axis_world_coords(cube.wavelength_axis)[0]
     try:
         to_radiance = cube.unit.to(RADIANCE_UNIT_PER_HZ, equivalencies=u.spectral_density(wavelength))
@@ -279,7 +279,7 @@ def subtract_background(cube, windows, *, degree=1):
 
     Saturated samples (see :ref:`irispy-tutorial-saturated-data`) are left out of the fit and stay marked.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     background = _fit_background(cube, windows, degree)
     # Their value minus NaN would be NaN
     background[np.isnan(background) & _saturated_samples(cube)] = 0

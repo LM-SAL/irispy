@@ -86,9 +86,9 @@ def remove_cosmic_rays(
         so a replaced spike is not masked and keeps the uncertainty it had as a spike.
     """
     # Avoid circular imports
-    from irispy.utils._spectral import check_scaled, make_map_cube  # NOQA: PLC0415
+    from irispy.utils._spectral import in_memory, make_map_cube  # NOQA: PLC0415
 
-    check_scaled(cube)
+    cube = in_memory(cube)
     method = method.lower()
     kwargs = dict(method_kwargs or {})
     backends = {

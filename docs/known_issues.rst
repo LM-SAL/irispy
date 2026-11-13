@@ -38,15 +38,10 @@ To use less memory:
 
 * Read only the spectral windows you need with ``spectral_windows``; the memory goes down in proportion.
 * Leave ``uncertainty=False`` (the default); ``uncertainty=True`` adds an array of the data's type and size.
-* Pass ``memmap=True``, which maps the raw, unscaled integers instead of allocating scaled data numbers (DN); AIA and Hinode/SOT data are stored unscaled and keep their units.
-  A lazy Dask mask marks both fill values without reading the mapped data at open.
-  Only the mask slices that are used read data; computing the entire mask takes one byte per pixel.
-  No uncertainty is computed in this mode.
-  Most analysis functions refuse these raw IRIS data and need ``memmap=False``, the only mode that marks saturated samples (see :ref:`irispy-tutorial-saturated-data`).
+* Pass ``memmap=True``: the data, mask and uncertainty are then lazy Dask arrays with the same values, and only the slices that are used are read from the files and scaled.
+  The analysis functions read the cube they are given into memory, so slice or crop it first.
 
 Compressed SJI files are decompressed into memory once, so ``memmap=True`` cannot provide disk-backed arrays for them.
-
-Loading the scaled and masked data lazily, only when they are used, is tracked in `#14 <https://github.com/LM-SAL/irispy/issues/14>`__.
 
 .. _irispy-known-issues-extracted-archives:
 

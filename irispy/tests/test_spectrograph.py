@@ -14,10 +14,10 @@ from astropy.tests.helper import assert_quantity_allclose
 from astropy.wcs.utils import wcs_to_celestial_frame
 
 from irispy.data.test import get_test_filepath
+from irispy.io import _raster_combine
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.io.utils import read_files
 from irispy.tests.helpers import figure_test
-from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 
 LON, LAT = "custom:pos.helioprojective.lon", "custom:pos.helioprojective.lat"
 
@@ -27,8 +27,8 @@ def combined_si_iv(raster_sg_files):
     return read_spectrograph_lvl2(raster_sg_files, spectral_windows="Si IV 1403")["Si IV 1403"]
 
 
-def _raw_si_iv(filename):
-    with fits.open(filename, memmap=True, do_not_scale_image_data=True) as hdulist:
+def _si_iv(filename):
+    with fits.open(filename) as hdulist:
         header = hdulist[0].header
         windows = [header[f"TDESC{i}"] for i in range(1, header["NWIN"] + 1)]
         return np.array(hdulist[windows.index("Si IV 1403") + 1].data, copy=True)
@@ -124,17 +124,31 @@ def test_sky_box_crop_with_the_fits_wcs_of_a_later_raster(combined_si_iv):
     assert raster.crop([None, lower], [None, upper], wcs=raster.fits_wcs).data.shape[:2] == (4, 41)
 
 
-def test_memmap_rasters_read_together_hold_the_raw_fits_integers(raster_sg_files):
+def test_memmap_rasters_read_together_hold_the_dn_of_each_file(raster_sg_files):
     cube = read_spectrograph_lvl2(raster_sg_files, memmap=True)["Si IV 1403"]
     raster0 = cube[0]
-    expected = _raw_si_iv(raster_sg_files[0])
+    expected = _si_iv(raster_sg_files[0])
 
     np.testing.assert_array_equal(raster0.data.compute(), expected)
-    np.testing.assert_array_equal(
-        (raster0.data == BAD_PIXEL_VALUE_UNSCALED).compute(), expected == BAD_PIXEL_VALUE_UNSCALED
-    )
     np.testing.assert_array_equal(raster0[3, 50, :].data.compute(), expected[3, 50])
     np.testing.assert_array_equal(cube.data[0, 0, 0].compute(), expected[0, 0])
+
+
+def test_memmap_rasters_read_together_read_only_the_exposure_asked_for(raster_sg_files, monkeypatch):
+    reads = []
+    read_window = _raster_combine._read_window
+
+    def record_read(source, index):
+        reads.append(index)
+        return read_window(source, index)
+
+    monkeypatch.setattr(_raster_combine, "_read_window", record_read)
+    cube = read_spectrograph_lvl2(raster_sg_files, memmap=True)["Si IV 1403"]
+    assert reads == []
+
+    np.testing.assert_array_equal(cube.data[1, 3].compute(), _si_iv(raster_sg_files[1])[3])
+    # One read, of step 3 of the second file
+    assert [index[0] for index in reads] == [3]
 
 
 @pytest.fixture

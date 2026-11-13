@@ -11,7 +11,7 @@ from scipy.ndimage import gaussian_filter1d
 import astropy.units as u
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
-from irispy.utils._spectral import check_scaled, check_velocity_range, make_map_cube, make_spatial_template
+from irispy.utils._spectral import check_velocity_range, in_memory, make_map_cube, make_spatial_template
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED
 from irispy.utils.utils import _boolean_mask, _saturated_samples
 
@@ -35,7 +35,7 @@ def calculate_mg_features(cube, *, velocity_range: u.km / u.s = (-40, 40) * u.km
     Parameters
     ----------
     cube : `~irispy.spectrograph.SpectrogramCube`
-        A Mg II window, read with ``memmap=False``, with axes (raster, step, slit, wavelength),
+        A Mg II window, with axes (raster, step, slit, wavelength),
         or (step, slit, wavelength) for one raster, ``cube[k]``.
     velocity_range : `~astropy.units.Quantity`, optional
         ``(lower, upper)`` Doppler velocities from each line's rest wavelength within which to search.
@@ -90,7 +90,7 @@ def calculate_mg_features(cube, *, velocity_range: u.km / u.s = (-40, 40) * u.km
     if cube.data.ndim not in (3, 4) or cube.wavelength_axis != cube.data.ndim - 1:
         msg = "cube must have axes ([raster,] step, slit, wavelength); slice it with ranges, e.g. cube[:, 300:301]"
         raise ValueError(msg)
-    check_scaled(cube)
+    cube = in_memory(cube)
     check_velocity_range(velocity_range)
     if not lines or not set(lines) <= set(_REST_WAVELENGTH) or len(set(lines)) < len(lines):
         msg = f"lines must be 'k', 'h' or both, not {lines!r}"

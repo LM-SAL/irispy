@@ -1,6 +1,5 @@
 from copy import deepcopy
 
-import dask.array as da
 import numpy as np
 
 import astropy.units as u
@@ -9,8 +8,9 @@ from astropy.nddata import StdDevUncertainty
 
 from irispy._gwcs import _create_raster_gwcs, _create_raster_non_spectral
 from irispy._wcs import _MadeWhenAskedFor
-from irispy.io._mask import _memmap_fill_mask
+from irispy.io._mask import _memmap_dn, _memmap_fill_mask, _memmap_saturated
 from irispy.spectrograph import SpectrogramCube
+from irispy.utils import calculate_uncertainty
 
 
 def _combine_raster_metas(metas, combined_shape):
@@ -49,8 +49,7 @@ class _WindowFiles:
     file only when it is indexed.
 
     Each source is either the ``(filename, ext, flip)`` of a file, which stays closed
-    until it is read, or the window's array from an HDU list given to the reader. Dask
-    wraps this in one graph layer for all the files.
+    until it is read, or the window's array from an HDU list given to the reader.
     """
 
     def __init__(self, sources, shape, dtype):
@@ -60,9 +59,11 @@ class _WindowFiles:
         self.ndim = len(self.shape)
 
     def __getitem__(self, item):
-        # Dask asks for chunks, so every index is a slice
+        # Dask asks for a chunk, or for the part of one that a slice needs: one raster, or a slice of them
         raster, *rest = item
-        return np.stack([_read_window(source, tuple(rest)) for source in self.sources[raster]])
+        if isinstance(raster, slice):
+            return np.stack([_read_window(source, tuple(rest)) for source in self.sources[raster]])
+        return _read_window(self.sources[raster], tuple(rest))
 
 
 def _add_raster(rasters, index, count, **arrays):
@@ -116,35 +117,32 @@ def _combine_raster_cubes(reads, rasters, non_spectral, *, lazy):
     Combine one window of every file, one read per file, into one cube with a leading
     raster axis.
 
-    ``rasters`` has the window's arrays from ``_add_raster``, unless the read is
-    ``lazy``, when the data are made here as a Dask array that opens each file when it
-    is read. The mask of memory-mapped data is made here too. ``non_spectral`` is the
-    band's model from ``_sky_time_models``.
+    ``rasters`` has the window's arrays from ``_add_raster``: every array of a read into
+    memory, only the mapped data of one memory-mapped file, and none for a ``lazy``
+    read, of several memory-mapped files that are each opened when read. The DN, mask
+    and uncertainty of memory-mapped data are made here, as Dask arrays.
+    ``non_spectral`` is the band's model from ``_sky_time_models``.
     """
     first = reads[0]
-    if lazy:
-        shape, dtype = first.shape, first.dtype
-        # Chunks of up to 64 MiB of steps, one file each
-        steps = max(1, min(shape[0], 64 * 2**20 // (int(np.prod(shape[1:])) * dtype.itemsize)))
-        data = da.from_array(
-            _WindowFiles([read.source for read in reads], shape, dtype),
-            chunks=(1, steps, *shape[1:]),
-            name=False,
-            fancy=False,
-            meta=np.empty((0,) * (len(shape) + 1), dtype=dtype),
-        )
-    else:
-        data = rasters["data"]
-    # A memory-mapped read has no mask yet. Made from the data with their raster axis, a slice of it reads only that
-    # slice: Dask does not pass a slice through an axis added later, and reads whole chunks.
-    mask = rasters["mask"] if "mask" in rasters else _memmap_fill_mask(data, first.header)
-    uncertainty = rasters.get("uncertainty")
+    data = rasters.get("data")
+    mask, uncertainty, saturated = rasters.get("mask"), rasters.get("uncertainty"), rasters.get("saturated")
+    if mask is None:
+        # The raw values of a memory-mapped read, with their raster axis: Dask does not pass a slice through an axis
+        # added later, and reads whole chunks
+        raw = _WindowFiles([read.source for read in reads], first.shape, first.dtype) if lazy else data
+        header = first.header
+        data = _memmap_dn(raw, header)
+        mask = _memmap_fill_mask(raw, header, saturated=True)
+        saturated = _memmap_saturated(raw, header)
+        if first.readout_noise is not None:
+            # In the byte order of the machine, whatever that of the file
+            uncertainty = data.map_blocks(
+                calculate_uncertainty, first.readout_noise, first.unit, dtype=data.dtype.newbyteorder("=")
+            )
     meta = _combine_raster_metas([read.meta for read in reads], data.shape)
     meta["fits_wcs"] = _MadeWhenAskedFor([read.fits_wcs for read in reads])
-    if "saturated" in rasters:
-        meta.add(
-            "saturated", rasters["saturated"], "Samples at the level 2 ceiling, also masked", tuple(range(data.ndim))
-        )
+    if saturated is not None:
+        meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", tuple(range(data.ndim)))
     wcs = _create_raster_gwcs(first.header, *non_spectral)
     wcs.array_shape = data.shape
     return SpectrogramCube(

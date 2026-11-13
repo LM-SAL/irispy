@@ -23,7 +23,6 @@ from astropy.coordinates import SpectralCoord
 from astropy.visualization import AsymmetricPercentileInterval
 
 from irispy.io import read_files
-from irispy.utils.constants import BAD_PIXEL_VALUE_UNSCALED
 from irispy.utils.wavelength_drift import calculate_wavelength_drift
 
 ###############################################################################
@@ -44,24 +43,14 @@ iris_raster_tar = pooch.retrieve(
 ###############################################################################
 # We will now open the data using a helper function which is designed to read
 # all files from a single observation.
-#
-# Since this is a large dataset, we will use memory mapping to read the data values
-# directly from the FITS files without loading them into memory.
 
-raster = read_files(iris_raster_tar, memmap=True, spectral_windows="Mg II k 2796")
+raster = read_files(iris_raster_tar, spectral_windows="Mg II k 2796")
 
 ###############################################################################
 # We are after the Mg II k window, which we can select using a key.
 
 mg_ii = raster["Mg II k 2796"][0]
 (mg_wave,) = mg_ii.axis_world_coords("wl")
-
-###############################################################################
-# The reader masks the Level 2 fill values (-200 and -199 DN). With memory mapping
-# the mask is lazy: it is computed from the data each time it is used, so it would
-# follow the changes we make to the data below. We compute it once now instead.
-
-mg_ii.mask = mg_ii.mask.compute()
 
 ###############################################################################
 # This very large dense raster took more than three hours to complete
@@ -115,8 +104,7 @@ fig.legend(loc="outside upper center", ncols=5)
 # Adding the drift to the wavelengths of a step corrects them. To look at the
 # whole image at a given wavelength, we instead interpolate each step back onto
 # the original wavelength grid. Unsupported wavelengths and interpolation through
-# bad pixels stay invalid. We work on one floating-point step at a time, mask
-# invalid results and store them as the FITS fill value in the integer array.
+# bad pixels stay invalid: we mask them.
 # The rows of the first raster give the drift of each ``step`` of ``mg_ii``, in
 # the column named by its ``meta.detector_band``: the ``"NUV"`` column plotted above.
 
@@ -126,7 +114,7 @@ for i, shift in drift[drift["raster"] == 0].iterrows("step", mg_ii.meta.detector
         mg_wave.to_value(u.nm), extrapolate=False
     )
     mg_ii.mask[i] = ~np.isfinite(corrected)
-    mg_ii.data[i] = np.where(mg_ii.mask[i], BAD_PIXEL_VALUE_UNSCALED, corrected)
+    mg_ii.data[i] = corrected
 
 ###############################################################################
 # Before the correction, the Mn I intensity shows a regular bright-dark pattern
@@ -148,7 +136,7 @@ for ax, data, title in zip(axes[:2], (before, after), ("Before correction", "Aft
 
 change = axes[2].imshow(difference.T, origin="lower", aspect="auto", cmap="RdBu_r", vmin=-limit, vmax=limit)
 axes[2].set_title("After minus before")
-fig.colorbar(change, ax=axes[2], label="Intensity change (unscaled DN)")
+fig.colorbar(change, ax=axes[2], label="Intensity change (DN)")
 for ax in axes:
     ax.set_xlabel("Raster step")
 axes[0].set_ylabel("Position along the slit (pixel)")
@@ -172,8 +160,7 @@ wings = np.where(mg_ii.mask[..., [index_m, index_p]], np.nan, mg_ii.data[..., [i
 doppler = wings[..., 0] - wings[..., 1]
 
 ###############################################################################
-# And now we can plot this as before (intensity units are again arbitrary
-# because of the unscaled DNs).
+# And now we can plot this as before.
 
 vmin, vmax = AsymmetricPercentileInterval(0.15, 99.85).get_limits(doppler)
 # A diverging color map needs limits centered on zero.

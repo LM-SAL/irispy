@@ -7,7 +7,6 @@ import astropy.units as u
 from astropy.table import QTable
 
 from irispy.data.test import get_test_filepath
-from irispy.io import _mask
 from irispy.io.spectrograph import read_spectrograph_lvl2
 from irispy.spectrograph import RasterCollection
 from irispy.tests.helpers import make_test_spectrogram_cube
@@ -225,16 +224,8 @@ def test_window_chosen_by_its_wavelengths():
     )
 
 
-def test_memmap_mask_is_not_computed(monkeypatch):
-    # The lazy fill mask of memmap=True spans the whole raster, which the fit never reads
-    monkeypatch.setattr(_mask, "_fill_mask_values", lambda *_: pytest.fail("the lazy mask was computed"))
-    cube = read_spectrograph_lvl2(CROP, memmap=True)["Mg II k 2796"][0]
-    assert isinstance(cube.mask, da.Array)  # fixture check
-    assert np.isfinite(_line_shifts(cube, _wavelengths(cube), *_LINES["Ni I"])).any()
-
-
 def test_dask_mask_on_scaled_data_is_applied():
-    # Only the lazy fill mask of memmap=True, over the unscaled integers, goes unread
+    # As the lazy mask of a memmap=True read
     wavelengths = 1355.05 + 0.05 * np.arange(30)
     data = np.broadcast_to(50 * np.exp(-0.5 * ((wavelengths - 1355.62) / 0.04) ** 2), (2, 3, 30)).copy()
     data[..., 17] += 20  # a positive spike at the end of the fit range
@@ -253,8 +244,7 @@ def test_dask_mask_on_scaled_data_is_applied():
 
 @pytest.mark.parametrize("files", [CROP, [CROP, CROP]], ids=["one-raster", "two-rasters"])
 def test_memmap_data_give_the_same_table(files):
-    # memmap=True leaves the FITS integers, which are scaled to DN for the fit ranges only;
-    # several files read together give a Dask array
+    # The data and mask of a memmap=True read are Dask arrays, of which the fit ranges are read
     table = calculate_wavelength_drift(read_spectrograph_lvl2(files))
     memmap = calculate_wavelength_drift(read_spectrograph_lvl2(files, memmap=True))
     for name in [*LINES, "NUV", "FUV"]:

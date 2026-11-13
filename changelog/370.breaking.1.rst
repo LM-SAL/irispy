@@ -1,0 +1,1 @@
+Removed ``irispy.utils.constants.BAD_PIXEL_VALUE_UNSCALED``, ``DN_UNIT["SJI_UNSCALED"]`` and ``cube.meta["scaled"]``, as no cube holds unscaled data any more. The fill value in DN is ``irispy.utils.constants.BAD_PIXEL_VALUE_SCALED``, and ``cube.mask`` marks the samples with no data.

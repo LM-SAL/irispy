@@ -1,3 +1,4 @@
+import dask
 import numpy as np
 import pytest
 
@@ -5,25 +6,86 @@ import astropy.units as u
 from astropy.nddata import InverseVariance, StdDevUncertainty, UnknownUncertainty
 from astropy.time import Time
 
+from irispy.data.test import get_test_filepath
 from irispy.io import read_files
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils._spectral import check_scaled, in_windows, make_map_cube, standard_deviation
-from irispy.utils.constants import DN_UNIT
-from irispy.utils.moments import calculate_moments
+from irispy.utils._spectral import in_memory, in_windows, make_map_cube, standard_deviation
+from irispy.utils.bursts import find_bright_image_events, find_si_iv_bursts
+from irispy.utils.cosmic_rays import remove_cosmic_rays
+from irispy.utils.dust import calculate_dust_mask, remove_dust
+from irispy.utils.fiducials import find_fiducials
+from irispy.utils.fitting import line_model, starts_from_model
+from irispy.utils.mg_features import calculate_mg_features
+from irispy.utils.moments import average_window, calculate_moments
 from irispy.utils.red_blue import calculate_red_blue_asymmetry
-from irispy.utils.spectrograph import radiometric_calibration
+from irispy.utils.rgb import calculate_rgb
+from irispy.utils.spectrograph import radiometric_calibration, subtract_background
+
+SJI = "bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits"
+SI_IV = "bursts/iris_l2_20130902_182935_4000005156_raster_t000_r00000_si_iv_test.fits"
+MG_II = "mg_features/iris_l2_20130902_182935_4000005156_raster_t000_r00000_mg_features_test.fits"
 
 
-def test_check_scaled():
-    wavelengths = np.arange(3) * u.nm
-    # Integers in DN, as AIA cubes are stored
-    check_scaled(make_test_spectrogram_cube(np.ones((1, 1, 3), dtype=np.int16), wavelengths))
-    for band in ("SJI", "FUV", "NUV"):
-        for unit in (DN_UNIT[f"{band}_UNSCALED"], DN_UNIT[f"{band}_UNSCALED"] / u.s):
-            with pytest.raises(ValueError, match="unscaled"):
-                check_scaled(make_test_spectrogram_cube(np.ones((1, 1, 3)), wavelengths, unit=unit))
-        # Converting the raw integers to counts would lose the unit that marks them
-        assert not DN_UNIT[f"{band}_UNSCALED"].is_equivalent(u.ct)
+def test_in_memory(sns_sg_file):
+    eager, lazy = (
+        read_files(sns_sg_file, memmap=memmap, uncertainty=True)["Si IV 1403"][:, 2:] for memmap in (False, True)
+    )
+    assert in_memory(eager) is eager
+    # In threads whatever the scheduler: another process would fill arrays of its own
+    with dask.config.set(scheduler="processes"):
+        loaded = in_memory(lazy)
+    for array, expected in (
+        (loaded.data, eager.data),
+        (loaded.mask, eager.mask),
+        (loaded.uncertainty.array, eager.uncertainty.array),
+    ):
+        assert isinstance(array, np.ndarray)
+        np.testing.assert_array_equal(array, expected)
+    assert loaded.unit == eager.unit
+
+
+@pytest.mark.parametrize(
+    ("filename", "analysis"),
+    [
+        (SJI, lambda cube: remove_dust(cube).data),
+        (SJI, calculate_dust_mask),
+        (SJI, lambda cube: pytest.importorskip("rsliding") and remove_cosmic_rays(cube).data),
+        (SJI, lambda cube: find_bright_image_events(cube)[0].data),
+        (SI_IV, lambda raster: find_si_iv_bursts(raster["Si IV 1403"])[0].data),
+        (SI_IV, lambda raster: calculate_moments(raster["Si IV 1403"], velocity_range=None)["centroid"].data),
+        (SI_IV, lambda raster: calculate_red_blue_asymmetry(raster["Si IV 1403"])["red_blue_asymmetry"].data),
+        (SI_IV, lambda raster: pytest.importorskip("colorsynth") and calculate_rgb(raster["Si IV 1403"][0])[0]),
+        (SI_IV, lambda raster: average_window(raster["Si IV 1403"], [1402.7, 1402.9] * u.AA).data),
+        (SI_IV, lambda raster: subtract_background(raster["Si IV 1403"], [1402.5, 1402.6] * u.AA).data),
+        (SI_IV, lambda raster: radiometric_calibration(raster["Si IV 1403"]).data),
+        (MG_II, lambda raster: find_fiducials(raster["Mg II k 2796"])[0]),
+        (MG_II, lambda raster: calculate_mg_features(raster["Mg II k 2796"], lines=("k",))["k3_velocity"].data),
+        (MG_II, lambda raster: starts_from_model(line_model(["Mg II k"]), raster["Mg II k 2796"][0]).parameters),
+        # Stays lazy
+        (SI_IV, lambda raster: raster["Si IV 1403"].apply_exposure_time_correction().data),
+    ],
+    ids=[
+        "remove_dust",
+        "calculate_dust_mask",
+        "remove_cosmic_rays",
+        "find_bright_image_events",
+        "find_si_iv_bursts",
+        "calculate_moments",
+        "calculate_red_blue_asymmetry",
+        "calculate_rgb",
+        "average_window",
+        "subtract_background",
+        "radiometric_calibration",
+        "find_fiducials",
+        "calculate_mg_features",
+        "starts_from_model",
+        "apply_exposure_time_correction",
+    ],
+)
+def test_memmap_read_gives_the_result_of_a_read_into_memory(filename, analysis):
+    # Each function reads the lazy arrays of a memmap=True cube into memory first, unless it leaves them lazy
+    lazy, eager = (analysis(read_files(get_test_filepath(filename), memmap=memmap)) for memmap in (True, False))
+    np.testing.assert_array_equal(lazy, eager)
 
 
 @pytest.mark.parametrize("windows", [[[1, 2], [10, 11]], [[10, 11], [1, 2]]])

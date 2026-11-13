@@ -213,9 +213,11 @@ positionally, as for `~irispy.sji.SJICube`:
 Memmap reads
 ============
 
-Cubes read with ``memmap=True`` hold the unscaled integers from the file, in
-``DN_IRIS_FUV_UNSCALED`` or ``DN_IRIS_NUV_UNSCALED``, with the window's
-``BSCALE`` and ``BZERO`` in ``meta``.
-Their fill mask is a lazy Dask array, computed only for the slices that are used.
-Several raster files read with ``memmap=True`` give one Dask-backed cube that
+Cubes read with ``memmap=True`` hold the values of a read with ``memmap=False``,
+in data numbers (DN), where they held the unscaled integers of the file.
+Their data, mask, uncertainty and ``meta["saturated"]`` are lazy Dask arrays, read
+and scaled only for the slices that are used: ``np.asarray(cube.data)`` gives a
+NumPy array. The ``DN_IRIS_SJI_UNSCALED`` unit, ``meta["scaled"]`` and
+``BAD_PIXEL_VALUE_UNSCALED`` are gone.
+Several raster files read with ``memmap=True`` give one cube that
 reads each file only when its data are used.

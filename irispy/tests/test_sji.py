@@ -19,11 +19,11 @@ from irispy.utils.spectrograph import radiometric_calibration
 from irispy.visualization import LAT_AXIS_LABEL, LON_AXIS_LABEL
 
 
-def test_to_maps_rejects_unscaled_data(bursts_sji_1400_file):
-    # The maps give the IRIS DN units as DN, which the raw integers of a memmap read are not
-    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
-        read_files(bursts_sji_1400_file, memmap=True).to_maps(0)
-    assert read_files(bursts_sji_1400_file).to_maps(0).unit == u.DN
+def test_to_maps_of_a_memmap_read(bursts_sji_1400_file):
+    lazy, eager = (read_files(bursts_sji_1400_file, memmap=memmap).to_maps(0) for memmap in (True, False))
+    assert lazy.unit == eager.unit == u.DN
+    np.testing.assert_array_equal(lazy.data, eager.data)
+    np.testing.assert_array_equal(lazy.mask, eager.mask)
 
 
 AXIS = [

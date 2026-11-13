@@ -11,9 +11,9 @@ from astropy.nddata import NDDataArray, StdDevUncertainty
 from irispy.spectrograph import RasterCollection, _wavelength_indices
 from irispy.utils._spectral import (
     _to_unit,
-    check_scaled,
     check_velocity_range,
     default_rest_wavelength,
+    in_memory,
     make_map_cube,
     make_spatial_template,
     standard_deviation,
@@ -94,7 +94,7 @@ def calculate_moments(
     * :cite:t:`yu2020`, Section 3.1
     * :cite:t:`cheung2022`, Appendix C
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     if min_intensity is not None:
         min_intensity = _to_unit(min_intensity, cube.unit, "min_intensity")
     if rest_wavelength is None:
@@ -226,7 +226,7 @@ def average_window(cube, wavelength_range: u.AA, *, method="mean"):
     * For :math:`\int I(\lambda) \, d\lambda`, multiply a sum by the wavelength step:
       ``(average_window(cube, wavelength_range, method="sum") * abs(cube.spectral_dispersion)).to(cube.unit * u.AA)``.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     if method not in {"mean", "sum"}:
         msg = f'method must be "mean" or "sum", not {method!r}'
         raise ValueError(msg)

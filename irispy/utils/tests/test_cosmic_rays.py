@@ -139,7 +139,6 @@ def test_remove_cosmic_rays_astroscrappy_backend(sns_sjicube_1330, monkeypatch, 
     np.testing.assert_array_equal(cleaned.data, np.where(expected_mask, data, data - 1))
     np.testing.assert_array_equal(cleaned.mask, mask)
     assert cleaned.unit == cube.unit
-    assert cleaned.meta["scaled"] == cube.meta["scaled"]
     assert list(cleaned.extra_coords.keys()) == list(cube.extra_coords.keys())
     assert list(cleaned.global_coords) == list(cube.global_coords)
     np.testing.assert_array_equal(cube.data, data)
@@ -186,11 +185,6 @@ def test_remove_cosmic_rays_does_not_share_meta_coordinates_or_mask(sns_sjicube_
     assert "note" not in cube.meta
     assert "sequence" not in tuple(cube.extra_coords.keys())
     np.testing.assert_array_equal(cube.mask, mask)
-
-
-def test_remove_cosmic_rays_rejects_unscaled_data(bursts_sji_1400_file):
-    with pytest.raises(ValueError, match="unscaled"):
-        remove_cosmic_rays(read_sji_lvl2(bursts_sji_1400_file, memmap=True))
 
 
 @pytest.mark.parametrize("method", ["rsliding", "astroscrappy"])

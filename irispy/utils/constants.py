@@ -6,7 +6,6 @@ import astropy.units as u
 
 __all__ = [
     "BAD_PIXEL_VALUE_SCALED",
-    "BAD_PIXEL_VALUE_UNSCALED",
     "DN_UNIT",
     "INSTRUMENTAL_FWHM",
     "RADIANCE_UNIT",
@@ -21,24 +20,15 @@ __all__ = [
 BAD_PIXEL_VALUE_SCALED = -200
 # Both Level 2 fill values represent missing samples; -199 is an IRIS SolarSoft convention.
 BAD_PIXEL_VALUES_SCALED = (BAD_PIXEL_VALUE_SCALED, -199)
-#: The raw integer of the -200 DN fill value in IRIS level 2 files, and so in the raw IRIS integers the readers give
-#: with ``memmap=True``.
-BAD_PIXEL_VALUE_UNSCALED = -32768
 # Camera gain (electrons per DN), yield (electrons per photon) and read noise (DN) by spectrograph detector and
 # slit-jaw passband: De Pontieu et al. (2014) Sect. 7.1. The photons per DN, 4 (FUV) and 18 (NUV) for the spectrograph
 # and 12 (1330, 1400) and 18 (2796, 2832) for the slit-jaw imager, are those of Wülser et al. (2018) Table 1 and of
 # the response files (DN2PHOT_SG and DN2PHOT_SJI).
 DETECTOR_GAIN = {"NUV": 18.0, "FUV": 6.0, "SJI_1330": 18.0, "SJI_1400": 18.0, "SJI_2796": 18.0, "SJI_2832": 18.0}
 DETECTOR_YIELD = {"NUV": 1.0, "FUV": 1.5, "SJI_1330": 1.5, "SJI_1400": 1.5, "SJI_2796": 1.0, "SJI_2832": 1.0}
-#: The DN unit of each spectrograph detector and slit-jaw passband, which converts to photons, and the
-#: ``"*_UNSCALED"`` units of the raw IRIS integers the readers give with ``memmap=True``, which convert to no other
-#: unit.
+#: The DN unit of each spectrograph detector and slit-jaw passband, which converts to photons.
 DN_UNIT = {
     band: u.def_unit(f"DN_IRIS_{band}", DETECTOR_GAIN[band] / DETECTOR_YIELD[band] * u.photon) for band in DETECTOR_GAIN
-} | {
-    # The raw integers of a memmap read are not physical values, so their units convert to nothing
-    band: u.def_unit(f"DN_IRIS_{band}")
-    for band in ("SJI_UNSCALED", "NUV_UNSCALED", "FUV_UNSCALED")
 }
 #: The readout noise of each spectrograph detector and slit-jaw passband, in its DN unit.
 READOUT_NOISE = {band: (3.1 if band == "FUV" else 1.2) * DN_UNIT[band] for band in DETECTOR_GAIN}

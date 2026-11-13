@@ -6,6 +6,7 @@ from copy import copy, deepcopy
 from enum import IntEnum
 from numbers import Integral
 
+import dask.array as da
 import numpy as np
 
 import astropy.units as u
@@ -30,15 +31,27 @@ class _QualityFlag(IntEnum):
         return obj
 
 
-def check_scaled(cube):
+def in_memory(cube):
     """
-    Raise a `ValueError` if ``cube`` holds unscaled data read with ``memmap=True``.
+    ``cube`` with its data, mask and uncertainty as NumPy arrays: a cube read with
+    ``memmap=True`` is read from its file here, in one pass, and any other cube is
+    returned as it is.
     """
-    # The readers give raw FITS integers the DN_IRIS_*_UNSCALED units, which outlast arithmetic such as an exposure
-    # time correction
-    if any(base.name.endswith("_UNSCALED") for base in cube.unit.bases):
-        msg = "The data are unscaled; read them with memmap=False"
-        raise ValueError(msg)
+    uncertainty = cube.uncertainty
+    lazy = {"data": cube.data, "mask": cube.mask, "uncertainty": getattr(uncertainty, "array", None)}
+    lazy = {name: array for name, array in lazy.items() if isinstance(array, da.Array)}
+    if not lazy:
+        return cube
+    arrays = {name: np.empty(array.shape, array.dtype) for name, array in lazy.items()}
+    # Chunk by chunk into arrays made first: dask.compute holds every chunk and the array joined from them. In threads,
+    # whatever the scheduler of the session: another process, as of a Dask client, would fill arrays of its own.
+    da.store(list(lazy.values()), list(arrays.values()), lock=False, scheduler="threads")
+    if "uncertainty" in arrays:
+        arrays["uncertainty"] = type(uncertainty)(arrays["uncertainty"], copy=False)
+    cube = copy(cube)
+    for name, array in arrays.items():
+        setattr(cube, name, array)
+    return cube
 
 
 def _to_unit(value, unit, name):

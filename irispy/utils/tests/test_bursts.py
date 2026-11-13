@@ -112,15 +112,13 @@ def test_si_iv_ignores_missing_data(si_iv_cube):
     assert labels.data[10].any()
 
 
-def test_si_iv_errors(bursts_si_iv_raster, bursts_si_iv_file):
+def test_si_iv_errors(bursts_si_iv_raster):
     with pytest.raises(ValueError, match=r"no wavelength bins between -50\.0 km / s and 50\.0 km / s"):
         find_si_iv_bursts(bursts_si_iv_raster[0][:, :, :3])
     with pytest.raises(ValueError, match="two increasing velocities"):
         find_si_iv_bursts(bursts_si_iv_raster[0], velocity_range=50 * u.km / u.s)
     with pytest.raises(TypeError, match="threshold"):
         find_si_iv_bursts(bursts_si_iv_raster[0], threshold=80)
-    with pytest.raises(ValueError, match="unscaled"):
-        find_si_iv_bursts(read_spectrograph_lvl2(bursts_si_iv_file, memmap=True)["Si IV 1403"])
     with pytest.raises(ValueError, match="slice with a range"):
         find_si_iv_bursts(bursts_si_iv_raster[0][3])
 
@@ -214,9 +212,7 @@ def test_sji_frames_without_valid_pixels(bursts_sjicube_1400):
     assert labels.data[0, 100, 100] == labels.data[0, 100, 101] > 0
 
 
-def test_sji_errors(bursts_sjicube_1400, bursts_sji_1400_file):
-    with pytest.raises(ValueError, match="unscaled"):
-        find_bright_image_events(read_sji_lvl2(bursts_sji_1400_file, memmap=True))
+def test_sji_errors(bursts_sjicube_1400):
     with pytest.raises(ValueError, match="slice with a range"):
         find_bright_image_events(bursts_sjicube_1400[0])
 

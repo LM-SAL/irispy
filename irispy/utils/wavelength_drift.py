@@ -51,7 +51,7 @@ def calculate_wavelength_drift(raster):
     raster : `~irispy.spectrograph.RasterCollection`
         Level 2 spectra: the whole collection that `irispy.io.read_files` returns for raster files,
         not one window; the windows with the reference lines are found in it. They may be read with
-        ``memmap=True``: only the fit ranges are read, and scaled to DN. The spectra are averaged
+        ``memmap=True``: only the fit ranges are read. The spectra are averaged
         along the whole slit; to leave out rows with flows, such as in a flare, slice the collection
         along the slit first, such as ``raster[:, :, 300:700]``.
 
@@ -156,17 +156,11 @@ def _line_shifts(cube, wavelength, rest, fit_range, min_intensity, sign):
         bins = np.arange(bins[0], min(bins[0] + 5, wavelength.size))
     if bins.size < 4:  # fewer bins than Gaussian parameters
         return shifts
-    # The fit bins in DN, which memmap=True leaves as the FITS integers, averaged along the slit
-    # with bad, masked, +Inf and negative pixels as zero, as in IDL
-    # A multi-file memmap raster is a Dask array: read the fit bins only
+    # The fit bins, averaged along the slit with bad, masked, +Inf and negative pixels as zero, as in IDL
+    # A memmap=True raster is a Dask array: read the fit bins only
     data = np.asarray(cube.data[..., bins])
-    unscaled = np.issubdtype(data.dtype, np.integer)
-    if unscaled:
-        data = data.astype(np.float32) * cube.meta["BSCALE"] + cube.meta["BZERO"]
-    # The lazy mask of memmap=True, over the unscaled integers, spans the whole raster and marks
-    # the fill values only, which are negative, so the clip below zeroes them without computing it
-    if not (unscaled and isinstance(cube.mask, da.Array)):
-        data[_boolean_mask(cube)[..., bins]] = 0
+    mask = cube.mask[..., bins] if isinstance(cube.mask, da.Array) else _boolean_mask(cube)[..., bins]
+    data[np.asarray(mask)] = 0
     profiles = np.clip(np.nan_to_num(data, copy=False, posinf=0), 0, None, out=data).mean(axis=1, dtype=float)
     offset = wavelength[bins] - rest
     for step in np.flatnonzero(profiles.mean(axis=1) > min_intensity):

@@ -1,1 +1,1 @@
-``irispy.io.read_sji_lvl2`` and ``irispy.io.read_files`` with ``memmap=True`` now give AIA cubes in DN, with ``meta["scaled"]`` ``True``, as with ``memmap=False``; AIA files store DN as integers without FITS scaling, and these cubes were labeled ``DN_IRIS_SJI_UNSCALED``.
+``irispy.io.read_sji_lvl2`` and ``irispy.io.read_files`` with ``memmap=True`` now give AIA cubes in DN, as with ``memmap=False``; AIA files store DN as integers without FITS scaling, and these cubes were labeled ``DN_IRIS_SJI_UNSCALED``.
