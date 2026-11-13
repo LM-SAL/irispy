@@ -58,6 +58,8 @@ def test_in_memory(sns_sg_file):
         (MG_II, lambda raster: find_fiducials(raster["Mg II k 2796"])[0]),
         (MG_II, lambda raster: calculate_mg_features(raster["Mg II k 2796"], lines=("k",))["k3_velocity"].data),
         (MG_II, lambda raster: starts_from_model(line_model(["Mg II k"]), raster["Mg II k 2796"][0]).parameters),
+        # Stays lazy
+        (SI_IV, lambda raster: raster["Si IV 1403"].apply_exposure_time_correction().data),
     ],
     ids=[
         "remove_dust",
@@ -74,10 +76,11 @@ def test_in_memory(sns_sg_file):
         "find_fiducials",
         "calculate_mg_features",
         "starts_from_model",
+        "apply_exposure_time_correction",
     ],
 )
 def test_memmap_read_gives_the_result_of_a_read_into_memory(filename, analysis):
-    # Each function reads the lazy arrays of a memmap=True cube into memory first
+    # Each function reads the lazy arrays of a memmap=True cube into memory first, unless it leaves them lazy
     lazy, eager = (analysis(read_files(get_test_filepath(filename), memmap=memmap)) for memmap in (True, False))
     np.testing.assert_array_equal(lazy, eager)
 
