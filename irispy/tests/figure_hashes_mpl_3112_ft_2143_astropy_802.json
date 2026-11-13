@@ -1,5 +1,5 @@
 {
-  "irispy.tests.test_sji.test_sji_frame_figure": "6b15e4cdce3e91171dfe96d09bea032da47bf04b88c685bd9050458de967e4ec",
+  "irispy.tests.test_sji.test_sji_frame_figure": "100587926cdd69dd1167fbbc5b5b16ee988b901182cb0909d40207d99c4aa3db",
   "irispy.tests.test_spectrograph.test_spectrogram_figure": "eb18e10e0031c62d59fe0d7bd017a4b7d65acd2a46d696e6bf08e8608894c61a",
   "irispy.utils.tests.test_dust.test_remove_dust_before_after_figure": "7bb744932918da114efa2d849df3bd200f26e50eb0da24929c6562e8674ed689",
   "irispy.utils.tests.test_moments.test_calculate_moments_known_gaussian_figure": "e9b832403b5aac1d0f7db55bfe850a45aa3a297a3904b477238536aea72effbb",

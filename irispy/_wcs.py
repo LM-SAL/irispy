@@ -5,6 +5,9 @@ FITS WCS, the celestial frame.
 ``irispy._gwcs`` builds the gWCS of each cube.
 """
 
+from copy import deepcopy
+from collections.abc import Sequence
+
 import numpy as np
 
 import gwcs
@@ -16,6 +19,38 @@ from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube.utils.wcs import pixel_axis_to_physical_types
 from ndcube.wcs.wrappers import ResampledLowLevelWCS
+
+
+class _MadeWhenAskedFor(Sequence):
+    """
+    A sequence whose items are each made by a function of their own when first asked
+    for, and kept: the FITS WCS of each raster, which is slow to build and often not
+    used.
+
+    A slice of it is a list.
+    """
+
+    def __init__(self, makers):
+        self._makers = list(makers)
+        self._made = {}
+
+    def __deepcopy__(self, memo):
+        # A slice of a cube copies its meta. The copy keeps items of its own and shares the functions, which change
+        # nothing: copying what they hold, a header for each raster, made a slice take twice as long.
+        copied = type(self)(self._makers)
+        copied._made = deepcopy(self._made, memo)
+        return copied
+
+    def __len__(self):
+        return len(self._makers)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[k] for k in range(*index.indices(len(self)))]
+        index = range(len(self))[index]
+        if index not in self._made:
+            self._made[index] = self._makers[index]()
+        return self._made[index]
 
 
 def _root_wcs(cube):
@@ -47,10 +82,11 @@ def _fits_wcs_from_cube(cube):
     """
     The FITS WCS of the cube, sliced as the cube is.
 
-    For a slit-jaw cube, a list with one per frame, with the pointing and time of that
-    frame, and for one frame, ``cube[k]``, its FITS WCS. For a cube built on a FITS WCS,
-    that WCS. `None` when the cube has none, such as after rebinning, or when it is one
-    pixel of each frame.
+    For a raster window, a list with the FITS-TAB WCS of each raster, which holds the
+    pointing of each exposure; for a slit-jaw cube, one per frame, with the pointing and
+    time of that frame. For one raster or frame, ``cube[k]``, its FITS WCS. For a cube
+    built on a FITS WCS, that WCS. `None` when the cube has none, such as after
+    rebinning, or when it is one pixel of each raster or frame.
     """
     root, item = _root_and_item(cube)
     if isinstance(root, WCS):
