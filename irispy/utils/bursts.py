@@ -15,7 +15,7 @@ from astropy.table import QTable
 from astropy.time import Time
 
 from irispy.spectrograph import MosaicCube
-from irispy.utils._spectral import _to_unit, check_scaled, check_velocity_range, make_map_cube, make_spatial_template
+from irispy.utils._spectral import _to_unit, check_velocity_range, in_memory, make_map_cube, make_spatial_template
 from irispy.utils.constants import DN_UNIT
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 from irispy.utils.utils import _boolean_mask, _saturated_samples
@@ -153,7 +153,7 @@ def find_bright_spectral_events(
             raise ValueError(msg)
     threshold = _to_unit(threshold, DN_UNIT[meta.detector_band] / u.s, "threshold")
     check_velocity_range(velocity_range)
-    check_scaled(cube)
+    cube = in_memory(cube)
     if cube.data.ndim not in (3, 4) or cube.wavelength_axis != cube.data.ndim - 1:
         msg = "The spectra must have axes ([raster,] step, slit, wavelength); slice with a range, not an index"
         raise ValueError(msg)
@@ -253,7 +253,7 @@ def find_bright_image_events(cube, *, sigma_factor=10, min_pixels=2):
     ----------
     * :cite:t:`young2018`
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     if cube.data.ndim != 3:
         msg = "The slit-jaw cube must have axes (frame, y, x); slice with a range, such as [0:1], not an index"
         raise ValueError(msg)

@@ -15,7 +15,7 @@ from irispy.io.utils import read_files
 from irispy.sji import SJICube
 from irispy.spectrograph import SpectrogramCube
 from irispy.tests.helpers import make_test_spectrogram_cube
-from irispy.utils.constants import DN_UNIT, RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
+from irispy.utils.constants import RADIANCE_UNIT, RADIANCE_UNIT_PER_HZ
 from irispy.utils.response import get_latest_response
 from irispy.utils.spectrograph import (
     calculate_dn_to_radiance_factor,
@@ -23,16 +23,6 @@ from irispy.utils.spectrograph import (
     radiometric_calibration,
     subtract_background,
 )
-
-
-@pytest.mark.parametrize("function", [radiometric_calibration, radiation_temperature])
-def test_rejects_unscaled_data(function):
-    filename = get_test_filepath(
-        "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
-    )
-    cube = read_files(filename, memmap=True)["Mg II k 2796"]
-    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
-        function(cube)
 
 
 @pytest.fixture
@@ -282,14 +272,6 @@ def test_subtract_background_rejects_bad_windows(windows, match):
     cube = make_test_spectrogram_cube(np.ones((1, 1, 5)), np.linspace(1333, 1337, 5) * u.AA)
     with pytest.raises(ValueError, match=match):
         subtract_background(cube, windows)
-
-
-def test_subtract_background_rejects_unscaled_data():
-    cube = make_test_spectrogram_cube(
-        np.ones((1, 1, 5)), np.linspace(1333, 1337, 5) * u.AA, unit=DN_UNIT["FUV_UNSCALED"]
-    )
-    with pytest.raises(ValueError, match="unscaled"):
-        subtract_background(cube, [1333, 1334] * u.AA)
 
 
 def test_subtract_background_keeps_inf():

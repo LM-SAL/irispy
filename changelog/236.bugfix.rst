@@ -1,1 +1,0 @@
-``irispy.io.read_spectrograph_lvl2`` and ``irispy.io.read_files`` with ``memmap=True`` now give the raw integers of a raster window the unit ``DN_IRIS_FUV_UNSCALED`` or ``DN_IRIS_NUV_UNSCALED`` instead of ``DN_IRIS_FUV`` or ``DN_IRIS_NUV``, as slit-jaw reads already do, so they no longer convert to photons. Eager reads and float memmap data keep their DN units.

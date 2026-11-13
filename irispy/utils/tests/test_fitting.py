@@ -373,12 +373,6 @@ def test_starts_from_model_accepts_a_scalar_mask():
     np.testing.assert_array_equal(starts_from_model(line_model(["Si IV 1403"]), cube).parameters, expected.parameters)
 
 
-def test_starts_from_model_rejects_unscaled_data():
-    raster = read_spectrograph_lvl2(get_test_filepath(MG_FEATURES_FILE), memmap=True)
-    with pytest.raises(ValueError, match="unscaled"):
-        starts_from_model(line_model(["Mg II k"]), raster["Mg II k 2796"][0])
-
-
 def _k2_peaks(unit):
     """
     Gaussians for the Mg II k2v and k2r peaks on a constant background, to fit to one

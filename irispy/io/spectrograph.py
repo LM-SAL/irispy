@@ -333,16 +333,15 @@ def _read_raster_file(hdulist, given, selection, observer, frame_observer, *, fi
             fits_wcs=partial(_with_spectral_axis, file_wcs, header),
             shape=data.shape,
             dtype=data.dtype,
+            # For the uncertainty of a memory-mapped read, which _combine_raster_cubes makes
+            readout_noise=READOUT_NOISE[band] if uncertainty and memmap else None,
         )
-        if memmap:  # the data stay the FITS integers, which these scale to DN
-            meta["BSCALE"], meta["BZERO"] = header.get("BSCALE", 1), header.get("BZERO", 0)
-            if np.issubdtype(data.dtype, np.integer):  # the FITS integers, not DN
-                window.unit = DN_UNIT[f"{band}_UNSCALED"]
         if lazy:
             # The cube reads each file on demand; a memmap would keep every file open
             window.source = data if isinstance(filename, fits.HDUList) else (filename, ext, flip)
         elif memmap:
-            window.arrays = {"data": data}  # _combine_raster_cubes makes the mask
+            # The raw values of the file: _combine_raster_cubes makes their DN, mask and uncertainty
+            window.arrays = {"data": data}
         else:
             _check_scaled(header)
             # Level 2 clips at the ceiling, where iris_prep's +Inf saturation flags were lost
@@ -351,7 +350,6 @@ def _read_raster_file(hdulist, given, selection, observer, frame_observer, *, fi
                 "data": data,
                 "mask": np.isin(data, BAD_PIXEL_VALUES_SCALED) | saturated,
                 "saturated": saturated if saturated.any() else None,
-                # memmap data are unscaled integers, so the photon noise would be wrong
                 "uncertainty": calculate_uncertainty(data, READOUT_NOISE[band], window.unit) if uncertainty else None,
             }
         windows.append(window)
@@ -395,17 +393,14 @@ def read_spectrograph_lvl2(
         The spectral windows to read. Defaults to `None`, every window of the files.
     uncertainty : `bool`, optional
         If `True` (not the default), will compute the uncertainty for the data (slower and
-        uses more memory). If ``memmap=True``, the uncertainty is never computed.
+        uses more memory).
     memmap : `bool`, optional
-        If `True` (not the default), will not load arrays into memory, and will only read from
-        the file into memory when needed. This option is faster and uses a
-        lot less memory. However, because FITS scaling is not done on-the-fly,
-        integer data stay unscaled, in ``DN_IRIS_FUV_UNSCALED`` or ``DN_IRIS_NUV_UNSCALED``,
-        not the usual data numbers (DN). The mask is a lazy Dask array, computed only for the
-        slices that are used. The data of several files read together are a lazy Dask array too.
-        With ``memmap=False``, the samples at the level 2 ceiling,
-        `irispy.utils.constants.SATURATION_LIMIT`, keep their value and are marked in the mask
-        and, if there are any, in ``meta["saturated"]`` (see :ref:`irispy-tutorial-saturated-data`).
+        If `True` (not the default), the data, mask, uncertainty and ``meta["saturated"]`` are
+        lazy Dask arrays with the values of ``memmap=False``: only the slices that are used are
+        read from the files, which is faster and uses much less memory.
+        The samples at the level 2 ceiling, `irispy.utils.constants.SATURATION_LIMIT`, keep
+        their value and are marked in the mask and in ``meta["saturated"]``, which
+        ``memmap=False`` leaves out when there are none (see :ref:`irispy-tutorial-saturated-data`).
     revert_v34 : `bool`, optional
         Will undo the flipping of the raster step axis made to V34 observations
         (data, mask, uncertainty, WCS, times and per-step metadata).
@@ -470,7 +465,7 @@ def read_spectrograph_lvl2(
                 filename=filename,
                 memmap=memmap,
                 lazy=lazy,
-                uncertainty=uncertainty and not memmap,
+                uncertainty=uncertainty,
             )
             files.append(file)
             if not lazy:

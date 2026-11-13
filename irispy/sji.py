@@ -16,7 +16,6 @@ from irispy._wcs import (
     _root_and_item,
     _wcs_array_axis_physical_types,
 )
-from irispy.utils._spectral import check_scaled
 from irispy.visualization import SJIPlotter, _make_map, _sji_cmap_name
 
 __all__ = ["AIACube", "SJICube", "SOTCube"]
@@ -222,8 +221,6 @@ class SJICube(_ResolveNegativeIndicesMixin, SpectrogramCube):
         """
         from sunpy.map import MapSequence  # NOQA: PLC0415
 
-        # The maps give the IRIS DN units as DN, which the raw integers of a memmap read are not
-        check_scaled(self)
         if self._frame_headers is None:
             msg = (
                 "This cube has no FITS WCS header for its frames (for example, it was rebinned or indexed along a "

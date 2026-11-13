@@ -253,16 +253,12 @@ def read_files(
         Defaults to `None`, which extracts all spectral windows.
     uncertainty : `bool`, optional
         If `True` (not the default), will compute the uncertainty for the data (slower and
-        uses more memory). If ``memmap=True``, the uncertainty is never computed.
+        uses more memory).
     memmap : `bool`, optional
-        If `True` (not the default), FITS data are opened using Astropy/NumPy
-        memory mapping rather than being fully read into memory at once. This
-        can keep memory usage low when working with many files, since array
-        data are accessed from disk on demand. In this mode FITS image scaling
-        is disabled, so IRIS data are the raw integers of the file, in the
-        ``DN_IRIS_*_UNSCALED`` units, which the analysis functions refuse; AIA and
-        Hinode/SOT data are stored unscaled and keep their units. If ``memmap=True``,
-        the uncertainty is never computed.
+        If `True` (not the default), the data, mask and uncertainty are lazy Dask arrays
+        with the values of ``memmap=False``: only the slices that are used are read from
+        the files, which keeps memory usage low when working with many files. The analysis
+        functions read the cube they are given into memory, so slice or crop it first.
     allow_errors : `bool`, optional
         Will continue loading the files if one fails to load.
         Defaults to `False`.

@@ -10,14 +10,6 @@ from irispy.tests.helpers import figure_test
 from irispy.utils.dust import _local_median_fill, calculate_dust_mask, remove_dust
 
 
-@pytest.mark.parametrize("function", [remove_dust, calculate_dust_mask])
-def test_rejects_unscaled_data(function, bursts_sji_1400_file):
-    # The fill values of a memmap read are finite integers, which the dust mask took for pixels with a value
-    cube = read_files(bursts_sji_1400_file, memmap=True)
-    with pytest.raises(ValueError, match=r"unscaled.*memmap=False"):
-        function(cube)
-
-
 def test_remove_dust_repairs_pixels_from_neighboring_frames(sns_sjicube_1330):
     cube = sns_sjicube_1330[:4, :3, :3]
     cube.data[...] = np.array(
@@ -61,7 +53,6 @@ def test_remove_dust_preserves_sjicube_state(sns_sjicube_1330):
 
     assert type(cleaned) is type(cube)
     assert cleaned.data.dtype == np.float32
-    assert cleaned.meta["scaled"] is cube.meta["scaled"]
     assert list(cleaned.extra_coords.keys()) == original_extra_coord_keys
     assert list(cleaned.global_coords.keys()) == original_global_coord_keys
     assert cleaned.fits_wcs is not None

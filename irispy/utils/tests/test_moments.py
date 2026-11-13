@@ -152,12 +152,6 @@ def test_calculate_moments_min_intensity_in_dn(sns_sg_file):
         calculate_moments(radiometric_calibration(cube), velocity_range=None, min_intensity=75 * u.DN)
 
 
-def test_calculate_moments_rejects_unscaled_data():
-    cube = make_test_spectrogram_cube(np.ones((1, 1, 3)), [500.0, 501.0, 502.0] * u.nm, unit=DN_UNIT["NUV_UNSCALED"])
-    with pytest.raises(ValueError, match="unscaled"):
-        calculate_moments(cube, velocity_range=None)
-
-
 def test_calculate_moments_velocity_range_without_rest_wavelength(sns_sg_file):
     """
     Test that calculate_moments auto-detects rest_wavelength from cube metadata when

@@ -1,0 +1,1 @@
+The analysis functions of ``irispy.utils`` and ``SJICube.to_maps`` now give the results of a ``memmap=False`` read for cubes read with ``memmap=True``. They read the cube they are given into memory, so slice or crop it first. ``uncertainty=True`` now gives an uncertainty with ``memmap=True`` too.

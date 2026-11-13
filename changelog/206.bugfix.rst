@@ -1,2 +1,1 @@
 The Level 2 readers now mask the -199 DN floor that lower samples are clipped to as well as the -200 DN fill value, also with ``memmap=True``, so the analysis functions leave both out.
-With ``memmap=True``, slit-jaw data keep their pixel values instead of having the fill values replaced with zeros.

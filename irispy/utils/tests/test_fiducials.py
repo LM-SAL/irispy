@@ -74,12 +74,6 @@ def test_find_fiducials_skips_dips_below_zero():
     assert find_fiducials(cube)[0].size == 0
 
 
-def test_find_fiducials_rejects_unscaled_data():
-    raster = read_files(get_test_filepath(MG_FEATURES_FILE), memmap=True)
-    with pytest.raises(ValueError, match="unscaled"):
-        find_fiducials(raster["Mg II k 2796"])
-
-
 def test_level2_marks():
     # 80.97 and 620.01 in the whole Mg II k window of this file
     raster = read_files(get_test_filepath(MG_FEATURES_FILE))

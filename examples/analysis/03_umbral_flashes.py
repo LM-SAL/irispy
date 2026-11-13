@@ -42,8 +42,6 @@ sji_filename = pooch.retrieve(
 
 # Since this is a large dataset, we will use memory mapping to read the data values
 # directly from the FITS files without loading them into memory.
-# The values are then the raw integers of the files, not DN, which is enough to see
-# how they vary in time.
 
 raster = read_files(raster_filename, memmap=True, spectral_windows=["Mg II k 2796", "C II 1336"])
 sji_1400 = read_files(sji_filename, memmap=True)
@@ -76,7 +74,7 @@ mg_crop.plot(axes=ax, aspect="auto")
 # Let us now load the 1400 SJI for context.
 
 plt.figure()
-sji_1400[0].plot(vmin=-32000, vmax=-30000)
+sji_1400[0].plot(vmin=-8, vmax=492)
 plt.title("1400 SJI")
 
 ###############################################################################
@@ -106,7 +104,7 @@ plt.plot(mg_ii_times, mg_ii.data[:200, 220, 103], label="Mg II k3")
 plt.plot(c_ii_times, c_ii.data[:200, 220, 90], label="C II")
 (ax,) = plt.plot(times_sji, sji_1400.data[:50, 220, 190], label="1400 SJI")
 plt.legend()
-plt.ylabel("Raw file value (unscaled, not DN)")
+plt.ylabel("Intensity (DN)")
 plt.xlabel("Time (UTC)")
 ax.axes.xaxis.set_major_formatter(mdates.ConciseDateFormatter(ax.axes.xaxis.get_major_locator()))
 # Rotates and right-aligns the x labels so they don't crowd each other.

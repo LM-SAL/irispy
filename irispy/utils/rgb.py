@@ -16,7 +16,7 @@ import astropy.units as u
 
 from irispy._gwcs import _is_sit_and_stare
 from irispy.spectrograph import _wavelength_indices
-from irispy.utils._spectral import _to_unit, check_scaled, check_velocity_range, default_rest_wavelength
+from irispy.utils._spectral import _to_unit, check_velocity_range, default_rest_wavelength, in_memory
 from irispy.utils.utils import _boolean_mask, _import_optional
 from irispy.visualization import LAT_AXIS_LABEL, LON_AXIS_LABEL
 
@@ -125,7 +125,7 @@ def calculate_rgb(
         in one wavelength bin. Finite-width lines can have different colors at the
         same peak intensity; this is not a calibration of line intensity or velocity.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     colorsynth = _import_optional("colorsynth", reason="false-color RGB images", extra="rgb")
     if len(cube.shape) != 3:
         msg = f"A false-color image needs a three dimensional cube, got shape {cube.shape}"

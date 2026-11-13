@@ -7,7 +7,7 @@ from scipy import ndimage, signal
 
 import astropy.units as u
 
-from irispy.utils._spectral import check_scaled
+from irispy.utils._spectral import in_memory
 from irispy.utils.constants import SLIT_WIDTH
 from irispy.utils.utils import _boolean_mask
 
@@ -52,7 +52,7 @@ def _candidates(cube, min_depth):
     """
     Dark rows along the slit: their positions, depths and significance.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     sums = counts = 0
     # A raster at a time, so the masked copies are of one raster, not the whole window
     rasters = cube if cube.data.ndim == 4 else [cube]
@@ -108,7 +108,7 @@ def find_fiducials(cube, *, min_depth=0.5):
     Parameters
     ----------
     cube : `~irispy.spectrograph.SpectrogramCube`
-        One spectral window, read with ``memmap=False``. The slit axis is the axis before the
+        One spectral window. The slit axis is the axis before the
         wavelength axis, as in the cubes from `irispy.io.read_files`.
     min_depth : `float`, optional
         The smallest fraction of the light a dip must block to count as a mark. In the Level 2

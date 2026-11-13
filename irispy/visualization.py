@@ -251,7 +251,8 @@ def _make_map(data, header, unit, mask):
     bases = [u.DN if base.name.startswith("DN_IRIS") else base for base in unit.bases]
     header = header.copy()
     header["bunit"] = u.CompositeUnit(unit.scale, bases, unit.powers).to_string()
-    return Map(data, header, mask=None if mask is None else np.asarray(mask))
+    # The data and mask of a memmap=True read are Dask arrays
+    return Map(np.asarray(data), header, mask=None if mask is None else np.asarray(mask))
 
 
 def _sji_cmap_name(meta):

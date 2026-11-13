@@ -407,7 +407,7 @@ def test_read_spectrograph_flips_v34_data_meta_and_world_coordinates(v34_sg_file
 
 def test_memmap_v34_rasters_read_together_are_flipped(v34_sg_file):
     cube = read_spectrograph_lvl2([v34_sg_file] * 2, spectral_windows="Mg II k 2796", memmap=True)["Mg II k 2796"]
-    with fits.open(v34_sg_file, do_not_scale_image_data=True) as hdulist:
+    with fits.open(v34_sg_file) as hdulist:
         expected = hdulist[_window_ext(hdulist, "Mg II k 2796")].data[::-1]
     for scan in range(2):
         np.testing.assert_array_equal(np.asarray(cube.data[scan]), expected)
@@ -421,15 +421,36 @@ def test_fits_wcs_interpolates_between_steps_and_inverts(raster_sg_file):
     np.testing.assert_allclose(fits_wcs.world_to_pixel_values(*world)[2], steps, atol=1e-6)
 
 
-@pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files"], ids=["one_file", "several_files"])
-def test_memmap_mode_never_computes_uncertainty(request, files):
-    # memmap data are unscaled integers, so no uncertainty is computed from them, and the fill mask is lazy
-    files = request.getfixturevalue(files)
-    memmap = read_spectrograph_lvl2(files, spectral_windows="Si IV 1403", memmap=True, uncertainty=True)["Si IV 1403"]
-    assert memmap.uncertainty is None
-    assert isinstance(memmap.mask, da.Array)
-    scaled = read_spectrograph_lvl2(files, spectral_windows="Si IV 1403", uncertainty=True)["Si IV 1403"]
-    assert scaled.uncertainty is not None
+SCALED_FILE = "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
+
+
+@pytest.mark.parametrize(
+    ("files", "window"),
+    [
+        ("raster_sg_file", "Si IV 1403"),
+        ("raster_sg_files", "Si IV 1403"),
+        (get_test_filepath(SCALED_FILE), "Mg II k 2796"),
+        ([get_test_filepath(SCALED_FILE)] * 2, "Mg II k 2796"),
+    ],
+    ids=["float_file", "float_files", "scaled_integer_file", "scaled_integer_files"],
+)
+def test_memmap_read_is_lazy_with_the_values_of_a_read_into_memory(request, files, window):
+    files = request.getfixturevalue(files) if isinstance(files, str) and files.endswith(("file", "files")) else files
+    lazy, eager = (
+        read_spectrograph_lvl2(files, spectral_windows=window, memmap=memmap, uncertainty=True)[window]
+        for memmap in (True, False)
+    )
+    assert lazy.unit == eager.unit
+    for array, expected in (
+        (lazy.data, eager.data),
+        (lazy.mask, eager.mask),
+        (lazy.uncertainty.array, eager.uncertainty.array),
+        # A read into memory leaves the saturated samples out when there are none
+        (lazy.meta["saturated"], eager.meta.get("saturated", np.zeros(eager.data.shape, dtype=bool))),
+    ):
+        assert isinstance(array, da.Array)
+        assert array.dtype == expected.dtype
+        np.testing.assert_array_equal(array, expected)
 
 
 @pytest.mark.parametrize("files", ["raster_sg_file", "raster_sg_files", "sns_sg_file"])
@@ -616,16 +637,15 @@ def test_read_spectrograph_masks_both_fill_values(tmp_path, sns_sg_file, memmap)
         data = np.full(hdulist[1].data.shape, 7.0)
         data.flat[:4] = [-200, -199, -198, 7]
         expected_mask = np.isin(data, [-200, -199])
-        hdulist[1].data = data
+        # Scaled in place when the file is written
+        hdulist[1].data = data.copy()
         hdulist[1].scale("int16", bscale=0.25, bzero=7992)
-        raw = hdulist[1].data.copy()
         hdulist.writeto(filename)
 
     cube = read_spectrograph_lvl2(filename, spectral_windows="C II 1336", memmap=memmap)["C II 1336"][0]
 
     np.testing.assert_array_equal(cube.mask, expected_mask)
-    if memmap:
-        np.testing.assert_array_equal(cube.data, raw)
+    np.testing.assert_array_equal(cube.data, data)
 
 
 def test_read_spectrograph_uncertainty_is_a_standard_deviation(raster_sg_file):
@@ -654,29 +674,6 @@ def test_an_exposure_without_pointing_has_no_sky_position():
         assert_quantity_allclose(position.Ty[1:], fov_center.Ty[1:], atol=1e-6 * u.arcsec)
 
 
-def test_memmap_records_the_window_scaling():
-    # memmap=True keeps the FITS integers, so the window's BSCALE and BZERO go in the metadata
-    filename = get_test_filepath(
-        "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
-    )
-    cube = read_spectrograph_lvl2(filename, memmap=True, spectral_windows="Mg II k 2796")["Mg II k 2796"]
-    assert np.issubdtype(cube.data.dtype, np.integer)
-    with fits.open(filename) as hdulist:
-        header = hdulist[3].header
-    assert (cube.meta["BSCALE"], cube.meta["BZERO"]) == (header["BSCALE"], header["BZERO"])
-
-
-@pytest.mark.parametrize(("window", "band"), [("O I 1356", "FUV"), ("Mg II k 2796", "NUV")])
-def test_memmap_unit_is_unscaled(window, band, raster_sg_file):
-    filename = get_test_filepath(
-        "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
-    )
-    assert read_spectrograph_lvl2(filename, memmap=True)[window][0].unit == DN_UNIT[f"{band}_UNSCALED"]
-    assert read_spectrograph_lvl2(filename)[window][0].unit == DN_UNIT[band]
-    # Float data hold DN already
-    assert read_spectrograph_lvl2(raster_sg_file, memmap=True)["C II 1336"][0].unit == DN_UNIT["FUV"]
-
-
 def test_unscaled_opened_file_needs_memmap():
     filename = get_test_filepath(
         "wavelength_drift/iris_l2_20140708_114109_3824262996_raster_t000_r00000_wavelength_drift_test.fits"
@@ -685,7 +682,7 @@ def test_unscaled_opened_file_needs_memmap():
         with pytest.raises(ValueError, match="needs memmap=True"):
             read_spectrograph_lvl2(hdulist, spectral_windows="Mg II k 2796")
         cube = read_spectrograph_lvl2(hdulist, spectral_windows="Mg II k 2796", memmap=True)["Mg II k 2796"][0]
-    assert cube.unit == DN_UNIT["NUV_UNSCALED"]
+    assert cube.unit == DN_UNIT["NUV"]
 
 
 def test_read_spectrograph_masks_clipped_samples(tmp_path, sns_sg_file):

@@ -17,10 +17,10 @@ from irispy.spectrograph import RasterCollection, SpectrogramCube
 from irispy.utils._spectral import (
     _QualityFlag,
     _to_unit,
-    check_scaled,
     check_velocity_range,
     default_rest_wavelength,
     drop_extra_coords_dependent_on_axis,
+    in_memory,
     make_map_cube,
     make_spatial_template,
     standard_deviation,
@@ -241,7 +241,7 @@ def calculate_red_blue_asymmetry(
     on ``v + 10`` km/s; a band with a missing velocity is NaN. Calling this function for each band
     instead takes a peak for each band, within its upper velocity of ``rest_wavelength``.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     if min_intensity is not None:
         min_intensity = _to_unit(min_intensity, cube.unit, "min_intensity")
     if rest_wavelength is None:

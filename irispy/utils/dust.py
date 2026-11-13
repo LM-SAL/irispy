@@ -15,7 +15,7 @@ from astropy.io import fits
 
 from irispy._wcs import _root_and_item
 from irispy.data import ROOTDIR
-from ._spectral import check_scaled
+from ._spectral import in_memory
 from .utils import _boolean_mask
 
 __all__ = ["calculate_dust_mask", "remove_dust"]
@@ -55,8 +55,7 @@ def calculate_dust_mask(cube):
         `True` at the bad pixels and their neighbors, with the shape of the cube's
         data. Pixels without a value (not finite) stay `False`.
     """
-    # The fill values of a memmap read are finite raw integers
-    check_scaled(cube)
+    cube = in_memory(cube)
     channel = cube.meta.get("TDESC1")
     pixels, pointing, level2_cdelt = _badpix_table()
     if channel not in pixels:
@@ -191,7 +190,7 @@ def remove_dust(
         msg = "fallback must be 'spatial' or None."
         raise ValueError(msg)
 
-    check_scaled(cube)
+    cube = in_memory(cube)
     clean_data = np.array(cube.data, dtype=np.promote_types(cube.data.dtype, np.float32))
     original_mask = _boolean_mask(cube)
     dust_mask = _coerce_dust_mask(cube, clean_data, dust_mask)

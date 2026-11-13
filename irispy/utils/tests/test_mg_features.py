@@ -204,12 +204,6 @@ def test_short_slit(raster):
     np.testing.assert_array_equal(velocity[:, 8:9], alone)
 
 
-def test_rejects_unscaled_data():
-    raster = read_spectrograph_lvl2(get_test_filepath(TEST_FILE), memmap=True)
-    with pytest.raises(ValueError, match="unscaled"):
-        calculate_mg_features(raster["Mg II k 2796"][0], lines=("k",))
-
-
 def test_rejects_other_input(raster):
     with pytest.raises(TypeError, match="select a window"):
         calculate_mg_features(raster)

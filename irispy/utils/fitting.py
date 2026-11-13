@@ -17,8 +17,8 @@ from irispy.spectrograph import RasterCollection
 from irispy.utils._spectral import (
     _QualityFlag,
     _to_unit,
-    check_scaled,
     default_rest_wavelength,
+    in_memory,
     make_map_cube,
     make_spatial_template,
     standard_deviation,
@@ -164,7 +164,7 @@ def starts_from_model(model, cube):
         spectrum of ``cube``, and the sum of its components, such as lines on a background.
         Parameters without units are taken in Å and the unit of ``cube``.
     cube : `~irispy.spectrograph.SpectrogramCube`
-        The cube to fit, read with ``memmap=False`` and cropped to the wavelengths to fit.
+        The cube to fit, cropped to the wavelengths to fit.
 
     Returns
     -------
@@ -198,7 +198,7 @@ def starts_from_model(model, cube):
     samples at all gets a NaN background. A line centered outside the wavelengths of ``cube``
     raises a `ValueError`.
     """
-    check_scaled(cube)
+    cube = in_memory(cube)
     if any(np.ndim(getattr(model, name).value) for name in model.param_names):
         msg = "model has array parameters; pass one with a value per parameter, such as one fitted to one spectrum."
         raise ValueError(msg)

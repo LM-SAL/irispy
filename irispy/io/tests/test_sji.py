@@ -1,6 +1,7 @@
 import io
 from pathlib import Path
 
+import dask.array as da
 import numpy as np
 import pytest
 
@@ -155,7 +156,7 @@ def test_read_sji_lvl2_unscaled_opened_file_needs_memmap(bursts_sji_1400_file):
 
 
 @pytest.mark.parametrize("memmap", [False, True])
-def test_read_sji_lvl2_masks_both_fill_values_without_changing_raw_data(memmap):
+def test_read_sji_lvl2_masks_both_fill_values_and_clipped_pixels(memmap):
     filename = get_test_filepath("bursts/iris_l2_20130902_163935_4000255147_SJI_1400_t000_test.fits")
     with fits.open(filename, memmap=False, do_not_scale_image_data=True) as hdulist:
         raw = hdulist[0].data.copy()
@@ -166,21 +167,25 @@ def test_read_sji_lvl2_masks_both_fill_values_without_changing_raw_data(memmap):
 
     cube = read_sji_lvl2(filename, memmap=memmap, uncertainty=True)
 
-    assert cube.meta["scaled"] is not memmap
-    if memmap:
-        np.testing.assert_array_equal(cube.mask, expected_mask)
-        np.testing.assert_array_equal(cube.data, raw)
-        assert cube.uncertainty is None
-    else:
-        expected = raw.astype(float) * scale + offset
-        expected[expected_mask] = np.nan
-        clipped = expected >= SATURATION_LIMIT.value  # the clipped pixels of this flare, which keep their value
-        assert clipped.any()
-        np.testing.assert_array_equal(cube.mask, expected_mask | clipped)
-        np.testing.assert_array_equal(cube.meta["saturated"], clipped)
-        np.testing.assert_allclose(cube.data, expected)
-        assert isinstance(cube.uncertainty, StdDevUncertainty)
-        assert cube.uncertainty.array.shape == cube.data.shape
+    expected = raw.astype(float) * scale + offset
+    expected[expected_mask] = np.nan
+    clipped = expected >= SATURATION_LIMIT.value  # the clipped pixels of this flare, which keep their value
+    assert clipped.any()
+    np.testing.assert_array_equal(cube.mask, expected_mask | clipped)
+    np.testing.assert_array_equal(cube.meta["saturated"], clipped)
+    np.testing.assert_allclose(cube.data, expected)
+    assert isinstance(cube.uncertainty, StdDevUncertainty)
+    # A memmap read gives the values of a read into memory, as lazy arrays
+    eager = read_sji_lvl2(filename, uncertainty=True)
+    for array, in_memory in (
+        (cube.data, eager.data),
+        (cube.mask, eager.mask),
+        (cube.uncertainty.array, eager.uncertainty.array),
+        (cube.meta["saturated"], eager.meta["saturated"]),
+    ):
+        assert isinstance(array, da.Array) is memmap
+        assert array.dtype == in_memory.dtype
+        np.testing.assert_array_equal(array, in_memory)
 
 
 @pytest.mark.parametrize(("file_fixture", "photons_per_dn"), [("sns_sji_1400_file", 12), ("sns_sji_2796_file", 18)])
@@ -213,19 +218,14 @@ def test_read_sji_lvl2_accepts_decompressed_data(input_kind, memmap):
     expected = read_sji_lvl2(filename, memmap=memmap)
     if input_kind == "hdulist":
         with fits.open(filename, mode="denywrite", memmap=memmap, do_not_scale_image_data=memmap) as hdulist:
-            original = hdulist[0].data
             cube = read_sji_lvl2(hdulist, memmap=memmap)
             assert not hdulist.fileinfo(0)["file"].closed
-            if memmap:
-                assert np.shares_memory(cube.data, original)
-                assert not cube.data.flags["W"]
     else:
         cube = read_sji_lvl2(io.BytesIO(Path(filename).read_bytes()), memmap=memmap)
 
     np.testing.assert_array_equal(cube.data, expected.data)
     np.testing.assert_array_equal(cube.mask, expected.mask)
     assert cube.unit == expected.unit
-    assert cube.meta["scaled"] == expected.meta["scaled"]
     np.testing.assert_allclose(cube.wcs.pixel_to_world_values(2, 3, 0), expected.wcs.pixel_to_world_values(2, 3, 0))
 
 
@@ -349,7 +349,6 @@ def test_read_aia_cube(aia_1700_file, memmap):
     assert "AIACube" in str(aia)
     assert aia.shape == (3, 382, 320)
     assert aia.unit == u.DN
-    assert aia.meta["scaled"]
     assert aia.meta.instrument == "AIA_3"
     assert aia.meta.observing_mode_id == 3620106076
     # The cube keeps the file's integers: no fill values, so nothing to replace or mask
@@ -454,7 +453,6 @@ def test_read_sot_cube(kind, unit, date, memmap, request):
     # One FITS WCS per frame
     assert [wcs.wcs.ctype[0] for wcs in cube.fits_wcs] == [header["CTYPE1"]] * cube.shape[0]
     assert cube.unit == unit
-    assert cube.meta["scaled"]
     # The floats are unscaled and NaN marks missing pixels, with or without memmap
     np.testing.assert_array_equal(cube.data, raw)
     np.testing.assert_array_equal(cube.mask, np.isnan(raw))
