@@ -6,8 +6,10 @@ from copy import copy, deepcopy
 from enum import IntEnum
 from numbers import Integral
 
+import dask
 import dask.array as da
 import numpy as np
+from dask.array.core import slices_from_chunks
 
 import astropy.units as u
 from astropy.nddata import StdDevUncertainty, UnknownUncertainty
@@ -52,6 +54,70 @@ def in_memory(cube):
     for name, array in arrays.items():
         setattr(cube, name, array)
     return cube
+
+
+def in_chunks(function, *arrays, axis, **kwargs):
+    """
+    The `dict` of arrays that ``function(*arrays, axis=axis, **kwargs)`` returns, for a
+    ``function`` that works out each spectrum on its own and drops the wavelength
+    ``axis``.
+
+    Dask arrays, those of a cube read with ``memmap=True``, are read and worked out a
+    chunk of exposures at a time and the results joined, so that only the chunks at work
+    are in memory. The chunks run in several threads at once, so ``function`` must not
+    use `warnings.catch_warnings`, which changes the filters of every thread.
+    """
+    lazy = next((array for array in arrays if isinstance(array, da.Array)), None)
+    kwargs["axis"] = axis
+    if lazy is None:
+        return function(*arrays, **kwargs)
+    # Whole exposures: not split along the wavelengths, nor along the slit before them, which calculate_mg_features
+    # follows
+    blocks = slices_from_chunks(
+        tuple(
+            (size,) if position in (axis - 1, axis) else chunks
+            for position, (chunks, size) in enumerate(zip(lazy.chunks, lazy.shape, strict=True))
+        )
+    )
+    results = list(
+        dask.compute(
+            *(
+                # Not pure: Dask would hash the arrays for a key that nothing shares
+                dask.delayed(function, pure=False)(
+                    *(array if array is None else array[block] for array in arrays), **kwargs
+                )
+                for block in blocks
+            ),
+            # Whatever the scheduler of the session, as in_memory
+            scheduler="threads",
+        )
+    )
+    joined = {
+        # The axes of the spectra, then those that the function adds
+        name: None
+        if first is None
+        else np.empty((*np.delete(lazy.shape, axis), *first.shape[lazy.ndim - 1 :]), first.dtype)
+        for name, first in results[0].items()
+    }
+    for index, block in enumerate(blocks):
+        for name, result in results[index].items():
+            if result is not None:
+                joined[name][block[:axis] + block[axis + 1 :]] = result
+        # Dropped once joined, so that large outputs, such as profiles, are not held twice
+        results[index] = None
+    return joined
+
+
+def take(array, indices, axis):
+    """
+    ``array`` at the adjacent ``indices`` of ``axis``, or `None` for none.
+    """
+    if array is None:
+        return None
+    taken = array[(slice(None),) * axis + (slice(indices[0], indices[-1] + 1),)]
+    # A Dask array then reads only these from its file. A NumPy array is copied: the maths is slower on a view with
+    # the other wavelengths between its samples, and the copy of a slice takes half the time of np.take.
+    return taken if isinstance(taken, da.Array) else np.ascontiguousarray(taken)
 
 
 def _to_unit(value, unit, name):
@@ -183,7 +249,9 @@ def standard_deviation(cube):
         return None
     if not isinstance(uncertainty, StdDevUncertainty | UnknownUncertainty):
         uncertainty = uncertainty.represent_as(StdDevUncertainty)
-    sigma = np.asarray(uncertainty.array, dtype=float)
+    sigma = uncertainty.array
+    # A Dask array stays one, for in_chunks
+    sigma = sigma.astype(float) if isinstance(sigma, da.Array) else np.asarray(sigma, dtype=float)
     if uncertainty.unit is not None and cube.unit is not None and uncertainty.unit != cube.unit:
         sigma = sigma * uncertainty.unit.to(cube.unit)
     return np.broadcast_to(sigma, cube.data.shape)
@@ -236,7 +304,7 @@ def make_spatial_template(cube, wavelength_axis):
     sliced_template = super(SpectrogramCube, cube).__getitem__(tuple(template_slicer))
     template_mask = None
     if cube.mask is not None:
-        spatial_mask = np.all(cube.mask, axis=wavelength_axis)
+        spatial_mask = np.asarray(np.all(cube.mask, axis=wavelength_axis))
         template_mask = spatial_mask if np.any(spatial_mask) else None
     if hasattr(cube.wcs, "dropaxis"):
         template_wcs = cube.wcs.dropaxis(cube.data.ndim - 1 - wavelength_axis)

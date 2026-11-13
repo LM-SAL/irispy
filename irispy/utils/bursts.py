@@ -15,7 +15,15 @@ from astropy.table import QTable
 from astropy.time import Time
 
 from irispy.spectrograph import MosaicCube
-from irispy.utils._spectral import _to_unit, check_velocity_range, in_memory, make_map_cube, make_spatial_template
+from irispy.utils._spectral import (
+    _to_unit,
+    check_velocity_range,
+    in_chunks,
+    in_memory,
+    make_map_cube,
+    make_spatial_template,
+    take,
+)
 from irispy.utils.constants import DN_UNIT
 from irispy.utils.response import get_interpolated_effective_area, get_latest_response
 from irispy.utils.utils import _boolean_mask, _saturated_samples
@@ -153,7 +161,6 @@ def find_bright_spectral_events(
             raise ValueError(msg)
     threshold = _to_unit(threshold, DN_UNIT[meta.detector_band] / u.s, "threshold")
     check_velocity_range(velocity_range)
-    cube = in_memory(cube)
     if cube.data.ndim not in (3, 4) or cube.wavelength_axis != cube.data.ndim - 1:
         msg = "The spectra must have axes ([raster,] step, slit, wavelength); slice with a range, not an index"
         raise ValueError(msg)
@@ -166,18 +173,19 @@ def find_bright_spectral_events(
             f"from {rest_wavelength}"
         )
         raise ValueError(msg)
-    data = cube.data[..., bins]
-    # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
-    data = np.ma.masked_where(~(data >= -10), data)
-    if cube.mask is not None:
-        # Saturated samples are masked, but count at their value, as in IDL
-        left_out = _boolean_mask(cube) & ~_saturated_samples(cube)
-        data[left_out[..., bins]] = np.ma.masked
-    mean = data.mean(axis=-1, dtype=float)
-    intensity = (mean / meta["exposure time"].to_value(u.s)[..., np.newaxis]).filled(np.nan)
-    burst = intensity >= threshold.to_value(cube.unit / u.s)
-    if median_factor is not None:
-        burst[burst] = mean[burst] < median_factor * np.ma.median(data[burst], axis=-1)
+    # Saturated samples are masked, but count at their value, as in IDL
+    left_out = None if cube.mask is None else _boolean_mask(cube) & ~_saturated_samples(cube)
+    # The exposure time of each sample, for in_chunks
+    exposure = np.broadcast_to(meta["exposure time"].to_value(u.s)[..., np.newaxis, np.newaxis], cube.data.shape)
+    found = in_chunks(
+        _bright_spectra,
+        *(take(array, np.flatnonzero(bins), cube.wavelength_axis) for array in (cube.data, left_out)),
+        exposure,
+        axis=cube.wavelength_axis,
+        threshold=threshold.to_value(cube.unit / u.s),
+        median_factor=median_factor,
+    )
+    intensity, burst = found["intensity"], found["burst"]
     # Pixels touch within a raster, not across rasters
     structure = np.zeros((3,) * burst.ndim, dtype=bool)
     structure[(1,) * (burst.ndim - 2)] = _EIGHT_CONNECTED
@@ -200,6 +208,23 @@ def find_bright_spectral_events(
         meta={"threshold": threshold},
     )
     return make_map_cube(template, labels, u.one), events
+
+
+def _bright_spectra(data, left_out, exposure, *, axis, threshold, median_factor):
+    """
+    The mean intensity per second of each spectrum of ``data``, and whether it is a
+    burst.
+    """
+    # NaN, the -200 fill and, as in iris_getwindata.pro, any other value below -10
+    data = np.ma.masked_where(~(data >= -10), data)
+    if left_out is not None:
+        data[left_out] = np.ma.masked
+    mean = data.mean(axis=axis, dtype=float)
+    intensity = (mean / exposure[..., 0]).filled(np.nan)
+    burst = intensity >= threshold
+    if median_factor is not None:
+        burst[burst] = mean[burst] < median_factor * np.ma.median(data[burst], axis=-1)
+    return {"intensity": intensity, "burst": burst}
 
 
 def find_bright_image_events(cube, *, sigma_factor=10, min_pixels=2):

@@ -4,6 +4,7 @@ This module provides general utility functions.
 
 from importlib import import_module
 
+import dask.array as da
 import numpy as np
 
 import astropy.units as u
@@ -35,7 +36,9 @@ def _boolean_mask(cube):
 
     A mask may be a scalar, cover only the trailing axes or be an integer array.
     """
-    mask = False if cube.mask is None else np.asarray(cube.mask, dtype=bool)
+    mask = False if cube.mask is None else cube.mask
+    # A Dask mask stays one, for in_chunks
+    mask = mask.astype(bool) if isinstance(mask, da.Array) else np.asarray(mask, dtype=bool)
     return np.broadcast_to(mask, cube.data.shape)
 
 
@@ -53,8 +56,11 @@ def _saturated_samples(cube):
     saturated = cube.meta.get("saturated")
     # Rebinning leaves the mark at the old shape
     if saturated is None or cube.mask is None or np.shape(saturated) != cube.data.shape:
-        return np.zeros(cube.data.shape, dtype=bool)
-    return _boolean_mask(cube) & np.asarray(saturated, dtype=bool)
+        # Not an array of the size of the cube
+        return np.broadcast_to(np.False_, cube.data.shape)
+    mask = _boolean_mask(cube)
+    # Lazy with the mask only: the marks of a cube read into memory stay a Dask array in its metadata
+    return mask & (saturated.astype(bool) if isinstance(mask, da.Array) else np.asarray(saturated, dtype=bool))
 
 
 @u.quantity_input

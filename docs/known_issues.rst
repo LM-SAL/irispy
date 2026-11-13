@@ -39,7 +39,8 @@ To use less memory:
 * Read only the spectral windows you need with ``spectral_windows``; the memory goes down in proportion.
 * Leave ``uncertainty=False`` (the default); ``uncertainty=True`` adds an array of the data's type and size.
 * Pass ``memmap=True``: the data, mask and uncertainty are then lazy Dask arrays with the same values, and only the slices that are used are read from the files and scaled.
-  The analysis functions read the cube they are given into memory, so slice or crop it first.
+  `~irispy.utils.moments.calculate_moments`, `~irispy.utils.moments.average_window`, `~irispy.utils.red_blue.calculate_red_blue_asymmetry`, `~irispy.utils.mg_features.calculate_mg_features` and the spectral burst finders work through such a cube a chunk of exposures at a time.
+  The other analysis functions read the cube they are given into memory, so slice or crop it first.
 
 Compressed SJI files are decompressed into memory once, so ``memmap=True`` cannot provide disk-backed arrays for them.
 

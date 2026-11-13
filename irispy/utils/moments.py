@@ -13,10 +13,11 @@ from irispy.utils._spectral import (
     _to_unit,
     check_velocity_range,
     default_rest_wavelength,
-    in_memory,
+    in_chunks,
     make_map_cube,
     make_spatial_template,
     standard_deviation,
+    take,
 )
 from irispy.utils.utils import _boolean_mask, _saturated_samples
 
@@ -94,14 +95,13 @@ def calculate_moments(
     * :cite:t:`yu2020`, Section 3.1
     * :cite:t:`cheung2022`, Appendix C
     """
-    cube = in_memory(cube)
     if min_intensity is not None:
         min_intensity = _to_unit(min_intensity, cube.unit, "min_intensity")
     if rest_wavelength is None:
         rest_wavelength = default_rest_wavelength(cube)
     wavelength_axis = cube.wavelength_axis
     wavelengths = cube.axis_world_coords(wavelength_axis)[0].to(u.nm)
-    data = np.asarray(cube.data)
+    data = cube.data
     mask = _boolean_mask(cube)
     clipped = _saturated_samples(cube)
     sigma = standard_deviation(cube)
@@ -112,59 +112,23 @@ def calculate_moments(
         check_velocity_range(velocity_range)
         limits = rest_wavelength * (1 + (velocity_range / constants.c).to_value(u.one))
         crop_indices = _wavelength_indices(wavelengths, limits)
-        slicer = [slice(None)] * data.ndim
-        slicer[wavelength_axis] = crop_indices
-        data = data[tuple(slicer)]
-        clipped = clipped[tuple(slicer)]
-        mask = mask[tuple(slicer)]
-        if sigma is not None:
-            sigma = sigma[tuple(slicer)]
+        data, mask, clipped, sigma = (
+            take(array, crop_indices, wavelength_axis) for array in (data, mask, clipped, sigma)
+        )
         wavelengths = wavelengths[crop_indices]
-    data = np.array(data, dtype=float, copy=True)
-    saturated = np.any(clipped, axis=wavelength_axis)
-    # The template is masked where all of cube is, the maps also where no sample is used or saturated
-    used_mask = ~np.any((~np.isnan(data) & ~mask) | clipped, axis=wavelength_axis)
-    dropped = (data < 0) | ~np.isfinite(data) | mask
-    data[dropped] = 0
-
-    weights = np.moveaxis(data, wavelength_axis, -1)
-    wvls = wavelengths.value
-    intensity_value = np.nansum(weights, axis=-1)
-    intensity_nonzero = intensity_value != 0
-    centroid_numerator = np.nansum(weights * wvls, axis=-1)
-    with np.errstate(invalid="ignore"):
-        centroid_value = np.where(intensity_nonzero, centroid_numerator / intensity_value, np.nan)
-    offset_squared = (wvls - centroid_value[..., np.newaxis]) ** 2
-    variance_numerator = np.nansum(offset_squared * weights, axis=-1)
-    with np.errstate(invalid="ignore"):
-        variance_value = np.where(intensity_nonzero, variance_numerator / intensity_value, np.nan)
-    variance_value = np.where(variance_value < 0, np.nan, variance_value)
-    stddev_value = np.sqrt(variance_value)
-
-    if min_intensity is not None:
-        low_intensity = intensity_value < min_intensity.value
-        intensity_value = np.where(low_intensity, np.nan, intensity_value)
-        centroid_value = np.where(low_intensity, np.nan, centroid_value)
-        stddev_value = np.where(low_intensity, np.nan, stddev_value)
-
-    intensity_value = np.where(saturated, np.nan, intensity_value)
-    centroid_value = np.where(saturated, np.nan, centroid_value)
-    stddev_value = np.where(saturated, np.nan, stddev_value)
-
-    errors = {}
-    if sigma is not None:
-        # First-order propagation of independent sample errors.
-        weight_sigma = np.moveaxis(np.where(dropped, 0, sigma), wavelength_axis, -1)
-        weight_variance = weight_sigma**2
-        kept = (~dropped).sum(axis=wavelength_axis)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            errors["intensity"] = np.where(kept > 0, np.sqrt(weight_variance.sum(axis=-1)), np.nan)
-            centroid_error = np.sqrt((offset_squared * weight_variance).sum(axis=-1)) / intensity_value
-            errors["centroid"] = np.where(kept > 1, centroid_error, np.nan)
-            width_terms = (offset_squared - variance_value[..., np.newaxis]) ** 2 * weight_variance
-            width_error = np.sqrt(width_terms.sum(axis=-1)) / intensity_value / (2 * stddev_value)
-            # Count the samples, as roundoff can leave a width of 0 at about 1e-14
-            errors["width"] = np.where(np.count_nonzero(weights, axis=-1) > 1, width_error, np.nan)
+    moments = in_chunks(
+        _moments,
+        data,
+        mask,
+        clipped,
+        sigma,
+        axis=wavelength_axis,
+        wvls=wavelengths.value,
+        min_intensity=None if min_intensity is None else min_intensity.value,
+    )
+    intensity_value, centroid_value, stddev_value = moments["intensity"], moments["centroid"], moments["width"]
+    saturated, used_mask = moments["saturated"], moments["unused"]
+    errors = {name: moments[f"{name}_error"] for name in ("intensity", "centroid", "width") if sigma is not None}
 
     maps = [
         ("intensity", intensity_value, cube.unit),
@@ -194,6 +158,66 @@ def calculate_moments(
     cubes = [(name, _make_cube(name, values, unit)) for name, values, unit in maps]
     cubes.append(("saturated", make_map_cube(template, saturated, u.dimensionless_unscaled, mask=used_mask)))
     return RasterCollection(cubes, aligned_axes=tuple(range(len(template.shape))))
+
+
+def _moments(data, mask, clipped, sigma, *, axis, wvls, min_intensity):
+    """
+    The moments of each spectrum of ``data`` over the wavelengths ``wvls``, for
+    `calculate_moments`, with their errors if ``sigma`` is given.
+    """
+    wavelength_axis = axis
+    data = np.array(data, dtype=float, copy=True)
+    saturated = np.any(clipped, axis=wavelength_axis)
+    # The template is masked where all of cube is, the maps also where no sample is used or saturated
+    used_mask = ~np.any((~np.isnan(data) & ~mask) | clipped, axis=wavelength_axis)
+    dropped = (data < 0) | ~np.isfinite(data) | mask
+    data[dropped] = 0
+
+    weights = np.moveaxis(data, wavelength_axis, -1)
+    intensity_value = np.nansum(weights, axis=-1)
+    intensity_nonzero = intensity_value != 0
+    centroid_numerator = np.nansum(weights * wvls, axis=-1)
+    with np.errstate(invalid="ignore"):
+        centroid_value = np.where(intensity_nonzero, centroid_numerator / intensity_value, np.nan)
+    offset_squared = (wvls - centroid_value[..., np.newaxis]) ** 2
+    variance_numerator = np.nansum(offset_squared * weights, axis=-1)
+    with np.errstate(invalid="ignore"):
+        variance_value = np.where(intensity_nonzero, variance_numerator / intensity_value, np.nan)
+    variance_value = np.where(variance_value < 0, np.nan, variance_value)
+    stddev_value = np.sqrt(variance_value)
+
+    if min_intensity is not None:
+        low_intensity = intensity_value < min_intensity
+        intensity_value = np.where(low_intensity, np.nan, intensity_value)
+        centroid_value = np.where(low_intensity, np.nan, centroid_value)
+        stddev_value = np.where(low_intensity, np.nan, stddev_value)
+
+    intensity_value = np.where(saturated, np.nan, intensity_value)
+    centroid_value = np.where(saturated, np.nan, centroid_value)
+    stddev_value = np.where(saturated, np.nan, stddev_value)
+
+    errors = {}
+    if sigma is not None:
+        # First-order propagation of independent sample errors.
+        weight_sigma = np.moveaxis(np.where(dropped, 0, sigma), wavelength_axis, -1)
+        weight_variance = weight_sigma**2
+        kept = (~dropped).sum(axis=wavelength_axis)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            errors["intensity"] = np.where(kept > 0, np.sqrt(weight_variance.sum(axis=-1)), np.nan)
+            centroid_error = np.sqrt((offset_squared * weight_variance).sum(axis=-1)) / intensity_value
+            errors["centroid"] = np.where(kept > 1, centroid_error, np.nan)
+            width_terms = (offset_squared - variance_value[..., np.newaxis]) ** 2 * weight_variance
+            width_error = np.sqrt(width_terms.sum(axis=-1)) / intensity_value / (2 * stddev_value)
+            # Count the samples, as roundoff can leave a width of 0 at about 1e-14
+            errors["width"] = np.where(np.count_nonzero(weights, axis=-1) > 1, width_error, np.nan)
+    return {
+        "intensity": intensity_value,
+        "centroid": centroid_value,
+        "width": stddev_value,
+        "saturated": saturated,
+        "unused": used_mask,
+        **{f"{name}_error": errors.get(name) for name in ("intensity", "centroid", "width")},
+    }
 
 
 @u.quantity_input
@@ -226,22 +250,34 @@ def average_window(cube, wavelength_range: u.AA, *, method="mean"):
     * For :math:`\int I(\lambda) \, d\lambda`, multiply a sum by the wavelength step:
       ``(average_window(cube, wavelength_range, method="sum") * abs(cube.spectral_dispersion)).to(cube.unit * u.AA)``.
     """
-    cube = in_memory(cube)
     if method not in {"mean", "sum"}:
         msg = f'method must be "mean" or "sum", not {method!r}'
         raise ValueError(msg)
     wavelength_axis = cube.wavelength_axis
     window = _wavelength_indices(cube.axis_world_coords(wavelength_axis)[0], wavelength_range)
-    data = np.take(cube.data, window, axis=wavelength_axis).astype(float)
-    dropped = np.isnan(data)
-    saturated = np.any(np.take(_saturated_samples(cube), window, axis=wavelength_axis), axis=wavelength_axis)
-    dropped |= np.take(_boolean_mask(cube), window, axis=wavelength_axis)
     sigma = standard_deviation(cube)
-    uncertainty = None if sigma is None else StdDevUncertainty(np.take(sigma, window, axis=wavelength_axis))
-    reduction = getattr(NDDataArray(data, uncertainty=uncertainty, mask=dropped), method)
-    result = reduction(axis=wavelength_axis, operation_ignores_mask=True)
-    blank = result.mask | saturated
-    values = np.where(blank, np.nan, result.data)
-    uncertainty = None if sigma is None else StdDevUncertainty(np.where(blank, np.nan, result.uncertainty.array))
+    # Only what is in the window is kept: the saturated samples of the whole cube are an array of its size
+    arrays = [
+        take(array, window, wavelength_axis)
+        for array in (cube.data, _boolean_mask(cube), _saturated_samples(cube), sigma)
+    ]
+    window = in_chunks(_window, *arrays, axis=wavelength_axis, method=method)
+    uncertainty = None if sigma is None else StdDevUncertainty(window["error"])
     template = make_spatial_template(cube, wavelength_axis)
-    return make_map_cube(template, values, cube.unit, mask_invalid=True, uncertainty=uncertainty)
+    return make_map_cube(template, window["values"], cube.unit, mask_invalid=True, uncertainty=uncertainty)
+
+
+def _window(data, mask, clipped, sigma, *, axis, method):
+    """
+    The mean or sum of each spectrum of ``data``, for `average_window`, with its error
+    if ``sigma`` is given.
+    """
+    data = data.astype(float)
+    uncertainty = None if sigma is None else StdDevUncertainty(sigma)
+    reduction = getattr(NDDataArray(data, uncertainty=uncertainty, mask=np.isnan(data) | mask), method)
+    result = reduction(axis=axis, operation_ignores_mask=True)
+    blank = result.mask | np.any(clipped, axis=axis)
+    return {
+        "values": np.where(blank, np.nan, result.data),
+        "error": None if sigma is None else np.where(blank, np.nan, result.uncertainty.array),
+    }

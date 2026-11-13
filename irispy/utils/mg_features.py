@@ -11,7 +11,7 @@ from scipy.ndimage import gaussian_filter1d
 import astropy.units as u
 
 from irispy.spectrograph import RasterCollection, SpectrogramCube
-from irispy.utils._spectral import check_velocity_range, in_memory, make_map_cube, make_spatial_template
+from irispy.utils._spectral import check_velocity_range, in_chunks, make_map_cube, make_spatial_template, take
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED
 from irispy.utils.utils import _boolean_mask, _saturated_samples
 
@@ -90,7 +90,6 @@ def calculate_mg_features(cube, *, velocity_range: u.km / u.s = (-40, 40) * u.km
     if cube.data.ndim not in (3, 4) or cube.wavelength_axis != cube.data.ndim - 1:
         msg = "cube must have axes ([raster,] step, slit, wavelength); slice it with ranges, e.g. cube[:, 300:301]"
         raise ValueError(msg)
-    cube = in_memory(cube)
     check_velocity_range(velocity_range)
     if not lines or not set(lines) <= set(_REST_WAVELENGTH) or len(set(lines)) < len(lines):
         msg = f"lines must be 'k', 'h' or both, not {lines!r}"
@@ -111,19 +110,17 @@ def calculate_mg_features(cube, *, velocity_range: u.km / u.s = (-40, 40) * u.km
         if np.count_nonzero(inside) < 3:
             msg = f"Too few wavelength points of Mg II {line} between {low} and {high} km/s"
             raise ValueError(msg)
-        window = np.asarray(cube.data[..., inside])
-        masked = _boolean_mask(cube)[..., inside]
-        missing = ~np.isfinite(window) | np.isin(window, BAD_PIXEL_VALUES_SCALED) | masked
-        # Masked, so missing, and no features
-        saturated = np.any(_saturated_samples(cube)[..., inside], axis=-1)
-        grid = np.linspace(velocity[inside][0], velocity[inside][-1], 300)
-        features = np.full((*window.shape[:-1], 3, 2), np.nan)  # blue peak, center, red peak
-        # One exposure, along the slit, at a time
-        for exposure in np.ndindex(window.shape[:-2]):
-            valid = ~missing[exposure].any(axis=-1)
-            if valid.any():
-                spectra = _spline(velocity[inside], window[exposure][valid].T, grid, tension=0).T
-                features[exposure][valid] = _slit_features(grid, spectra, valid)
+        found = in_chunks(
+            _line_features,
+            *(
+                take(array, np.flatnonzero(inside), cube.wavelength_axis)
+                for array in (cube.data, _boolean_mask(cube), _saturated_samples(cube))
+            ),
+            axis=cube.wavelength_axis,
+            velocity=velocity[inside],
+            grid=np.linspace(velocity[inside][0], velocity[inside][-1], 300),
+        )
+        features, saturated = found["features"], found["saturated"]
         maps += [
             (f"{line}{feature}_{kind}", make_map_cube(template, features[..., index, part], unit, mask_invalid=True))
             for index, feature in enumerate(("2v", "3", "2r"))
@@ -136,6 +133,23 @@ def calculate_mg_features(cube, *, velocity_range: u.km / u.s = (-40, 40) * u.km
     if skipped:
         warnings.warn(f"{msg}; skipping it", UserWarning, stacklevel=2)
     return RasterCollection(maps, aligned_axes=tuple(range(cube.data.ndim - 1)))
+
+
+def _line_features(window, masked, clipped, *, axis, velocity, grid):
+    """
+    Blue peak, line center and red peak, as (velocity, intensity), of each spectrum of
+    ``window``, and whether it has a saturated sample.
+    """
+    missing = ~np.isfinite(window) | np.isin(window, BAD_PIXEL_VALUES_SCALED) | masked
+    features = np.full((*window.shape[:-1], 3, 2), np.nan)  # blue peak, center, red peak
+    # One exposure, along the slit, at a time
+    for exposure in np.ndindex(window.shape[:-2]):
+        valid = ~missing[exposure].any(axis=-1)
+        if valid.any():
+            spectra = _spline(velocity, window[exposure][valid].T, grid, tension=0).T
+            features[exposure][valid] = _slit_features(grid, spectra, valid)
+    # Masked, so missing, and no features
+    return {"features": features, "saturated": np.any(clipped, axis=axis)}
 
 
 def _slit_features(grid, spectra, valid):
