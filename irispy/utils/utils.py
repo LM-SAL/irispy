@@ -56,7 +56,8 @@ def _saturated_samples(cube):
     saturated = cube.meta.get("saturated")
     # Rebinning leaves the mark at the old shape
     if saturated is None or cube.mask is None or np.shape(saturated) != cube.data.shape:
-        return np.zeros(cube.data.shape, dtype=bool)
+        # Not an array of the size of the cube
+        return np.broadcast_to(np.False_, cube.data.shape)
     mask = _boolean_mask(cube)
     # Lazy with the mask only: the marks of a cube read into memory stay a Dask array in its metadata
     return mask & (saturated.astype(bool) if isinstance(mask, da.Array) else np.asarray(saturated, dtype=bool))
