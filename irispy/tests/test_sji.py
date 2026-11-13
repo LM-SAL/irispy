@@ -362,6 +362,11 @@ def test_sjicube_slice_keeps_the_fits_wcs_of_its_frames(sns_sjicube_1330, item, 
 
     if expected_len is None:
         assert isinstance(subset.fits_wcs, WCS)
+        # The pointing of that frame, which is not the one of the frame at the other end
+        frames = sns_sjicube_1330.fits_wcs
+        frame = item if isinstance(item, int) else item[0]
+        np.testing.assert_array_equal(subset.fits_wcs.wcs.crval, frames[frame].wcs.crval)
+        assert not np.array_equal(frames[0].wcs.crval, frames[-1].wcs.crval)
     else:
         assert len(subset.fits_wcs) == expected_len
         assert isinstance(subset.fits_wcs[0], WCS)

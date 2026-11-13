@@ -539,6 +539,21 @@ def test_celestial_frame_is_the_frame_of_the_gwcs_off_the_limb(raster_sji_1400_f
     assert cube.crop([lower, first_time], [upper, last_time]).data.shape == (2, 99, 11)
 
 
+def test_file_with_no_pointing_reads_with_no_sky_positions(sns_sji_1400_file, tmp_path):
+    # A PC matrix of zeros has no inverse, which stopped the read
+    with fits.open(sns_sji_1400_file) as hdulist:
+        auxiliary = hdulist[1]
+        pointing = [auxiliary.header[key] for key in ("XCENIX", "YCENIX", "PC1_1IX", "PC1_2IX", "PC2_1IX", "PC2_2IX")]
+        auxiliary.data[:, pointing] = 0
+        hdulist.writeto(tmp_path / "no_pointing.fits")
+    cube = read_sji_lvl2(tmp_path / "no_pointing.fits")
+    np.testing.assert_array_equal(cube.data, read_sji_lvl2(sns_sji_1400_file).data)
+    longitude, latitude, seconds = cube.wcs.pixel_to_world_values(5, 5, 3)
+    assert np.isnan(longitude)
+    assert np.isnan(latitude)
+    assert seconds > 0
+
+
 def test_file_of_one_frame_has_a_world_to_pixel(sot_sp_file):
     # The time table of one frame does not invert, which left the gWCS of a Hinode/SOT SP map without an inverse
     cube = read_sji_lvl2(sot_sp_file)

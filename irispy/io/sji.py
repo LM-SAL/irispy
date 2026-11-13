@@ -57,7 +57,7 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
     matrix). Only rows where every pointing value is zero are treated as gaps. Gaps are
     filled with the average of the nearest valid neighbor on each side (clamped at the
     ends), so filled values never leave the neighbors' range and an unrotated PC matrix
-    stays exactly identity.
+    stays exactly identity. When every row is a gap, the pointing is NaN.
     """
     columns = [
         hdulist[1].header["XCENIX"],
@@ -70,10 +70,14 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
     pointing = hdulist[1].data[:, columns]
     dropped_rows = np.flatnonzero(np.all(pointing == 0, axis=1))
     valid_rows = np.flatnonzero(np.any(pointing != 0, axis=1))
-    if dropped_rows.size == 0 or valid_rows.size == 0:
+    if dropped_rows.size == 0:
         return
     if not hdulist[1].data.flags["W"]:
         hdulist[1].data = hdulist[1].data.copy()
+    if valid_rows.size == 0:
+        # No sky positions, where a PC matrix of zeros has no inverse to build the gWCS with
+        hdulist[1].data[:, columns] = np.nan
+        return
     right = np.clip(np.searchsorted(valid_rows, dropped_rows), 0, valid_rows.size - 1)
     left = np.clip(right - 1, 0, valid_rows.size - 1)
     for column in columns:
