@@ -1,0 +1,1 @@
+A crop of a slit-jaw, AIA or Hinode/SOT cube with a time before its first frame or after its last is now clipped to the data. It raised a ``NotImplementedError``.

@@ -1,0 +1,1 @@
+``cube.wcs.array_shape`` of a slit-jaw, AIA or Hinode/SOT cube is now the shape of its data, which ``reproject_to`` takes from its target WCS. It was ``None``.

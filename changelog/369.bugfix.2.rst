@@ -1,0 +1,1 @@
+The gWCS of a file with one frame, such as a Hinode/SOT SP map, now has a world to pixel transform. ``cube.wcs.world_to_pixel``, ``crop`` and ``plot_coord`` raised a ``ValueError`` on it.

@@ -3,17 +3,14 @@ from contextlib import nullcontext
 import numpy as np
 
 import astropy.units as u
-import gwcs
-import gwcs.coordinate_frames as cf
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.time import Time
 from astropy.wcs.utils import celestial_frame_to_wcs
 
-from dkist.wcs.models import CoupledCompoundModel, VaryingCelestialTransform
 from sunpy.util import MetaDict
 
-from irispy._interpolation import _time_lookup
+from irispy._gwcs import _create_sji_gwcs
 from irispy.io._level2 import _check_level2
 from irispy.io._mask import _check_scaled, _fill_mask_values, _is_scaled, _memmap_fill_mask
 from irispy.meta import SJIMeta
@@ -60,7 +57,7 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
     matrix). Only rows where every pointing value is zero are treated as gaps. Gaps are
     filled with the average of the nearest valid neighbor on each side (clamped at the
     ends), so filled values never leave the neighbors' range and an unrotated PC matrix
-    stays exactly identity.
+    stays exactly identity. When every row is a gap, the pointing is NaN.
     """
     columns = [
         hdulist[1].header["XCENIX"],
@@ -73,67 +70,19 @@ def _fill_dropped_pointing_rows(hdulist) -> None:
     pointing = hdulist[1].data[:, columns]
     dropped_rows = np.flatnonzero(np.all(pointing == 0, axis=1))
     valid_rows = np.flatnonzero(np.any(pointing != 0, axis=1))
-    if dropped_rows.size == 0 or valid_rows.size == 0:
+    if dropped_rows.size == 0:
         return
     if not hdulist[1].data.flags["W"]:
         hdulist[1].data = hdulist[1].data.copy()
+    if valid_rows.size == 0:
+        # No sky positions, where a PC matrix of zeros has no inverse to build the gWCS with
+        hdulist[1].data[:, columns] = np.nan
+        return
     right = np.clip(np.searchsorted(valid_rows, dropped_rows), 0, valid_rows.size - 1)
     left = np.clip(right - 1, 0, valid_rows.size - 1)
     for column in columns:
         values = hdulist[1].data[:, column]
         values[dropped_rows] = (values[valid_rows[left]] + values[valid_rows[right]]) / 2
-
-
-def _create_gwcs(hdulist: fits.HDUList, t_obs) -> gwcs.WCS:
-    """
-    Creates the GWCS object for the SJI file.
-
-    Parameters
-    ----------
-    hdulist : `astropy.io.fits.HDUList`
-        The HDU list of the SJI file.
-
-    Returns
-    -------
-    `gwcs.WCS`
-        GWCS object for the SJI file.
-    """
-    from sunpy.coordinates.frames import Helioprojective  # NOQA: PLC0415
-
-    pc_table = hdulist[1].data[:, hdulist[1].header["PC1_1IX"] : hdulist[1].header["PC2_2IX"] + 1].reshape(-1, 2, 2)
-    crval_table = hdulist[1].data[:, hdulist[1].header["XCENIX"] : hdulist[1].header["YCENIX"] + 1]
-    # FITS CRPIX is 1-based and the transform takes 0-based pixels
-    crpix_table = [hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1]
-    cdelt = [hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]
-    celestial = VaryingCelestialTransform(
-        cdelt=cdelt * u.arcsec / u.pixel,
-        pc_table=pc_table * u.pixel,
-        crval_table=crval_table * u.arcsec,
-        crpix_table=crpix_table * u.pixel,
-    )
-    start_time = t_obs[0]
-    cadence = (t_obs - start_time).to_value(u.s) * u.s
-    temporal = _time_lookup(cadence)
-    forward_transform = CoupledCompoundModel("&", left=celestial, right=temporal)
-    celestial_frame = cf.CelestialFrame(
-        axes_order=(0, 1),
-        unit=(u.arcsec, u.arcsec),
-        reference_frame=Helioprojective(observer="earth", obstime=start_time),
-        axis_physical_types=[
-            "custom:pos.helioprojective.lon",
-            "custom:pos.helioprojective.lat",
-        ],
-        axes_names=("Longitude", "Latitude"),
-    )
-    temporal_frame = cf.TemporalFrame(start_time, unit=(u.s,), axes_order=(2,), axes_names=("Time (UTC)",))
-    output_frame = cf.CompositeFrame([celestial_frame, temporal_frame])
-    input_frame = cf.CoordinateFrame(
-        axes_order=(0, 1, 2),
-        naxes=3,
-        axes_type=["PIXEL", "PIXEL", "PIXEL"],
-        unit=(u.pix, u.pix, u.pix),
-    )
-    return gwcs.WCS(forward_transform, input_frame=input_frame, output_frame=output_frame)
 
 
 def _create_headers_wcs(hdulist, t_obs):
@@ -361,9 +310,19 @@ def read_sji_lvl2(filename, *, uncertainty=False, memmap=False):
         meta["scaled"] = scaled
         if saturated is not None and saturated.any():
             meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", (0, 1, 2))
+        auxiliary, columns = hdulist[1].data, hdulist[1].header
+        wcs = _create_sji_gwcs(
+            auxiliary[:, columns["PC1_1IX"] : columns["PC2_2IX"] + 1].reshape(-1, 2, 2),
+            auxiliary[:, columns["XCENIX"] : columns["YCENIX"] + 1],
+            # FITS CRPIX is 1-based and the transform takes 0-based pixels
+            np.array([hdulist[0].header["CRPIX1"] - 1, hdulist[0].header["CRPIX2"] - 1]),
+            np.array([hdulist[0].header["CDELT1"], hdulist[0].header["CDELT2"]]),
+            t_obs,
+        )
+        wcs.array_shape = data_nan_masked.shape
         map_cube = cube_class(
             data_nan_masked,
-            _create_gwcs(hdulist, t_obs),
+            wcs,
             uncertainty=out_uncertainty,
             unit=unit,
             meta=meta,

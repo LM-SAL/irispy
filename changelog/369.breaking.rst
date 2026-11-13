@@ -1,0 +1,2 @@
+The low-level longitudes that ``cube.wcs.pixel_to_world_values`` gives for a slit-jaw, AIA or Hinode/SOT cube are now arcseconds from -648000 to 648000, the ``Tx`` of the sky position.
+They were from 0 to 1296000: convert a longitude kept from before with ``(lon + 648000) % 1296000 - 648000``.
