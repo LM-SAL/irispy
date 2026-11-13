@@ -378,8 +378,7 @@ def read_spectrograph_lvl2(
     one raster. Use `irispy.io.read_files` for tar files.
 
     Samples with the ``-200`` DN fill value, or clipped to the ``-199`` DN floor, keep their
-    value and are marked in the mask. With ``memmap=True`` these are the raw integers
-    ``-32768`` and ``-32764``.
+    value and are marked in the mask.
 
     Parameters
     ----------
