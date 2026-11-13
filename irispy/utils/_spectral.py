@@ -43,8 +43,9 @@ def in_memory(cube):
     if not lazy:
         return cube
     arrays = {name: np.empty(array.shape, array.dtype) for name, array in lazy.items()}
-    # Chunk by chunk into arrays made first: dask.compute holds every chunk and the array joined from them
-    da.store(list(lazy.values()), list(arrays.values()), lock=False)
+    # Chunk by chunk into arrays made first: dask.compute holds every chunk and the array joined from them. In threads,
+    # whatever the scheduler of the session: another process, as of a Dask client, would fill arrays of its own.
+    da.store(list(lazy.values()), list(arrays.values()), lock=False, scheduler="threads")
     if "uncertainty" in arrays:
         arrays["uncertainty"] = type(uncertainty)(arrays["uncertainty"], copy=False)
     cube = copy(cube)

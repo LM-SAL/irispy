@@ -1,3 +1,4 @@
+import dask
 import numpy as np
 import pytest
 
@@ -30,7 +31,9 @@ def test_in_memory(sns_sg_file):
         read_files(sns_sg_file, memmap=memmap, uncertainty=True)["Si IV 1403"][:, 2:] for memmap in (False, True)
     )
     assert in_memory(eager) is eager
-    loaded = in_memory(lazy)
+    # In threads whatever the scheduler: another process would fill arrays of its own
+    with dask.config.set(scheduler="processes"):
+        loaded = in_memory(lazy)
     for array, expected in (
         (loaded.data, eager.data),
         (loaded.mask, eager.mask),
