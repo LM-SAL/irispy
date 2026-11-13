@@ -113,9 +113,11 @@ def test_in_chunks():
 
     expected = function(data, 2 * data, None, axis=3, power=2)
     calls.clear()
-    lazy = da.from_array(data, chunks=(1, 2, 3, 4))
-    # A NumPy array beside the Dask one is cut into the same chunks
-    result = in_chunks(function, lazy, 2 * data, None, axis=3, power=2)
+    # Chunks along the slit and the wavelengths too: the function still gets whole exposures
+    lazy = da.from_array(data, chunks=(1, 2, 2, 2))
+    # In threads whatever the scheduler, and a NumPy array beside the Dask one is cut into the same chunks
+    with dask.config.set(scheduler="processes"):
+        result = in_chunks(function, lazy, 2 * data, None, axis=3, power=2)
     assert sorted(calls) == sorted([(1, 2, 3, 4)] * 4 + [(1, 1, 3, 4)] * 2)
     assert result["nothing"] is None
     for name in ("total", "pair"):

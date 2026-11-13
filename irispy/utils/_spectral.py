@@ -71,25 +71,40 @@ def in_chunks(function, *arrays, axis, **kwargs):
     kwargs["axis"] = axis
     if lazy is None:
         return function(*arrays, **kwargs)
-    blocks = slices_from_chunks(lazy.chunks)
-    results = dask.compute(
-        *(
-            # Not pure: Dask would hash the arrays for a key that nothing shares
-            dask.delayed(function, pure=False)(
-                *(array if array is None else array[block] for array in arrays), **kwargs
-            )
-            for block in blocks
+    # Whole exposures: not split along the wavelengths, nor along the slit before them, which calculate_mg_features
+    # follows
+    blocks = slices_from_chunks(
+        tuple(
+            (size,) if position in (axis - 1, axis) else chunks
+            for position, (chunks, size) in enumerate(zip(lazy.chunks, lazy.shape, strict=True))
         )
     )
-    joined = {}
-    for name, first in results[0].items():
-        if first is None:
-            joined[name] = None
-            continue
+    results = list(
+        dask.compute(
+            *(
+                # Not pure: Dask would hash the arrays for a key that nothing shares
+                dask.delayed(function, pure=False)(
+                    *(array if array is None else array[block] for array in arrays), **kwargs
+                )
+                for block in blocks
+            ),
+            # Whatever the scheduler of the session, as in_memory
+            scheduler="threads",
+        )
+    )
+    joined = {
         # The axes of the spectra, then those that the function adds
-        joined[name] = np.empty((*np.delete(lazy.shape, axis), *first.shape[lazy.ndim - 1 :]), first.dtype)
-        for block, result in zip(blocks, results, strict=True):
-            joined[name][block[:axis] + block[axis + 1 :]] = result[name]
+        name: None
+        if first is None
+        else np.empty((*np.delete(lazy.shape, axis), *first.shape[lazy.ndim - 1 :]), first.dtype)
+        for name, first in results[0].items()
+    }
+    for index, block in enumerate(blocks):
+        for name, result in results[index].items():
+            if result is not None:
+                joined[name][block[:axis] + block[axis + 1 :]] = result
+        # Dropped once joined, so that large outputs, such as profiles, are not held twice
+        results[index] = None
     return joined
 
 
