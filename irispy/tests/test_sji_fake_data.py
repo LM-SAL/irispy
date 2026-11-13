@@ -131,13 +131,6 @@ def test_sjicube_slice_rejects_out_of_range_index(sns_sjicube_1330):
     assert not isinstance(error.value, ValueError)
 
 
-def test_sjicube_slice_without_frame_headers_keeps_fits_wcs_none(cube):
-    subset = cube[0:1]
-
-    assert cube.fits_wcs is None
-    assert subset.fits_wcs is None
-
-
 def test_sjicube_plot_without_twave1_uses_viridis(cube, cube_2d):
     assert "TWAVE1" not in cube.meta  # fixture check
     assert cube.plotter._default_cmap_name() == "viridis"
@@ -150,4 +143,3 @@ def test_sjicube_2d_slice(cube_2d):
     subset = cube_2d[:, :2]
 
     assert subset.data.ndim == 2
-    assert subset.fits_wcs is None

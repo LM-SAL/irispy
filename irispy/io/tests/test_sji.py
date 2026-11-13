@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import asdf
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -281,12 +282,20 @@ def test_read_sji_lvl2_fills_dropped_pointing_rows(tmp_path, sns_sji_1330_file):
     np.testing.assert_allclose(header["CRVAL2"], expected["YCENIX"])
 
 
-def test_sji_gwcs_matches_the_fits_pointing(sns_sji_1400_file):
+# The pixels of the SOT SP map are not square, so its PC matrix must be scaled by rows
+@pytest.mark.parametrize("file", ["sns_sji_1400_file", "sot_sp_file"])
+def test_sji_gwcs_matches_the_fits_pointing(request, file):
     # CRVAL is at the 1-based FITS CRPIX, i.e. the 0-based pixel CRPIX - 1
-    cube = read_sji_lvl2(sns_sji_1400_file)
-    with fits.open(sns_sji_1400_file) as hdulist:
-        header, aux, columns = hdulist[0].header, hdulist[1].data, hdulist[1].header
+    file = request.getfixturevalue(file)
+    cube = read_sji_lvl2(file)
+    with fits.open(file) as hdulist:
+        # The auxiliary table of a one-frame file is one row
+        header, aux, columns = hdulist[0].header, np.atleast_2d(hdulist[1].data), hdulist[1].header
     n_frames, ny, nx = cube.data.shape
+    assert cube.wcs.array_shape == cube.data.shape
+    # The same names as on a raster and a mosaic, and a name for each table of the direction
+    assert cube.wcs.world_axis_names[:2] == ("Longitude", "Latitude")
+    assert cube.wcs.low_level_wcs.forward_transform["per_x_0"].lookup_table.shape == (n_frames + 2,)
     x = np.array([0, nx - 1, 0, nx - 1, (nx - 1) / 2])
     y = np.array([0, 0, ny - 1, ny - 1, (ny - 1) / 2])
     for frame in (0, n_frames - 1):
@@ -300,11 +309,10 @@ def test_sji_gwcs_matches_the_fits_pointing(sns_sji_1400_file):
             [aux[frame, columns["PC1_1IX"]], aux[frame, columns["PC1_2IX"]]],
             [aux[frame, columns["PC2_1IX"]], aux[frame, columns["PC2_2IX"]]],
         ]
-        longitude, latitude = (value * 3600 for value in fits_wcs.pixel_to_world_values(x, y))
-        world = cube.wcs.pixel_to_world_values(x, y, np.full_like(x, frame))
-        # the gWCS wraps longitude to [0, 360) degrees and astropy to (-180, 180]
-        np.testing.assert_allclose((world[0] - longitude + 648000) % 1296000 - 648000, 0, atol=1e-6)
-        np.testing.assert_allclose(world[1], latitude, atol=1e-6)
+        expected = fits_wcs.pixel_to_world(x, y)
+        sky = cube.wcs.pixel_to_world(x, y, np.full_like(x, frame))[0]
+        assert_quantity_allclose(sky.Tx, expected.Tx, atol=1e-6 * u.arcsec)
+        assert_quantity_allclose(sky.Ty, expected.Ty, atol=1e-6 * u.arcsec)
 
 
 def test_sji_extra_coordinate_units(sns_sji_1400_file):
@@ -376,6 +384,22 @@ def test_sji_first_and_last_frames_round_trip(sns_sjicube_1400):
         assert cube.wcs.world_to_array_index(*cube.wcs.array_index_to_world(*index)) == index
 
 
+def test_sji_gwcs_interpolates_between_frames_and_survives_asdf(sns_sjicube_1400, tmp_path):
+    wcs = sns_sjicube_1400.wcs
+    frames = np.array([3.0, 3.5, 4.0])
+    world = np.array(wcs.pixel_to_world_values(5.0, 7.0, frames))
+    # Halfway between two frames is halfway between their sky positions and times
+    np.testing.assert_allclose(world[:, 1], (world[:, 0] + world[:, 2]) / 2, rtol=1e-9)
+    # The low-level longitude is the Tx of the sky position, not an angle from 0 to 360 degrees
+    np.testing.assert_allclose(world[0, 0], wcs.pixel_to_world(5.0, 7.0, 3.0)[0].Tx.to_value(u.arcsec), rtol=1e-10)
+    assert world[0, 0] < 0
+    asdf.AsdfFile({"wcs": wcs}).write_to(tmp_path / "wcs.asdf")
+    with asdf.open(tmp_path / "wcs.asdf") as asdf_file:
+        saved = asdf_file["wcs"]
+        np.testing.assert_array_equal(saved.pixel_to_world_values(5.0, 7.0, frames), world)
+        np.testing.assert_allclose(saved.world_to_pixel_values(*world[:, ::2]), [[5.0] * 2, [7.0] * 2, frames[::2]])
+
+
 def test_frame_wcs_headers_match_per_frame_make_fitswcs_header(sns_sji_1400_file):
     # The headers are built from one template; each frame must equal a header made for that frame alone.
     with fits.open(sns_sji_1400_file) as hdulist:
@@ -427,6 +451,8 @@ def test_read_sot_cube(kind, unit, date, memmap, request):
 
     assert isinstance(cube, SOTCube)
     assert "SOTCube" in str(cube)
+    # One FITS WCS per frame
+    assert [wcs.wcs.ctype[0] for wcs in cube.fits_wcs] == [header["CTYPE1"]] * cube.shape[0]
     assert cube.unit == unit
     assert cube.meta["scaled"]
     # The floats are unscaled and NaN marks missing pixels, with or without memmap
@@ -490,8 +516,42 @@ def test_sot_cube_to_maps(kind, conversion, request):
     sot_map.plot()
 
 
+def test_crop_with_a_time_outside_the_cube_is_clipped_to_the_data(sns_sjicube_1400):
+    cube = sns_sjicube_1400
+    lower, upper = cube.wcs.pixel_to_world(5, 5, 0), cube.wcs.pixel_to_world(20, 15, cube.data.shape[0] - 1)
+    inside = cube.crop(lower, upper).data.shape
+    assert inside[0] == cube.data.shape[0]
+    # A time outside the cube gave NaN pixels, and the crop raised
+    assert cube.crop(lower, [upper[0], upper[1] + 1 * u.hour]).data.shape == inside
+    assert cube.crop([lower[0], lower[1] - 1 * u.hour], upper).data.shape == inside
+    # The frame of such a time is outside the cube, as from a FITS WCS
+    assert cube.wcs.world_to_pixel(upper[0], upper[1] + 1 * u.hour)[2] > cube.data.shape[0]
+
+
+def test_celestial_frame_is_the_frame_of_the_gwcs_off_the_limb(raster_sji_1400_file):
+    # The frame of the FITS header of the first frame is not that of the gWCS, and sunpy cannot move a position off
+    # the limb between two frames: it became NaN
+    cube = read_sji_lvl2(raster_sji_1400_file)
+    (lower, first_time), (upper, last_time) = cube.wcs.pixel_to_world(0, 10, 0), cube.wcs.pixel_to_world(10, 108, 1)
+    assert upper.Ty > 1000 * u.arcsec
+    lower, upper = (SkyCoord(sky.Tx, sky.Ty, frame=cube.celestial_frame) for sky in (lower, upper))
+    np.testing.assert_allclose(cube.wcs.world_to_pixel(upper, last_time), (10, 108, 1), atol=1e-6)
+    assert cube.crop([lower, first_time], [upper, last_time]).data.shape == (2, 99, 11)
+
+
+def test_file_of_one_frame_has_a_world_to_pixel(sot_sp_file):
+    # The time table of one frame does not invert, which left the gWCS of a Hinode/SOT SP map without an inverse
+    cube = read_sji_lvl2(sot_sp_file)
+    assert cube.data.shape[0] == 1
+    pixel = (5.0, 7.0, 0.0)
+    np.testing.assert_allclose(
+        cube.wcs.world_to_pixel_values(*cube.wcs.pixel_to_world_values(*pixel)), pixel, atol=1e-9
+    )
+    lower, upper = cube[0].wcs.pixel_to_world(5, 7), cube[0].wcs.pixel_to_world(40, 42)
+    assert cube[0].crop(lower, upper).data.shape == (36, 36)
+
+
 def test_length_one_time_slice_prints_and_maps(sns_sjicube_1330):
-    # A one-frame cube only arises from slicing; no level 2 file holds a single exposure
     cube = sns_sjicube_1330[0:1]
     assert cube.data.shape[0] == 1
     assert "Obs ID" in str(cube)

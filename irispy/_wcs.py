@@ -1,19 +1,74 @@
+"""
+What the cubes need of their WCS, whatever its kind: the WCS that a slice came from, the
+FITS WCS, the celestial frame.
+
+``irispy._gwcs`` builds the gWCS of each cube.
+"""
+
 import numpy as np
 
+import gwcs
+import gwcs.coordinate_frames as cf
 from astropy.utils.shapes import simplify_basic_index
 from astropy.wcs import WCS
 from astropy.wcs.utils import wcs_to_celestial_frame
+from astropy.wcs.wcsapi import SlicedLowLevelWCS
 
 from ndcube.utils.wcs import pixel_axis_to_physical_types
-from sunpy.coordinates.frames import Helioprojective
+from ndcube.wcs.wrappers import ResampledLowLevelWCS
+
+
+def _root_wcs(cube):
+    """
+    The WCS of ``cube`` before any slicing or rebinning.
+    """
+    wcs = cube.wcs.low_level_wcs
+    while isinstance(wcs, (SlicedLowLevelWCS, ResampledLowLevelWCS)):
+        wcs = wcs._wcs
+    return wcs
+
+
+def _root_and_item(cube):
+    """
+    The WCS of ``cube`` before its slicing, and the slice, in array order, that leads
+    from it to the cube's WCS: a full slice for a cube that is not sliced.
+    """
+    wcs = cube.wcs.low_level_wcs
+    if isinstance(wcs, SlicedLowLevelWCS):
+        return wcs._wcs, list(wcs._slices_array)
+    return wcs, [slice(None)] * wcs.pixel_n_dim
+
+
+def _sliced(wcs, item):
+    return wcs if all(index == slice(None) for index in item) else wcs.slice(tuple(item), numpy_order=True)
+
+
+def _fits_wcs_from_cube(cube):
+    """
+    The FITS WCS of the cube, sliced as the cube is.
+
+    For a slit-jaw cube, a list with one per frame, with the pointing and time of that
+    frame, and for one frame, ``cube[k]``, its FITS WCS. For a cube built on a FITS WCS,
+    that WCS. `None` when the cube has none, such as after rebinning, or when it is one
+    pixel of each frame.
+    """
+    root, item = _root_and_item(cube)
+    if isinstance(root, WCS):
+        return _sliced(root, item)
+    # A rebinned cube has no FITS WCS; a gWCS cube has one for each raster or frame
+    roots = cube._fits_wcs_roots(item[0]) if isinstance(root, gwcs.WCS) else None
+    if all(isinstance(index, (int, np.integer)) for index in item[1:]):
+        # One pixel of each raster or frame, such as a light curve, leaves that WCS no pixel axis
+        return None
+    if isinstance(roots, list):
+        return [_sliced(wcs, item[1:]) for wcs in roots]
+    return None if roots is None else _sliced(roots, item[1:])
 
 
 def _wcs_array_axis_physical_types(cube):
     """
-    `~ndcube.NDCube.array_axis_physical_types` from the main WCS alone.
-
-    The combined WCS, with the extra coordinates, raises on a length-1 step axis
-    (ndcube: mismatched pixel bounds), such as ``cube[0:1]`` or a one-exposure file.
+    `~ndcube.NDCube.array_axis_physical_types` from the main WCS alone, without the
+    types of the extra coordinates, for the printed summary of a cube.
     """
     wcs = cube.wcs.low_level_wcs
     return [tuple(pixel_axis_to_physical_types(axis, wcs).tolist()) for axis in reversed(range(wcs.pixel_n_dim))]
@@ -21,30 +76,21 @@ def _wcs_array_axis_physical_types(cube):
 
 def _celestial_frame_from_cube(cube):
     """
-    The `~sunpy.coordinates.frames.Helioprojective` frame of this observation, as seen
-    by the IRIS observer.
+    The `~sunpy.coordinates.frames.Helioprojective` frame of the sky positions that the
+    WCS of the cube gives and takes.
 
     This does not depend on slicing: it works on combined multi-file cubes and on
-    cubes sliced along the scan, step, slit, time, or wavelength axes.
+    cubes sliced along the raster, step, slit, time, or wavelength axes.
     """
-    observer = getattr(cube.meta, "observer", None)
-    if observer is not None:
-        return Helioprojective(observer=observer, obstime=observer.obstime)
-
-    headers = cube.meta.get("frame_wcs_headers")
-    if headers is not None:
-        # The first frame, whatever the slice: fits_wcs follows an integer index and a rebinned cube has none.
-        fits_wcs = WCS(headers[0])
-    else:
-        fits_wcs = cube.fits_wcs
-        if fits_wcs is None:
-            fits_wcs = cube.meta.get("fits_wcs")
-    if isinstance(fits_wcs, list):
-        fits_wcs = fits_wcs[0] if fits_wcs else None
-    if fits_wcs is None or not hasattr(fits_wcs, "celestial"):
-        msg = "This cube does not carry the WCS metadata needed to derive a celestial frame."
-        raise ValueError(msg)
-    return wcs_to_celestial_frame(fits_wcs.celestial)
+    root = _root_wcs(cube)
+    if isinstance(root, gwcs.WCS):
+        for frame in getattr(root.output_frame, "frames", [root.output_frame]):
+            if isinstance(frame, cf.CelestialFrame):
+                return frame.reference_frame
+    elif hasattr(root, "celestial"):
+        return wcs_to_celestial_frame(root.celestial)
+    msg = "This cube does not carry the WCS metadata needed to derive a celestial frame."
+    raise ValueError(msg)
 
 
 class _ResolveNegativeIndicesMixin:
