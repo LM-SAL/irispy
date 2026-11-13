@@ -1,0 +1,1 @@
+``fits_wcs`` of one pixel of each frame of a slit-jaw cube, such as the light curve ``cube[:, 3, 4]``, is now ``None``. It raised a ``ValueError``.

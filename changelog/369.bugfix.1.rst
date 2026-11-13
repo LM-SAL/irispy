@@ -1,0 +1,2 @@
+The ``celestial_frame`` of a slit-jaw, AIA or Hinode/SOT cube is now the frame of the sky positions of ``cube.wcs``.
+It was the frame of the FITS header of the first frame, and a position off the limb built in it became NaN in ``cube.wcs.world_to_pixel`` and in ``crop``.
