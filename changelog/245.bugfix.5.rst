@@ -1,1 +1,0 @@
-``SpectrogramCubeSequence`` can now be sliced with a range, along the cube axes and through ``index_as_cube``, as an ``NDCubeSequence``; any slice but an integer raised the OBSID error.

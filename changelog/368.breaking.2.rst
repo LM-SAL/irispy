@@ -1,0 +1,2 @@
+In a result with several products, ``irispy.io.read_files`` now keys the rasters ``"raster"`` instead of by their first spectral window, such as ``"C II 1336"``.
+The rasters of further observations are keyed ``"raster (<OBSID>)"``, then ``"raster (<OBSID>, <STARTOBS>)"``.

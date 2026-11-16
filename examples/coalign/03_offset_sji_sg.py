@@ -48,11 +48,11 @@ sji_2796 = read_files(sji_filename)
 mg_ii = raster["Mg II k 2796"][0]
 c_ii = raster["C II 1336"][0]
 
-times_SG = mg_ii.axis_world_coords("time", wcs=mg_ii.extra_coords)
+times_SG = mg_ii.time
 (time_2796,) = sji_2796.axis_world_coords("time")
 # We picked randomly.
 raster_idx = 55
-time_target = times_SG[0][raster_idx]
+time_target = times_SG[raster_idx]
 
 time_idx_2796 = np.abs(time_2796 - time_target).argmin()
 time_stamp_2796 = time_2796[time_idx_2796].isot
@@ -67,26 +67,19 @@ sji_slit_location_pixel_x = sji_2796.axis_world_coords(wcs=sji_2796.extra_coords
 sji_slit_location_pixel_y = sji_2796.axis_world_coords(wcs=sji_2796.extra_coords["slit y position"])[0][time_idx_2796]
 
 ###############################################################################
-# We can now get the slit locations from the raster FITS WCSes.
+# We can now get the slit locations from the raster WCSes, as a
+# `~astropy.coordinates.SkyCoord` along the slit at that raster step.
 
 sji_2796_closest = sji_2796[time_idx_2796]
 sji_2796_frame = sji_2796_closest.celestial_frame
 
-nuv_lon_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
-nuv_lat_coords = mg_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
-fuv_lon_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lon")[0][raster_idx]
-fuv_lat_coords = c_ii.axis_world_coords_values("custom:pos.helioprojective.lat")[0][raster_idx]
+(nuv_slit,) = mg_ii[raster_idx].axis_world_coords("custom:pos.helioprojective.lon")
+(fuv_slit,) = c_ii[raster_idx].axis_world_coords("custom:pos.helioprojective.lon")
 
 ###############################################################################
 # The NUV and FUV windows share the physical slit, so their coordinates coincide.
 # The slit position recorded in the SJI auxiliary data agrees with them to well
-# under a pixel.
-
-nuv_slit = SkyCoord(Tx=nuv_lon_coords, Ty=nuv_lat_coords, frame=sji_2796_frame)
-fuv_slit = SkyCoord(Tx=fuv_lon_coords, Ty=fuv_lat_coords, frame=sji_2796_frame)
-
-###############################################################################
-# Finally, we can compare the locations to see how it all lines up.
+# under a pixel. Finally, we can compare the locations to see how it all lines up.
 
 fig = plt.figure(figsize=(9, 9))
 ax = fig.add_subplot(projection=sji_2796_closest)
@@ -98,7 +91,7 @@ slit_location_from_sji_aux = sji_2796[time_idx_2796].wcs.pixel_to_world(
 )
 ax.plot_coord(slit_location_from_sji_aux, ".", color="white", label="SJI auxiliary slit")
 
-# These are the matching NUV and FUV raster slit coordinates from their FITS WCSes.
+# These are the matching NUV and FUV raster slit coordinates from their WCSes.
 ax.plot_coord(nuv_slit, color="red", linestyle="-", linewidth=1, label="NUV raster slit")
 ax.plot_coord(fuv_slit, color="cyan", linestyle="--", linewidth=1, label="FUV raster slit")
 ax.legend()

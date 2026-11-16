@@ -1,1 +1,2 @@
 Added ``irispy.io.read_mosaic`` and ``irispy.spectrograph.MosaicCube`` to read the IRIS full-disk mosaics, and ``MosaicCube.to_map`` to make a ``sunpy.map.Map`` at one wavelength or averaged over a range.
+The cube has a gWCS with the wavelength, sky position and time of each position; ``cube.time`` is masked where no raster covered a position, and ``cube.fits_wcs`` is the FITS WCS of the file.

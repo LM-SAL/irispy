@@ -8,6 +8,7 @@ from astropy.wcs import WCS
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
 from sunpy.coordinates.wcs_utils import _set_wcs_aux_obs_coord
 
+from irispy._gwcs import _create_mosaic_gwcs
 from irispy.meta import MosaicMeta
 from irispy.spectrograph import MosaicCube, _wavelength_indices
 from irispy.utils.constants import BAD_PIXEL_VALUES_SCALED, DN_UNIT, SATURATION_LIMIT
@@ -42,9 +43,11 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
 
     Notes
     -----
-    The WCS is helioprojective, with the observer at Earth at ``DATE_OBS``, the start of
-    the mosaic. The mosaic is not derotated and takes about 18 hours to acquire, so
-    ``meta["time"]`` holds the time of each position, masked where no raster covered it.
+    The gWCS gives the wavelength, the helioprojective longitude and latitude, with the
+    observer at Earth at ``DATE_OBS``, the start of the mosaic, and the time of each
+    position: the mosaic is not derotated and takes about 18 hours to acquire.
+    ``meta["time"]`` holds the same times, masked where no raster covered it, and
+    ``fits_wcs`` the FITS WCS the mosaic was read with.
 
     Gzipped files cannot be memory-mapped, so every read decompresses the file.
     Decompressing it once, for example with ``gunzip``, makes later reads much faster.
@@ -86,6 +89,7 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
             }
         )
         wcs = WCS(wcs_header)
+        celestial = wcs.celestial  # (solar X, solar Y), before the axes are reversed
         indices = range(header["NAXIS3"])
         if wavelength_range is not None:
             wavelengths = wcs.spectral.pixel_to_world(indices)
@@ -93,7 +97,8 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
             wcs = wcs[indices[0] : indices[-1] + 1]
         # The file is (wavelength, solar Y, solar X); rasters are the reverse.
         wcs = wcs.sub([3, 2, 1])
-        _set_wcs_aux_obs_coord(wcs, get_body_heliographic_stonyhurst("Earth", date_obs))
+        observer = get_body_heliographic_stonyhurst("Earth", date_obs)
+        _set_wcs_aux_obs_coord(wcs, observer)
         # The stored integers in one read: astropy seeks back after a read, which restarts a gzip decompression.
         stored = hdulist[0].section[indices[0] : indices[-1] + 1]
         time_offset = hdulist[2].data.T
@@ -116,4 +121,7 @@ def read_mosaic(filename, *, wavelength_range: u.AA = None):
     meta.add("time", times, "Time of each mosaic position, masked where no raster covered it", (0, 1))
     if saturated.any():
         meta.add("saturated", saturated, "Samples at the level 2 ceiling, also masked", (0, 1, 2))
-    return MosaicCube(data, wcs, unit=DN_UNIT[meta.detector], meta=meta, mask=mask)
+    meta["fits_wcs"] = wcs
+    gwcs_ = _create_mosaic_gwcs(wcs, celestial, time_offset.T, date_obs, observer)
+    gwcs_.array_shape = data.shape
+    return MosaicCube(data, gwcs_, unit=DN_UNIT[meta.detector], meta=meta, mask=mask)

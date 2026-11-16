@@ -6,8 +6,6 @@ import hashlib
 import tarfile
 from pathlib import Path
 
-from filelock import FileLock
-
 from astropy.config.paths import get_cache_dir
 from astropy.io import fits
 from astropy.table import Table
@@ -76,6 +74,10 @@ def _extract_tarfile(filenames, extract_dir=None):
         ``astropy.config.paths.get_cache_dir("irispy")``, so the archive's own folder
         stays untouched and can be read-only.
     """
+    # Imported only here: filelock adds an audit hook on import, which then runs at every id() and so slows every
+    # deepcopy, such as gwcs's
+    from filelock import FileLock  # NOQA: PLC0415
+
     root = Path(get_cache_dir("irispy") if extract_dir is None else extract_dir)
     expanded_files = []
     for fname in filenames:
@@ -143,17 +145,16 @@ def _get_spec_group_key(file, header):
     return obsid, startobs
 
 
-def _get_spec_return_key(group_key, describe, returns):
-    key = f"{describe}"
-    if key not in returns:
-        return key
+def _get_spec_return_key(group_key, returns):
+    if "raster" not in returns:
+        return "raster"
     obsid, startobs = group_key
     if startobs is None:
-        return f"{describe} ({Path(obsid).stem})"
-    key = f"{describe} ({obsid})"
+        return f"raster ({Path(obsid).stem})"
+    key = f"raster ({obsid})"
     if key not in returns:
         return key
-    return f"{describe} ({obsid}, {startobs})"
+    return f"raster ({obsid}, {startobs})"
 
 
 def fits_info(filename: str) -> None:
@@ -282,8 +283,8 @@ def read_files(
         What the files hold, if they hold one product: an `~irispy.sji.SJICube` (or AIA or SOT cube) for a slit-jaw file,
         a `~irispy.spectrograph.RasterCollection` keyed by spectral window for the raster files of one observation.
         Several products come back in an `~ndcube.NDCollection` keyed by band or measured quantity, with the
-        filename added to repeated names; rasters are keyed by the file's first spectral window, such as
-        ``"C II 1336"``, with the OBSID, then also STARTOBS, added to repeated names.
+        filename added to repeated names. The rasters of an observation are keyed ``"raster"``; further
+        observations add their OBSID, then also STARTOBS, such as ``"raster (3620258102)"``.
 
     Raises
     ------
@@ -310,8 +311,8 @@ def read_files(
     ...     "sns/iris_l2_20210905_001833_3620258102_raster_t000_r00000_test.fits"
     ... )
     >>> raster = read_files(filename)
-    >>> len(raster), raster["Si IV 1403"][0].shape
-    (8, (187, 40, 29))
+    >>> len(raster), raster["Si IV 1403"].shape
+    (8, (1, 187, 40, 29))
 
     The same on the sample data, reading one spectral window of the rasters:
 
@@ -373,9 +374,9 @@ def read_files(
                     # A file that is not FITS: raises the level 2 error, chained to this one
                     _check_level2(file, None)
                 product = _check_level2(file, header)
-                _, describe = _get_simple_metadata(header)
                 log.debug(f"Processing file: {file} as {product}")
                 if product == "SJI":
+                    _, describe = _get_simple_metadata(header)
                     # SOT-SP archives may contain multiple observations of the same quantity.
                     key = describe if describe not in returns else f"{describe} ({file.stem})"
                     suffix = 2
@@ -384,17 +385,15 @@ def read_files(
                         suffix += 1
                     returns[key] = read_sji_lvl2(file, memmap=memmap, uncertainty=uncertainty)
                 else:
-                    # Keep the first file's description, so the group needs no second header read.
-                    group_key = _get_spec_group_key(file, header)
-                    spec_groups.setdefault(group_key, (describe, []))[1].append(file)
+                    spec_groups.setdefault(_get_spec_group_key(file, header), []).append(file)
             except Exception as e:
                 if allow_errors:
                     log.warning(f"File {file} failed to load with {e}")
                     continue
                 raise
-    for group_key, (describe, file_group) in spec_groups.items():
+    for group_key, file_group in spec_groups.items():
         try:
-            key = _get_spec_return_key(group_key, describe, returns)
+            key = _get_spec_return_key(group_key, returns)
             returns[key] = read_spectrograph_lvl2(
                 file_group,
                 spectral_windows=spectral_windows,
